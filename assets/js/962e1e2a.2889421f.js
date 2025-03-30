@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkazurelocal_github_io=self.webpackChunkazurelocal_github_io||[]).push([[8408],{5050:a=>{a.exports=JSON.parse('{"metadata":{"permalink":"/azurelocal.github.io/blog","page":1,"postsPerPage":10,"totalPages":1,"totalCount":4,"blogDescription":"Blog","blogTitle":"Blog"}}')}}]);
