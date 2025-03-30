@@ -14,10 +14,24 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18"
+          node-version: '18'
 
       - name: Install dependencies
         run: npm install
+
+      - name: Lint JavaScript with ESLint
+        run: npx eslint "src/**/*.{js,jsx}" --max-warnings 0
+
+      - name: Check formatting with Prettier
+        run: npx prettier --check "src/**/*.{js,jsx,json,css,md}"
+
+      - name: Set up Vale
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y vale
+
+      - name: Lint prose with Vale
+        run: vale docs/
 
       - name: Build site
         run: npm run build
