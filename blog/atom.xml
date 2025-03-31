@@ -2,11 +2,179 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://azurelocal.github.io/blog</id>
     <title>Azure Local Blog</title>
-    <updated>2021-08-26T00:00:00.000Z</updated>
+    <updated>2025-03-30T23:45:48.721Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://azurelocal.github.io/blog"/>
     <subtitle>Azure Local Blog</subtitle>
     <icon>https://azurelocal.github.io/img/favicon.ico</icon>
+    <entry>
+        <title type="html"><![CDATA[Demo MIgration]]></title>
+        <id>https://azurelocal.github.io/blog/2025/03/30/demo-migration</id>
+        <link href="https://azurelocal.github.io/blog/2025/03/30/demo-migration"/>
+        <updated>2025-03-30T23:45:48.721Z</updated>
+        <content type="html"><![CDATA[<p>This is a test.</p>]]></content>
+    </entry>
+    <entry>
+        <title type="html"><![CDATA[Secure RDP Access via SSH for Arc VM]]></title>
+        <id>https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm</id>
+        <link href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm"/>
+        <updated>2025-01-25T22:14:57.971Z</updated>
+        <summary type="html"><![CDATA[Learn how to securely access Azure Arc-enabled servers via RDP over SSH, enhancing your cloud security and management efficiency.]]></summary>
+        <content type="html"><![CDATA[<p>With Azure Arc-enabled servers, many of us are already familiar with the ability to establish SSH connections to these machines. If this is news to you, here’s something exciting: you can SSH into Windows machines that have been onboarded to Azure Arc! Now, I can imagine security professionals having a moment of concern—yes, you read that right: SSH access to Windows machines onboarded with Azure Arc is possible.</p>
+<p>Here’s an even bigger revelation: this applies not only to on-premises machines but also to Azure Arc-enabled servers running on other cloud platforms like AWS and GCP. However, before panic sets in, let me assure you that this functionality is secure and well-architected for safe usage. (Although I’ll admit, I’m not the security expert breaking out in a cold sweat right now!)</p>
+<p><strong>How does this work?</strong></p>
+<p>SSH for Arc-enabled servers allows secure, seamless SSH connections to your Azure Arc-enabled machines without requiring a public IP address or opening additional ports. This feature can be utilized interactively, automated within workflows, or integrated into existing SSH-based management tooling.</p>
+<p><strong>Key Benefits of SSH for Arc-Enabled Servers</strong></p>
+<p>Here are some of the standout advantages of this feature:</p>
+<ul>
+<li>No public IP address or open SSH ports are required.</li>
+<li>Supports both Windows and Linux servers.</li>
+<li>Login options include local user accounts or Azure AD users (Linux only).</li>
+<li>Integrates seamlessly with OpenSSH-based tools, including support for configuration files.</li>
+</ul>
+<p><strong>But What About RDP Over SSH?</strong></p>
+<p>Now that we’ve covered SSH, let’s dive into the main topic: securely connecting to your Azure Arc-enabled servers using RDP over SSH. This approach allows you to establish secure RDP connections to your Azure Arc-enabled machines, regardless of where they’re hosted—be it Azure Local, on-premises environments like vSphere and Hyper-V, or even cloud platforms like AWS and GCP.</p>
+<p>Let’s explore how you can achieve this across various environments while maintaining security and operational efficiency.</p>
+<hr>
+<h1>Secure RDP Access Via SSH</h1>
+<ul>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#secure-rdp-access-via-ssh">Secure RDP Access Via SSH</a>
+<ul>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#install-azure-cli-for-powershell">Install Azure Cli for PowerShell</a></li>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#install-openssh-extension">Install OpenSSH Extension</a>
+<ul>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#verify-from-portal">Verify from portal</a></li>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#verify-from-azure-cli">Verify from Azure Cli</a></li>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#install-from-the-portal">Install from the portal</a></li>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#install-from-azure-cli">Install from Azure Cli</a></li>
+</ul>
+</li>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#connect-to-server-via-ssh">Connect to Server via SSH</a></li>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#connect-to-server-via-rdp-over-ssh">Connect to Server via RDP over SSH</a></li>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#security">Security</a></li>
+<li><a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#final-thoughts">Final Thoughts</a></li>
+</ul>
+</li>
+</ul>
+<p>The following steps will be taken:</p>
+<ol>
+<li>Install Azure Cli for PowerShell</li>
+<li>Install WindowsOpenSSH Extension via Azure Portal</li>
+<li>Connect to Azure Arc enabled Server via SSH</li>
+<li>Connect to Azure Arc via RDP over SSH</li>
+</ol>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="install-azure-cli-for-powershell">Install Azure Cli for PowerShell<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#install-azure-cli-for-powershell" class="hash-link" aria-label="Direct link to Install Azure Cli for PowerShell" title="Direct link to Install Azure Cli for PowerShell">​</a></h2>
+<p>To install Azure Cli for PowerShell, the easiest way is to use Winget. This will work on Windows 11 and Windows Server 2025 Servers. The following command will install Azure Cli on PowerShell:</p>
+<div class="language-PowerShell language-powershell codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-powershell codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">winget install -e --id Microsoft.AzureCLI</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="Copy code to clipboard" title="Copy" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<p>For more ways to install the Azure CLi for PowerShell or for Linux the following Microsoft Learn Document can be handy: <a href="https://learn.microsoft.com/en-us/cli/azure/install-azure-cli" target="_blank" rel="noopener noreferrer">How to install the Azure Cli</a></p>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="install-openssh-extension">Install OpenSSH Extension<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#install-openssh-extension" class="hash-link" aria-label="Direct link to Install OpenSSH Extension" title="Direct link to Install OpenSSH Extension">​</a></h2>
+<p>First, let’s verify whether the extension is already installed. This can be done using the Azure CLI or through the Azure Portal.</p>
+<h3 class="anchor anchorWithStickyNavbar_LWe7" id="verify-from-portal">Verify from portal<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#verify-from-portal" class="hash-link" aria-label="Direct link to Verify from portal" title="Direct link to Verify from portal">​</a></h3>
+<p>From the Azure Portal, navigate to the Azure Arc blade, then select Azure Arc Resources, followed by Machines. From the list of machines, select the desired Azure Arc-enabled server.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20200421-6254ae62ba7aebde6a5699f614fea5e2.png" width="1219" height="499" class="img_ev3q"></p>
+<p>On the selected Azure Arc resource, navigate to Settings and then select Extensions.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20200601-285c0194bdcba4df12a3a5320930dd80.png" width="1391" height="570" class="img_ev3q"></p>
+<p>From the Extensions blade, check if the WindowsOpenSSH extension is already installed.</p>
+<ul>
+<li>If the extension is installed, you can proceed to the Connecting to Your Azure Arc-Enabled Server via SSH section.</li>
+<li>If it is not installed, continue with the steps to install the extension, either through the Azure Portal or using the Azure CLI.</li>
+</ul>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20200629-1fc449938345f83852643732e0998470.png" width="1702" height="474" class="img_ev3q"></p>
+<h3 class="anchor anchorWithStickyNavbar_LWe7" id="verify-from-azure-cli">Verify from Azure Cli<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#verify-from-azure-cli" class="hash-link" aria-label="Direct link to Verify from Azure Cli" title="Direct link to Verify from Azure Cli">​</a></h3>
+<p>Run the following Azure Cli commands:</p>
+<p>Login to your subscription:</p>
+<div class="language-PowerShell language-powershell codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-powershell codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">az login</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="Copy code to clipboard" title="Copy" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-PowerShell language-powershell codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-powershell codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">az connectedmachine extension list --machine-name AzureArcMachineName --resource-group AzureResourceGroup</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="Copy code to clipboard" title="Copy" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20195653-881756eeca39f2b262f19b27149458e8.png" width="1108" height="611" class="img_ev3q"></p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20195843-0a11269f42ee7a6a53fca94b3cecfb0a.png" width="1115" height="875" class="img_ev3q"></p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20195956-350d1cd58ee71092293c3e5d7fbf956c.png" width="1115" height="875" class="img_ev3q"></p>
+<h3 class="anchor anchorWithStickyNavbar_LWe7" id="install-from-the-portal">Install from the portal<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#install-from-the-portal" class="hash-link" aria-label="Direct link to Install from the portal" title="Direct link to Install from the portal">​</a></h3>
+<p>To install the WindowsOpenSSH extension from the Azure Portal:</p>
+<ol>
+<li>Navigate to the Azure Arc blade and select Machines from the Azure Arc Resources section.</li>
+<li>From the list of machines, select the Azure Arc-enabled server where the extension needs to be installed.</li>
+<li>Open the selected resource, and in the Settings section, select Extensions.</li>
+</ol>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20185443-911595e4a32634ba5b31ff05f6ff6043.png" width="1702" height="485" class="img_ev3q"></p>
+<p>In the Extensions blade, click + Add to install a new extension. Select WindowsOpenSSH from the list of available extensions, then follow the prompts to complete the installation.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20185508-fab47a5e60b22ee02b8e65fcdf9c3abe.png" width="1702" height="355" class="img_ev3q"></p>
+<p>Click to install the extension.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20185543-283d0d4e50302a4de0949ee96e27ad48.png" width="850" height="276" class="img_ev3q"></p>
+<p>Note: Starting with Windows Server 2025, you can also enable Remote SSH Access directly through the Server Manager.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20185605-502801d6fd743eb65ac5404b6fe8e5d2.png" width="575" height="401" class="img_ev3q"></p>
+<p>The extension will begin deploying. Please note that the WindowsOpenSSH extension may take approximately 5 minutes to complete the installation.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20185653-bfc4b2080d3509dba6b728cefac52dd5.png" width="1710" height="515" class="img_ev3q"></p>
+<p>Once the installation is complete, navigate back to the Extensions blade on the selected Azure Arc resource to verify that the WindowsOpenSSH extension has been successfully installed.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20185807-a761b4c2ca22b08a2394118d612f1ca2.png" width="1697" height="486" class="img_ev3q"></p>
+<p>Additionally, you can return to Server Manager on the server to confirm that Remote SSH Access is now showing as enabled.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20185903-0aaf4120de135e8b9da9826ee508cd70.png" width="536" height="405" class="img_ev3q"></p>
+<h3 class="anchor anchorWithStickyNavbar_LWe7" id="install-from-azure-cli">Install from Azure Cli<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#install-from-azure-cli" class="hash-link" aria-label="Direct link to Install from Azure Cli" title="Direct link to Install from Azure Cli">​</a></h3>
+<p>If the extension is not installed, you also have the option to install it using the Azure CLI. Run the following command:</p>
+<div class="language-PowerShell language-powershell codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-powershell codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">az connectedmachine extension create --name OpenSSH --publisher Microsoft.Azure.OpenSSH --type WindowsOpenSSH --resource-group &lt;ResourceGroupName&gt; --machine-name &lt;AzureArcVmName&gt; --location &lt;AzureRegion&gt;</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="Copy code to clipboard" title="Copy" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20202227-9375e0e246cf4c221eff7ccbb53f0ae0.png" width="1115" height="495" class="img_ev3q"></p>
+<p>When the extension is successfully installed, the following output (or similar) should appear in the command window:</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20202457-4436b644df7c0ad7eccc04ff4b99c510.png" width="1115" height="837" class="img_ev3q"></p>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="connect-to-server-via-ssh">Connect to Server via SSH<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#connect-to-server-via-ssh" class="hash-link" aria-label="Direct link to Connect to Server via SSH" title="Direct link to Connect to Server via SSH">​</a></h2>
+<p>Now that the extension is installed, we are ready to establish our first connection to the Azure Arc-enabled server via SSH. Use the following Azure CLI command:</p>
+<div class="language-PowerShell language-powershell codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-powershell codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">az ssh arc --resource-group &lt;ResourceGroupName&gt; --name &lt;AzureArcVmName --local-user &lt;Administrator&gt;</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="Copy code to clipboard" title="Copy" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<p>The first time you attempt the connection, you may see the following prompt, Port 22 is not allowed for SSH connections on this resource. Would you like to update the current Service Configuration in the endpoint to allow connections to port 22?</p>
+<p>At this point, type Y and press Enter to allow connections to port 22. This action updates the service configuration to permit SSH access on the required port, enabling a secure connection.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20181537-5d515800ea0a7c9eaf69c964da92f70e.png" width="1115" height="609" class="img_ev3q"></p>
+<p>After initiating the connection, wait while the SSH service is configured on the Azure Arc-enabled server. This process sets up the necessary parameters to establish a secure tunnel for the connection. Once the configuration is complete, the session will proceed.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20192303-3a9e376d7ad1ff8e05ddb9ffdd8b9f37.png" width="1115" height="609" class="img_ev3q"></p>
+<p>Since this is the first time connecting via SSH, you will be prompted to approve the connection and add the SSH host key to your local machine's known hosts file. When prompted, review the fingerprint to ensure it matches your server's details, then type yes and press Enter to proceed. This step establishes trust between your local machine and the Azure Arc-enabled server.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20192339-ebcfb786c7e9b85491c7600516c77fdf.png" width="1115" height="609" class="img_ev3q"></p>
+<p>At this point, you will be prompted to enter the password for the local account specified in the Azure CLI command. Provide the correct password for the account to complete the authentication process and establish the connection.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20192411-60376fa72aeb5d45cb5df8b47c3fdc7c.png" width="1115" height="609" class="img_ev3q"></p>
+<p>You are now successfully connected to your Azure Arc-enabled server via SSH. This secure connection allows you to manage and interact with the server as needed, leveraging the Azure Arc integration for centralized control.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20192623-952df89122d3c2ca1924686426885783.png" width="1115" height="609" class="img_ev3q"></p>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="connect-to-server-via-rdp-over-ssh">Connect to Server via RDP over SSH<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#connect-to-server-via-rdp-over-ssh" class="hash-link" aria-label="Direct link to Connect to Server via RDP over SSH" title="Direct link to Connect to Server via RDP over SSH">​</a></h2>
+<p>Run the following Azure CLI command to initiate the connection. Ensure the specified local account has the necessary permissions to log in to the machine via both SSH and RDP. Ensure this local account is configured with permissions to access the server using both SSH and RDP.</p>
+<div class="language-PowerShell language-powershell codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-powershell codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">az ssh arc --resource-group &lt;ResourceGroupName&gt; --name &lt;AzureArcVmName --local-user &lt;Administrator&gt; --rdp</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="Copy code to clipboard" title="Copy" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20203754-9fd80799dfb576a6e08f5dfddb35169b.png" width="1115" height="571" class="img_ev3q"></p>
+<p>Once authentication via SSH is successful, the Remote Desktop Connection will launch. Keep in mind that the SSH window must remain open for the duration of the RDP session, as it acts as the secure tunnel facilitating the connection. Closing the SSH window will terminate the RDP session.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20203823-6c86c04936716b6180a1e25a7fd4a222.png" width="1115" height="571" class="img_ev3q"></p>
+<p>At this point, you will see the standard RDP login prompt. Here, you will need to enter the local account and password for the server.</p>
+<p>(Note: I haven’t tested using a domain account yet, but it’s likely not supported in this setup.)</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20203902-e12eecc82165ed32127a8793cb03e2d1.png" width="456" height="671" class="img_ev3q"></p>
+<p>If the connection is successful, you will encounter the standard prompt regarding the machine's certificate. This is normal behavior when initiating an RDP session, as it verifies the identity of the remote machine. Review the certificate details, and if everything looks correct, proceed by clicking Yes to continue to the session.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20203918-d5fb8f58c14ab7b8b3173739d7c5ceb9.png" width="392" height="401" class="img_ev3q"></p>
+<p>Next, the RDP session will initiate, and you will see the demo admin account logging in to the session. This confirms that the connection has been successfully established through the secure RDP via SSH process.</p>
+<p><img decoding="async" loading="lazy" src="https://azurelocal.github.io/assets/images/Screenshot%202025-01-25%20203947-de68f3913ba7f8d23f1a329474fc3e02.png" width="2425" height="1385" class="img_ev3q"></p>
+<p>This final screenshot highlights what the title bar of your RDP session will look like once you're connected. It serves as a visual confirmation that the session is established via Azure Arc's secure SSH-to-RDP functionality.</p>
+<p><img decoding="async" loading="lazy" src="data:image/png;base64,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" width="665" height="32" class="img_ev3q"></p>
+<hr>
+<p>At this point, we are successfully connected to our Azure Arc-enabled server using RDP via SSH—a powerful and secure way to remotely connect to any server that has been onboarded into Azure Arc.</p>
+<p>For those concerned about security, rest assured—this method is highly secure. The connection leverages Azure's authentication, RBAC, and encrypted communication over port 443. Additionally, there are no public IP addresses exposed on these machines in my environment, which significantly reduces attack vectors.</p>
+<p>Of course, there are alternative methods for remote access. Azure Bastion, for example, is an excellent option for securely accessing Azure VMs directly through the Azure Portal without needing public IPs. In my environment, we make extensive use of Azure Bastion for connecting to Azure VMs. Furthermore, we have a Site-to-Site VPN set up between Azure and our on-premises infrastructure, allowing us to use Bastion for accessing not just Azure VMs but also Azure Local VMs and other supporting infrastructure onboarded to Azure Arc.</p>
+<p>While Bastion is my preferred choice for remote access, using RDP via SSH to connect to Azure Arc-enabled servers is my second choice. It’s a great fallback option for securely managing and troubleshooting servers in distributed or hybrid environments.</p>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="security">Security<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#security" class="hash-link" aria-label="Direct link to Security" title="Direct link to Security">​</a></h2>
+<p>Security Considerations for Using RDP via SSH on an Azure Arc-Enabled Server</p>
+<ol>
+<li><strong>Azure Tenant Authentication</strong>: You must authenticate to the Azure AD tenant linked to the Azure Arc resource. This ensures access is restricted to authorized users within the tenant</li>
+<li><strong>Role-Based Access Control (RBAC)</strong>: You need sufficient RBAC permissions (e.g., Virtual Machine Administrator Login or equivalent) to access the Azure Arc-enabled server resource in Azure</li>
+<li><strong>Local Server Authentication</strong>: After gaining access through Azure, you must also authenticate at the server level. This typically requires valid local credentials (e.g., username and password or SSH key for a local account).</li>
+<li><strong>Secure Communication</strong>: All communication is encrypted and occurs over port 443 (HTTPS) using the Azure Arc Agent, officially known as the Microsoft Connected Machine Agent, to facilitate the connection securely. No direct RDP port (3389) exposure is required.</li>
+</ol>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="final-thoughts">Final Thoughts<a href="https://azurelocal.github.io/blog/secure-rdp-access-ssh-arc-vm#final-thoughts" class="hash-link" aria-label="Direct link to Final Thoughts" title="Direct link to Final Thoughts">​</a></h2>
+<p>I was thrilled when I first heard that Microsoft was adding SSH connectivity to Azure Arc-enabled servers. But when I discovered that we could take it a step further and do RDP through that SSH connection, I was genuinely excited. It’s such a powerful and secure way to manage servers without exposing public IPs or opening unnecessary ports. As Azure Arc continues to evolve, I’m eagerly anticipating the new features and improvements that will make managing hybrid environments even easier.</p>
+<p>This approach may not fit everyone’s needs, but if you’re running Azure Arc-enabled servers, I highly recommend exploring RDP via SSH. It’s a game-changer for securely accessing and managing machines in hybrid and multi-cloud setups.</p>
+<p>A lot of what I’ve learned came from these two sites:</p>
+<ul>
+<li><a href="https://www.edtechirl.com/p/unlocking-remote-access-on-azure" target="_blank" rel="noopener noreferrer">https://www.edtechirl.com/p/unlocking-remote-access-on-azure</a></li>
+<li><a href="https://www.thomasmaurer.ch/2024/09/remote-desktop-connection-rdp-to-azure-arc-enabled-windows-server-machines-anywhere/" target="_blank" rel="noopener noreferrer">https://www.thomasmaurer.ch/2024/09/remote-desktop-connection-rdp-to-azure-arc-enabled-windows-server-machines-anywhere/</a></li>
+</ul>
+<p>If you’re considering it, take the plunge—it’s worth it!</p>
+<p>Ref:</p>]]></content>
+        <author>
+            <name>Kristopher Turner</name>
+            <uri>https://github.com/kristopherjturner</uri>
+        </author>
+        <category label="Azure Arc" term="Azure Arc"/>
+        <category label="Azure Arc-enabled servers" term="Azure Arc-enabled servers"/>
+        <category label="SSH" term="SSH"/>
+        <category label="RDP" term="RDP"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Welcome]]></title>
         <id>https://azurelocal.github.io/blog/welcome</id>
@@ -27,12 +195,8 @@
 <p>The blog supports tags as well!</p>
 <p><strong>And if you don't want a blog</strong>: just delete this directory, and use <code>blog: false</code> in your Docusaurus config.</p>]]></content>
         <author>
-            <name>Sébastien Lorber</name>
-            <uri>https://sebastienlorber.com</uri>
-        </author>
-        <author>
-            <name>Yangshun Tay</name>
-            <uri>https://github.com/yangshun</uri>
+            <name>Kristopher Turner</name>
+            <uri>https://github.com/kristopherjturner</uri>
         </author>
         <category label="Facebook" term="Facebook"/>
         <category label="Hello" term="Hello"/>
@@ -51,8 +215,8 @@
 <div class="language-js codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-js codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token operator" style="color:#393A34">&lt;</span><span class="token plain">button onClick</span><span class="token operator" style="color:#393A34">=</span><span class="token punctuation" style="color:#393A34">{</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token plain"> </span><span class="token arrow operator" style="color:#393A34">=&gt;</span><span class="token plain"> </span><span class="token function" style="color:#d73a49">alert</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">'button clicked!'</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">}</span><span class="token operator" style="color:#393A34">&gt;</span><span class="token maybe-class-name">Click</span><span class="token plain"> me</span><span class="token operator" style="color:#393A34">!</span><span class="token operator" style="color:#393A34">&lt;</span><span class="token operator" style="color:#393A34">/</span><span class="token plain">button</span><span class="token operator" style="color:#393A34">&gt;</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="Copy code to clipboard" title="Copy" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <button>Click me!</button>]]></content>
         <author>
-            <name>Sébastien Lorber</name>
-            <uri>https://sebastienlorber.com</uri>
+            <name>Kristopher Turner</name>
+            <uri>https://github.com/kristopherjturner</uri>
         </author>
         <category label="Docusaurus" term="Docusaurus"/>
     </entry>
@@ -81,8 +245,8 @@
 <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque elementum dignissim ultricies. Fusce rhoncus ipsum tempor eros aliquam consequat. Lorem ipsum dolor sit amet</p>
 <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque elementum dignissim ultricies. Fusce rhoncus ipsum tempor eros aliquam consequat. Lorem ipsum dolor sit amet</p>]]></content>
         <author>
-            <name>Yangshun Tay</name>
-            <uri>https://github.com/yangshun</uri>
+            <name>Kristopher Turner</name>
+            <uri>https://github.com/kristopherjturner</uri>
         </author>
         <category label="Hello" term="Hello"/>
         <category label="Docusaurus" term="Docusaurus"/>
@@ -96,12 +260,8 @@
         <content type="html"><![CDATA[<p>Lorem ipsum dolor sit amet...</p>
 <p>...consectetur adipiscing elit. Pellentesque elementum dignissim ultricies. Fusce rhoncus ipsum tempor eros aliquam consequat. Lorem ipsum dolor sit amet</p>]]></content>
         <author>
-            <name>Sébastien Lorber</name>
-            <uri>https://sebastienlorber.com</uri>
-        </author>
-        <author>
-            <name>Yangshun Tay</name>
-            <uri>https://github.com/yangshun</uri>
+            <name>Kristopher Turner</name>
+            <uri>https://github.com/kristopherjturner</uri>
         </author>
         <category label="Hola" term="Hola"/>
         <category label="Docusaurus" term="Docusaurus"/>
