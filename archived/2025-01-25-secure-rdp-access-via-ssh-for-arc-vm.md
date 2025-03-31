@@ -6,13 +6,12 @@ preview: /img/arc/ssh_rdp/OIP.jpeg
 draft: false
 tags:
   - Azure Arc
-  - Azure Arc-enabled servers
   - SSH
   - RDP
-slug: secure-rdp-access-ssh-arc-vm
 authors:
   - kristopherjturner
 ---
+<!-- truncate -->
 
 With Azure Arc-enabled servers, many of us are already familiar with the ability to establish SSH connections to these machines. If this is news to you, here’s something exciting: you can SSH into Windows machines that have been onboarded to Azure Arc! Now, I can imagine security professionals having a moment of concern—yes, you read that right: SSH access to Windows machines onboarded with Azure Arc is possible.
 
@@ -37,7 +36,7 @@ Now that we’ve covered SSH, let’s dive into the main topic: securely connect
 
 Let’s explore how you can achieve this across various environments while maintaining security and operational efficiency.
 
-----------------------------------------------
+---
 
 # Secure RDP Access Via SSH
 
@@ -110,7 +109,6 @@ az connectedmachine extension list --machine-name AzureArcMachineName --resource
 ![](/img/arc/ssh_rdp/Screenshot%202025-01-25%20195843.png)
 
 ![](/img/arc/ssh_rdp/Screenshot%202025-01-25%20195956.png)
-
 
 ### Install from the portal
 
@@ -190,8 +188,6 @@ You are now successfully connected to your Azure Arc-enabled server via SSH. Thi
 
 ![](/img/arc/ssh_rdp/Screenshot%202025-01-25%20192623.png)
 
-
-
 ## Connect to Server via RDP over SSH
 
 Run the following Azure CLI command to initiate the connection. Ensure the specified local account has the necessary permissions to log in to the machine via both SSH and RDP. Ensure this local account is configured with permissions to access the server using both SSH and RDP.
@@ -224,7 +220,7 @@ This final screenshot highlights what the title bar of your RDP session will loo
 
 ![](/img/arc/ssh_rdp/Screenshot%202025-01-25%20204239.png)
 
-----------------------
+---
 
 At this point, we are successfully connected to our Azure Arc-enabled server using RDP via SSH—a powerful and secure way to remotely connect to any server that has been onboarded into Azure Arc.
 

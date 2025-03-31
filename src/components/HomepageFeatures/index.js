@@ -6,29 +6,17 @@ const FeatureList = [
   {
     title: 'Azure Local Docs',
     Svg: require('@site/static/img/docs.svg').default,
-    description: (
-      <>
-        Azure Local Documentation coming soon.
-      </>
-    ),
+    description: <>Azure Local Documentation coming soon.</>,
   },
   {
     title: 'Azure Local Blogs',
     Svg: require('@site/static/img/blogs.svg').default,
-    description: (
-      <>
-        Azure Local Blogs Coming soon!.
-      </>
-    ),
+    description: <>Azure Local Blogs Coming soon!.</>,
   },
   {
     title: 'Azure Local Demos',
     Svg: require('@site/static/img/demos.svg').default,
-    description: (
-      <>
-        Azure Local Demos coming soon!
-              </>
-    ),
+    description: <>Azure Local Demos coming soon!</>,
   },
 ];
 

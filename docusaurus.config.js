@@ -11,7 +11,8 @@ import { themes as prismThemes } from 'prism-react-renderer';
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Azure Local',
-  tagline: 'Cloud Infrastructure for distributed locations enabled by Azure Arc',
+  tagline:
+    'Cloud Infrastructure for distributed locations enabled by Azure Arc',
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
@@ -45,8 +46,7 @@ const config = {
           sidebarPath: './sidebars.js',
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/AzureLocal/',
+          editUrl: 'https://github.com/AzureLocal/',
         },
         blog: {
           showReadingTime: true,
@@ -56,8 +56,7 @@ const config = {
           },
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/AzureLocal/',
+          editUrl: 'https://github.com/AzureLocal/',
           // Useful options to enforce blogging best practices
           onInlineTags: 'warn',
           onInlineAuthors: 'warn',
@@ -88,8 +87,8 @@ const config = {
             position: 'left',
             label: 'Docs',
           },
-          { to: '/blog/soon/', label: 'Blog (Coming Soon)', position: 'left' },
-          { to: '/demos/soon/', label: 'Demos (Coming Soon)', position: 'left' },
+          { to: '/', label: 'Demos (Coming Soon)', position: 'left' },
+          { to: '/', label: 'Blog (Coming Soon)', position: 'left' },
           {
             href: 'https://github.com/AzuerLocal/',
             label: 'GitHub',
@@ -131,7 +130,11 @@ const config = {
             items: [
               {
                 label: 'Blog (Coming Soon)',
-                to: '/blog/soon/',
+                to: '/',
+              },
+              {
+                label: 'Demos (Coming Soon)',
+                to: '/',
               },
               {
                 label: 'GitHub',
