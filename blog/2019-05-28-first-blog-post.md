@@ -1,7 +1,7 @@
 ---
 slug: first-blog-post
 title: First Blog Post
-authors: [slorber, kristopherjturner]
+authors: [kristopherjturner]
 tags: [hola, docusaurus]
 ---
 
