@@ -11,7 +11,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Azure Local',
-  tagline: 'Just another fluffy private cloud',
+  tagline: 'Cloud Infrastructure for distributed locations enabled by Azure Arc',
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
