@@ -5,17 +5,17 @@ import styles from './styles.module.css';
 const FeatureList = [
   {
     title: 'Azure Local Docs',
-    Svg: require('@site/static/img/docs.svg').default,
+    Svg: require('@site/static/img/documentation-svgrepo-com.svg').default,
     description: <>Azure Local Documentation coming soon.</>,
   },
   {
     title: 'Azure Local Blogs',
-    Svg: require('@site/static/img/blogs.svg').default,
+    Svg: require('@site/static/img/computer-and-house-svgrepo-com.svg').default,
     description: <>Azure Local Blogs Coming soon!.</>,
   },
   {
     title: 'Azure Local Demos',
-    Svg: require('@site/static/img/demos.svg').default,
+    Svg: require('@site/static/img/presentation-svgrepo-com.svg').default,
     description: <>Azure Local Demos coming soon!</>,
   },
 ];

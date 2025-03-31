@@ -4,4 +4,4 @@ sidebar_position: 1
 
 # Azure Local Documentation
 
-**Coming Soon!!!**.
+**Azure Local Documentation is coming soon.**.

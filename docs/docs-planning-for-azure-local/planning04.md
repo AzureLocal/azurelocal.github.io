@@ -2,4 +2,4 @@
 sidebar_position: 4
 ---
 
-# Coming Soon!!!
+# Planning is for plans
