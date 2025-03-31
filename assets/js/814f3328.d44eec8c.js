@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkazurelocal_github_io=self.webpackChunkazurelocal_github_io||[]).push([[472],{5513:e=>{e.exports=JSON.parse('{"title":"Recent posts","items":[{"title":"Coming Soon","permalink":"/blog/coming-soon","unlisted":false,"date":"2025-04-01T00:00:00.000Z"}]}')}}]);

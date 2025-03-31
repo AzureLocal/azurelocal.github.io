@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkazurelocal_github_io=self.webpackChunkazurelocal_github_io||[]).push([[8121],{8070:a=>{a.exports=JSON.parse('{"tags":[{"label":"Azure Local","permalink":"/blog/tags/azure-local","description":"Azure Local tag description","count":1}]}')}}]);
