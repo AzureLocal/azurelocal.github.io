@@ -9,8 +9,6 @@ tags:
   - Azure Arc-enabled servers
   - SSH
   - RDP
-categories:
-  - Azure Arc
 slug: secure-rdp-access-ssh-arc-vm
 authors:
   - kristopherjturner
@@ -257,5 +255,3 @@ A lot of what I’ve learned came from these two sites:
 - https://www.thomasmaurer.ch/2024/09/remote-desktop-connection-rdp-to-azure-arc-enabled-windows-server-machines-anywhere/
 
 If you’re considering it, take the plunge—it’s worth it!
-
-Ref:
