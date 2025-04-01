@@ -18,6 +18,21 @@ const FeatureList = [
     Svg: require('@site/static/img/presentation-svgrepo-com.svg').default,
     description: <>Azure Local Demos coming soon!</>,
   },
+  {
+    title: 'Azure Local Training',
+    Svg: require('@site/static/img/learning-school-svgrepo-com.svg').default,
+    description: <>Azure Local Training coming soon!</>,
+  },
+  {
+    title: 'Azure Local Announcements',
+    Svg: require('@site/static/img/announcement-svgrepo-com.svg').default,
+    description: <>Azure Local News and Updates coming soon!</>,
+  },
+  {
+    title: 'Azure Local Events',
+    Svg: require('@site/static/img/calendar-svgrepo-com.svg').default,
+    description: <>Azure Local Events coming soon!</>,
+  },
 ];
 
 function Feature({ Svg, title, description }) {

@@ -33,8 +33,8 @@ export default function Home() {
   const { siteConfig } = useDocusaurusContext();
   return (
     <Layout
-      title={`Hello from ${siteConfig.title}`}
-      description="Azure Local Documentation <head />"
+      title={`${siteConfig.title}`}
+      description="Azure Local Documentation<head />"
     >
       <HomepageHeader />
       <main>

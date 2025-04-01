@@ -16,7 +16,7 @@ const config = {
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://azurelocal.github.io',
+  url: 'https://azurelocal.cloud',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
@@ -82,13 +82,32 @@ const config = {
         },
         items: [
           {
-            type: 'docSidebar',
-            sidebarId: 'sidebar',
+            type: 'docsVersionDropdown',
             position: 'left',
+            //dropdownItemsAfter: [{to: '/versions', label: 'All versions'}],
+            dropdownActiveClassDisabled: true,
+          },
+          {
+            type: 'docsVersion',
+            position: 'left',
+            to: '/docs/intro',
             label: 'Docs',
           },
-          { to: '/', label: 'Demos (Coming Soon)', position: 'left' },
-          { to: '/', label: 'Blog (Coming Soon)', position: 'left' },
+          { to: '/working', label: 'Blog', position: 'left' },
+          { to: '/working', label: 'Demos', position: 'left' },
+          { to: '/working', label: 'Training', position: 'left' },
+          { to: '/working', label: 'News', position: 'left' },
+          { to: '/working', label: 'Events', position: 'left' },
+          {
+            type: 'localeDropdown',
+            position: 'right',
+            dropdownItemsAfter: [
+              {
+                to: 'https://my-site.com/help-us-translate',
+                label: 'Help us translate',
+              },
+            ],
+          },
           {
             href: 'https://github.com/AzuerLocal/',
             label: 'GitHub',
@@ -123,18 +142,26 @@ const config = {
                 label: 'X',
                 href: 'https://x.com/',
               },
+              {
+                label: 'Community Days',
+                href: 'https://www.communitydays.org/',
+              },
             ],
           },
           {
             title: 'More',
             items: [
               {
-                label: 'Blog (Coming Soon)',
-                to: '/',
+                label: 'Blog',
+                to: '/working',
               },
               {
-                label: 'Demos (Coming Soon)',
-                to: '/',
+                label: 'Demos',
+                to: '/working',
+              },
+              {
+                label: 'News and Updates',
+                to: '/news',
               },
               {
                 label: 'GitHub',
@@ -143,7 +170,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Azure Local. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Azure Local. Designed by <a href="https://x.com/CountryCloudBoy" target="_blank">@CountryCloudBoy</a> and built with Docusaurus.`,
       },
       prism: {
         theme: prismThemes.github,
