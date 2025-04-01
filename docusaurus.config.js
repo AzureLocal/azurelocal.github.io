@@ -99,6 +99,33 @@ const config = {
           { to: '/working', label: 'News', position: 'left' },
           { to: '/working', label: 'Events', position: 'left' },
           {
+                type: 'dropdown',
+                label: 'More',
+                position: 'right',
+                items: [
+                  {
+                label: 'About',
+                to: '/about',  // Links to /about page
+              },
+              {
+                label: 'Contact',
+                to: '/working',  // Links to /contact page
+              },
+              {
+                label: 'FAQ',
+                to: '/working',  // Links to /faq page
+              },
+              {
+                label: 'Links',
+                to: '/working',  // Links to /faq page
+              },
+              {
+                label: 'Resources',
+                to: '/working',  // Links to /faq page
+              },
+            ],
+          },
+          {
             type: 'localeDropdown',
             position: 'right',
             dropdownItemsAfter: [
