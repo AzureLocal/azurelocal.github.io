@@ -34,7 +34,7 @@ export default function Home() {
   return (
     <Layout
       title={`${siteConfig.title}`}
-      description="Azure Local Documentation<head />"
+      description="Azure Local Documentation <head />"
     >
       <HomepageHeader />
       <main>
