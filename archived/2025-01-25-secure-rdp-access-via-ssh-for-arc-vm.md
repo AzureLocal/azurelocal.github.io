@@ -11,6 +11,7 @@ tags:
 authors:
   - kristopherjturner
 ---
+
 <!-- truncate -->
 
 With Azure Arc-enabled servers, many of us are already familiar with the ability to establish SSH connections to these machines. If this is news to you, here’s something exciting: you can SSH into Windows machines that have been onboarded to Azure Arc! Now, I can imagine security professionals having a moment of concern—yes, you read that right: SSH access to Windows machines onboarded with Azure Arc is possible.
