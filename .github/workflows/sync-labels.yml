@@ -1,0 +1,31 @@
+name: Sync Labels
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'project_management/labels.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo:
+          - AzureLocal/azurelocal-sofs-fslogix
+          - AzureLocal/aurelocal-avd
+          - AzureLocal/azurelocal-loadtools
+          - AzureLocal/azurelocal-vm-conversion-toolkit
+          - AzureLocal/azurelocal.github.io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EndBug/label-sync@v2
+        with:
+          config-file: project_management/labels.yml
+          repository: ${{ matrix.repo }}
+          token: ${{ secrets.LABEL_SYNC_TOKEN }}
+          delete-other-labels: false
