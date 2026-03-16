@@ -79,9 +79,33 @@ Every solution repo uses this as the starting point. Repo-specific values (site_
 
 **Plugins (shared):**
 - `search`
+- `drawio` — render `.drawio` files directly in MkDocs pages (via `mkdocs-drawio` plugin)
+
+**Diagram Strategy — draw.io + Mermaid (use both):**
+
+| Use Case | Tool | Rationale |
+|----------|------|----------|
+| Architecture / infrastructure diagrams | **draw.io** | Full visual control, Azure icon set, professional appearance, customer-facing quality |
+| Flowcharts, decision trees, sequences | **Mermaid** | Text-based, lives inline in markdown, fast to author, clean diffs in PRs |
+| Network topology / port diagrams | **draw.io** | Complex layouts with grouped elements, icons, custom positioning |
+| Troubleshooting decision flows | **Mermaid** | Quick inline flows, easy to maintain |
+| Deployment sequences | **Mermaid** | Sequence diagrams render well, easy to update |
+
+**draw.io conventions:**
+- Source `.drawio` files stored in `docs/assets/diagrams/`
+- Export SVG (preferred) or PNG alongside the source for fallback rendering
+- Use the Azure icon set within draw.io for infrastructure diagrams
+- The `mkdocs-drawio` plugin renders `.drawio` files directly — use `![](assets/diagrams/architecture.drawio)` syntax
+- For Docusaurus pages, embed the exported SVG/PNG since there is no native draw.io plugin
+
+**Mermaid conventions:**
+- Inline in markdown using fenced code blocks (` ```mermaid `)
+- Rendered natively via `pymdownx.superfences` custom fence (MkDocs) or `@docusaurus/theme-mermaid` (Docusaurus)
+- Keep diagrams simple — if it needs custom positioning or icons, switch to draw.io
 
 **Rationale for each extension:**
-- Mermaid: Architecture diagrams across all repos
+- Mermaid (superfences): Inline flowcharts, sequence diagrams, and decision trees
+- draw.io (mkdocs-drawio): Architecture and infrastructure diagrams with Azure icons
 - Tabbed: Tool-picker sections (Terraform/Bicep/ARM/PowerShell tabs)
 - Snippets: Include shared content or code samples from src/
 - Admonition + details: Consistent callout patterns across repos
@@ -240,7 +264,7 @@ The loadtools repo has the most extensive AsciiDoc content:
    - AsciiDoc includes → pymdownx.snippets or inline
 3. **Preserve directory structure** — the current `getting-started/`, `tools/`, `operations/`, `reference/`, `standards/` maps cleanly to MkDocs nav sections
 4. **Keep AsciiDoc for PDF generation** — the `build-docs.yml` workflow continues to exist alongside `deploy-docs.yml`. The .adoc files can remain as the "book format" source if PDF output is still needed, or be archived
-5. **Migrate diagrams** — draw.io source files stay; exported PNGs move to `docs/assets/` or embed inline
+5. **Migrate diagrams** — draw.io source `.drawio` files move to `docs/assets/diagrams/`. Export SVG alongside each source file. Use `mkdocs-drawio` plugin to render `.drawio` files directly in pages, with exported SVG as fallback
 
 ### 4.3 — Nav Structure (proposed)
 
@@ -338,7 +362,8 @@ nav:
 | **Versioned docs** | Built-in (versions.json) | mkdocs-versioning plugin (less mature) | Docusaurus wins |
 | **Blog engine** | Built-in with RSS/Atom | mkdocs-blog plugin (community) | Docusaurus wins |
 | **Search** | Algolia DocSearch or local | Built-in lunr.js | Both good |
-| **Mermaid diagrams** | Plugin required | Built-in via superfences | MkDocs easier |
+| **Mermaid diagrams** | Plugin required (`@docusaurus/theme-mermaid`) | Built-in via superfences | MkDocs easier |
+| **draw.io diagrams** | Embed as SVG/PNG (no native plugin) | `mkdocs-drawio` plugin renders `.drawio` directly | MkDocs wins |
 | **Tabbed content** | MDX components | pymdownx.tabbed | Both good |
 | **Admonitions** | Built-in | Built-in | Tie |
 | **Dark mode** | Built-in toggle | Built-in toggle | Tie |
@@ -470,7 +495,7 @@ docs/
   reference/            # Reference material
   standards/            # (if applicable)
   assets/               # Images, diagrams
-    diagrams/           # Mermaid or draw.io source
+    diagrams/           # draw.io source (.drawio) + exported SVG/PNG; Mermaid stays inline in .md files
   contributing.md       # (or at repo root, linked here)
   roadmap.md            # (optional)
 ```

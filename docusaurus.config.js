@@ -100,6 +100,29 @@ const config = {
           { to: '/working', label: 'Events', position: 'left' },
           {
                 type: 'dropdown',
+                label: 'Solutions',
+                position: 'left',
+                items: [
+                  {
+                    label: 'SOFS for FSLogix',
+                    href: 'https://azurelocal.github.io/azurelocal-sofs-fslogix/',
+                  },
+                  {
+                    label: 'Azure Virtual Desktop',
+                    href: 'https://azurelocal.github.io/aurelocal-avd/',
+                  },
+                  {
+                    label: 'Load Testing Framework',
+                    href: 'https://azurelocal.github.io/azurelocal-loadtools/',
+                  },
+                  {
+                    label: 'VM Conversion Toolkit',
+                    href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
+                  },
+                ],
+          },
+          {
+                type: 'dropdown',
                 label: 'More',
                 position: 'right',
                 items: [
@@ -136,7 +159,7 @@ const config = {
             ],
           },
           {
-            href: 'https://github.com/AzuerLocal/',
+            href: 'https://github.com/AzureLocal/',
             label: 'GitHub',
             position: 'right',
           },
@@ -151,6 +174,27 @@ const config = {
               {
                 label: 'Azure Local Docs',
                 to: '/docs/intro',
+              },
+            ],
+          },
+          {
+            title: 'Solutions',
+            items: [
+              {
+                label: 'SOFS for FSLogix',
+                href: 'https://azurelocal.github.io/azurelocal-sofs-fslogix/',
+              },
+              {
+                label: 'Azure Virtual Desktop',
+                href: 'https://azurelocal.github.io/aurelocal-avd/',
+              },
+              {
+                label: 'Load Testing Framework',
+                href: 'https://azurelocal.github.io/azurelocal-loadtools/',
+              },
+              {
+                label: 'VM Conversion Toolkit',
+                href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
               },
             ],
           },
