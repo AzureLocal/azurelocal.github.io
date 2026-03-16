@@ -1,0 +1,293 @@
+---
+title: "Task 02: Customer Network Service Verification"
+sidebar_label: "Task 02: Network Services"
+sidebar_position: 2
+description: "Verify customer-provided DNS and NTP services are operational"
+category: Runbook
+scope: Customer network service validation
+purpose: Verify customer-provided DNS and NTP services are operational
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-03
+version: 1.1
+tags: ["azure-local", "dns-validation", "ntp-validation", "network-services"]
+keywords: ["DNS verification", "NTP synchronization", "network services"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Customer Network Service Verification
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Customer network service validation 
+> **PURPOSE**: Verify customer-provided DNS and NTP services are operational 
+> **MASTER REFERENCE**: [Microsoft Learn - Network Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/network-requirements) 
+
+**Status**: Active 
+**Estimated Time**: 30 minutes 
+---
+
+## Overview
+
+Verify that customer-provided network services (DNS, NTP) are operational from the management network. These services should already be configured by the customer network team as part of their infrastructure prerequisites.
+
+:::info Pre-Network Infrastructure Validation
+This step validates **customer-provided services only** - services that should work before Azure Local Cloud configures switches and firewall rules in Phase 03.
+
+Azure and Dell endpoint connectivity testing occurs in **Phase 03 Step 4** after network infrastructure is configured.
+:::
+
+**Performed by:** Engineer on management VLAN workstation
+
+---
+
+## Prerequisites
+
+| Requirement | Description |
+|-------------|-------------|
+| Validation workstation | Windows machine on management VLAN |
+| PowerShell | Version 5.1 or later |
+| Discovery data | DNS server IPs, NTP server, AD domain from infrastructure.yml |
+
+---
+
+## DNS Resolution Tests
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual Verification" default>
+
+1. Open **PowerShell** on the management workstation.
+2. Use `Resolve-DnsName` to test each AD domain controller hostname.
+3. Use `nslookup` to verify against specific DNS server IPs.
+4. Record results (hostname, resolved IP, pass/fail).
+5. If any resolution fails, coordinate with the customer DNS team before proceeding.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+> **When to use**: Managing from a domain-joined management server — config-driven via infrastructure.yml
+
+#### Script
+
+**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/powershell/Test-NetworkServices.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/azure-cli/Test-NetworkServices.ps1` |
+| Bash | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/bash/test-network-services.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Test-NetworkServices.ps1
+# Execution: Run FROM management server — reads infrastructure.yml
+# Prerequisites: powershell-yaml module, management VLAN access
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath
+)
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($ConfigPath) {
+ $ConfigFile = $ConfigPath
+} else {
+ $ConfigFile = Join-Path $ScriptDir "..\\..\\..\\..\\configs\\infrastructure.yml"
+}
+if (!(Test-Path $ConfigFile)) { throw "infrastructure.yml not found at $ConfigFile" }
+
+Import-Module powershell-yaml -ErrorAction Stop
+
+$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
+$dnsServers = $config["cluster_arm_deployment"]["dns_servers"]
+$domainFqdn = $config["cluster_arm_deployment"]["domain_fqdn"]
+$nodes = $config["nodes"]
+$ogIp = $config["network_devices"]["opengear"]["ip"]
+$ogHost = $config["network_devices"]["opengear"]["hostname"]
+$gwIp = $config["vlans"]["management"]["gateway"]
+
+# --- DNS Resolution Tests ---
+Write-Host "[1/4] DNS Resolution: Domain Controllers" -ForegroundColor Cyan
+foreach ($dns in $dnsServers) {
+ try {
+ $result = Resolve-DnsName -Name $domainFqdn -Server $dns -ErrorAction Stop
+ Write-Host " [PASS] DNS server $dns resolves $domainFqdn" -ForegroundColor Green
+ } catch {
+ Write-Host " [FAIL] DNS server $dns cannot resolve $domainFqdn" -ForegroundColor Red
+ }
+}
+
+Write-Host "\n[2/4] DNS Resolution: Planned Node FQDNs" -ForegroundColor Cyan
+foreach ($key in $nodes.Keys) {
+ $fqdn = $nodes[$key]["fqdn"]
+ try {
+ $result = Resolve-DnsName -Name $fqdn -ErrorAction Stop
+ Write-Host " [PASS] $fqdn -> $($result.IPAddress)" -ForegroundColor Green
+ } catch {
+ Write-Host " [WARN] $fqdn not pre-created (will be created during deployment)" -ForegroundColor Yellow
+ }
+}
+
+# --- NTP Tests ---
+Write-Host "\n[3/4] NTP Time Synchronization" -ForegroundColor Cyan
+Write-Host " Current time source:" -ForegroundColor Yellow
+w32tm /query /source
+Write-Host " Sync status:" -ForegroundColor Yellow
+w32tm /query /status
+
+# --- Infrastructure Ping Tests ---
+Write-Host "\n[4/4] Infrastructure Connectivity" -ForegroundColor Cyan
+$targets = @(
+ @{ Name = "OpenGear ($ogHost)"; IP = $ogIp },
+ @{ Name = "Default Gateway"; IP = $gwIp }
+)
+foreach ($t in $targets) {
+ $ping = Test-Connection -ComputerName $t.IP -Count 2 -Quiet -ErrorAction SilentlyContinue
+ $status = if ($ping) { "[PASS] Reachable" } else { "[FAIL] UNREACHABLE" }
+ $color = if ($ping) { "Green" } else { "Red" }
+ Write-Host " $($t.Name) ($($t.IP)): $status" -ForegroundColor $color
+}
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Quick verification without infrastructure.yml — manually set variables in the configuration block.
+
+#### Script
+
+**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/powershell/Test-NetworkServices-Standalone.ps1`
+
+#### Code
+
+```powershell
+#region CONFIGURATION
+$DnsServers = @("10.250.1.36", "10.250.1.37")
+$DomainFqdn = "azrl.mgmt"
+$PlannedNodeFqdns = @(
+ "node01.azrl.mgmt",
+ "node02.azrl.mgmt"
+)
+$NtpServer = "10.250.1.36"
+$OpenGearIP = "10.245.64.5"
+$DefaultGateway = "192.168.203.1"
+#endregion
+
+# --- DNS Resolution ---
+Write-Host "=== DNS Resolution: Domain ===" -ForegroundColor Cyan
+foreach ($dns in $DnsServers) {
+ try {
+ Resolve-DnsName -Name $DomainFqdn -Server $dns -ErrorAction Stop | Out-Null
+ Write-Host " [PASS] $dns resolves $DomainFqdn" -ForegroundColor Green
+ } catch {
+ Write-Host " [FAIL] $dns cannot resolve $DomainFqdn" -ForegroundColor Red
+ }
+}
+
+Write-Host "\n=== DNS Resolution: Planned Nodes ===" -ForegroundColor Cyan
+foreach ($fqdn in $PlannedNodeFqdns) {
+ try {
+ $r = Resolve-DnsName -Name $fqdn -ErrorAction Stop
+ Write-Host " [PASS] $fqdn -> $($r.IPAddress)" -ForegroundColor Green
+ } catch {
+ Write-Host " [WARN] $fqdn not pre-created" -ForegroundColor Yellow
+ }
+}
+
+# --- NTP ---
+Write-Host "\n=== NTP Synchronization ===" -ForegroundColor Cyan
+w32tm /query /source
+w32tm /stripchart /computer:$NtpServer /samples:3 /dataonly
+
+# --- Connectivity ---
+Write-Host "\n=== Infrastructure Ping ===" -ForegroundColor Cyan
+@(
+ @{ Name = "OpenGear"; IP = $OpenGearIP },
+ @{ Name = "Default Gateway"; IP = $DefaultGateway }
+) | ForEach-Object {
+ $ping = Test-Connection -ComputerName $_.IP -Count 2 -Quiet -EA SilentlyContinue
+ $status = if ($ping) { "[PASS]" } else { "[FAIL]" }
+ $color = if ($ping) { "Green" } else { "Red" }
+ Write-Host " $status $($_.Name) ($($_.IP))" -ForegroundColor $color
+}
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Checklist
+
+| Service | Test | Expected Result | Status |
+|---------|------|-----------------|--------|
+| DNS | AD Domain Controllers | Resolved to IPs | ☐ |
+| DNS | Planned Node FQDNs | Resolved or warning (optional) | ☐ |
+| NTP | Time Source | Configured and responding | ☐ |
+| NTP | Time Skew | < 5 minutes | ☐ |
+| Ping | OpenGear Console | Reachable | ☐ |
+| Ping | Default Gateway | Reachable | ☐ |
+
+---
+
+## Acceptance Criteria
+
+- DNS resolves Active Directory domain controllers
+- NTP server responds and time is synchronized (< 5 minute skew)
+- OpenGear console server responds to ping
+- Default gateway responds to ping
+- Results documented for sign-off
+
+:::note Azure Endpoint Testing
+Azure and Dell endpoint connectivity testing (management.azure.com, login.microsoftonline.com, dl.dell.com, etc.) will be performed in **Phase 03 Step 4** after network infrastructure is configured.
+:::
+
+---
+
+## Troubleshooting
+
+| Issue | Likely Cause | Resolution |
+|-------|--------------|------------|
+| DNS resolution fails | Wrong DNS server configured | Verify DNS server IPs from discovery |
+| AD DCs don't resolve | DNS not configured for AD zone | Work with customer DNS team |
+| NTP not responding | Firewall blocking UDP 123 | Verify NTP server IP and firewall rules |
+| OpenGear not reachable | Cabling or IP issue | Check NET1 connection in Step 1 |
+| Gateway not reachable | VLAN or routing issue | Verify management VLAN connectivity |
+
+---
+
+## Next Steps
+
+| Step Complete? | Next Action |
+|----------------|-------------|
+| ✅ Yes | Proceed to [Task 3: OpenGear Verification](./task-03-opengear-verification.mdx) |
+| ❌ No | Work with customer network team to resolve issues |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 01: Hardware Inspection](./task-01-hardware-inspection.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Task 03: OpenGear Verification →](./task-03-opengear-verification.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Standardized runbook format |
+
+---
+
+*End of Task*

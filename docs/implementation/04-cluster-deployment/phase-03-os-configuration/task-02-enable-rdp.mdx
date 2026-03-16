@@ -1,0 +1,205 @@
+---
+title: "Task 02: Enable RDP"
+sidebar_label: "Task 02: Enable RDP"
+sidebar_position: 2
+description: "Enable Remote Desktop Protocol on all Azure Local nodes for graphical remote access during configuration and troubleshooting."
+category: Runbook
+scope: Remote desktop enablement
+purpose: Enable RDP on all cluster nodes for graphical remote access from the management server and delivery engineer workstation
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: 2.0
+tags: ["azure-local", "os-configuration", "rdp", "remote-desktop", "powershell"]
+keywords: ["RDP", "Remote Desktop", "fDenyTSConnections", "SConfig", "Enable-NetFirewallRule"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Enable RDP
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Remote desktop enablement 
+> **PURPOSE**: Enable RDP on all cluster nodes for graphical remote access from the management server and delivery engineer workstation 
+> **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Enable Remote Desktop Protocol (RDP) on all Azure Local nodes. This provides graphical remote access for configuration and troubleshooting throughout the deployment engagement.
+
+WinRM is already enabled from [Task 01](./task-01-enable-winrm-for-remote-management.mdx), so this task can be run either directly on each node via iDRAC Virtual Console or remotely from the management server.
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Task 01 Complete | WinRM enabled on all nodes | [Task 01: Enable WinRM](./task-01-enable-winrm-for-remote-management.mdx) |
+| iDRAC console access | Virtual Console accessible for each node (if using SConfig or Direct tab) | `infrastructure.yml: nodes.<name>.idrac_ip` |
+| Administrator credentials | Local admin password set during OS installation | Key Vault: `node-<hostname>-local-admin` |
+
+---
+
+## Execution
+
+<Tabs groupId="deployment-method">
+<TabItem value="sconfig" label="SConfig Utility" default>
+
+Run on each node via iDRAC Virtual Console.
+
+1. Open `https://<idrac-ip>` → **Virtual Console** → **Launch**
+2. Log in as `Administrator`
+3. Type `SConfig` and press Enter
+4. Select option **7** — Remote Desktop
+5. Enter **E** to enable
+6. Select **1** — Allow connections from any version
+7. Verify status shows **Enabled**
+8. Repeat for every node
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+Run on each node via iDRAC Virtual Console.
+
+```powershell
+# Enable Remote Desktop
+Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+ -Name "fDenyTSConnections" -Value 0
+
+# Enable Remote Desktop firewall rule
+Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+# Verify
+$rdp = Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+ -Name "fDenyTSConnections"
+
+if ($rdp.fDenyTSConnections -eq 0) {
+ Write-Host "RDP enabled successfully" -ForegroundColor Green
+} else {
+ Write-Host "RDP not enabled" -ForegroundColor Red
+}
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+Run from the management server. Reads node names from `infrastructure.yml`.
+
+```powershell
+$ConfigPath = ".\configs\infrastructure.yml"
+$config = ConvertFrom-Yaml (Get-Content $ConfigPath -Raw)
+$NodeNames = $config.cluster.nodes | ForEach-Object { $_.name }
+$Credential = Get-Credential -Message "Enter local Administrator credentials"
+
+foreach ($node in $NodeNames) {
+ Write-Host "Enabling RDP on $node..." -ForegroundColor Cyan
+
+ Invoke-Command -ComputerName $node -Credential $Credential -ScriptBlock {
+ Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+ -Name "fDenyTSConnections" -Value 0
+
+ Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+ $rdp = Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+ -Name "fDenyTSConnections"
+
+ [PSCustomObject]@{
+ Node = $env:COMPUTERNAME
+ RDPEnabled = ($rdp.fDenyTSConnections -eq 0)
+ }
+ } | ForEach-Object {
+ $status = if ($_.RDPEnabled) { "Green" } else { "Red" }
+ Write-Host " $($_.Node): $(if ($_.RDPEnabled) { 'Enabled' } else { 'Not enabled' })" -ForegroundColor $status
+ }
+}
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+Self-contained script. Update `$NodeNames` and `$Credential` before running.
+
+```powershell
+#region CONFIGURATION
+$NodeNames = @("node01", "node02", "node03", "node04")
+$Credential = Get-Credential -Message "Enter local Administrator credentials"
+#endregion CONFIGURATION
+
+foreach ($node in $NodeNames) {
+ Write-Host "Enabling RDP on $node..." -ForegroundColor Cyan
+
+ Invoke-Command -ComputerName $node -Credential $Credential -ScriptBlock {
+ Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+ -Name "fDenyTSConnections" -Value 0
+
+ Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+ $rdp = Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+ -Name "fDenyTSConnections"
+
+ [PSCustomObject]@{
+ Node = $env:COMPUTERNAME
+ RDPEnabled = ($rdp.fDenyTSConnections -eq 0)
+ }
+ } | ForEach-Object {
+ $status = if ($_.RDPEnabled) { "Green" } else { "Red" }
+ Write-Host " $($_.Node): $(if ($_.RDPEnabled) { 'Enabled' } else { 'Not enabled' })" -ForegroundColor $status
+ }
+}
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Checklist
+
+- [ ] RDP enabled on all nodes
+- [ ] RDP port 3389 accessible from management server
+- [ ] Can connect via Remote Desktop Client to each node
+- [ ] Firewall rules enabled for Remote Desktop group
+
+```powershell
+# Test RDP port from management server
+Test-NetConnection -ComputerName <node-ip> -Port 3389
+# Expected: TcpTestSucceeded : True
+```
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Connection refused on port 3389 | RDP not enabled | Re-run enable script on the node |
+| Port blocked | Firewall rule not enabled | `Enable-NetFirewallRule -DisplayGroup "Remote Desktop"` on the node |
+| Authentication failure | Wrong credentials | Verify local Administrator password from Key Vault |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 01: Enable WinRM](./task-01-enable-winrm-for-remote-management.mdx) | [↑ Phase 03: OS Configuration](./index.mdx) | [Task 03: Configure Static IP →](./task-03-configure-static-ip-address.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 2.0 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Full rewrite to standards — complete frontmatter, 4-tab structure, orchestrated reads infrastructure.yml, standalone with config region, Navigation and Version Control |

@@ -1,0 +1,405 @@
+---
+title: "Task 16: Configure Windows Admin Center"
+sidebar_label: "Task 16: Configure WAC"
+sidebar_position: 16
+description: "Install and configure Windows Admin Center (WAC) on the utility server for Azure Local cluster management, monitoring, and Azure integration."
+category: Runbook
+scope: Windows Admin Center installation and configuration
+purpose: Establish web-based management portal for Azure Local cluster operations
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, wac, windows-admin-center, management, monitoring]
+keywords: [WAC, Windows Admin Center, cluster management, Azure integration, extensions]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 16: Configure Windows Admin Center
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Windows Admin Center installation and configuration 
+> **PURPOSE**: Establish web-based management portal for Azure Local cluster operations 
+> **MASTER REFERENCE**: [Microsoft Learn - WAC](https://learn.microsoft.com/en-us/windows-server/manage/windows-admin-center/overview)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Windows Admin Center (WAC) provides a web-based management interface for Azure Local clusters. It is installed on the utility server and used for cluster health monitoring, VM management, storage operations, and Azure hybrid integration.
+
+:::info Task Classification
+**Execution Target**: Windows Server (on-VM configuration) 
+**Tab Profile**: 4 tabs — WAC Web UI · Direct Script (On Node) · Orchestrated Script (Mgmt Server) · Standalone Script
+:::
+
+### Configuration Summary
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| Install Target | Utility Server | `azure_vms.utility.name` |
+| WAC Port | 443 (HTTPS) | Default |
+| WAC URL | `https://util-eus-01.azrl.mgmt` | `azure_vms.utility.fqdn` |
+| Certificate | Self-signed (initial) | Auto-generated |
+| Version | Latest stable | Microsoft Download Center |
+
+### Required WAC Extensions
+
+| Extension | Purpose |
+|-----------|---------|
+| Cluster Manager | Azure Local cluster management |
+| Azure Hybrid Center | Azure Arc and hybrid integration |
+| Azure Monitor | Monitoring integration |
+| Virtual Machines | VM lifecycle management |
+| Storage | Storage pool and volume management |
+| Networking | SDN and network management |
+
+## Prerequisites
+
+- [ ] [Task 13: Configure Utility Server](./task-13-configure-utility-server) completed — utility VM domain-joined
+- [ ] Internet access for WAC download (NAT Gateway — Task 07)
+- [ ] Utility VM accessible via Bastion
+- [ ] Domain admin credentials for extension installation
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Install Target | Utility Server | `azure_vms.utility` |
+| Access URL | `https://<utility_fqdn>` | `azure_vms.utility.fqdn` |
+| Cluster to Manage | Azure Local cluster | `cluster.deployment.cluster_name` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="WAC Web UI" default>
+
+### WAC Web UI
+
+> **When to use**: Standard installation via GUI installer on the utility server
+
+#### Procedure — Download and Install
+
+1. **Connect to utility VM** via Bastion (Task 05)
+
+2. **Download WAC**:
+ - Open Edge/Chrome on the utility server
+ - Navigate to: https://aka.ms/wacdownload
+ - Download the latest MSI
+
+3. **Run MSI installer**:
+ | Setting | Value |
+ |---------|-------|
+ | Port | `443` |
+ | Use WinRM (HTTPS) | Checked |
+ | Generate self-signed cert | Checked |
+ | Allow WAC to modify TrustedHosts | Checked |
+
+4. **Complete installation** — WAC service starts automatically
+
+#### Procedure — Initial Configuration
+
+5. **Access WAC**: Open `https://localhost` on the utility server
+
+6. **Add Cluster Connection**:
+ - Click **Add** → **Server clusters**
+ - Cluster name: From `cluster.deployment.cluster_name`
+ - Credentials: Use domain admin
+
+7. **Install Extensions**:
+ - Navigate to **Settings** → **Extensions**
+ - Install or update:
+ - Cluster Manager
+ - Azure Hybrid Center
+ - Azure Monitor
+ - Virtual Machines
+ - Storage
+ - Networking
+
+#### Procedure — Azure Integration
+
+8. **Register WAC with Azure**:
+ - Settings → **Azure** → **Register**
+ - Sign in with Azure AD credentials
+ - Select the management subscription
+ - Grant required permissions
+
+9. **Enable Azure Monitor**:
+ - Cluster → **Azure Monitor** → Enable
+ - Select Log Analytics workspace: `log-azrlmgmt-azl-eus-01` (`azure_infrastructure.log_analytics.workspace_name`)
+
+#### Validation
+
+- [ ] WAC accessible at `https://util-eus-01.azrl.mgmt`
+- [ ] Cluster connection healthy — green status
+- [ ] All extensions installed and current
+- [ ] Azure registration complete
+- [ ] Azure Monitor forwarding data
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+### Direct Script (On Node)
+
+> **When to use**: Run directly on the utility VM — silent WAC installation, no infrastructure.yml access
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Deploy-WAC.ps1
+# Execution: Run ON the utility VM — standalone, no config file access
+# Prerequisites: Windows Server 2025, domain-joined, internet access
+# ============================================================================
+
+#region CONFIGURATION
+$WacPort = 443
+$WacDownload = "https://aka.ms/wacdownload"
+$TempPath = "C:\Temp\WindowsAdminCenter.msi"
+#endregion CONFIGURATION
+
+$ErrorActionPreference = "Stop"
+
+# Create temp directory
+if (!(Test-Path "C:\Temp")) { New-Item -Path "C:\Temp" -ItemType Directory -Force }
+
+# Download WAC
+Write-Host "Downloading Windows Admin Center..." -ForegroundColor Cyan
+$ProgressPreference = 'SilentlyContinue'
+Invoke-WebRequest -Uri $WacDownload -OutFile $TempPath
+
+# Silent install
+Write-Host "Installing WAC on port $WacPort..." -ForegroundColor Cyan
+$msiArgs = @(
+ "/i", $TempPath,
+ "/qn",
+ "/L*v", "C:\Temp\wac-install.log",
+ "SME_PORT=$WacPort",
+ "SSL_CERTIFICATE_OPTION=generate"
+)
+Start-Process msiexec.exe -ArgumentList $msiArgs -Wait
+
+# Verify service
+$svc = Get-Service -Name "ServerManagementGateway" -ErrorAction SilentlyContinue
+if ($svc -and $svc.Status -eq "Running") {
+ Write-Host "WAC installed and running on port $WacPort" -ForegroundColor Green
+} else {
+ Write-Host "WAC service not found or not running — check install log" -ForegroundColor Red
+}
+
+# Cleanup
+Remove-Item $TempPath -Force -ErrorAction SilentlyContinue
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+### Orchestrated Script (Mgmt Server)
+
+> **When to use**: Run from management workstation via PSRemoting — reads `infrastructure.yml`
+
+#### Script
+
+**Path**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-16-configure-wac/powershell/Deploy-WindowsAdminCenter.ps1`
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Deploy-WindowsAdminCenter.ps1
+# Execution: Run from management workstation via PSRemoting
+# Prerequisites: WinRM/PSRemoting access to utility VM
+# ============================================================================
+
+#Requires -Modules Az.KeyVault
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "configs/infrastructure.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/keyvault-helper.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+$UtilIp = $config.azure_vms.utility.private_ip
+$UtilFqdn = $config.azure_vms.utility.fqdn
+$NetBios = $config.active_directory.ad_netbios_name
+$KvName = $config.azure_infrastructure.key_vaults.management.name
+$WacPort = 443
+
+$DomainPwd = Get-KeyVaultSecret -SecretUri "keyvault://$KvName/domain-admin-password"
+$SecDomPwd = ConvertTo-SecureString $DomainPwd -AsPlainText -Force
+$domainCred = New-Object PSCredential("$NetBios\Administrator", $SecDomPwd)
+
+Write-LogInfo "Installing WAC on $UtilFqdn ($UtilIp)"
+
+Invoke-Command -ComputerName $UtilIp -Credential $domainCred -ScriptBlock {
+ param($WacPort)
+ $ErrorActionPreference = "Stop"
+ 
+ if (!(Test-Path "C:\Temp")) { New-Item -Path "C:\Temp" -ItemType Directory -Force }
+ 
+ $ProgressPreference = 'SilentlyContinue'
+ Invoke-WebRequest -Uri "https://aka.ms/wacdownload" -OutFile "C:\Temp\WindowsAdminCenter.msi"
+ 
+ $msiArgs = @("/i","C:\Temp\WindowsAdminCenter.msi","/qn","/L*v","C:\Temp\wac-install.log","SME_PORT=$WacPort","SSL_CERTIFICATE_OPTION=generate")
+ Start-Process msiexec.exe -ArgumentList $msiArgs -Wait
+ 
+ $svc = Get-Service -Name "ServerManagementGateway" -ErrorAction SilentlyContinue
+ if ($svc -and $svc.Status -eq "Running") {
+ Write-Output "WAC service running on port $WacPort"
+ } else {
+ throw "WAC service failed to start"
+ }
+ 
+ Remove-Item "C:\Temp\WindowsAdminCenter.msi" -Force -ErrorAction SilentlyContinue
+} -ArgumentList $WacPort
+
+Write-LogSuccess "WAC installed on $UtilFqdn — access at https://$UtilFqdn"
+Write-LogInfo "Complete Azure registration and extension setup via the WAC Web UI"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Self-contained, copy-paste ready. Run from a machine with PSRemoting to the utility VM.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Configure-WAC-Standalone.ps1
+# Execution: Self-contained — run from any machine with PSRemoting
+# ============================================================================
+
+#region CONFIGURATION
+$UtilIp = "10.250.1.38"
+$WacPort = 443
+$AdminUser = "MGMT\Administrator"
+$AdminPwd = Read-Host -AsSecureString "Domain admin password"
+#endregion CONFIGURATION
+
+$cred = New-Object PSCredential($AdminUser, $AdminPwd)
+
+Write-Host "Installing WAC on $UtilIp..." -ForegroundColor Cyan
+
+Invoke-Command -ComputerName $UtilIp -Credential $cred -ScriptBlock {
+ param($Port)
+ 
+ if (!(Test-Path "C:\Temp")) { New-Item -Path "C:\Temp" -ItemType Directory -Force }
+ 
+ # Download
+ Write-Host "Downloading WAC..."
+ $ProgressPreference = 'SilentlyContinue'
+ Invoke-WebRequest -Uri "https://aka.ms/wacdownload" -OutFile "C:\Temp\WindowsAdminCenter.msi"
+ 
+ # Install silently
+ Write-Host "Installing..."
+ $args = @("/i","C:\Temp\WindowsAdminCenter.msi","/qn","/L*v","C:\Temp\wac-install.log","SME_PORT=$Port","SSL_CERTIFICATE_OPTION=generate")
+ Start-Process msiexec.exe -ArgumentList $args -Wait
+ 
+ # Verify
+ $svc = Get-Service ServerManagementGateway -ErrorAction SilentlyContinue
+ if ($svc.Status -eq "Running") {
+ Write-Host "WAC running on port $Port" -ForegroundColor Green
+ } else {
+ Write-Host "WAC failed to start — check C:\Temp\wac-install.log" -ForegroundColor Red
+ }
+ 
+ Remove-Item "C:\Temp\WindowsAdminCenter.msi" -Force -ErrorAction SilentlyContinue
+} -ArgumentList $WacPort
+
+Write-Host "WAC installed — complete setup at https://$UtilIp" -ForegroundColor Green
+```
+
+:::info No External Dependencies
+Self-contained. Edit `#region CONFIGURATION` and run from a machine with PSRemoting.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] WAC service running: `Get-Service ServerManagementGateway`
+- [ ] Web UI accessible: `https://util-eus-01.azrl.mgmt`
+- [ ] Cluster connection established
+- [ ] Extensions installed and current version
+- [ ] Azure registration completed
+
+---
+
+## CAF/WAF Landing Zone Model
+
+WAC configuration is identical regardless of landing zone model — it runs on the utility VM in the **Management subscription**.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Management** subscription | `azure.subscriptions.management.id` |
+| Install Target | Utility VM in Management spoke | `azure_vms.utility` |
+
+### Execution Options
+
+The execution is the same as Single Subscription — WAC runs on the utility VM regardless of which subscription it resides in. The cluster connection points to the Azure Local cluster in its respective subscription.
+
+### Additional Considerations
+
+In the CAF/WAF model, when registering WAC with Azure:
+- Use the **Management** subscription for WAC registration
+- The cluster may reside in a **Workload** subscription — cross-subscription access requires appropriate RBAC
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| MSI download fails | No internet | Verify NAT Gateway (Task 07) and DNS |
+| WAC service not starting | Port conflict | Check if IIS or other service uses port 443 |
+| Cannot connect to cluster | CredSSP/Kerberos | Enable CredSSP or use constrained delegation |
+| Azure registration fails | Missing permissions | Ensure Global Admin or App Administrator role |
+| Extensions fail to install | WAC version mismatch | Update WAC to latest version first |
+| Certificate warning | Self-signed cert | Expected for initial setup — replace with CA cert in production |
+| Slow performance | Low VM resources | Verify utility VM size is adequate |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 15: Lighthouse Server](./task-15-configure-lighthouse) | [Manual Deployment Index](./index.mdx) | — |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, wac, windows-admin-center, management, monitoring
+- Keywords: WAC, Windows Admin Center, cluster management, Azure integration, extensions
+- Author: Azure Local Cloudnology Team

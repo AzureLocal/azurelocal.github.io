@@ -1,0 +1,257 @@
+---
+title: "Landing Zone Strategy"
+sidebar_label: "Landing Zone Strategy"
+sidebar_position: 7
+description: "Choose the appropriate Azure Landing Zone deployment model for customer requirements"
+---
+
+# Landing Zone Strategy
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Azure Landing Zone deployment models 
+> **PURPOSE**: Choose appropriate landing zone architecture 
+> **MASTER REFERENCE**: [Microsoft CAF Landing Zones](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)
+
+**Status**: Active
+
+---
+
+During the planning phase, a critical decision must be made regarding the Azure Landing Zone deployment model. This decision impacts governance structure, subscription organization, cost, and complexity.
+
+## Overview
+
+Azure Local Anywhere supports two deployment models for Azure Landing Zones:
+
+| Aspect | Full CAF/WAF Deployment | Simplified Deployment |
+|--------|-------------------------|----------------------|
+| **Management Groups** | Complete hierarchy per CAF Enterprise-Scale | Single Azure Local Cloud management group |
+| **Subscriptions** | Dedicated subscription per landing zone | Single Azure subscription |
+| **Resource Groups** | Standard RGs per subscription | RGs organized by landing zone pattern |
+| **Governance** | MG-level policies with inheritance | RG-level policies |
+| **Complexity** | Higher | Lower |
+| **Cost** | Higher (multiple subscriptions) | Lower (single subscription) |
+
+## Deployment Models
+
+### Full CAF/WAF Deployment
+
+The Full CAF/WAF deployment follows Microsoft's Cloud Adoption Framework and Well-Architected Framework guidelines for enterprise-scale landing zones.
+
+#### When to Use
+
+- **Enterprise customers** with strict governance and compliance requirements
+- **Multi-environment production** deployments (dev, test, staging, prod, DR)
+- **Large organizations** requiring clear separation of duties
+- **Regulated industries** (healthcare, finance, government) requiring audit trails
+- **Multi-team environments** where different teams manage different landing zones
+- **Long-term strategic deployments** planned for growth
+
+#### Architecture
+
+```
+Tenant Root
+├── cmp-prod-root (Azure Local Cloud CMP Root)
+│ ├── cmp-platform-prod (Platform Services)
+│ │ ├── cmp-platform-management-prod (Management)
+│ │ ├── cmp-platform-connectivity-prod (Connectivity)
+│ │ ├── cmp-platform-identity-prod (Identity)
+│ │ └── cmp-platform-security-prod (Security)
+│ ├── cmp-landing-zones-prod (Landing Zones)
+│ │ ├── cmp-lz-online-prod (Online Workloads)
+│ │ └── cmp-lz-corp-prod (Corporate Workloads)
+│ ├── cmp-sandbox-prod (Sandbox)
+│ └── cmp-decommissioned-prod (Decommissioned)
+```
+
+**Subscriptions**:
+- `sub-Azure Local Cloud-management` - Management services
+- `sub-Azure Local Cloud-connectivity` - Network connectivity
+- `sub-Azure Local Cloud-identity` - Identity services
+- `sub-Azure Local Cloud-security` - Security services
+- `sub-Azure Local Cloud-azurelocal-{site}` - Azure Local per site
+
+#### Benefits
+
+- ✅ Maximum governance and policy control
+- ✅ Clear RBAC boundaries at management group level
+- ✅ Cost allocation per subscription
+- ✅ Isolated blast radius for changes
+- ✅ Follows Microsoft best practices exactly
+
+#### Considerations
+
+- ⚠️ Higher complexity to set up and maintain
+- ⚠️ Requires EA/MCA enrollment for subscription creation
+- ⚠️ More Azure AD permissions required
+- ⚠️ Longer initial deployment time
+
+---
+
+### Simplified Deployment
+
+The Simplified deployment provides a streamlined structure for smaller deployments, POCs, or cost-conscious customers while still maintaining organizational best practices.
+
+#### When to Use
+
+- **Proof of Concept (POC)** deployments
+- **Azure Local Cloud labs and demos**
+- **Smaller customers** with limited Azure footprint
+- **Cost-conscious deployments** minimizing subscription overhead
+- **Quick-start scenarios** requiring rapid deployment
+- **Single-team environments** where one team manages all resources
+
+#### Architecture
+
+```
+Tenant Root
+├── cmp-Azure Local Cloud (Azure Local Cloud Management Group)
+│ └── Single subscription containing all resources
+│ ├── rg-platform-management-{env}-{region}
+│ ├── rg-platform-connectivity-{env}-{region}
+│ ├── rg-platform-identity-{env}-{region}
+│ ├── rg-platform-security-{env}-{region}
+│ ├── rg-lz-azlocal-{env}-{region}-001
+│ ├── rg-lz-azlocal-{env}-{region}-compute
+│ ├── rg-lz-azlocal-{env}-{region}-network
+│ └── rg-lz-azlocal-{env}-{region}-storage
+```
+
+**Subscriptions**:
+- `sub-Azure Local Cloud-azurelocal-{site}` - Single subscription for all resources
+
+#### Benefits
+
+- ✅ Faster deployment
+- ✅ Lower complexity
+- ✅ Single subscription cost tracking
+- ✅ Minimal Azure AD permissions required
+- ✅ Easier to manage for small teams
+
+#### Considerations
+
+- ⚠️ Less granular RBAC (resource group level only)
+- ⚠️ Single subscription limits apply
+- ⚠️ Less isolation between environments
+- ⚠️ May require migration to Full deployment later
+
+---
+
+## Decision Matrix
+
+Use this matrix to determine the appropriate deployment model:
+
+| Requirement | Full CAF/WAF | Simplified |
+|-------------|:------------:|:---------:|
+| Enterprise customer with existing Azure governance | ✅ | ❌ |
+| POC or lab environment | ❌ | ✅ |
+| Regulatory compliance requirements (SOX, HIPAA, etc.) | ✅ | ⚠️ |
+| Multi-team management | ✅ | ❌ |
+| Single team/operator | ⚠️ | ✅ |
+| Budget constraints | ❌ | ✅ |
+| Future growth expected | ✅ | ⚠️ |
+| Quick deployment timeline | ❌ | ✅ |
+| Existing EA/MCA enrollment | ✅ | ⚠️ |
+| First Azure Local deployment | ⚠️ | ✅ |
+
+**Legend**: ✅ Recommended | ⚠️ Possible with limitations | ❌ Not recommended
+
+---
+
+## Discovery Questions
+
+During customer discovery workshops, ask these questions to determine the appropriate model:
+
+### Governance and Compliance
+
+1. Does the customer have existing Azure governance policies?
+2. Are there regulatory compliance requirements (SOX, HIPAA, FedRAMP)?
+3. Does the customer require audit trails at the subscription level?
+4. Are there data residency or sovereignty requirements?
+
+### Organization and Teams
+
+5. How many teams will manage Azure resources?
+6. Is there a dedicated platform/infrastructure team?
+7. Does the customer require separation of duties?
+8. Will different business units have different access requirements?
+
+### Scale and Growth
+
+9. How many Azure Local sites are planned (now and future)?
+10. Is this a POC that will become production?
+11. What is the expected timeline for growth?
+12. Will additional workloads be deployed to Azure?
+
+### Cost and Resources
+
+13. Does the customer have an Enterprise Agreement or MCA?
+14. Is there a preference for simplified billing?
+15. What is the deployment timeline?
+16. Are there constraints on initial setup complexity?
+
+---
+
+## Documentation Checklist
+
+Before proceeding to [Phase 03: Landing Zones](../implementation/02-azure-foundation/phase-01-landing-zones/), document the following:
+
+- [ ] **Deployment Model Selected**: Full CAF/WAF or Simplified
+- [ ] **Justification**: Business and technical reasons for selection
+- [ ] **Customer Approval**: Customer stakeholder sign-off
+- [ ] **Future Considerations**: Plan for migration if starting with Simplified
+
+### Decision Record Template
+
+```markdown
+## Landing Zone Strategy Decision
+
+**Customer**: [Customer Name]
+**Date**: [Date]
+**Decided By**: [Names]
+
+### Selected Model
+[ ] Full CAF/WAF Deployment
+[ ] Simplified Deployment
+
+### Justification
+[Document the reasons for selecting this model]
+
+### Key Factors
+- Governance requirements: [Low/Medium/High]
+- Team structure: [Single team/Multiple teams]
+- Compliance requirements: [None/SOX/HIPAA/Other]
+- Growth expectations: [Stable/Moderate growth/Rapid growth]
+- Timeline constraints: [Flexible/Fixed deadline]
+
+### Future Considerations
+[Document any plans to migrate from Simplified to Full if applicable]
+
+### Approval
+- [ ] Customer IT stakeholder
+- [ ] Azure Local Cloud Solution Architect
+- [ ] Azure Local Cloud Project Manager
+```
+
+---
+
+## Next Steps
+
+After the landing zone strategy is determined:
+
+1. **Document the decision** using the template above
+2. **Update infrastructure.yml** with the selected model
+3. **Proceed to Phase 03: Landing Zones** and follow the appropriate deployment path:
+ - [Full CAF/WAF Deployment](../implementation/02-azure-foundation/phase-01-landing-zones/full-deployment/)
+ - [Simplified Deployment](../implementation/02-azure-foundation/phase-01-landing-zones/simplified-deployment/)
+
+---
+
+## Related Documentation
+
+- [Naming Standards - Management Groups](./01-naming-standards#management-groups)
+- Discovery Sessions - Customer Workshops
+- [Phase 03: Landing Zones](../implementation/02-azure-foundation/phase-01-landing-zones/)
+- [Microsoft CAF Landing Zones](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)

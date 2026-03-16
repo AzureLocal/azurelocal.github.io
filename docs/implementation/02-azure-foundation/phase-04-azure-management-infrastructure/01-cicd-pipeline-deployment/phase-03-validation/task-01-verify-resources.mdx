@@ -1,0 +1,196 @@
+---
+title: "Task 01: Verify Azure Resources"
+sidebar_position: 1
+description: "Verify all Azure resources exist and are configured correctly"
+---
+
+# Task 01: Verify Azure Resources
+
+> **Objective**: Confirm all Azure resources were deployed with correct configuration
+
+---
+
+## Management Mode Resources
+
+### 1. Resource Groups
+
+**Azure Portal:** Resource groups
+
+Verify:
+- [ ] `rg-{cid}-{env}-{region}-management` exists
+- [ ] Contains ~30-40 resources
+- [ ] Tags applied correctly
+
+### 2. Virtual Network
+
+**Azure Portal:** Virtual networks → Select management VNet
+
+Verify:
+- [ ] VNet address space correct (e.g., `10.100.1.0/24`)
+- [ ] All 5 subnets created:
+ - [ ] `GatewaySubnet` (minimum /27)
+ - [ ] `azrl-subnet` (Azure Local management)
+ - [ ] `AzureBastionSubnet` (minimum /26)
+ - [ ] `endpoints-subnet` (private endpoints)
+ - [ ] `dns-subnet` (DNS resolver, minimum /28)
+- [ ] NSGs attached to subnets
+
+### 3. VPN Gateway
+
+**Azure Portal:** Virtual network gateways → Select VPN gateway
+
+Verify:
+- [ ] Status: **Succeeded**
+- [ ] Gateway type: **VPN**
+- [ ] SKU: **VpnGw2AZ** (or configured SKU)
+- [ ] BGP: **Enabled**
+- [ ] BGP ASN matches configuration
+- [ ] Two public IPs (zone-redundant)
+
+**Azure CLI:**
+```bash
+az network vnet-gateway show \
+ --name vpngw-{cid}-{env}-{region} \
+ --resource-group rg-{cid}-{env}-{region}-management \
+ --query '{status:provisioningState, sku:sku.name, bgp:bgpSettings.asn}'
+```
+
+### 4. Azure Bastion
+
+**Azure Portal:** Bastions → Select bastion host
+
+Verify:
+- [ ] Status: **Succeeded**
+- [ ] SKU: **Standard** or **Basic**
+- [ ] Virtual network linked correctly
+- [ ] Public IP assigned
+
+### 5. Key Vault
+
+**Azure Portal:** Key vaults → Select management Key Vault
+
+Verify:
+- [ ] Status: **Active**
+- [ ] Access policies configured
+- [ ] Azure Local Cloud group has access
+- [ ] CI/CD service principal has access
+- [ ] Soft delete enabled
+- [ ] Purge protection enabled (production)
+
+**Test Access:**
+```bash
+az keyvault secret set \
+ --vault-name kv-{cid}-{env}-mgmt \
+ --name test-secret \
+ --value "deployment-validation"
+
+az keyvault secret show \
+ --vault-name kv-{cid}-{env}-mgmt \
+ --name test-secret
+```
+
+### 6. Log Analytics Workspace
+
+**Azure Portal:** Log Analytics workspaces → Select workspace
+
+Verify:
+- [ ] Status: **Active**
+- [ ] Retention: 30-90 days
+- [ ] Solutions installed (if configured)
+
+### 7. Storage Account (if cluster mode)
+
+**Azure Portal:** Storage accounts → Select cloud witness storage
+
+Verify:
+- [ ] Status: **Available**
+- [ ] Replication: **LRS** or **ZRS**
+- [ ] Blob service enabled
+- [ ] File service enabled
+
+---
+
+## Cluster Mode Resources
+
+If cluster mode was configured:
+
+### 1. VPN Connection
+
+**Azure Portal:** Virtual network gateways → VPN gateway → Connections
+
+Verify:
+- [ ] Connection created to on-premises cluster
+- [ ] Status: **Connected** (may show "Connecting" initially)
+- [ ] BGP enabled
+
+### 2. Cluster Key Vault
+
+**Azure Portal:** Key vaults → Cluster Key Vault
+
+Verify:
+- [ ] Separate from management Key Vault
+- [ ] Name pattern: `kv-{cid}-{cluster}-{env}`
+
+### 3. DNS A Records
+
+**Azure Portal:** Private DNS zones → Select zone → Record sets
+
+Verify:
+- [ ] A record for each cluster node
+- [ ] IP addresses match node configuration
+- [ ] TTL appropriate (300-3600 seconds)
+
+---
+
+## Validation Checklist
+
+### Management Mode (Complete List)
+- [ ] Resource group exists
+- [ ] Virtual network deployed with correct CIDR
+- [ ] All 5 subnets created with correct sizing
+- [ ] VPN Gateway online (VpnGw2AZ or configured SKU)
+- [ ] BGP configured on VPN Gateway
+- [ ] Azure Bastion deployed and accessible
+- [ ] NAT Gateway deployed (if configured)
+- [ ] Key Vault accessible
+- [ ] Log Analytics Workspace collecting data
+- [ ] Private DNS Zone created
+- [ ] DNS Resolver deployed
+- [ ] NSGs attached to subnets
+- [ ] Optional servers deployed (NDM/Utility if configured)
+
+### Cluster Mode (Complete List)
+- [ ] Cluster resource group exists
+- [ ] VPN connection to cluster network created
+- [ ] VPN connection status is Connected or Connecting
+- [ ] Cluster Key Vault accessible
+- [ ] Cluster Log Analytics Workspace created
+- [ ] Cloud witness storage account accessible
+- [ ] DNS A records created for all nodes
+- [ ] Arc Gateway deployed (if enabled)
+
+---
+
+## Troubleshooting
+
+**VPN Gateway not showing:**
+- Check deployment logs in Phase 02, Task 05
+- Verify in Azure Portal → Activity log
+
+**Key Vault access denied:**
+- Verify Azure Local Cloud group membership
+- Check RBAC assignments
+- Confirm access policies
+
+**Missing resources:**
+- Review Terraform outputs
+- Check apply stage logs
+- Verify configuration in terraform.tfvars
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 02 - Execution](../phase-02-pipeline-execution/) | [Phase 03 - Validation](./index.mdx) | [Task 02 - Test Connectivity](./task-02-test-connectivity.mdx) |

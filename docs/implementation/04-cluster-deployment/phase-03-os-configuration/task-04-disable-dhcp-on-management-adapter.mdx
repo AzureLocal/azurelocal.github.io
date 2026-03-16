@@ -1,0 +1,795 @@
+---
+title: "Task 04: Disable DHCP on All Adapters"
+sidebar_label: "Task 04: Disable DHCP"
+sidebar_position: 4
+description: "Disable DHCP on all network adapters except virtual and management adapters to lock in static IP configuration across all Azure Local cluster nodes."
+category: Runbook
+scope: Network DHCP configuration
+purpose: Lock static IP configuration by disabling DHCP on all physical adapters while preserving DHCP on excluded virtual and management adapters
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-05
+version: 2.0
+tags: ["azure-local", "os-configuration", "networking", "dhcp", "powershell"]
+keywords: ["disable DHCP", "Set-NetIPInterface", "NDIS", "network adapter", "Invoke-DisableDHCP-Orchestrated", "Disable-DHCPOnAllAdapters"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Disable DHCP on All Adapters
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Network DHCP configuration 
+> **PURPOSE**: Lock static IP configuration by disabling DHCP on all physical adapters while 
+> preserving DHCP on NDIS, Hyper-V virtual, and other excluded adapter types 
+> **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Disable DHCP on all network adapters on each Azure Local node, except adapters matching the
+exclusion pattern. This permanently locks in the static IP configured in Task 03 and prevents
+any adapter from requesting DHCP renewals.
+
+:::warning Run AFTER Task 03
+Task 03 must be complete and the management static IP verified on every node before running
+this task. If DHCP is disabled before static IP is set, the node will lose connectivity.
+:::
+
+**What the scripts do:**
+
+1. Enumerate all `NetAdapter` entries on the node
+2. **Skip** adapters whose `InterfaceDescription` matches the exclusion pattern
+3. **Skip** adapters with no IPv4 interface (nothing to configure)
+4. Check idempotency — already-disabled adapters are logged as OK, not re-processed
+5. Call `Set-NetIPInterface -Dhcp Disabled` on each remaining adapter
+6. Verify the change and log a final results table
+
+**Why exclude certain adapters?**
+
+| Excluded pattern | Adapter type | Why DHCP is preserved |
+|-----------------|--------------|----------------------|
+| `NDIS` | Remote NDIS Compatible Device | USB/virtual management channel — may use DHCP for out-of-band access |
+| `Hyper-V Virtual` | Hyper-V Virtual Ethernet Adapter | Post-cluster vEthernet adapters require DHCP for vSwitch functionality |
+| `WAN Miniport` | VPN / routing tunnels | No meaningful physical IPv4 assignment |
+| `Bluetooth` | Bluetooth PAN adapter | Not used for cluster networking |
+| `Wi-Fi Direct` | Wi-Fi Direct virtual adapter | Not used for cluster networking |
+| `Microsoft Kernel Debug` | Kernel debug network adapter | Reserved for debug use |
+| `Multiplexor` | Microsoft Network Adapter Multiplexor | Used by NIC teaming — managed separately |
+
+:::note Phase 03 adapter state
+At this phase, Hyper-V is not yet deployed — no vEthernet adapters exist yet. The
+`Hyper-V Virtual` pattern is included defensively so the script remains safe to re-run
+after cluster deployment.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Task 03 complete | Static IP configured and verified on all nodes | [Task 03: Configure Static IP](./task-03-configure-static-ip-address.mdx) |
+| Node accessible | Reachable via static management IP | Network validation |
+| Admin credentials | Local admin (direct) or domain admin (orchestrated) | Deployment credentials |
+
+---
+
+## Configuration Reference
+
+The `infrastructure.yml` path used by the orchestrated script:
+
+| yml Path | Used for | Example |
+|----------|----------|---------|
+| `nodes.<name>.management_ip` | PSRemoting target IP (management NIC static) | `10.100.200.11` |
+
+The exclusion pattern is defined in `#region CONFIGURATION` of both scripts. No other values are read from `infrastructure.yml` — this task does not modify networking parameters, only disables DHCP.
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct Script (On Node)" default>
+
+Run on each node individually — via RDP, console, or KVM.
+
+**Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter/powershell/Disable-DHCPOnAllAdapters.ps1`
+
+**Configuration block** (edit before running):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `$ExcludePattern` | Regex pattern — adapters matching this are skipped | `NDIS\|Hyper-V Virtual\|WAN Miniport\|Bluetooth\|Wi-Fi Direct\|Microsoft Kernel Debug\|Multiplexor` |
+
+```powershell title="Disable-DHCPOnAllAdapters.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+ Disable-DHCPOnAllAdapters.ps1
+ Disables DHCP on all network adapters except virtual/management adapters.
+
+.DESCRIPTION
+ Run directly on each Azure Local node (locally or via PSRemoting).
+ Disables DHCP on every physical NIC. Adapters whose InterfaceDescription
+ matches the $ExcludePattern are skipped — this preserves DHCP on Remote NDIS
+ and Hyper-V virtual adapters.
+
+ Why exclude NDIS / virtual adapters:
+ - Remote NDIS Compatible Device: USB or virtual management NIC — should keep DHCP
+ - Hyper-V Virtual Ethernet Adapter: post-cluster vEthernet — must keep DHCP
+ - WAN Miniport: VPN/routing tunnels — no meaningful IPv4 interface to set
+
+ Behaviour:
+ - Skips adapters matching $ExcludePattern in InterfaceDescription
+ - Skips adapters with no IPv4 interface (nothing to configure)
+ - Checks idempotency — already-disabled adapters are reported as OK, not re-set
+ - Logs a final table of every adapter: Name, Description, Status, DHCP result
+
+.NOTES
+ Author: Azure Local Cloud Azure Local Cloud
+ Version: 1.0.0
+ Phase: 03-os-configuration
+ Task: task-04-disable-dhcp-on-management-adapter
+ Execution: Run directly on the node (console, KVM, RDP, or PSRemoting)
+ Prerequisites: PowerShell 5.1+, local admin rights
+ Run after: Task 03 — static IP must already be configured on management NIC
+
+.EXAMPLE
+ .\Disable-DHCPOnAllAdapters.ps1
+#>
+
+# ============================================================================
+#region CONFIGURATION
+# Adapters whose InterfaceDescription matches ANY of these patterns will be SKIPPED.
+# Add patterns here to protect additional virtual or management adapters.
+# ============================================================================
+
+$ExcludePattern = "NDIS|Hyper-V Virtual|WAN Miniport|Bluetooth|Wi-Fi Direct|Microsoft Kernel Debug|Multiplexor"
+
+#endregion CONFIGURATION
+# ============================================================================
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Write-Log {
+ param([string]$Message, [string]$Level = "INFO")
+ $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+ $color = switch ($Level) {
+ "ERROR" { "Red" }
+ "WARN" { "Yellow" }
+ "SUCCESS" { "Green" }
+ "HEADER" { "Cyan" }
+ "SKIP" { "DarkGray" }
+ default { "White" }
+ }
+ Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+try {
+ Write-Log "=== Disable-DHCPOnAllAdapters.ps1 ===" "HEADER"
+ Write-Log "Node: $($env:COMPUTERNAME)"
+ Write-Log "Exclude pattern: $ExcludePattern"
+
+ $adapters = Get-NetAdapter | Sort-Object Name
+
+ if ($adapters.Count -eq 0) {
+ Write-Log "No network adapters found." "WARN"
+ exit 0
+ }
+
+ Write-Log "Adapters found: $($adapters.Count)"
+
+ $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+ foreach ($adapter in $adapters) {
+ $desc = $adapter.InterfaceDescription
+ $name = $adapter.Name
+ $status = $adapter.Status
+
+ # Check exclude pattern
+ if ($desc -match $ExcludePattern) {
+ Write-Log " SKIP $name ($desc)" "SKIP"
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Description = $desc
+ Status = $status
+ DHCP = "Skipped (excluded)"
+ Result = "Skipped"
+ })
+ continue
+ }
+
+ # Get IPv4 interface — some adapters have no IPv4 interface
+ $ipIface = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+ if (-not $ipIface) {
+ Write-Log " SKIP $name (no IPv4 interface)" "SKIP"
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Description = $desc
+ Status = $status
+ DHCP = "N/A (no IPv4)"
+ Result = "Skipped"
+ })
+ continue
+ }
+
+ # Idempotency check
+ if ($ipIface.Dhcp -eq "Disabled") {
+ Write-Log " OK $name (already Disabled)" "SUCCESS"
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Description = $desc
+ Status = $status
+ DHCP = "Disabled"
+ Result = "AlreadyDisabled"
+ })
+ continue
+ }
+
+ # Disable DHCP
+ try {
+ Write-Log " SET $name ($status) $($ipIface.Dhcp) -> Disabled"
+ Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -Dhcp Disabled -ErrorAction Stop
+
+ # Verify
+ $afterIface = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+ if ($afterIface.Dhcp -eq "Disabled") {
+ Write-Log " OK $name DHCP disabled" "SUCCESS"
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Description = $desc
+ Status = $status
+ DHCP = "Disabled"
+ Result = "Changed"
+ })
+ } else {
+ Write-Log " FAIL $name DHCP is still $($afterIface.Dhcp)" "WARN"
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Description = $desc
+ Status = $status
+ DHCP = $afterIface.Dhcp
+ Result = "Failed"
+ })
+ }
+ } catch {
+ Write-Log " ERROR $name $_" "ERROR"
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Description = $desc
+ Status = $status
+ DHCP = "Error"
+ Result = "Error: $_"
+ })
+ }
+ }
+
+ # Final summary table
+ Write-Log "=== RESULTS ===" "HEADER"
+ $results | Format-Table -AutoSize | Out-String | Write-Host
+
+ $failed = @($results | Where-Object { $_.Result -notin @("Changed","AlreadyDisabled","Skipped") })
+ if ($failed.Count -gt 0) {
+ Write-Log "$($failed.Count) adapter(s) failed. Review errors above." "WARN"
+ exit 1
+ }
+
+ $changed = @($results | Where-Object { $_.Result -eq "Changed" }).Count
+ $already = @($results | Where-Object { $_.Result -eq "AlreadyDisabled" }).Count
+ $skipped = @($results | Where-Object { $_.Result -eq "Skipped" }).Count
+ Write-Log "Changed: $changed Already disabled: $already Skipped: $skipped" "SUCCESS"
+ Write-Log "DHCP DISABLE COMPLETE" "SUCCESS"
+ exit 0
+
+} catch {
+ Write-Log "CRITICAL ERROR: $_" "ERROR"
+ exit 1
+}
+```
+
+**Expected output (excerpt)**:
+
+```
+[2026-03-05 09:10:01] [HEADER] === Disable-DHCPOnAllAdapters.ps1 ===
+[2026-03-05 09:10:01] [INFO] Node: AZL-NODE-01
+[2026-03-05 09:10:01] [INFO] Exclude pattern: NDIS|Hyper-V Virtual|WAN Miniport|Bluetooth|Wi-Fi Direct|Microsoft Kernel Debug|Multiplexor
+[2026-03-05 09:10:01] [INFO] Adapters found: 5
+[2026-03-05 09:10:01] [SKIP] SKIP Ethernet (Remote NDIS Compatible Device)
+[2026-03-05 09:10:01] [INFO] SET Embedded NIC 1 (Up) Enabled -> Disabled
+[2026-03-05 09:10:02] [SUCCESS] OK Embedded NIC 1 DHCP disabled
+[2026-03-05 09:10:02] [INFO] SET Embedded NIC 2 (Disconnected) Enabled -> Disabled
+[2026-03-05 09:10:02] [SUCCESS] OK Embedded NIC 2 DHCP disabled
+[2026-03-05 09:10:02] [INFO] SET Embedded NIC 3 (Up) Enabled -> Disabled
+[2026-03-05 09:10:03] [SUCCESS] OK Embedded NIC 3 DHCP disabled
+[2026-03-05 09:10:03] [INFO] SET Embedded NIC 4 (Up) Enabled -> Disabled
+[2026-03-05 09:10:03] [SUCCESS] OK Embedded NIC 4 DHCP disabled
+[2026-03-05 09:10:03] [HEADER] === RESULTS ===
+
+Name Description Status DHCP Result
+---- ----------- ------ ---- ------
+Embedded NIC 1 Intel(R) Ethernet Connection 25G 4P E823-C LOM Up Disabled Changed
+Embedded NIC 2 Intel(R) Ethernet Connection 25G 4P E823-C LOM Disconnected Disabled Changed
+Embedded NIC 3 Intel(R) Ethernet Connection 25G 4P E823-C LOM Up Disabled Changed
+Embedded NIC 4 Intel(R) Ethernet Connection 25G 4P E823-C LOM Up Disabled Changed
+Ethernet Remote NDIS Compatible Device Up Skipped (excluded) Skipped
+
+[2026-03-05 09:10:03] [SUCCESS] Changed: 4 Already disabled: 0 Skipped: 1
+[2026-03-05 09:10:03] [SUCCESS] DHCP DISABLE COMPLETE
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+Run from the management server. Reads `nodes.<name>.management_ip` from `infrastructure.yml` to connect to each node.
+
+**No session loss expected**: this task does not change the management IP — DHCP is only being disabled on adapters. The management NIC already has a static IP from Task 03.
+
+**Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter/powershell/Invoke-DisableDHCP-Orchestrated.ps1`
+
+```powershell title="Invoke-DisableDHCP-Orchestrated.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+ Invoke-DisableDHCP-Orchestrated.ps1
+ Disables DHCP on all physical adapters on every Azure Local node using PSRemoting.
+
+.DESCRIPTION
+ Runs from the management server. Reads node management IPs from infrastructure.yml,
+ connects to each node over PSRemoting, and runs the DHCP-disable logic remotely.
+
+ No session loss expected: disabling DHCP on non-management adapters, and the
+ management NIC already has a static IP from Task 03 — this operation does not
+ change the management IP.
+
+ Adapter exclusion pattern applied on each node:
+ NDIS | Hyper-V Virtual | WAN Miniport | Bluetooth | Wi-Fi Direct |
+ Microsoft Kernel Debug | Multiplexor
+
+.NOTES
+ Author: Azure Local Cloud Azure Local Cloud
+ Version: 1.0.0
+ Phase: 03-os-configuration
+ Task: task-04-disable-dhcp-on-management-adapter
+ Execution: Run from management server (PSRemoting outbound to nodes)
+ Prerequisites: PowerShell 5.1+, WinRM enabled on all nodes, admin credentials
+ Run after: Task 03 — static IP configured on management NIC of all nodes
+
+.EXAMPLE
+ .\Invoke-DisableDHCP-Orchestrated.ps1
+ .\Invoke-DisableDHCP-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure.yml"
+#>
+
+[CmdletBinding()]
+param(
+ [string]$ConfigPath
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ============================================================================
+# LOGGING
+# ============================================================================
+
+function Write-Log {
+ param([string]$Message, [string]$Level = "INFO")
+ $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+ $color = switch ($Level) {
+ "ERROR" { "Red" }
+ "WARN" { "Yellow" }
+ "SUCCESS" { "Green" }
+ "HEADER" { "Cyan" }
+ "SKIP" { "DarkGray" }
+ default { "White" }
+ }
+ Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
+}
+
+# ============================================================================
+# CONFIGURATION RESOLVER
+# ============================================================================
+
+function Resolve-ConfigPath {
+ [CmdletBinding()]
+ param([string]$Provided)
+
+ if ($Provided -and (Test-Path $Provided)) {
+ Write-Log "Config: $Provided"
+ return $Provided
+ }
+
+ # Search common locations
+ $searchPaths = @(
+ (Join-Path $PSScriptRoot "..\..\..\..\configs"),
+ (Join-Path $PSScriptRoot "..\..\..\..\..\configs"),
+ "C:\configs",
+ "C:\AzureLocal\configs"
+ )
+
+ $found = @()
+ foreach ($dir in $searchPaths) {
+ if (Test-Path $dir) {
+ $found += Get-ChildItem -Path $dir -Filter "infrastructure*.yml" -File -ErrorAction SilentlyContinue
+ }
+ }
+
+ $found = @($found | Sort-Object FullName -Unique)
+
+ if ($found.Count -eq 0) {
+ Write-Log "No infrastructure*.yml found. Provide -ConfigPath manually." "ERROR"
+ throw "Config file not found."
+ }
+
+ if ($found.Count -eq 1) {
+ Write-Log "Config: $($found[0].FullName)"
+ return $found[0].FullName
+ }
+
+ Write-Log "Multiple config files found:" "WARN"
+ for ($i = 0; $i -lt $found.Count; $i++) {
+ Write-Host " [$($i+1)] $($found[$i].FullName)" -ForegroundColor Yellow
+ }
+ $choice = Read-Host "Select config [1-$($found.Count)]"
+ $idx = [int]$choice - 1
+ if ($idx -lt 0 -or $idx -ge $found.Count) { throw "Invalid selection." }
+ return $found[$idx].FullName
+}
+
+# ============================================================================
+# YAML PARSER (PowerShell 5.1 compatible)
+# ============================================================================
+
+function Get-YamlValue {
+ param([string[]]$Lines, [string[]]$KeyPath)
+
+ $current = $Lines
+ $indent = -1
+ $inBlock = $false
+ $blockLines = @()
+
+ foreach ($key in $KeyPath) {
+ $pattern = "^\s*${key}\s*:"
+ $lineIdx = -1
+ for ($i = 0; $i -lt $current.Count; $i++) {
+ if ($current[$i] -match $pattern) {
+ $lineIdx = $i
+ break
+ }
+ }
+ if ($lineIdx -eq -1) { return $null }
+
+ # Inline value?
+ if ($current[$lineIdx] -match "^\s*${key}\s*:\s*(.+)$") {
+ $val = $Matches[1].Trim().Trim('"').Trim("'")
+ if ($KeyPath[-1] -eq $key) { return $val }
+ # Descend into next key path — value was inline, no block to descend into
+ return $null
+ }
+
+ # Block — collect indented children
+ $keyIndent = ($current[$lineIdx] -replace "^(\s*).*", '$1').Length
+ $blockLines = @()
+ for ($j = $lineIdx + 1; $j -lt $current.Count; $j++) {
+ $line = $current[$j]
+ if ($line -match "^\s*$") { continue }
+ $thisIndent = ($line -replace "^(\s*).*", '$1').Length
+ if ($thisIndent -le $keyIndent) { break }
+ $blockLines += $line
+ }
+ $current = $blockLines
+ }
+ return $null
+}
+
+function Get-NodeNames {
+ param([string[]]$Lines)
+ $inNodes = $false
+ $names = @()
+ foreach ($line in $Lines) {
+ if ($line -match "^\s*nodes\s*:") { $inNodes = $true; continue }
+ if ($inNodes) {
+ if ($line -match "^\s*(\w[\w\-_]*):\s*$") { $names += $Matches[1] }
+ elseif ($line -match "^\S" -and $line -notmatch "^\s*#") { break }
+ }
+ }
+ return $names
+}
+
+# ============================================================================
+# GET NODE CONFIGS
+# ============================================================================
+
+function Get-NodeConfigs {
+ [CmdletBinding()]
+ param([string]$ConfigPath)
+
+ $raw = Get-Content -Path $ConfigPath -Raw
+ $lines = $raw -split "`n"
+
+ $nodeNames = Get-NodeNames -Lines $lines
+ if ($nodeNames.Count -eq 0) { throw "No nodes found in $ConfigPath." }
+
+ $configs = @()
+ foreach ($nodeName in $nodeNames) {
+ $mgmtIP = Get-YamlValue -Lines $lines -KeyPath @("nodes", $nodeName, "management_ip")
+ if (-not $mgmtIP) {
+ Write-Log " WARN: nodes.$nodeName.management_ip not found — skipping $nodeName" "WARN"
+ continue
+ }
+
+ $configs += [PSCustomObject]@{
+ NodeName = $nodeName
+ IP = $mgmtIP.Trim()
+ }
+ Write-Log " Node: $nodeName IP: $($mgmtIP.Trim())"
+ }
+
+ if ($configs.Count -eq 0) { throw "No valid node entries found in config." }
+ return $configs
+}
+
+# ============================================================================
+# REMOTE SCRIPTBLOCK
+# ============================================================================
+
+$RemoteScriptBlock = {
+ param([string]$ExcludePattern)
+
+ Set-StrictMode -Version Latest
+ $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+ $adapters = Get-NetAdapter | Sort-Object Name
+
+ foreach ($adapter in $adapters) {
+ $desc = $adapter.InterfaceDescription
+ $name = $adapter.Name
+
+ if ($desc -match $ExcludePattern) {
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Desc = $desc
+ Result = "Skipped"
+ DHCP = "Excluded"
+ })
+ continue
+ }
+
+ $ipIface = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+ if (-not $ipIface) {
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Desc = $desc
+ Result = "Skipped"
+ DHCP = "No IPv4"
+ })
+ continue
+ }
+
+ if ($ipIface.Dhcp -eq "Disabled") {
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Desc = $desc
+ Result = "AlreadyDisabled"
+ DHCP = "Disabled"
+ })
+ continue
+ }
+
+ try {
+ Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -Dhcp Disabled -ErrorAction Stop
+ $after = (Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).Dhcp
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Desc = $desc
+ Result = if ($after -eq "Disabled") { "Changed" } else { "Failed" }
+ DHCP = $after
+ })
+ } catch {
+ $results.Add([PSCustomObject]@{
+ Name = $name
+ Desc = $desc
+ Result = "Error"
+ DHCP = "Error: $_"
+ })
+ }
+ }
+
+ return $results
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+try {
+ Write-Log "=== Invoke-DisableDHCP-Orchestrated.ps1 ===" "HEADER"
+
+ $resolvedConfig = Resolve-ConfigPath -Provided $ConfigPath
+ Write-Log "Loading node configurations from: $resolvedConfig"
+ $nodes = Get-NodeConfigs -ConfigPath $resolvedConfig
+ Write-Log "Nodes to process: $($nodes.Count)"
+
+ $excludePattern = "NDIS|Hyper-V Virtual|WAN Miniport|Bluetooth|Wi-Fi Direct|Microsoft Kernel Debug|Multiplexor"
+
+ $credential = Get-Credential -Message "Enter local admin credentials for Azure Local nodes"
+
+ $nodeResults = @()
+
+ foreach ($node in $nodes) {
+ Write-Log "--- $($node.NodeName) ($($node.IP)) ---" "HEADER"
+
+ try {
+ $session = New-PSSession -ComputerName $node.IP -Credential $credential -ErrorAction Stop
+ Write-Log " Connected to $($node.IP)"
+
+ $remoteResults = Invoke-Command -Session $session -ScriptBlock $RemoteScriptBlock -ArgumentList $excludePattern
+
+ $failed = @($remoteResults | Where-Object { $_.Result -notin @("Changed","AlreadyDisabled","Skipped") })
+ $changed = @($remoteResults | Where-Object { $_.Result -eq "Changed" }).Count
+ $already = @($remoteResults | Where-Object { $_.Result -eq "AlreadyDisabled" }).Count
+ $skipped = @($remoteResults | Where-Object { $_.Result -eq "Skipped" }).Count
+
+ $remoteResults | Format-Table -AutoSize | Out-String | Write-Host
+
+ if ($failed.Count -gt 0) {
+ Write-Log " $($node.NodeName): $($failed.Count) adapter(s) FAILED" "WARN"
+ } else {
+ Write-Log " $($node.NodeName): Changed=$changed AlreadyDisabled=$already Skipped=$skipped" "SUCCESS"
+ }
+
+ $nodeResults += [PSCustomObject]@{
+ Node = $node.NodeName
+ IP = $node.IP
+ Status = if ($failed.Count -gt 0) { "Partial" } else { "OK" }
+ Changed = $changed
+ Already = $already
+ Skipped = $skipped
+ Errors = $failed.Count
+ }
+
+ Remove-PSSession -Session $session -ErrorAction SilentlyContinue
+
+ } catch {
+ Write-Log " ERROR connecting to $($node.NodeName) ($($node.IP)): $_" "ERROR"
+ $nodeResults += [PSCustomObject]@{
+ Node = $node.NodeName
+ IP = $node.IP
+ Status = "ConnectionFailed"
+ Changed = 0
+ Already = 0
+ Skipped = 0
+ Errors = 1
+ }
+ }
+ }
+
+ Write-Log "=== ORCHESTRATION SUMMARY ===" "HEADER"
+ $nodeResults | Format-Table -AutoSize | Out-String | Write-Host
+
+ $anyFailed = @($nodeResults | Where-Object { $_.Status -notin @("OK") })
+ if ($anyFailed.Count -gt 0) {
+ Write-Log "$($anyFailed.Count) node(s) had issues. Review above." "WARN"
+ exit 1
+ }
+
+ Write-Log "All nodes: DHCP disable complete." "SUCCESS"
+ exit 0
+
+} catch {
+ Write-Log "CRITICAL ERROR: $_" "ERROR"
+ exit 1
+}
+```
+
+**Expected output (excerpt)**:
+
+```
+[2026-03-05 09:12:00] [HEADER] === Invoke-DisableDHCP-Orchestrated.ps1 ===
+[2026-03-05 09:12:00] [INFO] Loading node configurations from: C:\configs\infrastructure.yml
+[2026-03-05 09:12:00] [INFO] Node: node01 IP: 10.100.200.11
+[2026-03-05 09:12:00] [INFO] Node: node02 IP: 10.100.200.12
+[2026-03-05 09:12:00] [INFO] Nodes to process: 2
+[2026-03-05 09:12:01] [HEADER] --- node01 (10.100.200.11) ---
+[2026-03-05 09:12:02] [INFO] Connected to 10.100.200.11
+
+Name Desc Result DHCP
+---- ---- ------ ----
+Embedded NIC 1 Intel(R) Ethernet Connection 25G 4P E823-C LOM Changed Disabled
+Embedded NIC 2 Intel(R) Ethernet Connection 25G 4P E823-C LOM Changed Disabled
+Embedded NIC 3 Intel(R) Ethernet Connection 25G 4P E823-C LOM Changed Disabled
+Embedded NIC 4 Intel(R) Ethernet Connection 25G 4P E823-C LOM Changed Disabled
+Ethernet Remote NDIS Compatible Device Skipped Excluded
+
+[2026-03-05 09:12:03] [SUCCESS] node01: Changed=4 AlreadyDisabled=0 Skipped=1
+
+[2026-03-05 09:12:03] [HEADER] === ORCHESTRATION SUMMARY ===
+
+Node IP Status Changed Already Skipped Errors
+---- -- ------ ------- ------- ------- ------
+node01 10.100.200.11 OK 4 0 1 0
+node02 10.100.200.12 OK 4 0 1 0
+
+[2026-03-05 09:12:22] [SUCCESS] All nodes: DHCP disable complete.
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+Verify DHCP is disabled on all physical adapters across all nodes:
+
+```powershell
+# Run on each node (or orchestrate with PSRemoting)
+Get-NetAdapter | ForEach-Object {
+ $iface = Get-NetIPInterface -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+ [PSCustomObject]@{
+ Name = $_.Name
+ Description = $_.InterfaceDescription
+ Status = $_.Status
+ DHCP = $iface.Dhcp
+ IsExcluded = $_.InterfaceDescription -match "NDIS|Hyper-V Virtual|WAN Miniport"
+ }
+} | Format-Table -AutoSize
+```
+
+**Validation checklist:**
+
+| Check | Expected | Status |
+|-------|----------|--------|
+| Physical adapters — DHCP | `Disabled` | ☐ |
+| NDIS / excluded adapters — DHCP | `Enabled` (or N/A) | ☐ |
+| Management NIC reachable | All nodes respond to ping | ☐ |
+| No connectivity loss | Continuous management access | ☐ |
+
+:::note Disconnected adapters
+Disconnected adapters may show blank or `Enabled` DHCP status. This is acceptable — they are not
+active on the network and cannot obtain an address even with DHCP nominally enabled.
+:::
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|------------|-------------|
+| DHCP re-enabled after reboot | Group Policy override | Check GPO DHCP settings; apply exception or override in policy |
+| Adapter still showing `Enabled` after script | Script exited with non-zero | Review output log; rerun script and check for errors |
+| Connectivity lost after running | Script disabled DHCP on management NIC before static IP was set | Re-run Task 03 first; boot node via console or iDRAC |
+| `Set-NetIPInterface` access denied | Script not run as local admin | Relaunch PowerShell as Administrator |
+| Orchestrated script: `No infrastructure*.yml found` | Config file not in search path | Pass `-ConfigPath` explicitly: `.\Invoke-DisableDHCP-Orchestrated.ps1 -ConfigPath C:\path\to\infrastructure.yml` |
+| Orchestrated script: `management_ip not found` | Node entry missing `management_ip` in yml | Verify `nodes.<name>.management_ip` is populated in `infrastructure.yml` |
+| Node cannot be reached via PSRemoting | WinRM not configured | Run `Enable-PSRemoting -Force` on the node (Task 02 enables RDP — verify WinRM separately) |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 03: Configure Static IP](./task-03-configure-static-ip-address.mdx) | [↑ Phase 03: OS Configuration](./index.mdx) | [Task 05: Configure DNS Servers →](./task-05-configure-dns-servers.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 2.0 | 2026-03-05 | Azure Local Cloud Azure Local Cloudnology | Full rewrite to standards — complete frontmatter, 2-tab structure (Direct + Orchestrated), Standalone tab removed, full embedded scripts, NDIS defensive pattern, infrastructure.yml integration in orchestrated script |

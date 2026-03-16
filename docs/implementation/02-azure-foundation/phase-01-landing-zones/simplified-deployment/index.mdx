@@ -1,0 +1,143 @@
+---
+title: "Simplified Deployment Overview"
+sidebar_label: "Overview"
+sidebar_position: 0
+description: "Overview of the simplified landing zone deployment — single management group, single subscription, single resource group."
+category: "RUNBOOK"
+scope: "Simplified landing zone deployment"
+purpose: "Deploy single management group, subscription, and resource group"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - phase-01
+ - simplified-deployment
+keywords:
+ - simplified deployment
+ - single subscription
+ - single resource group
+status: "approved"
+---
+
+# Simplified Deployment Overview
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Simplified landing zone deployment 
+> **PURPOSE**: Deploy single management group, subscription, and resource group 
+> **MASTER REFERENCE**: [Microsoft Learn — Landing Zones](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)
+
+**Status**: Active
+
+---
+
+The **Simplified Deployment** model streamlines Azure governance by using a single management group, a single subscription, and a single resource group for all cluster resources. This is the fastest path to a working Azure Local deployment.
+
+:::tip When to Use This Model
+Choose Simplified Deployment for:
+- Single Azure Local cluster deployments
+- Proof of concept (PoC) and lab environments
+- Environments with limited scale requirements
+- Rapid deployment timelines
+:::
+
+## Architecture Overview
+
+The example below uses Infinite azurelocal Corp (IIC). Replace names with values from your `infrastructure.yml`.
+
+```
+Tenant Root Group
+└── cmp-iic-root # azure.management_groups.tenant_root.name
+ └── cmp-landing-zones-iic # azure.management_groups.landing_zone.name
+ └── iic-lz-azurelocal-001 # azure.subscriptions.<env>.name
+ └── rg-c01-azl-eus-01 # azure_resources.resource_group_name
+```
+
+All cluster resources — Arc registration, Key Vault, storage accounts, cloud witness, and the cluster itself — reside in that single resource group. No multi-RG split is needed for the simplified model.
+
+## Key Characteristics
+
+| Aspect | Implementation |
+|--------|----------------|
+| **Management Groups** | Root MG + Landing Zone MG (from `infrastructure.yml`) |
+| **Subscriptions** | Single subscription for all resources |
+| **Resource Groups** | Single RG for all cluster resources |
+| **Policy Scope** | Subscription-level policies |
+| **RBAC Scope** | Resource group-level access control |
+| **Cost Tracking** | Tag-based cost allocation |
+
+## Prerequisites
+
+Before starting this deployment path:
+
+- [ ] **Entra ID tenant** established and accessible
+- [ ] **Subscription** provisioned (or will be created in Task 02)
+- [ ] **`infrastructure.yml`** configured with tenant, subscription, and resource group values
+- [ ] **Authenticated Azure session** — see [Authentication](../../../05-authentication.mdx)
+- [ ] **Permissions** — Owner or User Access Administrator at tenant root scope
+
+## Deployment Steps
+
+| Task | Description | Estimated Time |
+|------|-------------|----------------|
+| **Task 01** | [Configure Management Group](./task-01-configure-management-group) | 15 minutes |
+| **Task 02** | [Create Subscription](./task-02-create-subscription) | 30 minutes |
+| **Task 03** | [Create Resource Groups](./task-03-create-resource-groups) | 15 minutes |
+
+**Total Estimated Time**: ~1 hour
+
+## Comparison with Full Deployment
+
+| Feature | Simplified | Full CAF/WAF |
+|---------|------------|--------------|
+| Management Groups | 2 (root + landing zone) | 10+ |
+| Subscriptions | 1 | 6+ |
+| Resource Groups | 1 per cluster | Multiple per function |
+| Setup Complexity | Low | High |
+| Governance Flexibility | Limited | Maximum |
+| Cost Tracking | Tag-based | Subscription-based |
+| Best For | Single cluster, PoC | Multi-cluster, enterprise |
+
+## Limitations
+
+:::warning Simplified Deployment Limitations
+- **No subscription-level isolation** — all resources share billing and quota limits
+- **Limited policy granularity** — policies apply to the entire subscription
+- **Shared resource quotas** — all workloads compete for subscription limits
+- **Migration complexity** — moving to Full CAF/WAF later requires restructuring
+:::
+
+## Deliverables
+
+At the end of this phase, you will have:
+
+- [ ] Root management group created (`azure.management_groups.tenant_root.name`)
+- [ ] Landing zone management group created (`azure.management_groups.landing_zone.name`)
+- [ ] Subscription associated with the landing zone management group
+- [ ] Single resource group created (`azure_resources.resource_group_name`)
+
+## Next Steps
+
+Start with [Task 01: Configure Management Group](./task-01-configure-management-group)
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| — | [Phase 01 — Landing Zones](../index.mdx) | [Task 01 — Management Group](./task-01-configure-management-group.mdx) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, phase-01, simplified-deployment
+- Keywords: simplified deployment, single subscription, single resource group
+- Author: Azure Local Cloudnology Team

@@ -1,0 +1,110 @@
+---
+title: "Appendix B: Troubleshooting"
+sidebar_label: "Appendix B: Troubleshooting"
+sidebar_position: 2
+description: "Common issues and resolutions for Azure Local deployment and operations"
+---
+
+# Appendix B: Troubleshooting
+
+[![Reference](https://img.shields.io/badge/Type-Reference-green?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference 
+> **SCOPE**: Troubleshooting guide 
+> **PURPOSE**: Common issues and resolutions 
+> **MASTER REFERENCE**: [Microsoft Learn - Troubleshoot](https://learn.microsoft.com/en-us/azure/azure-local/manage/troubleshoot)
+
+**Status**: Active — sections added as operational experience is gained
+
+---
+
+## Arc Agent Metadata Refresh
+
+### Forcing an Immediate Metadata Refresh
+
+**Symptom:** After making changes on cluster nodes — NIC reconfiguration, IP reassignment, hostname changes, OS configuration, software installs — the Azure portal and `az connectedmachine` still show stale data. Deployment validation may also fail because the ARM template validator queries Azure metadata directly.
+
+**Cause:** The Azure Connected Machine Agent (`himds`) reports node metadata to Azure on a periodic heartbeat interval. Changes made on the node do not automatically trigger an immediate update; the stale data persists until the next scheduled heartbeat or until the service is restarted.
+
+**Resolution:** Restart the `himds` service on all affected nodes to force an immediate metadata refresh. This is safe to perform at any time and does not affect cluster workloads.
+
+Run from your management machine using `Invoke-Command` with node credentials:
+
+```powershell title="Restart himds on all cluster nodes"
+$nodes = @('10.10.50.11', '10.10.50.12', '10.10.50.13', '10.10.50.14')
+$names = @('iic-01-n01', 'iic-01-n02', 'iic-01-n03', 'iic-01-n04')
+
+$p = (az keyvault secret show --vault-name kv-<env>-platform `
+ --name local-admin-password --query value -o tsv) |
+ ConvertTo-SecureString -AsPlainText -Force
+$cred = New-Object System.Management.Automation.PSCredential("Administrator", $p)
+
+for ($i = 0; $i -lt $nodes.Count; $i++) {
+ $result = Invoke-Command -ComputerName $nodes[$i] -Credential $cred -ScriptBlock {
+ Restart-Service -Name 'himds' -Force
+ Start-Sleep -Seconds 2
+ (Get-Service -Name 'himds').Status
+ }
+ Write-Host "[$($names[$i])] himds: $result"
+}
+```
+
+**Verify the metadata updated in Azure** (allow 1–2 minutes after restart):
+
+```powershell title="Check Arc machine metadata in Azure"
+$nodes = @('iic-01-n01', 'iic-01-n02', 'iic-01-n03', 'iic-01-n04')
+foreach ($node in $nodes) {
+ $machine = az connectedmachine show `
+ --resource-group rg-<cluster-rg> `
+ --name $node | ConvertFrom-Json
+ Write-Host "$node Status: $($machine.status) Last heartbeat: $($machine.lastStatusChange)"
+}
+```
+
+Confirm `status` returns `Connected` and `lastStatusChange` reflects a recent timestamp.
+
+:::tip When to do this
+Any time you make configuration changes on cluster nodes — NIC changes, IP reassignment, DNS/gateway updates, hostname changes, or any other OS-level change — restart `himds` before re-running deployment validation. The ARM template validator reads from Azure metadata; if it's stale, validation will fail against the old state.
+:::
+
+---
+
+## Deployment Phase Issues
+
+### Pre-validation Failures
+
+> Content in progress — refer to [Microsoft Learn: Troubleshoot Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/troubleshoot) in the interim.
+
+### Hardware Configuration Errors
+
+> Content in progress.
+
+### Network Validation Problems
+
+> Content in progress.
+
+### Bootstrap Failures
+
+> Content in progress.
+
+---
+
+## Operational Issues
+
+### Cluster Connectivity Problems
+
+> Content in progress.
+
+### VM Management Issues
+
+> Content in progress.
+
+---
+
+## Interim Resources
+
+- [Microsoft Learn: Troubleshoot Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/troubleshoot)
+- [Azure Local Known Issues](https://learn.microsoft.com/en-us/azure/azure-local/known-issues)
+- [Azure Local Cloud Support Portal](https://support.Azure Local Cloud.com)
+

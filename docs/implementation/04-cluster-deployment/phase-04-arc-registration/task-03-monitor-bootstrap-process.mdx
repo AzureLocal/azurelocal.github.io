@@ -1,0 +1,269 @@
+---
+title: "Task 03: Monitor Bootstrap Process"
+sidebar_label: "Task 03: Monitor Bootstrap"
+sidebar_position: 3
+description: "Monitor Arc registration bootstrap status and handle OEM image updates"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Monitor Bootstrap Process
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 04](https://img.shields.io/badge/Phase-04_Arc_Registration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+**Status**: Active | **Estimated Time**: 30-90 minutes (includes OEM updates) | **Last Updated**: 2026-03-15
+
+---
+
+## Overview
+
+After Arc registration is initiated (Task 02), the bootstrap process runs in the background on each node. It first scans, downloads, and installs OEM updates (which may trigger automatic reboots), then completes Arc configuration. This task monitors all nodes through the full lifecycle until they report `Succeeded`.
+
+The **orchestrated monitor** collects comprehensive telemetry per node in a single WinRM call each cycle:
+
+| Data Collected | Source |
+|---|---|
+| Bootstrap status + phase breakdown | `Get-ArcBootstrapStatus` |
+| Arc agent status + version | `azcmagent show`, `himds` service |
+| System uptime + reboot detection | `CIM_OperatingSystem`, Event Log IDs 1074/6006/6008/6013/41 |
+| Windows Update activity | `wuauserv` service status |
+| Download directory snapshot | `C:\bootstrap` — file count, total size, files changed in last 10 min |
+| SolutionUpdate metadata | `C:\bootstrap\SolutionUpdate.xml` — target version, package size |
+| Validation report (failed/warning) | `AzStackHciEnvironmentReport.json` |
+| Bootstrap log tail | Latest lines from `C:\Windows\System32\Bootstrap\Logs` |
+| Azure-side verification | `Get-AzConnectedMachine` when agent reports connected |
+
+:::info Reboots Are Expected
+If a node reboots during registration, **do not restart the registration script**. The bootstrap service resumes automatically using cached SPN credentials. The monitor will show "UNREACHABLE (rebooting?)" until the node comes back online.
+:::
+
+:::tip Wrapper Script
+To launch registration + monitoring **simultaneously**, use `Start-ArcRegistrationWithMonitor.ps1` from the Task 02 folder. See [Task 02 — Wrapper Script](./task-02-register-cluster-nodes-with-azure-arc.mdx#combined-registration--monitor-wrapper-script).
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Task 02 initiated | Arc registration started on all target nodes |
+| Node access | RDP/console (Direct) or WinRM from mgmt server (Orchestrated) |
+| Az.ConnectedMachine | Required for Azure-side verification (orchestrated script) |
+
+---
+
+## Bootstrap Phases
+
+| Phase | Sub-Phase | Description | Duration |
+|---|---|---|---|
+| Update | Scan | Scans for available LCM/OEM updates | 1-5 min |
+| Update | Download | Downloads packages to `C:\bootstrap` | 10-40 min |
+| Update | Install | Installs updates, may trigger reboot | 5-15 min |
+| *(reboot)* | — | Node reboots if OS update applied | 2-5 min |
+| ArcConfiguration | ArcRegistration | Registers node with Azure Arc | 5-10 min |
+
+---
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run on each node individually via RDP or console.
+
+```powershell
+# Task 03 - Check Bootstrap Status (run on each node)
+
+$status = Get-ArcBootstrapStatus
+$status.Response | Select-Object Status, StartTime, EndTime
+
+# Show detailed phases
+if ($status.Response.DetailedResponse) {
+ foreach ($phase in $status.Response.DetailedResponse) {
+ Write-Host "$($phase.Name): $($phase.Status)"
+ if ($phase.DetailedResponse) {
+ $phase.DetailedResponse | ForEach-Object { Write-Host " $($_.Name): $($_.Status)" }
+ }
+ }
+}
+
+# Check Arc agent
+Get-Service himds | Select-Object Name, Status
+& "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe" show
+
+# Check download progress
+if (Test-Path "C:\bootstrap") {
+ Get-ChildItem "C:\bootstrap" -Recurse -File |
+ Measure-Object -Property Length -Sum |
+ Select-Object Count, @{N='SizeMB'; E={[math]::Round($_.Sum / 1MB, 1)}}
+}
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
+
+Run from management server — polls all nodes with comprehensive status collection.
+
+:::tip Standards-Compliant Script
+For production deployments, use **`Invoke-BootstrapMonitor-Orchestrated.ps1`** from the `azl-toolkit` repo. Features:
+- **Single WinRM call per node** — collects all telemetry in one remote scriptblock (low overhead)
+- **Rich display** — color-coded status per field (bootstrap, Arc agent, updates, downloads)
+- **Azure verification** — calls `Get-AzConnectedMachine` when nodes report agent connected
+- **Continuous mode** — `-ContinuousMode` polls indefinitely until all nodes succeed
+- **Full parameter support** — `-ConfigPath`, `-WhatIf`, `-TargetNode`, `-PollIntervalSeconds`, `-MaxIterations`, `-TailLines`
+- **YAML-overridable** — `-SubscriptionId` and `-ResourceGroup` default from infrastructure.yml
+:::
+
+```powershell title="Run the orchestrated monitor"
+# Standard — 3 iterations, 60s interval (default)
+.\scripts\deploy\04-cluster-deployment\phase-04-arc-registration\task-03-monitor-bootstrap-process\powershell\Invoke-BootstrapMonitor-Orchestrated.ps1 `
+ -ConfigPath .\configs\infrastructure-azl-lab.yml
+
+# Continuous mode — poll until all nodes succeed or fail
+.\scripts\deploy\...\Invoke-BootstrapMonitor-Orchestrated.ps1 `
+ -ConfigPath .\configs\infrastructure-azl-lab.yml `
+ -ContinuousMode `
+ -PollIntervalSeconds 90
+
+# Target specific nodes + debug log tail
+.\scripts\deploy\...\Invoke-BootstrapMonitor-Orchestrated.ps1 `
+ -ConfigPath .\configs\infrastructure-azl-lab.yml `
+ -TargetNode azl-lab-01-n01,azl-lab-01-n02 `
+ -TailLines 20
+
+# Dry run — shows what would be collected without connecting
+.\scripts\deploy\...\Invoke-BootstrapMonitor-Orchestrated.ps1 `
+ -ConfigPath .\configs\infrastructure-azl-lab.yml -WhatIf
+```
+
+### Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `-ConfigPath` | `""` | Path to infrastructure.yml |
+| `-Credential` | — | Override credential resolution for WinRM |
+| `-TargetNode` | all nodes | Limit to specific node(s) |
+| `-WhatIf` | — | Show what would be collected without running |
+| `-LogPath` | — | Override log file path |
+| `-PollIntervalSeconds` | 60 | Seconds between polling cycles |
+| `-MaxIterations` | 120 | Number of polling cycles (120 × 60s = 2 hours) |
+| `-ContinuousMode` | — | Ignore MaxIterations, poll until all done |
+| `-SubscriptionId` | from YAML | Azure subscription for `Get-AzConnectedMachine` |
+| `-ResourceGroup` | from YAML | Resource group for `Get-AzConnectedMachine` |
+| `-TailLines` | 5 | Bootstrap log lines to capture per node |
+
+### Inline Reference (Simplified)
+
+:::warning Inline Code — Reference Only
+The inline code below is a simplified polling loop. The `Invoke-` script provides far richer output including download progress, reboot detection, SolutionUpdate metadata, validation failures, and Azure-side verification.
+:::
+
+```powershell
+# Task 03 - Monitor Bootstrap (simplified inline, all nodes)
+# infrastructure.yml variables:
+# compute.cluster_nodes[].management_ip -> $ServerList
+
+$ConfigPath = ".\configs\infrastructure.yml"
+$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
+ ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+
+$CheckInterval = 60
+
+do {
+ $AllDone = $true
+ Write-Host "--- $(Get-Date -Format 'HH:mm:ss') ---"
+
+ foreach ($Node in $ServerList) {
+ try {
+ $s = Invoke-Command -ComputerName $Node -ScriptBlock {
+ (Get-ArcBootstrapStatus).Response.Status
+ } -ErrorAction Stop
+
+ $c = switch ($s) { "Succeeded" { "Green" } "Failed" { "Red" } default { "Yellow" } }
+ Write-Host " $Node : $s" -ForegroundColor $c
+
+ if ($s -notin "Succeeded","Failed") { $AllDone = $false }
+ } catch {
+ Write-Host " $Node : UNREACHABLE (may be rebooting)" -ForegroundColor Gray
+ $AllDone = $false
+ }
+ }
+
+ if (-not $AllDone) {
+ Write-Host "Waiting $CheckInterval seconds..."
+ Start-Sleep -Seconds $CheckInterval
+ }
+} while (-not $AllDone)
+
+Write-Host "All nodes completed."
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Expected Status Values
+
+| Status | Meaning | Action |
+|---|---|---|
+| `Update: Scan` | Scanning for OEM updates | Wait |
+| `Update: Download` | Downloading update packages | Wait — check download progress |
+| `Update: Install` | Installing updates | Wait — reboot may follow |
+| `UNREACHABLE` | Node is rebooting | Wait — auto-resumes after reboot |
+| `InProgress` | Arc registration running | Wait for completion |
+| `Succeeded` | Node registered with Azure Arc | Proceed to Task 04 |
+| `Failed` | Registration or update failed | Collect logs, troubleshoot |
+
+---
+
+## Troubleshooting
+
+### Collect Support Logs
+
+```powershell
+# Run on the failed node (RDP/console)
+Collect-ArcBootstrapSupportLogs -OutputPath "C:\Logs\ArcBootstrap"
+```
+
+### Check Validation Report
+
+```powershell
+# Check validation report on failed node
+$reportPath = "C:\Windows\System32\Bootstrap\DiagnosticsHistory\Bootstrap\AzStackHciEnvironmentReport.json"
+if (Test-Path $reportPath) {
+ $report = Get-Content $reportPath -Raw | ConvertFrom-Json
+ $report.TestResults | Where-Object { $_.Status -ne "Succeeded" } |
+ Select-Object Title, Status, @{N='Message';E={$_.AdditionalData.Message}}
+}
+```
+
+### Inspect Bootstrap Logs
+
+```powershell
+# Tail the latest bootstrap log on a node
+$logDir = "C:\Windows\System32\Bootstrap\Logs"
+$latest = Get-ChildItem $logDir -Filter *.log -ErrorAction SilentlyContinue |
+ Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($latest) { Get-Content $latest.FullName -Tail 30 }
+```
+
+### Common Issues
+
+| Issue | Resolution |
+|---|---|
+| Node unreachable 10+ min | Check iDRAC/BMC console — verify node is booting, not stuck |
+| Download stalled (no size change) | Check network connectivity (Task 01), proxy settings, DNS |
+| Auth failed after reboot | SPN token cache expired — re-run Task 02 on that node |
+| Validation failures | Review `AzStackHciEnvironmentReport.json` — fix prerequisites, re-run Task 01 |
+| `himds` service not running | Bootstrap incomplete — wait for ArcConfiguration phase |
+| Arc agent shows `Disconnected` in Azure | Check node clock sync (NTP), outbound connectivity |
+| Timeout (90+ min, no progress) | Collect support logs, open Microsoft support case |
+
+---
+
+## Navigation
+
+[← Task 02: Register Nodes with Arc](./task-02-register-cluster-nodes-with-azure-arc.mdx) · [Task 04: Verify Arc Registration →](./task-04-verify-arc-registration-and-connectivity.mdx)

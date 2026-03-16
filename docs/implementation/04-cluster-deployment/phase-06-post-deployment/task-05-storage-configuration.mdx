@@ -1,0 +1,942 @@
+---
+title: "Task 05: Storage Configuration"
+sidebar_label: "Task 05: Storage Configuration"
+sidebar_position: 5
+description: "Size and create S2D CSV volumes on the Azure Local cluster and register storage paths in Azure for VM workload placement"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 05 — Storage Configuration
+
+> **DOCUMENT CATEGORY:** Implementation Guide
+> **SCOPE:** Azure Local Cluster — Post-Deployment Storage
+> **PURPOSE:** Create Storage Spaces Direct (S2D) Cluster Shared Volumes (CSVs) on the cluster
+> and register the corresponding storage paths in Azure so they appear as placement targets
+> for virtual machines deployed through Azure Local.
+
+---
+
+## Section 1 — Volume Sizing & YAML Verification
+
+:::warning This step should already be complete
+Volume sizing and the `cluster_shared_volumes` YAML block should have been completed during
+the **Discovery & Planning** phase. If those values are not in your `infrastructure.yml`,
+**stop here** and complete sizing before proceeding — all scripts in Sections 2 and 3 read
+exclusively from the YAML. Nothing is hardcoded in the scripts.
+:::
+
+**If sizing was not completed**, use the S2D Capacity Calculator:
+
+```
+tools/planning/S2D_Capacity_Calculator_6.xlsx
+```
+
+The calculator requires:
+- Number of cluster nodes
+- Number and size of capacity drives per node
+- Resiliency type (Two-way Mirror / Three-way Mirror)
+- Target usable capacity per volume
+
+Once you have the outputs, populate the following keys in your `infrastructure.yml` before
+running any scripts in this task:
+
+| YAML Path | Example (IIC) | Description |
+|-----------|-------------------|-------------|
+| `cluster_shared_volumes.enabled` | `true` | Enable CSV creation |
+| `cluster_shared_volumes.volumes[].volume_name` | `csv-iic01-clus01-m2-vmstore-prd-01` | CSV friendly name → becomes `C:\ClusterStorage\<name>` |
+| `cluster_shared_volumes.volumes[].size_gb` | `2000` | Volume size in GB |
+| `cluster_shared_volumes.volumes[].filesystem` | `ReFS` | Filesystem — ReFS strongly recommended |
+| `cluster_shared_volumes.volumes[].resiliency` | `Mirror` | S2D resiliency class |
+| `cluster_shared_volumes.volumes[].path` | `C:\ClusterStorage\csv-...-01` | Full local mount path |
+| `cluster_shared_volumes.storage_paths.<key>.name` | `sp-iic01-clus01-m2-vmstore-prd-01` | Azure storage path resource name |
+| `cluster_shared_volumes.storage_paths.<key>.path` | `C:\ClusterStorage\csv-...-01\VMs` | Subdirectory inside CSV for VM placement |
+| `compute.azure_local.cluster_name` | `iic-clus01` | Cluster name (storage pool is `S2D on <cluster_name>`) |
+| `azure_platform.resource_groups.cluster.name` | `rg-iic01-azl-eus-01` | Resource group for storage path resources |
+| `compute.azure_local.custom_location` | `cl-iic01` | Azure custom location for storage path registration |
+
+:::info Volume naming convention
+Convention: `csv-<site-prefix>-<cluster-id>-<resiliency-short>-<purpose>-<seq>`
+
+- `m2` = two-way mirror, `m3` = three-way mirror
+- Storage path names mirror this with `sp-` prefix
+- Azure resource names must be lowercase, hyphens only (no underscores)
+:::
+
+**If your YAML is not yet populated**, use the interactive helper script
+[`Set-StorageVolumesConfig.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/Set-StorageVolumesConfig.ps1)
+from the toolkit. It walks through each value from the calculator output and writes the
+`cluster_shared_volumes` block directly into your `infrastructure.yml`. Skip if the YAML
+is already populated.
+
+**Script location:**
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+ task-05-storage-configuration/powershell/Set-StorageVolumesConfig.ps1
+```
+
+**What it does:**
+- Reads your existing `infrastructure.yml` and pre-fills any values already present
+- Prompts for volume count, name, size (GB from the Calculator usable capacity output),
+ resiliency (`Mirror` / `Parity` / `MirrorAcceleratedParity`), and filesystem (`ReFS` / `NTFS`)
+- Auto-derives storage path names (`sp-` prefix) and paths (`C:\ClusterStorage\<vol>\VMs`) from each volume name
+- Prompts for CSV cache settings (enabled, per-node RAM size in MB)
+- Writes the completed `cluster_shared_volumes` block back into the YAML file
+
+**Prerequisites:** `powershell-yaml` module (`Install-Module powershell-yaml -Scope CurrentUser`)
+
+**Run from the toolkit repo root:**
+
+```powershell title="Run from the toolkit repo root"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-05-storage-configuration\powershell\Set-StorageVolumesConfig.ps1
+
+# Specify a config path explicitly if needed:
+.\scripts\...\Set-StorageVolumesConfig.ps1 -ConfigPath configs\infrastructure-iic01.yml
+```
+
+:::warning Review before proceeding
+Open `infrastructure.yml` after the script completes and verify the `cluster_shared_volumes`
+block before running any Section 2 scripts. The script does **not** validate volume names
+against the naming convention — confirm they follow `csv-<cluster>-<res>-<purpose>-<seq>`.
+:::
+
+---
+
+## Section 2 — Create CSV Volumes
+
+<Tabs groupId="csv-method">
+<TabItem value="wac" label="Windows Admin Center" default>
+
+**When to use:** Ad-hoc volume creation on a single cluster, GUI preference, or verifying
+existing volume state.
+
+**Prerequisites:** Windows Admin Center connected to the cluster. The S2D storage pool must
+be **Online** and **Healthy** (confirmed automatically during cluster deployment).
+
+**Steps:**
+
+1. Open Windows Admin Center and connect to the cluster (e.g. `iic-clus01`)
+2. In the left navigation, select **Storage** → **Volumes**
+3. Click **+ Create**
+4. Fill in the volume details:
+ - **Name:** `csv-iic01-clus01-m2-vmstore-prd-01`
+ - **Resiliency:** Two-way mirror (or Three-way mirror for 5+ node clusters)
+ - **Size:** 2000 GB
+ - **Filesystem:** ReFS
+ - **Provisioning:** Thin
+5. Click **Create** and wait for provisioning to complete
+6. Repeat for each additional volume defined in `cluster_shared_volumes.volumes[]`
+
+After creation, confirm each volume shows **Status: OK** in the Volumes list before proceeding
+to Section 3.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script (On Node)">
+
+**When to use:** Creating volumes directly on a cluster node via console, RDP, or Arc SSH
+without access to the full toolkit repo. Copy the script to the node and run it there.
+
+**Script location:**
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+ task-05-storage-configuration/
+ powershell/
+ New-StorageCSV-Standalone.ps1
+```
+
+```powershell title="New-StorageCSV-Standalone.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+ Standalone: creates S2D CSV volumes on the local cluster node.
+
+.DESCRIPTION
+ Phase 06 — Post-Deployment | Task 05 — Storage Configuration (Section 2)
+
+ Run this script directly ON a cluster node (console, RDP, or Arc SSH).
+ Fill in the #region CONFIGURATION block with your environment values.
+ No infrastructure.yml dependency.
+
+.NOTES
+ Must be run on (or remoted into) a cluster node with FailoverClusters
+ and Storage modules available.
+ Run as a domain or local administrator.
+#>
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region CONFIGURATION -----------------------------------------------------------
+# Replace all values below with your environment. Do not use real internal names
+# in examples — see IIC / IMPROBABLE below for the naming convention.
+
+$ClusterName = "iic-clus01" # Cluster name (pool = "S2D on $ClusterName")
+
+$Volumes = @(
+ [PSCustomObject]@{
+ VolumeName = "csv-iic01-clus01-m2-vmstore-prd-01"
+ SizeGB = 2000
+ Filesystem = "ReFS"
+ Resiliency = "Mirror" # Mirror | Parity | MirrorAcceleratedParity
+ Purpose = "VM storage"
+ }
+ [PSCustomObject]@{
+ VolumeName = "csv-iic01-clus01-m2-vmstore-prd-02"
+ SizeGB = 2000
+ Filesystem = "ReFS"
+ Resiliency = "Mirror"
+ Purpose = "VM storage"
+ }
+)
+#endregion ----------------------------------------------------------------------
+
+function Write-Status {
+ param([string]$Message, [string]$Level = "INFO")
+ $color = switch ($Level) { "OK" { "Green" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; default { "Cyan" } }
+ Write-Host "[$Level] $Message" -ForegroundColor $color
+}
+
+Write-Status "CSV Volume Creation — $ClusterName"
+Write-Status "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Verify required modules
+foreach ($mod in @("FailoverClusters", "Storage")) {
+ if (-not (Get-Module -Name $mod -ListAvailable)) {
+ Write-Status "Required module missing: $mod" -Level "ERROR"
+ throw "Install-WindowsFeature RSAT-Clustering-PowerShell, RSAT-Hyper-V-Tools"
+ }
+}
+
+# Resolve storage pool name
+$poolName = "S2D on $ClusterName"
+$pool = Get-StoragePool -FriendlyName $poolName -ErrorAction SilentlyContinue
+if (-not $pool) {
+ Write-Status "Storage pool '$poolName' not found. Ensure S2D is enabled and the cluster name is correct." -Level "ERROR"
+ throw "Storage pool not found: $poolName"
+}
+
+Write-Status "Pool : $($pool.FriendlyName) Health: $($pool.HealthStatus) " `
+ + "Available: $([math]::Round(($pool.Size - $pool.AllocatedSize)/1GB, 0)) GB"
+
+foreach ($vol in $Volumes) {
+ Write-Status "Processing volume: $($vol.VolumeName)"
+
+ $existing = Get-VirtualDisk -FriendlyName $vol.VolumeName -ErrorAction SilentlyContinue
+ if ($existing) {
+ Write-Status " Already exists (State: $($existing.OperationalStatus)) — skipping" -Level "WARN"
+ continue
+ }
+
+ try {
+ $fsParam = if ($vol.Filesystem -eq "ReFS") { "CSVFS_ReFS" } else { "CSVFS_NTFS" }
+
+ New-Volume `
+ -FriendlyName $vol.VolumeName `
+ -StoragePoolFriendlyName $poolName `
+ -Size ($vol.SizeGB * 1GB) `
+ -ProvisioningType Thin `
+ -ResiliencySettingName $vol.Resiliency `
+ -FileSystem $fsParam `
+ -ErrorAction Stop | Out-Null
+
+ Write-Status " Created: $($vol.SizeGB) GB $($vol.Resiliency) $($vol.Filesystem)" -Level "OK"
+ }
+ catch {
+ Write-Status " Failed: $_" -Level "ERROR"
+ }
+}
+
+Write-Status "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Status "Current CSV state:"
+Get-ClusterSharedVolume | ForEach-Object {
+ $state = ($_ | Get-ClusterSharedVolumeState).StateInfo
+ Write-Status " $($_.Name) → $state" -Level "OK"
+}
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+**When to use:** Initial deployment across all volumes from the management server, CI/CD
+pipelines, or any case where direct console access to a cluster node is not available.
+Uses PS Remoting (`Invoke-Command`) to the cluster VIP — `New-Volume` runs remotely on
+the cluster so it has access to the S2D storage pool.
+
+**Prerequisites:**
+
+```powershell title="Verify prerequisites on management server"
+# WinRM must be reachable from the management server to the cluster VIP
+Test-NetConnection -ComputerName "iic-clus01" -Port 5985
+
+# powershell-yaml module required for config loading
+Get-Module -Name powershell-yaml -ListAvailable
+# If missing: Install-Module powershell-yaml -Scope CurrentUser
+```
+
+**Script location:**
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+ task-05-storage-configuration/
+ powershell/
+ Invoke-StorageCSV-Orchestrated.ps1
+```
+
+```powershell title="Invoke-StorageCSV-Orchestrated.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+ Creates S2D CSV volumes on the Azure Local cluster via PS Remoting.
+
+.DESCRIPTION
+ Phase 06 — Post-Deployment | Task 05 — Storage Configuration (Section 2)
+
+ Reads cluster_shared_volumes.volumes[] from infrastructure.yml and creates
+ each defined volume via Invoke-Command to the cluster VIP. New-Volume is
+ executed remotely so it has direct access to the S2D storage pool.
+
+ Credential resolution order:
+ 1. -Credential parameter (if passed)
+ 2. Key Vault (identity.accounts.account_local_admin_username/password)
+ 3. Interactive Get-Credential prompt
+
+.PARAMETER ConfigPath
+ Path to infrastructure YAML. Defaults to configs/infrastructure.yml in CWD.
+
+.PARAMETER Credential
+ Override credential resolution — skips Key Vault and prompt.
+
+.PARAMETER TargetNode
+ Specific node hostname to remote into for volume creation. If empty, the
+ script remotes to the cluster VIP (recommended — cluster handles routing).
+
+.PARAMETER WhatIf
+ Log planned actions without making any changes.
+
+.PARAMETER LogPath
+ Override log directory. Default: logs\task-05-storage-csv\ in CWD.
+
+.PARAMETER StoragePoolName
+ Override S2D pool name. Default: auto-derived as "S2D on <cluster_name>".
+
+.NOTES
+ Run from the repo root.
+ Requires: FailoverClusters + Storage RSAT features on management server,
+ or PS Remoting will carry them from the cluster node.
+ Requires: powershell-yaml module (Install-Module powershell-yaml)
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+ [string] $ConfigPath = "",
+ [PSCredential]$Credential = $null,
+ [string[]] $TargetNode = @(),
+ [switch] $WhatIf,
+ [string] $LogPath = "",
+ [string] $StoragePoolName = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region LOGGING -----------------------------------------------------------------
+$taskFolderName = "task-05-storage-csv"
+$timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+
+if ([string]::IsNullOrEmpty($LogPath)) {
+ $LogPath = Join-Path (Get-Location).Path "logs\$taskFolderName"
+}
+if (-not (Test-Path $LogPath)) { New-Item -ItemType Directory -Path $LogPath -Force | Out-Null }
+$logFile = Join-Path $LogPath "${timestamp}_StorageCSV.log"
+
+function Write-Log {
+ param([string]$Message, [string]$Level = "INFO")
+ $entry = "[{0}] [{1,-5}] {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Message
+ $entry | Tee-Object -FilePath $logFile -Append | Out-Null
+ $color = switch ($Level) {
+ "ERROR" { "Red" }; "WARN" { "Yellow" }; "OK" { "Green" }; default { "Cyan" }
+ }
+ Write-Host $entry -ForegroundColor $color
+}
+#endregion
+
+#region CONFIG LOADING ----------------------------------------------------------
+if ([string]::IsNullOrEmpty($ConfigPath)) {
+ $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+}
+if (-not (Test-Path $ConfigPath)) {
+ Write-Log "Config not found: $ConfigPath" -Level "ERROR"; throw "Config not found"
+}
+
+Import-Module powershell-yaml -ErrorAction Stop
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+$clusterName = $cfg.compute.azure_local.cluster_name # compute.azure_local.cluster_name
+$csvConfig = $cfg.cluster_shared_volumes # cluster_shared_volumes
+
+if (-not $csvConfig.enabled) {
+ Write-Log "cluster_shared_volumes.enabled is false — nothing to do." -Level "WARN"
+ exit 0
+}
+
+$volumes = $csvConfig.volumes # cluster_shared_volumes.volumes[]
+
+if ([string]::IsNullOrEmpty($StoragePoolName)) {
+ $StoragePoolName = "S2D on $clusterName"
+}
+
+Write-Log "Cluster : $clusterName"
+Write-Log "Storage pool : $StoragePoolName"
+Write-Log "Volumes : $($volumes.Count) defined"
+Write-Log "WhatIf : $WhatIf"
+#endregion
+
+#region CREDENTIAL RESOLUTION ---------------------------------------------------
+function Resolve-KeyVaultRef {
+ param([string]$Uri, [string]$FallbackUsername)
+ if ($Uri -notmatch '^keyvault://') { return $null }
+ $parts = $Uri -replace '^keyvault://', '' -split '/', 2
+ $vaultName = $parts[0]; $secretName = $parts[1]
+ try {
+ $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
+ return $secret
+ } catch {
+ Write-Log "Az.KeyVault failed ($vaultName/$secretName), trying az CLI" -Level "WARN"
+ try {
+ $secret = az keyvault secret show --vault-name $vaultName --name $secretName --query value -o tsv 2>$null
+ if ($LASTEXITCODE -eq 0) { return $secret }
+ } catch {}
+ }
+ return $null
+}
+
+if ($null -eq $Credential) {
+ $kvUsername = $cfg.identity.accounts.account_local_admin_username # identity.accounts.account_local_admin_username
+ $kvPassword = $cfg.identity.accounts.account_local_admin_password # identity.accounts.account_local_admin_password
+ $resolvedUser = $kvUsername
+ $resolvedPass = Resolve-KeyVaultRef -Uri $kvPassword -FallbackUsername $kvUsername
+
+ if ($resolvedPass) {
+ Write-Log "Credential resolved from Key Vault"
+ $secPass = ConvertTo-SecureString $resolvedPass -AsPlainText -Force
+ $Credential = New-Object PSCredential($resolvedUser, $secPass)
+ } else {
+ Write-Log "Key Vault unavailable — prompting for credential" -Level "WARN"
+ $Credential = Get-Credential -UserName $resolvedUser -Message "Enter credentials for $clusterName"
+ }
+}
+#endregion
+
+#region VOLUME CREATION ---------------------------------------------------------
+# Remote target: cluster VIP by default (unless -TargetNode was passed)
+$remoteTarget = if ($TargetNode.Count -gt 0) { $TargetNode[0] } else { $clusterName }
+Write-Log "Remote target: $remoteTarget"
+
+$credParam = @{ Credential = $Credential }
+
+foreach ($vol in $volumes) {
+ $volName = $vol.volume_name # cluster_shared_volumes.volumes[].volume_name
+ $sizeGB = $vol.size_gb # cluster_shared_volumes.volumes[].size_gb
+ $fsType = if ($vol.filesystem -eq "ReFS") { "CSVFS_ReFS" } else { "CSVFS_NTFS" }
+ $resiliency = $vol.resiliency # cluster_shared_volumes.volumes[].resiliency
+
+ Write-Log "Volume: $volName ($sizeGB GB $resiliency $($vol.filesystem))"
+
+ if ($WhatIf) {
+ Write-Log " [WhatIf] Would create via New-Volume on $remoteTarget" -Level "WARN"
+ continue
+ }
+
+ try {
+ $result = Invoke-Command -ComputerName $remoteTarget @credParam -ScriptBlock {
+ param($VolName, $SizeGB, $Resiliency, $FsType, $PoolName)
+
+ $existing = Get-VirtualDisk -FriendlyName $VolName -ErrorAction SilentlyContinue
+ if ($existing) { return "EXISTS:$($existing.OperationalStatus)" }
+
+ New-Volume `
+ -FriendlyName $VolName `
+ -StoragePoolFriendlyName $PoolName `
+ -Size ($SizeGB * 1GB) `
+ -ProvisioningType Thin `
+ -ResiliencySettingName $Resiliency `
+ -FileSystem $FsType `
+ -ErrorAction Stop | Out-Null
+
+ return "CREATED"
+ } -ArgumentList $volName, $sizeGB, $resiliency, $fsType, $StoragePoolName
+
+ if ($result -like "EXISTS:*") {
+ Write-Log " Already exists ($($result -replace 'EXISTS:','')) — skipped" -Level "WARN"
+ } else {
+ Write-Log " Created successfully" -Level "OK"
+ }
+ }
+ catch {
+ Write-Log " Failed: $_" -Level "ERROR"
+ }
+}
+#endregion
+
+Write-Log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Log "Done. Proceed to Section 3 to register storage paths in Azure." -Level "OK"
+Write-Log "Log: $logFile"
+```
+
+</TabItem>
+<TabItem value="arc-ssh" label="Arc SSH">
+
+**When to use:** When PS Remoting (WinRM) is not available or permitted from the management
+server, but Arc SSH access is configured (completed in Task 04). This pipes a PowerShell
+command through the Arc SSH tunnel to a cluster node.
+
+:::info Arc SSH runs on a node, not the cluster VIP
+`New-Volume` accesses the S2D storage pool through the Failover Clustering service, which
+is available on any cluster node. Targeting a specific node works correctly —
+the volume creation is cluster-wide regardless of which node you remote into.
+:::
+
+**Prerequisites:**
+
+```powershell title="Verify Arc SSH is ready"
+az account show # Logged in
+az extension list --query "[?name=='ssh']" # az ssh extension installed
+```
+
+**Step 1 — Identify a target node's Arc resource:**
+
+```powershell title="Get Arc machine name for a cluster node"
+$sub = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+$rg = "rg-iic01-azl-eus-01"
+
+# List Arc machines in the cluster RG — pick any cluster node
+az connectedmachine list --resource-group $rg --query "[].{name:name,status:status}" -o table
+```
+
+**Step 2 — Run volume creation via Arc SSH:**
+
+Repeat the `az ssh arc --command` block for each volume defined in
+`cluster_shared_volumes.volumes[]`. Change `$volName` and `$sizeGB` each time.
+
+```powershell title="Create each CSV volume via Arc SSH (run per volume)"
+$rg = "rg-iic01-azl-eus-01"
+$node = "iic-01-n01" # any cluster node (not the cluster VIP)
+$user = "IMPROBABLE\svc-azlocal-admin"
+
+# Volume parameters — repeat this block per volume
+$volName = "csv-iic01-clus01-m2-vmstore-prd-01"
+$sizeGB = 2000
+$resiliency = "Mirror"
+$clusterName = "iic-clus01"
+$poolName = "S2D on $clusterName"
+
+$psCommand = @"
+`$pool = Get-StoragePool -FriendlyName '$poolName' -ErrorAction Stop;
+`$exist = Get-VirtualDisk -FriendlyName '$volName' -ErrorAction SilentlyContinue;
+if (`$exist) { Write-Output 'EXISTS'; exit 0 };
+New-Volume -FriendlyName '$volName' -StoragePoolFriendlyName `$pool.FriendlyName ``
+ -Size ($sizeGB * 1GB) -ProvisioningType Thin ``
+ -ResiliencySettingName '$resiliency' -FileSystem CSVFS_ReFS -ErrorAction Stop | Out-Null;
+Write-Output 'CREATED'
+"@
+
+az ssh arc `
+ --resource-group $rg `
+ --name $node `
+ --local-user $user `
+ --command "powershell -NoProfile -Command `"$psCommand`""
+```
+
+**Step 3 — Verify volumes are online:**
+
+```powershell title="Verify CSV state via Arc SSH"
+az ssh arc `
+ --resource-group "rg-iic01-azl-eus-01" `
+ --name "iic-01-n01" `
+ --local-user "IMPROBABLE\svc-azlocal-admin" `
+ --command "powershell -NoProfile -Command `"Get-ClusterSharedVolume | Select-Object Name, State`""
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Section 3 — Register Storage Paths in Azure
+
+Storage paths are Azure resources that tell Azure Local where to place VM disks on the
+cluster storage. Each storage path maps an Azure resource name to a local path inside a CSV.
+
+Registration uses the `az stack-hci-vm` CLI extension and must be run from a machine with
+`az` CLI access to the subscription.
+
+<Tabs groupId="paths-method">
+<TabItem value="portal" label="Azure Portal" default>
+
+**When to use:** Ad-hoc registration, verifying existing path state, or re-registering after
+a storage change.
+
+**Steps:**
+
+1. Open the [Azure portal](https://portal.azure.com)
+2. Navigate to **Azure Local** → select your cluster (`iic-clus01`)
+3. In the left menu under **Settings**, select **Storage paths**
+4. Click **+ Add storage path** and fill in:
+ - **Name:** `sp-iic01-clus01-m2-vmstore-prd-01`
+ - **Custom location:** `cl-iic01` (auto-populated if only one exists)
+ - **Path:** `C:\ClusterStorage\csv-iic01-clus01-m2-vmstore-prd-01\VMs`
+5. Click **Add** and wait for `ProvisioningState: Succeeded`
+6. Repeat for each entry in `cluster_shared_volumes.storage_paths`
+
+:::tip CLI is faster for multiple paths
+Use the orchestrated or standalone tab to register all paths in one run rather than
+clicking through the portal for each one.
+:::
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+**When to use:** Initial deployment, CI/CD, or any time multiple paths need to be
+registered consistently from the management server.
+
+**Script location:**
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+ task-05-storage-configuration/
+ powershell/
+ Invoke-StoragePaths-Orchestrated.ps1
+```
+
+```powershell title="Invoke-StoragePaths-Orchestrated.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+ Registers Azure Local storage paths in Azure from infrastructure.yml.
+
+.DESCRIPTION
+ Phase 06 — Post-Deployment | Task 05 — Storage Configuration (Section 3)
+
+ Reads cluster_shared_volumes.storage_paths from infrastructure.yml and
+ registers each entry as an Azure storage path resource using:
+ az stack-hci-vm storagepath create
+
+ No PS Remoting required — all operations are Azure control-plane calls
+ via az CLI from the management server.
+
+.PARAMETER ConfigPath
+ Path to infrastructure YAML. Defaults to configs/infrastructure.yml in CWD.
+
+.PARAMETER Credential
+ Not used for storage path registration (Azure CLI handles auth via az login).
+ Included to satisfy the mandatory Invoke- script parameter contract.
+
+.PARAMETER TargetNode
+ Not applicable for this task — storage paths are cluster-scoped Azure resources.
+ Included to satisfy the mandatory Invoke- script parameter contract.
+
+.PARAMETER WhatIf
+ Log planned az CLI commands without executing them.
+
+.PARAMETER LogPath
+ Override log directory. Default: logs\task-05-storage-paths\ in CWD.
+
+.NOTES
+ Run from the repo root.
+ Requires: az CLI logged in with Contributor on the cluster resource group.
+ Requires: az extension add --name stack-hci-vm
+ Requires: powershell-yaml module (Install-Module powershell-yaml)
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+ [string] $ConfigPath = "",
+ [PSCredential]$Credential = $null,
+ [string[]] $TargetNode = @(),
+ [switch] $WhatIf,
+ [string] $LogPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region LOGGING -----------------------------------------------------------------
+$taskFolderName = "task-05-storage-paths"
+$timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+
+if ([string]::IsNullOrEmpty($LogPath)) {
+ $LogPath = Join-Path (Get-Location).Path "logs\$taskFolderName"
+}
+if (-not (Test-Path $LogPath)) { New-Item -ItemType Directory -Path $LogPath -Force | Out-Null }
+$logFile = Join-Path $LogPath "${timestamp}_StoragePaths.log"
+
+function Write-Log {
+ param([string]$Message, [string]$Level = "INFO")
+ $entry = "[{0}] [{1,-5}] {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Message
+ $entry | Tee-Object -FilePath $logFile -Append | Out-Null
+ $color = switch ($Level) {
+ "ERROR" { "Red" }; "WARN" { "Yellow" }; "OK" { "Green" }; default { "Cyan" }
+ }
+ Write-Host $entry -ForegroundColor $color
+}
+#endregion
+
+#region CONFIG LOADING ----------------------------------------------------------
+if ([string]::IsNullOrEmpty($ConfigPath)) {
+ $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+}
+if (-not (Test-Path $ConfigPath)) {
+ Write-Log "Config not found: $ConfigPath" -Level "ERROR"; throw "Config not found"
+}
+
+Import-Module powershell-yaml -ErrorAction Stop
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+$resourceGroup = $cfg.azure_platform.resource_groups.cluster.name # azure_platform.resource_groups.cluster.name
+$customLocation = $cfg.compute.azure_local.custom_location # compute.azure_local.custom_location
+$csvConfig = $cfg.cluster_shared_volumes # cluster_shared_volumes
+
+if (-not $csvConfig.enabled) {
+ Write-Log "cluster_shared_volumes.enabled is false — nothing to do." -Level "WARN"
+ exit 0
+}
+
+$storagePaths = $csvConfig.storage_paths.GetEnumerator() # cluster_shared_volumes.storage_paths
+
+Write-Log "Resource group : $resourceGroup"
+Write-Log "Custom location : $customLocation"
+Write-Log "WhatIf : $WhatIf"
+#endregion
+
+#region PREREQ CHECK ------------------------------------------------------------
+Write-Log "Verifying az CLI and stack-hci-vm extension..."
+
+$azAccount = az account show --query name -o tsv 2>&1
+if ($LASTEXITCODE -ne 0) {
+ Write-Log "az CLI not logged in. Run: az login" -Level "ERROR"; throw "az CLI auth required"
+}
+Write-Log "Azure account: $azAccount" -Level "OK"
+
+$extCheck = az extension list --query "[?name=='stack-hci-vm'].name" -o tsv 2>$null
+if ([string]::IsNullOrEmpty($extCheck)) {
+ Write-Log "stack-hci-vm extension not installed. Installing..." -Level "WARN"
+ if (-not $WhatIf) {
+ az extension add --name stack-hci-vm --yes 2>&1 | Out-Null
+ Write-Log "Extension installed" -Level "OK"
+ }
+}
+#endregion
+
+#region STORAGE PATH REGISTRATION -----------------------------------------------
+foreach ($entry in $storagePaths) {
+ $pathKey = $entry.Key
+ $pathName = $entry.Value.name # cluster_shared_volumes.storage_paths.<key>.name
+ $pathVal = $entry.Value.path # cluster_shared_volumes.storage_paths.<key>.path
+
+ Write-Log "Storage path [$pathKey]: $pathName → $pathVal"
+
+ if ($WhatIf) {
+ Write-Log " [WhatIf] az stack-hci-vm storagepath create --name $pathName --path $pathVal" -Level "WARN"
+ continue
+ }
+
+ # Check if already exists
+ $existing = az stack-hci-vm storagepath show `
+ --resource-group $resourceGroup `
+ --name $pathName `
+ --query "provisioningState" `
+ -o tsv 2>$null
+
+ if ($existing -eq "Succeeded") {
+ Write-Log " Already registered (Succeeded) — skipping" -Level "WARN"
+ continue
+ }
+
+ try {
+ az stack-hci-vm storagepath create `
+ --resource-group $resourceGroup `
+ --custom-location $customLocation `
+ --name $pathName `
+ --path $pathVal `
+ --output none `
+ 2>&1 | ForEach-Object { Write-Log " az: $_" }
+
+ if ($LASTEXITCODE -eq 0) {
+ Write-Log " Registered successfully" -Level "OK"
+ } else {
+ Write-Log " az CLI returned non-zero exit code" -Level "ERROR"
+ }
+ }
+ catch {
+ Write-Log " Failed: $_" -Level "ERROR"
+ }
+}
+#endregion
+
+Write-Log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Log "Done. Proceed to Section 4 to validate." -Level "OK"
+Write-Log "Log: $logFile"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+**When to use:** Registering storage paths on a machine without the full toolkit repo, or
+re-registering after a node replacement or storage change.
+
+**Script location:**
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+ task-05-storage-configuration/
+ powershell/
+ New-StoragePaths-Standalone.ps1
+```
+
+```powershell title="New-StoragePaths-Standalone.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+ Standalone: registers Azure Local storage paths in Azure via az CLI.
+
+.DESCRIPTION
+ Phase 06 — Post-Deployment | Task 05 — Storage Configuration (Section 3)
+
+ Fill in the #region CONFIGURATION block and run from any machine with
+ az CLI access. No infrastructure.yml dependency. No PS Remoting.
+
+.NOTES
+ Requires: az CLI logged in with Contributor on the cluster resource group.
+ Requires: az extension add --name stack-hci-vm
+#>
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region CONFIGURATION -----------------------------------------------------------
+$ResourceGroup = "rg-iic01-azl-eus-01"
+$CustomLocation = "cl-iic01"
+
+$StoragePaths = @(
+ [PSCustomObject]@{
+ Name = "sp-iic01-clus01-m2-vmstore-prd-01"
+ Path = "C:\ClusterStorage\csv-iic01-clus01-m2-vmstore-prd-01\VMs"
+ }
+ [PSCustomObject]@{
+ Name = "sp-iic01-clus01-m2-vmstore-prd-02"
+ Path = "C:\ClusterStorage\csv-iic01-clus01-m2-vmstore-prd-02\VMs"
+ }
+)
+#endregion ----------------------------------------------------------------------
+
+function Write-Status {
+ param([string]$Message, [string]$Level = "INFO")
+ $color = switch ($Level) { "OK" { "Green" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; default { "Cyan" } }
+ Write-Host "[$Level] $Message" -ForegroundColor $color
+}
+
+# Verify az CLI login
+$account = az account show --query name -o tsv 2>&1
+if ($LASTEXITCODE -ne 0) {
+ Write-Status "Not logged in to az CLI. Run: az login" -Level "ERROR"; exit 1
+}
+Write-Status "Azure account : $account" -Level "OK"
+
+# Ensure stack-hci-vm extension
+$extCheck = az extension list --query "[?name=='stack-hci-vm'].name" -o tsv 2>$null
+if ([string]::IsNullOrEmpty($extCheck)) {
+ Write-Status "Installing stack-hci-vm extension..." -Level "WARN"
+ az extension add --name stack-hci-vm --yes 2>&1 | Out-Null
+ Write-Status "Extension installed" -Level "OK"
+}
+
+Write-Status "Registering storage paths in $ResourceGroup"
+Write-Status "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+foreach ($sp in $StoragePaths) {
+ Write-Status "Processing: $($sp.Name)"
+
+ $existing = az stack-hci-vm storagepath show `
+ --resource-group $ResourceGroup `
+ --name $sp.Name `
+ --query "provisioningState" `
+ -o tsv 2>$null
+
+ if ($existing -eq "Succeeded") {
+ Write-Status " Already registered — skipping" -Level "WARN"
+ continue
+ }
+
+ az stack-hci-vm storagepath create `
+ --resource-group $ResourceGroup `
+ --custom-location $CustomLocation `
+ --name $sp.Name `
+ --path $sp.Path `
+ --output none
+
+ if ($LASTEXITCODE -eq 0) {
+ Write-Status " Registered: $($sp.Path)" -Level "OK"
+ } else {
+ Write-Status " Failed — check az CLI output above" -Level "ERROR"
+ }
+}
+
+Write-Status "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Status "Done. Run Section 4 validation to confirm." -Level "OK"
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+Run all checks from the management server (or a cluster node for pool/volume checks).
+
+```powershell title="1 — Verify storage pool health"
+# Run on a cluster node or via PS Remoting to the cluster
+Invoke-Command -ComputerName "iic-clus01" -ScriptBlock {
+ Get-StoragePool | Where-Object FriendlyName -like "S2D*" |
+ Select-Object FriendlyName, HealthStatus, OperationalStatus,
+ @{N='AllocatedTB'; E={[math]::Round($_.AllocatedSize/1TB, 2)}},
+ @{N='FreeTB'; E={[math]::Round(($_.Size - $_.AllocatedSize)/1TB, 2)}}
+}
+```
+
+```powershell title="2 — Verify CSV volumes are online"
+Invoke-Command -ComputerName "iic-clus01" -ScriptBlock {
+ Get-ClusterSharedVolume | Select-Object Name, State,
+ @{N='Path'; E={ $_.SharedVolumeInfo.FriendlyVolumeName }}
+}
+```
+
+```powershell title="3 — Verify virtual disk health"
+Invoke-Command -ComputerName "iic-clus01" -ScriptBlock {
+ Get-VirtualDisk | Select-Object FriendlyName, HealthStatus, OperationalStatus,
+ @{N='SizeGB'; E={[math]::Round($_.Size/1GB, 0)}}
+}
+```
+
+```powershell title="4 — Verify Azure storage paths registered"
+az stack-hci-vm storagepath list `
+ --resource-group "rg-iic01-azl-eus-01" `
+ --query "[].{name:name, path:extendedLocation, state:provisioningState}" `
+ -o table
+```
+
+**Expected results:**
+
+| Check | Expected |
+|-------|----------|
+| Storage pool `HealthStatus` | `Healthy` |
+| Storage pool `OperationalStatus` | `OK` |
+| `Get-ClusterSharedVolume` State | `Online` for all volumes |
+| `Get-VirtualDisk` HealthStatus | `Healthy` for all virtual disks |
+| `storagepath list` provisioningState | `Succeeded` for all paths |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 04: SSH Connectivity](./task-04-ssh-connectivity-to-nodes.mdx) | [Phase 06 Index](./index.mdx) | [Task 06: Image Downloads](./task-06-image-downloads.mdx) |

@@ -1,0 +1,145 @@
+---
+title: "Deprovision Steps"
+sidebar_label: "Deprovision Steps"
+sidebar_position: 3
+description: "Azure Local Anywhere deprovisioning procedures for different scenarios"
+---
+
+# Deprovision Steps
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Cluster decommissioning 
+> **PURPOSE**: Decommission and clean up Azure Local cluster 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+---
+
+## Overview
+
+Deprovisioning steps vary depending on the specific situation and customer requirements. This document covers three primary deprovisioning scenarios.
+
+---
+
+## Deprovisioning Scenarios
+
+| Scenario | Description | Primary Actions |
+|----------|-------------|------------------|
+| **Scenario 1** | Customer stays at Azure Local Cloud but no longer uses Azure Local; hardware repurposed | Remove Azure resources, reimage nodes |
+| **Scenario 2** | Customer takes over self-management of their Azure Local solution | Transfer credentials, remove Azure Local Cloud access |
+| **Scenario 3** | Customer leaves Azure Local Cloud entirely with their Azure Local solution | Full handover, remove all Azure Local Cloud integration |
+
+---
+
+## Scenario 1: Deprovisioning for Hardware Repurpose
+
+**Use Case**: Customer will remain a Azure Local Cloud customer but is discontinuing Azure Local services. The hardware will be repurposed for a new customer.
+
+### Pre-Deprovisioning Checklist
+
+- [ ] Confirm customer has migrated all workloads off the cluster
+- [ ] Verify all customer data has been backed up or removed
+- [ ] Obtain written customer approval for decommissioning
+- [ ] Document current configuration for CMDB update
+
+### Deprovisioning Steps
+
+| Step | Action | Responsible Team |
+|------|--------|------------------|
+| 1 | **Stop all running VMs** on the cluster | Operations |
+| 2 | **Disable Azure Site Recovery** replication for all protected VMs | Operations |
+| 3 | **Remove backup policies** and delete recovery points (per retention policy) | Operations |
+| 4 | **Unregister cluster** from Azure Arc | Operations |
+| 5 | **Delete Azure resources** from customer tenant:<br/>- Azure Local cluster resource<br/>- Arc Resource Bridge<br/>- Custom locations<br/>- Resource groups (if dedicated) | Operations |
+| 6 | **Remove DNS records** for cluster services | Network Team |
+| 7 | **Update CMDB** to mark CIs as decommissioned | Implementation |
+| 8 | **Reimage all nodes** using NIM process for future customer | Implementation |
+
+:::warning Data Destruction
+Ensure all storage volumes are securely wiped before reimaging nodes for a new customer deployment.
+:::
+
+---
+
+## Scenario 2: Deprovisioning for Customer Self-Management
+
+**Use Case**: Customer is transitioning from Azure Local Cloud managed services to self-management while keeping their Azure Local solution operational.
+
+### Pre-Handover Checklist
+
+- [ ] Complete knowledge transfer sessions (see [Client Training](./client-training-handover.mdx))
+- [ ] Customer has trained personnel ready to assume management
+- [ ] Customer has documented their own operational procedures
+- [ ] Transition timeline agreed upon
+
+### Deprovisioning Steps
+
+| Step | Action | Responsible Team |
+|------|--------|------------------|
+| 1 | **Change passwords** on all Active Directory service accounts | Security |
+| 2 | **Change passwords** on all Active Directory user accounts | Security |
+| 3 | **Remove Azure Local Cloud accounts** from Active Directory:<br/>- All non-service accounts<br/>- Accounts not directly related to cluster management | Security |
+| 4 | **Hand over Azure subscriptions** to customer:<br/>- Transfer subscription ownership<br/>- Update billing information<br/>- Verify customer has Global Administrator access | Operations |
+| 5 | **Remove Azure Local Cloud access** to customer subscription:<br/>- Remove all Azure Local Cloud employee accounts<br/>- Remove any Azure Local Cloud service principals<br/>- Revoke RBAC assignments | Security |
+| 6 | **Transfer monitoring ownership**:<br/>- Hand over alerting configurations<br/>- Update notification recipients<br/>- Transfer Log Analytics workspace ownership | Operations |
+| 7 | **Update CMDB** to reflect customer self-management status | Implementation |
+| 8 | **Provide final documentation package** to customer | Implementation |
+
+### Credentials to Transfer
+
+| Account Type | Action |
+|--------------|--------|
+| Local Administrator | Change password, provide to customer |
+| Domain Administrator | Change password, provide to customer |
+| Cluster Service Account | Change password, document for customer |
+| Azure Arc Service Principal | Transfer ownership or recreate |
+| iDRAC Credentials | Change password, provide to customer |
+
+---
+
+## Scenario 3: Customer Exit with Hardware
+
+**Use Case**: Customer is leaving Azure Local Cloud and taking their Azure Local solution with them (customer-owned hardware).
+
+### Pre-Exit Checklist
+
+- [ ] Verify hardware ownership documentation
+- [ ] Confirm all contractual obligations are met
+- [ ] Complete final billing reconciliation
+- [ ] Schedule physical disconnect and removal
+
+### Deprovisioning Steps
+
+Follow all steps from **Scenario 2**, plus:
+
+| Step | Action | Responsible Team |
+|------|--------|------------------|
+| 1-8 | Complete all Scenario 2 steps | Various |
+| 9 | **Disconnect VPN tunnels** from Azure Local Cloud infrastructure | Network Team |
+| 10 | **Remove firewall rules** for Azure Local Cloud management access | Security |
+| 11 | **Reclaim IP addresses** assigned from Azure Local Cloud ranges | Network Team |
+| 12 | **Physically disconnect** hardware from Azure Local Cloud infrastructure | Data Center |
+| 13 | **Coordinate hardware removal** with customer logistics | Facilities |
+| 14 | **Complete exit documentation** and close customer account | Account Management |
+
+---
+
+## Post-Deprovisioning Verification
+
+After completing any deprovisioning scenario:
+
+- [ ] Verify no Azure resources remain in customer tenant (for Scenario 1)
+- [ ] Confirm Azure Local Cloud has no access to customer systems
+- [ ] CMDB updated with final status
+- [ ] All documentation archived per retention policy
+- [ ] Customer acknowledgment of deprovisioning completion received
+
+---
+
+## Related Documentation
+
+- [CMDB Creation](./cmdb-creation.mdx)
+- [Client Training and Handover](./client-training-handover.mdx)
+- [Cluster Handover Checklist](../07-go-live/02-cluster-handover/task-03-complete-handover-checklist.mdx)

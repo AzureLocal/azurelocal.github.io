@@ -1,0 +1,288 @@
+---
+title: "Task 01: Visual Hardware Inspection"
+sidebar_label: "Task 01: Hardware Inspection"
+sidebar_position: 1
+description: "Physical verification of servers, network equipment, and cabling"
+category: Runbook
+scope: Physical infrastructure verification
+purpose: Verify all hardware is properly installed before network validation
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-03
+version: 1.1
+tags: ["azure-local", "hardware-inspection", "physical-verification", "pre-deployment"]
+keywords: ["hardware inspection", "rack verification", "cabling", "iDRAC", "physical install"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Visual Hardware Inspection
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Physical infrastructure verification 
+> **PURPOSE**: Verify all hardware is properly installed before network validation 
+> **MASTER REFERENCE**: [Dell AX Installation Guide](https://www.dell.com/support) 
+
+**Status**: Active 
+**Estimated Time**: 30 minutes 
+---
+
+## Overview
+
+Perform visual inspection of all physical infrastructure to verify installation matches the Low-Level Design (LLD) specifications before proceeding with network validation.
+
+**Performed by:** On-site technician or remote validation via photos/video
+
+---
+
+## Execution Options
+
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="On-Site Inspection" default>
+
+Walk the data center and verify each checklist item below. Take photos of:
+- Overall rack layout
+- Server front panels (LED status)
+- Cable routing and management
+- OpenGear installation
+
+**Photo storage location:** `artifacts/phase-02-enterprise-readiness/hardware-photos/`
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+> **When to use**: Managing from a domain-joined management server — config-driven via infrastructure.yml
+
+#### Script
+
+**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/powershell/Test-HardwareInspection.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/azure-cli/Test-HardwareInspection.ps1` |
+| Bash | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/bash/test-hardware-inspection.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Test-HardwareInspection.ps1
+# Execution: Run FROM management server — reads infrastructure.yml
+# Prerequisites: powershell-yaml module, network access to OOB VLAN
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath
+)
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($ConfigPath) {
+ $ConfigFile = $ConfigPath
+} else {
+ $ConfigFile = Join-Path $ScriptDir "..\..\..\..\configs\infrastructure.yml"
+}
+if (!(Test-Path $ConfigFile)) { throw "infrastructure.yml not found at $ConfigFile" }
+
+Import-Module powershell-yaml -ErrorAction Stop
+
+$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
+$nodes = $config["nodes"]
+
+Write-Host "[1/3] Testing iDRAC connectivity..." -ForegroundColor Cyan
+$results = @()
+foreach ($key in $nodes.Keys) {
+ $node = $nodes[$key]
+ $hostname = $node["hostname"]
+ $idracIp = $node["idrac_ip"]
+
+ $test = Test-NetConnection -ComputerName $idracIp -Port 443 -WarningAction SilentlyContinue
+ $status = if ($test.TcpTestSucceeded) { "Reachable" } else { "UNREACHABLE" }
+ $color = if ($test.TcpTestSucceeded) { "Green" } else { "Red" }
+ Write-Host " $hostname ($idracIp): $status" -ForegroundColor $color
+ $results += [PSCustomObject]@{ Node = $hostname; iDRAC = $idracIp; Status = $status }
+}
+
+Write-Host "
+[2/3] Testing OpenGear connectivity..." -ForegroundColor Cyan
+$ogIp = $config["network_devices"]["opengear"]["ip"]
+$ogHost = $config["network_devices"]["opengear"]["hostname"]
+$ogTest = Test-NetConnection -ComputerName $ogIp -Port 443 -WarningAction SilentlyContinue
+$ogStatus = if ($ogTest.TcpTestSucceeded) { "Reachable" } else { "UNREACHABLE" }
+$ogColor = if ($ogTest.TcpTestSucceeded) { "Green" } else { "Red" }
+Write-Host " $ogHost ($ogIp): $ogStatus" -ForegroundColor $ogColor
+
+Write-Host "
+[3/3] Summary" -ForegroundColor Cyan
+$results | Format-Table -AutoSize
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Quick verification without infrastructure.yml — manually set variables in the configuration block.
+
+#### Script
+
+**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/powershell/Test-HardwareInspection-Standalone.ps1`
+
+#### Code
+
+```powershell
+#region CONFIGURATION
+$iDRACs = @(
+ @{ Hostname = "node01"; IP = "10.245.64.11" },
+ @{ Hostname = "node02"; IP = "10.245.64.12" }
+)
+$OpenGearIP = "10.245.64.5"
+$OpenGearName = "og01"
+#endregion
+
+Write-Host "=== iDRAC Connectivity ===" -ForegroundColor Cyan
+foreach ($node in $iDRACs) {
+ $test = Test-NetConnection -ComputerName $node.IP -Port 443 -WarningAction SilentlyContinue
+ $status = if ($test.TcpTestSucceeded) { "Reachable" } else { "UNREACHABLE" }
+ $color = if ($test.TcpTestSucceeded) { "Green" } else { "Red" }
+ Write-Host " $($node.Hostname) ($($node.IP)): $status" -ForegroundColor $color
+}
+
+Write-Host "
+=== OpenGear Connectivity ===" -ForegroundColor Cyan
+$ogTest = Test-NetConnection -ComputerName $OpenGearIP -Port 443 -WarningAction SilentlyContinue
+$ogStatus = if ($ogTest.TcpTestSucceeded) { "Reachable" } else { "UNREACHABLE" }
+Write-Host " $OpenGearName ($OpenGearIP): $ogStatus" -ForegroundColor $(if ($ogTest.TcpTestSucceeded) {"Green"} else {"Red"})
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Server Installation Checklist
+
+| Check | Description | Status |
+|-------|-------------|--------|
+| Rack position | Servers installed in correct rack units per LLD | ☐ |
+| Power connections | Dual PSU connected to redundant PDUs | ☐ |
+| Power status | All servers powered on, no amber LEDs | ☐ |
+| Front panel | LCD/LED status indicators normal | ☐ |
+| Cable management | Cables routed through management arms | ☐ |
+
+---
+
+## Network Cabling Checklist
+
+### Management Network
+
+| Node | Port | Destination | Cable Type | Status |
+|------|------|-------------|------------|--------|
+| Node 1 | iDRAC | OpenGear sw0p1 | Cat6 | ☐ |
+| Node 2 | iDRAC | OpenGear sw0p2 | Cat6 | ☐ |
+| Node 3 | iDRAC | OpenGear sw0p3 | Cat6 | ☐ |
+| Node 4 | iDRAC | OpenGear sw0p4 | Cat6 | ☐ |
+
+### Storage/Compute Network (25/100GbE)
+
+| Node | Port 1 | Port 2 | Cable Type | Status |
+|------|--------|--------|------------|--------|
+| Node 1 | TOR1 Eth1/1/1 | TOR2 Eth1/1/1 | DAC/AOC | ☐ |
+| Node 2 | TOR1 Eth1/1/2 | TOR2 Eth1/1/2 | DAC/AOC | ☐ |
+| Node 3 | TOR1 Eth1/1/3 | TOR2 Eth1/1/3 | DAC/AOC | ☐ |
+| Node 4 | TOR1 Eth1/1/4 | TOR2 Eth1/1/4 | DAC/AOC | ☐ |
+
+### VLT Peer Link (TOR1 ↔ TOR2)
+
+| Connection | Ports | Cable Type | Status |
+|------------|-------|------------|--------|
+| VLTi Link 1 | Eth1/1/11 ↔ Eth1/1/11 | DAC/AOC | ☐ |
+| VLTi Link 2 | Eth1/1/12 ↔ Eth1/1/12 | DAC/AOC | ☐ |
+
+---
+
+## OpenGear Console Server Checklist
+
+| Check | Description | Status |
+|-------|-------------|--------|
+| Rack position | OpenGear installed per LLD | ☐ |
+| Power | Power LED solid green | ☐ |
+| NET1 | Connected to internet-routable network | ☐ |
+| NET2 | Connected to OOB management network | ☐ |
+| Serial ports | Console cables connected to switches | ☐ |
+| Integrated switch | iDRAC cables connected to sw0p1-sw0p4 | ☐ |
+
+---
+
+## Top-of-Rack Switch Checklist
+
+| Check | TOR1 | TOR2 | Status |
+|-------|------|------|--------|
+| Power | Dual PSU connected | Dual PSU connected | ☐ |
+| Status LEDs | Normal operation | Normal operation | ☐ |
+| Console cable | Connected to OpenGear | Connected to OpenGear | ☐ |
+| Management port | Connected to mgmt network | Connected to mgmt network | ☐ |
+| Uplinks | Connected to core/distribution | Connected to core/distribution | ☐ |
+
+---
+
+## Issues Log
+
+Document any discrepancies found during inspection:
+
+| Issue | Location | Severity | Resolution Required |
+|-------|----------|----------|---------------------|
+| | | | |
+| | | | |
+
+---
+
+## Acceptance Criteria
+
+- All checklist items verified and documented
+- Photos uploaded to deployment folder: `artifacts/phase-02-enterprise-readiness/hardware-photos/`
+- Any discrepancies logged in Issues table
+
+---
+
+## Validation
+
+**All checks passed?**
+
+- ☐ **YES** - Proceed to [Task 2: Network Service Verification](./task-02-network-service-verification.mdx)
+- ☐ **NO** - Document issues and coordinate with site team for resolution before proceeding
+
+---
+
+## Next Steps
+
+| Step Complete? | Next Action |
+|----------------|-------------|
+| ✅ Yes | Proceed to [Task 2: Network Service Verification](./task-02-network-service-verification.mdx) |
+| ❌ No | Resolve physical infrastructure issues before continuing |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Phase 02: Enterprise Readiness](./index.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Task 02: Network Service Verification →](./task-02-network-service-verification.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Standardized runbook format |
+
+---
+
+*End of Task*

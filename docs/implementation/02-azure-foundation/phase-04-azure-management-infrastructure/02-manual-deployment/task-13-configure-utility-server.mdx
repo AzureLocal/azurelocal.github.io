@@ -1,0 +1,397 @@
+---
+title: "Task 13: Configure Utility Server"
+sidebar_label: "Task 13: Utility Server"
+sidebar_position: 13
+description: "Configure the utility/management server — domain join, install management tools, configure Remote Server Administration Tools (RSAT), and prepare as the primary admin jump box."
+category: Runbook
+scope: Utility server configuration and domain join
+purpose: Establish management jump box for Azure Local administration
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, utility-server, management, jump-box, rsat]
+keywords: [utility server, jump box, RSAT, domain join, management tools, WAC]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 13: Configure Utility Server
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Utility server configuration and domain join 
+> **PURPOSE**: Establish management jump box for Azure Local administration 
+> **MASTER REFERENCE**: [Microsoft Learn - RSAT](https://learn.microsoft.com/en-us/troubleshoot/windows-server/system-management-components/remote-server-administration-tools)
+
+**Status**: Active
+
+---
+
+## Overview
+
+The utility server acts as the primary management jump box for Azure Local administration. This task domain-joins the VM, installs Remote Server Administration Tools (RSAT), management utilities, and configures it as the central point for cluster operations.
+
+:::info Task Classification
+**Execution Target**: Windows Server (on-VM configuration) 
+**Tab Profile**: 4 tabs — Server Manager · Direct Script (On Node) · Orchestrated Script (Mgmt Server) · Standalone Script
+:::
+
+### Configuration Summary
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| VM Name | `vm-util-azl-eus-01` | `azure_vms.utility.name` |
+| Hostname | `util-eus-01` | `azure_vms.utility.hostname` |
+| FQDN | `util-eus-01.azrl.mgmt` | `azure_vms.utility.fqdn` |
+| IP Address | `10.250.1.38` | `azure_vms.utility.private_ip` |
+| OS | Windows Server 2025 | `azure_vms.utility.os` |
+| Domain | `azrl.mgmt` | `active_directory.domain.fqdn` |
+| Role | Utility/Management Server | `azure_vms.utility.role` |
+
+### Software to Install
+
+| Package | Purpose |
+|---------|---------|
+| RSAT (all features) | Remote Server Administration Tools |
+| Az PowerShell modules | Azure management |
+| Azure CLI | Azure management (CLI) |
+| Edge / Chrome | Browser for portal access |
+| Windows Terminal | Modern terminal |
+
+## Prerequisites
+
+- [ ] [Task 12: Configure AD DS](./task-12-configure-adds) completed — domain functional
+- [ ] DNS resolving domain FQDN from the utility server
+- [ ] VM admin credentials available
+- [ ] Domain join credentials available
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Target VM | utility | `azure_vms.utility` |
+| Domain | `azrl.mgmt` | `active_directory.domain.fqdn` |
+| OU Path | Servers OU | `active_directory.organizational_units.servers` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Server Manager" default>
+
+### Server Manager
+
+> **When to use**: Single deployment, prefer GUI-based configuration
+
+#### Procedure — Domain Join
+
+1. **Connect to utility VM** via Bastion (Task 05)
+
+2. **Set DNS**: Settings → Network → set primary DNS to dc01 IP (`azure_vms.dc01.private_ip`)
+
+3. **Domain Join**:
+ - System Properties → **Change** → Domain: `azrl.mgmt`
+ - Provide domain admin credentials
+ - Restart when prompted
+
+4. **Log back in** with domain credentials
+
+#### Procedure — Install RSAT
+
+5. **Install RSAT Features**:
+ - Server Manager → **Add Roles and Features** → Features
+ - Expand **Remote Server Administration Tools**
+ - Select all relevant tools:
+ - AD DS and AD LDS Tools
+ - DNS Server Tools
+ - DHCP Server Tools
+ - Failover Clustering Tools
+ - Group Policy Management Tools
+ - Hyper-V Management Tools
+ - Install
+
+#### Procedure — Install Management Tools
+
+6. **Install Az PowerShell**: Open PowerShell as admin → `Install-Module -Name Az -Force -AllowClobber`
+
+7. **Install Azure CLI**: Download from [aka.ms/installazurecliwindows](https://aka.ms/installazurecliwindows)
+
+8. **Install Windows Terminal** (optional): From Microsoft Store or winget
+
+#### Validation
+
+- [ ] Utility VM domain-joined: `(Get-WmiObject Win32_ComputerSystem).Domain` returns `azrl.mgmt`
+- [ ] RSAT installed: `Get-WindowsFeature RSAT* | Where Installed`
+- [ ] Az module available: `Get-Module Az -ListAvailable`
+- [ ] Azure CLI available: `az --version`
+- [ ] Can RDP to utility from Bastion
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+### Direct Script (On Node)
+
+> **When to use**: Run directly on the utility VM via Bastion RDP session — no infrastructure.yml access
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Configure-UtilityServer.ps1
+# Execution: Run ON the utility VM — standalone, no config file access
+# Prerequisites: Windows Server 2025 with admin rights
+# ============================================================================
+
+#region CONFIGURATION
+$DomainFqdn = "azrl.mgmt"
+$DomainAdmin = "MGMT\Administrator"
+$DomainPwd = Read-Host -AsSecureString "Domain admin password"
+$OUPath = "OU=Servers,OU=MGMT,DC=azrl,DC=mgmt"
+#endregion CONFIGURATION
+
+$ErrorActionPreference = "Stop"
+
+# ── Domain Join ──
+Write-Host "Joining domain: $DomainFqdn" -ForegroundColor Cyan
+$cred = New-Object PSCredential($DomainAdmin, $DomainPwd)
+Add-Computer -DomainName $DomainFqdn -Credential $cred -OUPath $OUPath -Force
+
+# ── Install RSAT ──
+Write-Host "Installing RSAT features..." -ForegroundColor Cyan
+$rsatFeatures = @(
+ "RSAT-AD-Tools",
+ "RSAT-DNS-Server",
+ "RSAT-DHCP",
+ "RSAT-Clustering",
+ "GPMC",
+ "RSAT-Hyper-V-Tools"
+)
+foreach ($feature in $rsatFeatures) {
+ Install-WindowsFeature -Name $feature -IncludeAllSubFeature -ErrorAction SilentlyContinue
+}
+
+# ── Install Az PowerShell ──
+Write-Host "Installing Az PowerShell modules..." -ForegroundColor Cyan
+Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+Install-Module -Name Az -Force -AllowClobber
+
+# ── Install Azure CLI ──
+Write-Host "Installing Azure CLI..." -ForegroundColor Cyan
+$ProgressPreference = 'SilentlyContinue'
+Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi
+Start-Process msiexec.exe -Wait -ArgumentList '/I AzureCLI.msi /quiet'
+Remove-Item .\AzureCLI.msi -Force
+
+Write-Host "Configuration complete — restart required for domain join" -ForegroundColor Green
+Restart-Computer -Force
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+### Orchestrated Script (Mgmt Server)
+
+> **When to use**: Run from management workstation via PSRemoting — reads `infrastructure.yml`
+
+#### Script
+
+**Path**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-13-configure-utility-server/powershell/Deploy-JumpServer.ps1`
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Deploy-JumpServer.ps1
+# Execution: Run from management workstation via PSRemoting
+# Prerequisites: WinRM/PSRemoting access to utility VM
+# ============================================================================
+
+#Requires -Modules Az.KeyVault
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "configs/infrastructure.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/keyvault-helper.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+$UtilIp = $config.azure_vms.utility.private_ip
+$DomainFqdn = $config.active_directory.domain.fqdn
+$NetBios = $config.active_directory.ad_netbios_name
+$OUPath = $config.active_directory.organizational_units.servers
+$KvName = $config.azure_infrastructure.key_vaults.management.name
+
+$AdminUser = "azureadmin"
+$AdminPwd = Get-KeyVaultSecret -SecretUri "keyvault://$KvName/azlocal-admin-password"
+$SecPwd = ConvertTo-SecureString $AdminPwd -AsPlainText -Force
+$localCred = New-Object PSCredential($AdminUser, $SecPwd)
+
+$DomainPwd = Get-KeyVaultSecret -SecretUri "keyvault://$KvName/domain-admin-password"
+$SecDomPwd = ConvertTo-SecureString $DomainPwd -AsPlainText -Force
+$domainCred = New-Object PSCredential("$NetBios\Administrator", $SecDomPwd)
+
+Write-LogInfo "Configuring utility server at $UtilIp"
+
+# ── Domain Join ──
+Invoke-Command -ComputerName $UtilIp -Credential $localCred -ScriptBlock {
+ param($domain, $cred, $ou)
+ Add-Computer -DomainName $domain -Credential $cred -OUPath $ou -Force
+} -ArgumentList $DomainFqdn, $domainCred, $OUPath
+
+Write-LogInfo "Waiting for restart after domain join..."
+Restart-Computer -ComputerName $UtilIp -Credential $localCred -Wait -Force
+Start-Sleep -Seconds 60
+
+# ── Install RSAT & Tools ──
+Invoke-Command -ComputerName $UtilIp -Credential $domainCred -ScriptBlock {
+ $features = @("RSAT-AD-Tools","RSAT-DNS-Server","RSAT-DHCP","RSAT-Clustering","GPMC","RSAT-Hyper-V-Tools")
+ foreach ($f in $features) {
+ Install-WindowsFeature -Name $f -IncludeAllSubFeature -ErrorAction SilentlyContinue
+ }
+ Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+ Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+ Install-Module -Name Az -Force -AllowClobber
+ $ProgressPreference = 'SilentlyContinue'
+ Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile C:\Temp\AzureCLI.msi
+ Start-Process msiexec.exe -Wait -ArgumentList '/I C:\Temp\AzureCLI.msi /quiet'
+ Remove-Item C:\Temp\AzureCLI.msi -Force
+}
+
+Write-LogSuccess "Utility server configured and domain-joined"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Self-contained, copy-paste ready. Edit variables and run from a machine with PSRemoting.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Configure-UtilityServer-Standalone.ps1
+# Execution: Self-contained — run from any machine with PSRemoting
+# ============================================================================
+
+#region CONFIGURATION
+$UtilIp = "10.250.1.38"
+$DomainFqdn = "azrl.mgmt"
+$NetBios = "MGMT"
+$OUPath = "OU=Servers,OU=MGMT,DC=azrl,DC=mgmt"
+$AdminUser = "azureadmin"
+$AdminPwd = Read-Host -AsSecureString "VM admin password"
+$DomainPwd = Read-Host -AsSecureString "Domain admin password"
+#endregion CONFIGURATION
+
+$localCred = New-Object PSCredential($AdminUser, $AdminPwd)
+$domainCred = New-Object PSCredential("$NetBios\Administrator", $DomainPwd)
+
+# Domain Join
+Write-Host "Joining $UtilIp to $DomainFqdn" -ForegroundColor Cyan
+Invoke-Command -ComputerName $UtilIp -Credential $localCred -ScriptBlock {
+ param($d,$c,$o)
+ Add-Computer -DomainName $d -Credential $c -OUPath $o -Force
+ Restart-Computer -Force
+} -ArgumentList $DomainFqdn,$domainCred,$OUPath
+
+Write-Host "Waiting for restart..." -ForegroundColor Yellow
+Start-Sleep -Seconds 120
+
+# Install tools
+Write-Host "Installing RSAT and tools..." -ForegroundColor Cyan
+Invoke-Command -ComputerName $UtilIp -Credential $domainCred -ScriptBlock {
+ $features = @("RSAT-AD-Tools","RSAT-DNS-Server","RSAT-DHCP","RSAT-Clustering","GPMC","RSAT-Hyper-V-Tools")
+ foreach ($f in $features) { Install-WindowsFeature -Name $f -IncludeAllSubFeature -ErrorAction SilentlyContinue }
+ Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+ Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+ Install-Module -Name Az -Force -AllowClobber
+ $ProgressPreference = 'SilentlyContinue'
+ Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile C:\Temp\AzureCLI.msi
+ Start-Process msiexec.exe -Wait -ArgumentList '/I C:\Temp\AzureCLI.msi /quiet'
+ Remove-Item C:\Temp\AzureCLI.msi -Force
+}
+
+Write-Host "Utility server configured" -ForegroundColor Green
+```
+
+:::info No External Dependencies
+Self-contained. Edit `#region CONFIGURATION` and run from a machine with PSRemoting.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Domain joined: `(Get-WmiObject Win32_ComputerSystem).Domain` returns `azrl.mgmt`
+- [ ] RSAT features installed: `Get-WindowsFeature RSAT* | Where Installed`
+- [ ] Az modules: `Get-Module Az -ListAvailable` returns latest
+- [ ] Azure CLI: `az --version` succeeds
+- [ ] Computer object in correct OU in AD
+
+---
+
+## CAF/WAF Landing Zone Model
+
+Utility server configuration is identical regardless of landing zone model — it runs on the VM in the **Management subscription**.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Management** subscription | `azure.subscriptions.management.id` |
+| Target VM | Utility in Management spoke | `azure_vms.utility` |
+
+### Execution Options
+
+The execution is the same as Single Subscription — the scripts run on the VM regardless of which subscription it resides in. Connect via Bastion in the **Connectivity** subscription.
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| Domain join fails | DNS not resolving domain | Verify VNet DNS points to both DCs |
+| RSAT install fails | Feature source missing | Run `sfc /scannow` then retry |
+| Az module install timeout | No internet via NAT GW | Verify NAT Gateway association (Task 07) |
+| Azure CLI MSI fails | Insufficient disk space | Check OS disk free space |
+| PSRemoting timeout | WinRM not enabled | Run `Enable-PSRemoting -Force` on target |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 12: Configure AD DS](./task-12-configure-adds) | [Manual Deployment Index](./index.mdx) | [Task 14: Configure NDM Server](./task-14-configure-ndm-server) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, utility-server, management, jump-box, rsat
+- Keywords: utility server, jump box, RSAT, domain join, management tools, WAC
+- Author: Azure Local Cloudnology Team

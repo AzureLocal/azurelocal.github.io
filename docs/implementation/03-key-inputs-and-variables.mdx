@@ -1,0 +1,756 @@
+---
+title: "Key Inputs and Variables"
+sidebar_label: "Key Inputs and Variables"
+sidebar_position: 3
+description: "Configuration management system for Azure Local Anywhere deployments using master-registry.yaml and infrastructure.yml."
+category: "RUNBOOK"
+scope: "Configuration management system"
+purpose: "Define variable registry and infrastructure configuration"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - configuration
+ - variables
+ - infrastructure-yml
+keywords:
+ - key inputs
+ - variables
+ - infrastructure.yml
+ - master-registry.yaml
+status: "approved"
+---
+
+# Key Inputs and Variables
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Configuration management system 
+> **PURPOSE**: Define variable registry and infrastructure configuration 
+> **MASTER REFERENCE**: Variable Registry Process
+
+**Status**: Active
+
+---
+
+## Overview
+
+Azure Local Anywhere deployments use a **standardized configuration management system** based on two core files:
+
+1. **master-registry.yaml** - Variable DEFINITIONS (names, types, constraints, validation rules)
+2. **infrastructure.yml** - Environment-specific VALUES (actual configuration data)
+
+This system ensures consistency, validation, and automation compatibility across all deployments.
+
+:::info Complete Documentation
+**See the Configuration Management Standard for comprehensive details**
+:::
+
+## Planning Phase Integration
+
+The `infrastructure.yml` file is populated during the planning and discovery phase. Key planning documents provide the source values:
+
+- **[Naming Standards](../planning/01-naming-standards.mdx)** - Defines resource naming patterns and conventions
+- **[Discovery Checklist](../planning/02-discovery-checklist.mdx)** - Comprehensive checklist for gathering all required configuration values
+- **[Site Assessment](../planning/03-site-assessment.mdx)** - Site readiness and infrastructure requirements
+- **[Landing Zone Strategy](../planning/06-landing-zone-strategy.mdx)** - Determines management group and subscription structure
+
+**Planning Workflow:**
+1. Complete discovery checklist to gather all required values
+2. Apply naming standards to generate resource names
+3. Choose landing zone deployment model (Full CAF vs Simplified)
+4. Populate `infrastructure.yml` with discovered values
+5. Validate against `master-registry.yaml` constraints
+
+---
+
+## Configuration Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ PLANNING & DISCOVERY PHASE │
+│ - Discovery Checklist │
+│ - Naming Standards │
+│ - Site Assessment │
+│ - Landing Zone Strategy │
+└─────────────────────────────────────────────────────────────────┘
+ │
+ │ Populates ↓
+ │
+┌─────────────────────────────────────────────────────────────────┐
+│ MASTER VARIABLE REGISTRY (Definitions) │
+│ Defines: Variable names, types, constraints, patterns │
+│ Version: 2.1.0 (910+ variables) │
+└─────────────────────────────────────────────────────────────────┘
+ │
+ │ Validates ↓
+ │
+┌─────────────────────────────────────────────────────────────────┐
+│ infrastructure.yml (Environment Values) │
+│ Contains: Actual configuration for your specific deployment │
+│ Examples: Cluster names, IP addresses, Azure tenant IDs │
+└─────────────────────────────────────────────────────────────────┘
+
+---
+
+## How Scripts Use infrastructure.yml
+
+All deployment and automation scripts read configuration from `infrastructure.yml` using **fixed variable paths**. This ensures scripts are environment-agnostic and portable across all deployments.
+
+### Script Execution Pattern
+
+**Every script follows this pattern:**
+
+1. **Accept a config/environment parameter**
+ ```powershell
+ param(
+ [Parameter(Mandatory = $true)]
+ [string]$Environment # or -ConfigPath for custom locations
+ )
+ ```
+
+2. **Load the configuration**
+ ```powershell
+ # Import helper
+ . "$PSScriptRoot/../utilities/helpers/config-loader.ps1"
+ 
+ # Load environment config
+ $config = Get-EnvironmentConfig -Environment $Environment
+ ```
+
+3. **Read values using fixed paths**
+ ```powershell
+ # These paths are guaranteed to exist in every infrastructure.yml
+ $tenantId = $config.azure.tenant.id
+ $subscriptionId = $config.azure.subscriptions.demo.id
+ $kvName = $config.platform.kv_platform_name
+ $clusterName = $config.cluster.arm_deployment.cluster_name
+ ```
+
+4. **Never hardcode values**
+ ```powershell
+ # ❌ WRONG - hardcoded
+ $tenantId = "12345678-1234-1234-1234-123456789012"
+ 
+ # ✅ CORRECT - from config
+ $tenantId = $config.azure.tenant.id
+ ```
+
+### Guaranteed Variable Paths
+
+These paths are standardized across all `infrastructure.yml` files:
+
+| Path | Type | Description |
+|------|------|-------------|
+| `environment.name` | string | Environment identifier (azurelocalcloud, ProjectIIC, etc.) |
+| `azure.tenant.id` | guid | Azure tenant ID |
+| `azure.subscriptions.<name>.id` | guid | Subscription ID |
+| `platform.kv_platform_name` | string | Platform Key Vault name |
+| `platform.kv_platform_resource_group` | string | Platform Key Vault resource group |
+| `cluster.arm_deployment.cluster_name` | string | Cluster name |
+| `identity.service_principal.name` | string | Deployment SPN name |
+
+**See Scripting Standards for the complete list of guaranteed paths.**
+
+### Example: Creating a Service Principal
+
+```powershell
+# Load config
+$config = Get-EnvironmentConfig -Environment "azurelocalcloud"
+
+# Read required values from config
+$tenantId = $config.azure.tenant.id
+$subscriptionId = $config.azure.subscriptions.demo.id
+$spName = $config.identity.service_principal.name
+$kvName = $config.platform.kv_platform_name
+
+# Create the SPN
+$sp = New-AzADServicePrincipal -DisplayName $spName
+
+# Store credentials in Key Vault (also from config)
+az keyvault secret set --vault-name $kvName --name "$spName-secret" --value $sp.Secret
+```
+
+**Key points:**
+- Script works across all environments (azurelocalcloud, ProjectIIC, demos, etc.)
+- Only the values in `infrastructure.yml` differ—script logic stays the same
+- No hardcoded tenant IDs, subscription IDs, or resource names
+
+**Related Documentation:**
+- Scripting Standards - Config usage requirements and patterns
+- Scripting Framework - Architectural patterns for config-driven scripts
+- [How to Use This Runbook](./02-how-to-use-this-runbook.mdx) - Script execution workflows
+
+---
+
+## Required Configuration Files
+
+### 1. infrastructure.yml
+
+**Location:** Root of your environment repository
+
+**Purpose:** Contains all environment-specific configuration values for your Azure Local deployment
+
+**Key sections:**
+
+```yaml
+# Azure Identity & Authentication
+azure_identity:
+ azure_tenant_id: "YOUR-TENANT-ID"
+ azure_subscription_id: "YOUR-SUBSCRIPTION-ID"
+
+# Accounts
+accounts:
+ account_lcm_username: "lcm-iic-azl-clus01" # change iic to the right site code
+ account_lcm_password: "keyvault://{{platform.kv_platform_name}}/lcm-deployment-password"
+ account_local_admin_username: "administrator"
+ account_local_admin_password: "keyvault://{{platform.kv_platform_name}}/local-admin-password"
+
+# Active Directory
+active_directory:
+ ad_domain_fqdn: "azlocal.mgmt"
+ ad_netbios_name: "MGMT"
+ ad_ou_path: "OU=MGMT,DC=azlocal,DC=mgmt"
+ ad_computers_ou_path: "OU=Computers,OU=MGMT,DC=azlocal,DC=mgmt"
+ ad_servers_ou_path: "OU=Servers,OU=MGMT,DC=azlocal,DC=mgmt"
+ ad_clusters_ou_path: "OU=AzureLocal-Cluster01,OU=AzureLocal,OU=Clusters,OU=Clusters,OU=MGMT,DC=azlocal,DC=mgmt" # change the cluster name as needed
+ ad_service_accounts_ou_path: "OU=ServiceAccounts,OU=MGMT,DC=azlocal,DC=mgmt"
+
+# Azure Resources
+azure_resources:
+ resource_group_name: "rg-azlocal-prod-eus-001"
+ location: "eastus"
+ tags:
+ Environment: "Production"
+ Project: "Azure Local Cloud"
+
+# Networking
+networking:
+ vnet_name: "vnet-azlocal-prod-eus-hub"
+ vnet_address_space:
+ - "10.250.0.0/16"
+
+# Azure Local Cluster
+azure_local:
+ cluster_name: "azlc-clus01"
+ cluster_node_count: 4
+ network_topology: "traditional"
+ witness_type: "cloud_witness"
+
+# Cluster Nodes
+cluster_nodes:
+ - name: "azlc-node01"
+ ip_address: "192.168.1.11"
+ idrac_ip: "192.168.2.11"
+ mac_address: "B8:CE:F6:12:34:56"
+```
+
+:::tip Variable Placeholders in Examples
+Values wrapped in `{{...}}` (e.g., `{{platform.kv_platform_name}}`) are **variable path references** from your `infrastructure.yml`. Replace them with the actual values from your deployment configuration. For example, using the fictional **Infinite azurelocal Corp**:
+
+| Placeholder | IIC Example Value |
+|-------------|-------------------|
+| `{{platform.kv_platform_name}}` | `kv-iic-platform` |
+| `{{azure.tenant.id}}` | `a1b2c3d4-e5f6-7890-abcd-ef1234567890` |
+| `{{site.code}}` | `IIC` |
+
+So `keyvault://{{platform.kv_platform_name}}/local-admin-password` becomes `keyvault://kv-iic-platform/local-admin-password`.
+:::
+
+### 2. master-registry.yaml
+
+**Location:** Copied to your environment repository's `variables/` folder
+
+**Purpose:** Defines all variable names, types, constraints, and validation rules
+
+**You typically don't edit this file** - it's the source of truth maintained centrally and copied to each environment for validation purposes.
+
+---
+
+## Key Planning Inputs
+
+The following table shows how planning phase outputs map to `infrastructure.yml` variables:
+
+| Planning Document | Key Variables | Description |
+|-------------------|---------------|-------------|
+| **[Discovery Checklist](../planning/02-discovery-checklist.mdx)** | `azure_tenant_id`, `azure_subscription_id`, `tenant_domain`, `global_admin_email` | Azure identity and tenant information gathered during discovery |
+| **[Naming Standards](../planning/01-naming-standards.mdx)** | All resource names (`resource_group_name`, `vnet_name`, `cluster_name`, etc.) | Resource naming patterns following CAF standards |
+| **[Landing Zone Strategy](../planning/06-landing-zone-strategy.mdx)** | `management_group_hierarchy`, `subscription_model`, `landing_zone_type` | Management group and subscription structure (Full CAF vs Simplified) |
+| **[Site Assessment](../planning/03-site-assessment.mdx)** | `site_code`, `network_topology`, `cluster_node_count`, `ip_address_ranges` | Site-specific infrastructure and network requirements |
+
+**Landing Zone Impact:**
+- **Full CAF Deployment**: Requires multiple subscriptions and complex management group hierarchy
+- **Simplified Deployment**: Uses single subscription with resource group organization
+
+---
+
+## Key Input Categories
+
+### 1. Azure Identity
+
+**Required for Azure authentication and resource deployment**
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `azure_tenant_id` | UUID | Azure Entra ID (formerly Azure AD) tenant ID | `00000000-aaaa-bbbb-cccc-111111111111` |
+| `azure_subscription_id` | UUID | Azure subscription ID where resources will be deployed | `00000000-1111-2222-3333-444444444444` |
+
+**Where to find these values:**
+- **Azure Portal** → Azure Active Directory → Properties → Tenant ID
+- **Azure Portal** → Subscriptions → Select subscription → Overview
+
+### 2. Accounts
+
+**User and service account credentials for deployment and management**
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `account_lcm_username` | String | Azure Local Lifecycle Manager (LCM) deployment account sAMAccountName — bare username only, do **not** include `@domain` (the domain is specified separately via `domainFqdn`) | `lcm-iic-azl-clus01` |
+| `account_lcm_password` | String | LCM account password (Key Vault reference) | `keyvault://{{platform.kv_platform_name}}/lcm-deployment-password` |
+| `account_local_admin_username` | String | Local administrator username for all cluster nodes | `administrator` |
+| `account_local_admin_password` | String | Local admin password (Key Vault reference) | `keyvault://{{platform.kv_platform_name}}/local-admin-password` |
+
+**Account requirements:**
+- LCM account needs deployment permissions in Active Directory
+- Local admin credentials must be identical across all cluster nodes
+- All passwords stored in Azure Key Vault (never hardcoded)
+
+### 3. Active Directory
+
+**Domain integration and organizational unit configuration**
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `ad_domain_fqdn` | String | Active Directory domain FQDN | `azlocal.mgmt` |
+| `ad_netbios_name` | String | Active Directory NetBIOS name (max 15 chars, uppercase) | `MGMT` |
+| `ad_ou_path` | String | Base OU path for Azure Local objects | `OU=MGMT,DC=azlocal,DC=mgmt` |
+| `ad_computers_ou_path` | String | OU path for computer accounts | `OU=Computers,OU=MGMT,DC=azlocal,DC=mgmt` |
+| `ad_servers_ou_path` | String | OU path for server accounts | `OU=Servers,OU=MGMT,DC=azlocal,DC=mgmt` |
+| `ad_clusters_ou_path` | String | OU path for Azure Local cluster instance | `OU=AzureLocal-Cluster01,OU=AzureLocal,OU=Clusters,OU=Clusters,OU=MGMT,DC=azlocal,DC=mgmt` |
+| `ad_service_accounts_ou_path` | String | OU path for service accounts | `OU=ServiceAccounts,OU=MGMT,DC=azlocal,DC=mgmt` |
+
+**Domain requirements:**
+- FQDN must be routable and resolvable
+- NetBIOS name limited to 15 characters, uppercase
+- OU paths follow LDAP distinguished name format
+- Domain must be prepared per Active Directory stage documentation
+
+### 4. Azure Resources
+
+**Resource organization and naming**
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `resource_group_name` | String | Name for the Azure resource group (follows CAF naming) | `rg-azlocal-prod-eus-001` |
+| `location` | String | Azure region for resource deployment | `eastus`, `westus`, `centralus` |
+| `tags` | Object | Resource tags for governance and cost management | See example below |
+
+**Example tags:**
+
+```yaml
+tags:
+ Environment: "Production"
+ Project: "Azure Local Cloud"
+ ManagedBy: "Infrastructure as Code"
+ Owner: "Azure Local Cloud Team"
+ CostCenter: "IT-Infrastructure"
+```
+
+### 5. Networking
+
+**Virtual network and connectivity configuration**
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `vnet_name` | String | Virtual network name (follows CAF naming) | `vnet-azlc-Azure Local Cloud-eus-connectivity-hub` |
+| `vnet_address_space` | Array | CIDR blocks for virtual network | `["10.250.0.0/16"]` |
+| `subnet_name` | String | Subnet name for Azure resources | `snet-azlc-Azure Local Cloud-eus-connectivity-hub` |
+| `subnet_address_prefix` | String | CIDR block for subnet | `10.100.1.0/24` |
+
+**Network design considerations:**
+- Ensure no overlap with on-premises networks
+- Plan for future growth
+- Consider Azure Local network intents (management, compute, storage)
+
+### 6. Azure Local Cluster
+
+**Core cluster configuration**
+
+| Variable | Type | Description | Constraints |
+|----------|------|-------------|-------------|
+| `cluster_name` | String | NetBIOS-compatible cluster name | Max 15 characters, lowercase alphanumeric + hyphens |
+| `cluster_node_count` | Integer | Number of nodes in the cluster | 1-16 nodes |
+| `network_topology` | String | Network architecture | `traditional`, `switchless`, `nested` |
+| `identity_provider` | String | Authentication method | `active_directory`, `local_identity` |
+| `witness_type` | String | Quorum witness type | `cloud_witness`, `file_share_witness` |
+
+**Cluster naming examples:**
+- `iic-clus01` - Project Phoenix cluster 01
+- `demo-clus01` - Demo environment cluster
+- `lab-clus02` - Lab environment cluster 02
+
+### 7. Cluster Nodes
+
+**Physical or virtual server definitions**
+
+Each node requires:
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `name` | String | Node hostname (NetBIOS compatible) | `azlc-node01` |
+| `ip_address` | IPv4 | Management network IP address | `192.168.1.11` |
+| `idrac_ip` | IPv4 | iDRAC/BMC out-of-band management IP | `192.168.2.11` |
+| `mac_address` | MAC | Primary NIC MAC address | `B8:CE:F6:12:34:56` |
+| `service_tag` | String | Dell service tag (for hardware identification) | `ABC1234` |
+| `rack_position` | String | Physical rack location | `iic-Rack01-U10` |
+
+**Node configuration example:**
+
+```yaml
+cluster_nodes:
+ - name: "azlc-node01"
+ ip_address: "192.168.1.11"
+ idrac_ip: "192.168.2.11"
+ mac_address: "B8:CE:F6:12:34:56"
+ service_tag: "ABC1234"
+ rack_position: "iic-Rack01-U10"
+ 
+ - name: "azlc-node02"
+ ip_address: "192.168.1.12"
+ idrac_ip: "192.168.2.12"
+ mac_address: "B8:CE:F6:12:34:57"
+ service_tag: "ABC1235"
+ rack_position: "iic-Rack01-U12"
+```
+
+### 8. Storage
+
+**Azure Storage Account configuration**
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `storage_account_name` | String | Globally unique storage account name (3-24 chars, lowercase alphanumeric only) | `stazlprdeus001` |
+| `storage_account_sku` | String | Replication SKU | `Standard_LRS`, `Standard_GRS`, `Standard_ZRS` |
+
+**Storage SKU options:**
+- **LRS** (Local): Cheapest, single datacenter
+- **GRS** (Geo): Replicates to paired region
+- **ZRS** (Zone): Replicates across availability zones
+
+### 9. Key Vault
+
+**Azure Key Vault for secrets management**
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `platform_keyvault_name` | String | Globally unique Key Vault name (3-24 chars) | `kv-iic-prod-eus-001`, `kv-iic-mgmt-eus-001` |
+| `keyvault_sku` | String | Key Vault SKU | `standard`, `premium` |
+
+**Key Vault naming rules:**
+- Must start with a letter
+- No consecutive hyphens allowed
+- Globally unique across all Azure
+
+---
+
+## Naming Conventions
+
+All naming follows **Microsoft Cloud Adoption Framework (CAF)** standards:
+
+### Resource Groups
+**Pattern:** `rg-<workload>-<environment>-<region>-<instance>`
+
+**Examples:**
+- `rg-azlocal-prod-eus-001` (Primary cluster resources)
+- `rg-azlocal-prod-eus-arc` (Arc-connected resources)
+- `rg-azlocal-prod-eus-network` (Networking resources)
+- `rg-azlocal-prod-eus-security` (Security resources)
+
+### Storage Accounts
+**Pattern:** `st<workload><environment><region><instance>`
+
+**Examples:**
+- `stazlprdeus001` (Azure Local production storage)
+- `stazldevwus001` (Azure Local dev storage)
+- `stazltestcus001` (Azure Local test storage)
+
+**Rules:**
+- No hyphens allowed
+- Lowercase only
+- 3-24 characters
+- Globally unique
+
+### Key Vaults
+**Pattern:** `kv-{env_abbr}-{purpose}`
+
+**Examples:**
+- `kv-iic-platform`
+- `kv-azlc-clus01`
+
+**Rules:**
+- Must start with letter
+- No consecutive hyphens
+- 3-24 characters
+- Globally unique
+
+### Cluster Names
+**Pattern:** `{site}-clus{number}`
+
+**Examples:**
+- `iic-clus01`
+- `demo-clus01`
+- `lab-clus02`
+
+**Rules:**
+- Maximum 15 characters (NetBIOS requirement)
+- Lowercase alphanumeric + hyphens only
+
+:::tip Naming Standards
+See complete naming standards in Naming Standards
+:::
+
+---
+
+## Variable Validation
+
+### Pre-Deployment Validation
+
+**ALWAYS validate your infrastructure.yml before deployment:**
+
+```powershell
+# Validate configuration against schema
+.\tools\Test-Infrastructure.ps1 -ConfigFile .\infrastructure.yml
+```
+
+**Validation checks:**
+- ✅ All required variables present
+- ✅ Data types correct (string vs integer vs boolean)
+- ✅ Values within min/max ranges
+- ✅ Strings match regex patterns
+- ✅ UUIDs/IPs/CIDRs in correct format
+- ✅ Enum values in allowed lists
+- ✅ Array lengths within bounds
+
+**Example validation output:**
+
+```
+✅ Validation successful: infrastructure.yml conforms to schema
+
+Summary:
+- Variables validated: 127
+- Categories checked: 8
+- Required fields: All present
+- Type validation: All passed
+- Constraint validation: All passed
+```
+
+**Validation saves time:**
+- ⏱️ **2 seconds** - JSON Schema validation catches errors immediately
+- 🚫 **30 minutes** - Without validation, errors only found during deployment
+
+### Common Validation Errors
+
+**1. Value exceeds maximum:**
+```
+❌ /azure_local/cluster_node_count: Value 20 exceeds maximum of 16
+```
+**Fix:** Change to valid range (1-16)
+
+**2. String doesn't match pattern:**
+```
+❌ /azure_local/cluster_name: "Cluster01" doesn't match pattern "^[a-z0-9-]+$"
+```
+**Fix:** Use lowercase only: `cluster01`
+
+**3. Required variable missing:**
+```
+❌ Required variable 'azure_tenant_id' is missing
+```
+**Fix:** Add missing variable to infrastructure.yml
+
+---
+
+## Secrets Management
+
+:::danger NEVER commit secrets to infrastructure.yml
+Passwords, keys, and certificates must NEVER be hardcoded in configuration files
+:::
+
+**Use Azure Key Vault references:**
+
+```yaml
+# ❌ BAD: Hardcoded password
+credentials:
+ domain_join_password: "SuperSecret123!"
+
+# ✅ GOOD: Key Vault reference (variable placeholder)
+credentials:
+ domain_join_password: "keyvault://{{platform.kv_platform_name}}/domain-join-password"
+
+# ✅ GOOD: Infinite azurelocal Corp example
+credentials:
+ domain_join_password: "keyvault://kv-iic-platform/domain-join-password"
+```
+
+**Scripts automatically resolve Key Vault references:**
+
+```powershell
+# Script resolves keyvault:// references automatically
+$password = Resolve-KeyVaultSecret $config.credentials.domain_join_password
+```
+
+---
+
+## Getting Started Checklist
+
+Before deployment, ensure you have:
+
+- [ ] **Azure Identity**
+ - [ ] Azure tenant ID
+ - [ ] Azure subscription ID
+ - [ ] Appropriate Azure permissions
+
+- [ ] **Accounts**
+ - [ ] LCM account username and password (stored in Key Vault)
+ - [ ] Local administrator username and password (stored in Key Vault)
+ - [ ] Account credentials prepared for Active Directory integration
+
+- [ ] **Active Directory**
+ - [ ] Domain FQDN and NetBIOS name
+ - [ ] OU paths for computers, servers, clusters, and service accounts
+ - [ ] Domain controller accessibility and permissions
+ - [ ] Active Directory preparation completed per stage documentation
+
+- [ ] **Network Information**
+ - [ ] Virtual network address space (no overlap with on-premises)
+ - [ ] Subnet CIDR blocks
+ - [ ] Gateway addresses
+
+- [ ] **Cluster Details**
+ - [ ] Cluster name (max 15 characters)
+ - [ ] Number of nodes (1-16)
+ - [ ] Network topology decision
+
+- [ ] **Node Information** (for each node)
+ - [ ] Hostname
+ - [ ] Management IP address
+ - [ ] iDRAC/BMC IP address
+ - [ ] MAC address
+ - [ ] Service tag
+ - [ ] Rack position
+
+- [ ] **Azure Resources**
+ - [ ] Resource group name (following CAF naming)
+ - [ ] Azure region selection
+ - [ ] Resource tags
+
+- [ ] **Storage & Security**
+ - [ ] Storage account name (globally unique)
+ - [ ] Key Vault name (globally unique)
+ - [ ] Secrets stored in Key Vault (not in config files)
+
+- [ ] **Validation**
+ - [ ] infrastructure.yml created
+ - [ ] Configuration validated against schema
+ - [ ] All required variables populated
+
+---
+
+## Usage in Deployment
+
+### PowerShell Scripts
+
+```powershell
+# Load configuration
+$config = Get-Content -Path ".\infrastructure.yml" -Raw | ConvertFrom-Yaml
+
+# Use values
+$clusterName = $config.azure_local.cluster_name
+$nodeCount = $config.azure_local.cluster_node_count
+
+# Deploy
+.\Deploy-Infrastructure.ps1 -ConfigFile ".\infrastructure.yml"
+```
+
+### Terraform
+
+```hcl
+# Load configuration
+locals {
+ config = yamldecode(file("infrastructure.yml"))
+}
+
+# Use values
+resource "azurerm_resource_group" "main" {
+ name = local.config.azure_resources.resource_group_name
+ location = local.config.azure_resources.location
+}
+```
+
+### Bicep
+
+```bicep
+// Load configuration using deployment script
+param configFile string = 'infrastructure.yml'
+
+// Configuration loaded via PowerShell deployment script
+```
+
+---
+
+## Related Documentation
+
+- **Configuration Management Standard** - Complete configuration system documentation
+- **Variable Registry Process** - Registry management workflows 
+- **YAML Variables** - YAML syntax and structure standards
+- **Naming Standards** - Comprehensive naming conventions
+- **Discovery Sessions** - Gathering configuration requirements
+
+---
+
+## Next Steps
+
+After gathering all required inputs and creating your infrastructure.yml:
+
+1. **Validate configuration:**
+ ```powershell
+ .\tools\Test-Infrastructure.ps1 -ConfigFile .\infrastructure.yml
+ ```
+
+2. **Test deployment (WhatIf):**
+ ```powershell
+ .\Deploy-Infrastructure.ps1 -ConfigFile .\infrastructure.yml -WhatIf
+ ```
+
+3. **Deploy:**
+ ```powershell
+ .\Deploy-Infrastructure.ps1 -ConfigFile .\infrastructure.yml
+ ```
+
+4. **Proceed to:** [Prerequisites and Assumptions](04-prerequisites-and-assumptions.mdx)
+
+---
+
+*For questions about configuration variables or validation, refer to the Configuration Management Standard or contact the Azure Local Cloud documentation team.*
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [How to Use This Runbook](./02-how-to-use-this-runbook.mdx) | [Implementation Guide](./index.mdx) | [Prerequisites and Assumptions](./04-prerequisites-and-assumptions.mdx) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, configuration, variables, infrastructure-yml
+- Keywords: key inputs, variables, infrastructure.yml, master-registry.yaml
+- Author: Azure Local Cloudnology Team

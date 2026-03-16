@@ -1,0 +1,286 @@
+---
+title: "Task 03: Configure Security Baselines"
+sidebar_label: "Task 03: Security Baselines"
+sidebar_position: 3
+description: "Review and remediate Defender for Cloud security recommendations for Azure Local"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Configure Security Baselines
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Security baseline configuration 
+> **PURPOSE**: Review and remediate security recommendations 
+> **MASTER REFERENCE**: [Microsoft Learn - Security Baselines](https://learn.microsoft.com/en-us/azure/governance/blueprints/samples/azure-security-benchmark)
+
+**Status**: Active
+
+---
+
+Security baselines provide a standardized set of security configurations based on Microsoft best practices. This step reviews Defender for Cloud recommendations and remediates high-priority findings before Azure Local deployment.
+
+:::tip Proactive Security
+Addressing security recommendations **before** deploying Arc-enabled servers and the Azure Local cluster reduces the attack surface and simplifies post-deployment hardening.
+:::
+
+## Overview
+
+| Baseline Category | Focus Area | Priority |
+|-------------------|------------|----------|
+| **Compute** | VM security, extensions, encryption | High |
+| **Networking** | NSG rules, public access, network segmentation | High |
+| **Identity** | RBAC, privileged accounts, MFA | High |
+| **Data** | Encryption at rest, Key Vault configuration | Medium |
+| **Monitoring** | Diagnostic settings, log retention | Medium |
+
+## Prerequisites
+
+- Defender for Cloud enabled (Step 2)
+- Azure Policy initiatives assigned (Step 3)
+- Security Administrator role or equivalent
+
+## Procedure
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Review Security Recommendations
+
+1. **Navigate to Defender for Cloud**
+ - In Azure Portal, go to **Microsoft Defender for Cloud**
+ - Click **Recommendations** in the left menu
+
+2. **Filter by Severity**
+ - Set **Severity** filter to **High**
+ - Review the list of high-severity recommendations
+
+3. **Review by Resource Type**
+ - Click **Inventory** to view resources
+ - Filter by resource type (VMs, Key Vaults, Storage, etc.)
+ - Click a resource to see its security findings
+
+### Remediate High-Priority Recommendations
+
+#### Key Vault Recommendations
+
+1. **Key Vault should use RBAC permission model**
+ - Navigate to Key Vault → Access configuration
+ - Select **Azure role-based access control**
+ - Click **Save**
+
+2. **Key Vault should have soft delete enabled**
+ - Navigate to Key Vault → Properties
+ - Verify soft delete is enabled (default in new vaults)
+
+3. **Key Vault should have purge protection enabled**
+ - Navigate to Key Vault → Properties
+ - Enable **Purge protection**
+
+#### Network Recommendations
+
+1. **Subnets should be associated with an NSG**
+ - Navigate to Virtual Network → Subnets
+ - Verify each subnet has an NSG attached
+ - Apply NSGs created in Stage 06
+
+2. **Management ports should be protected with JIT**
+ - In Defender for Cloud, go to **Workload protections**
+ - Click **Just-in-time VM access**
+ - Enable JIT for management VMs
+
+#### Storage Recommendations
+
+1. **Storage accounts should use private link**
+ - Navigate to Storage account → Networking
+ - Configure private endpoints (if required)
+
+2. **Secure transfer to storage accounts should be enabled**
+ - Navigate to Storage account → Configuration
+ - Verify **Secure transfer required** is enabled
+
+### Export Recommendations
+
+1. **Export to CSV**
+ - In Recommendations view, click **Download CSV**
+ - Save for documentation and tracking
+
+2. **Configure Continuous Export**
+ - Go to **Environment settings** → Your subscription
+ - Click **Continuous export**
+ - Configure export to Log Analytics or Event Hub
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+```powershell
+# Variables
+$subscriptionId = "<your-subscription-id>"
+
+# Set subscription context
+az account set --subscription $subscriptionId
+
+# Get all security recommendations
+$recommendations = az security assessment list --query "[?status.code=='Unhealthy']" | ConvertFrom-Json
+
+# Display high-severity recommendations
+Write-Host "High Severity Recommendations:" -ForegroundColor Red
+$recommendations | Where-Object { $_.metadata.severity -eq "High" } | ForEach-Object {
+ Write-Host " - $($_.displayName)" -ForegroundColor Yellow
+ Write-Host " Resource: $($_.resourceDetails.Id)"
+}
+
+# Count by severity
+Write-Host "`nRecommendation Summary:" -ForegroundColor Cyan
+$recommendations | Group-Object { $_.metadata.severity } | Format-Table Name, Count
+
+# Enable soft delete on Key Vault (example remediation)
+$keyVaultName = "kv-azlmgmt-prod-eus2"
+$resourceGroup = "rg-management-prod-eastus2"
+
+az keyvault update `
+ --name $keyVaultName `
+ --resource-group $resourceGroup `
+ --enable-soft-delete true `
+ --enable-purge-protection true
+
+Write-Host "✅ Key Vault soft delete and purge protection enabled"
+
+# Enable secure transfer on storage account
+$storageAccountName = "stazlmgmtprodeus2"
+
+az storage account update `
+ --name $storageAccountName `
+ --resource-group $resourceGroup `
+ --https-only true
+
+Write-Host "✅ Storage account secure transfer enabled"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Variables
+$subscriptionId = "<your-subscription-id>"
+$resourceGroup = "rg-management-prod-eastus2"
+$keyVaultName = "kv-azlmgmt-prod-eus2"
+
+# Connect and set context
+Connect-AzAccount
+Set-AzContext -SubscriptionId $subscriptionId
+
+# Get security assessments (recommendations)
+$assessments = Get-AzSecurityAssessment
+
+# Filter unhealthy (non-compliant) assessments
+$unhealthyAssessments = $assessments | Where-Object { 
+ $_.Status.Code -eq "Unhealthy" 
+}
+
+Write-Host "Security Recommendations Requiring Attention:" -ForegroundColor Cyan
+Write-Host "=============================================" -ForegroundColor Cyan
+
+# Group by severity
+$grouped = $unhealthyAssessments | Group-Object { $_.Metadata.Severity }
+
+foreach ($group in $grouped) {
+ $color = switch ($group.Name) {
+ "High" { "Red" }
+ "Medium" { "Yellow" }
+ "Low" { "White" }
+ default { "Gray" }
+ }
+ Write-Host "`n$($group.Name) Severity ($($group.Count) items):" -ForegroundColor $color
+ 
+ $group.Group | ForEach-Object {
+ Write-Host " • $($_.DisplayName)" -ForegroundColor $color
+ }
+}
+
+# Remediation: Enable purge protection on Key Vault
+Write-Host "`nApplying Key Vault security baseline..." -ForegroundColor Cyan
+
+$keyVault = Get-AzKeyVault -VaultName $keyVaultName -ResourceGroupName $resourceGroup
+
+if (-not $keyVault.EnablePurgeProtection) {
+ Update-AzKeyVault `
+ -VaultName $keyVaultName `
+ -ResourceGroupName $resourceGroup `
+ -EnablePurgeProtection
+ Write-Host "✅ Purge protection enabled on Key Vault" -ForegroundColor Green
+} else {
+ Write-Host "✓ Purge protection already enabled" -ForegroundColor Green
+}
+
+# Verify Key Vault uses RBAC
+if ($keyVault.EnableRbacAuthorization) {
+ Write-Host "✓ RBAC authorization enabled on Key Vault" -ForegroundColor Green
+} else {
+ Write-Host "⚠️ Key Vault using Access Policies - consider migrating to RBAC" -ForegroundColor Yellow
+}
+
+Write-Host "`n✅ Security baseline review complete" -ForegroundColor Green
+```
+
+</TabItem>
+</Tabs>
+
+## Common Recommendations for Azure Local
+
+| Recommendation | Category | Remediation |
+|----------------|----------|-------------|
+| Enable MFA for accounts with owner permissions | Identity | Configure Conditional Access (Step 6) |
+| Subnets should be associated with NSG | Network | Apply NSGs from Stage 06 |
+| Key Vault should use RBAC | Data | Update Key Vault access model |
+| Enable Defender for servers | Compute | Enable in Defender for Cloud (Step 2) |
+| Storage accounts should restrict network access | Data | Configure private endpoints |
+| Management ports should be protected | Network | Enable JIT access |
+
+## Validation
+
+```powershell
+# Get secure score
+$secureScore = az security secure-score show --name ascScore | ConvertFrom-Json
+Write-Host "Current Secure Score: $($secureScore.score.current) / $($secureScore.score.max)" -ForegroundColor Cyan
+
+# Get recommendation count by status
+$recommendations = az security assessment list | ConvertFrom-Json
+$healthy = ($recommendations | Where-Object { $_.status.code -eq "Healthy" }).Count
+$unhealthy = ($recommendations | Where-Object { $_.status.code -eq "Unhealthy" }).Count
+
+Write-Host "`nRecommendation Status:"
+Write-Host " Healthy: $healthy" -ForegroundColor Green
+Write-Host " Unhealthy: $unhealthy" -ForegroundColor $(if ($unhealthy -gt 0) { "Yellow" } else { "Green" })
+```
+
+## Expected Output
+
+```
+Current Secure Score: 72 / 100
+
+Recommendation Status:
+ Healthy: 45
+ Unhealthy: 8
+```
+
+## Secure Score Target
+
+| Score Range | Status | Action |
+|-------------|--------|--------|
+| 80-100% | Excellent | Maintain current posture |
+| 60-79% | Good | Address high-severity items |
+| 40-59% | Fair | Prioritize remediation plan |
+| 0-39% | Poor | Immediate attention required |
+
+:::note
+Secure score may take up to 24 hours to reflect changes after remediation.
+:::
+
+## Next Steps
+
+Proceed to [Task 5: Enable Security Logging](./task-04-enable-security-logging.mdx) to configure security event collection.

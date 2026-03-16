@@ -1,0 +1,516 @@
+---
+title: "Discovery Checklist"
+sidebar_label: "Discovery Checklist"
+sidebar_position: 4
+description: "Comprehensive discovery checklist for Azure Local planning"
+---
+
+# Discovery Checklist
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Pre-deployment discovery activities 
+> **PURPOSE**: Comprehensive checklist for gathering deployment requirements 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Local Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
+
+**Status**: Active
+
+---
+
+This document consolidates **all discovery and planning activities** required before executing the Azure Local provisioning runbook. Discovery is organized into three parts that directly feed the provisioning stages:
+
+- **Part 1: Pre-Deployment Discovery** - Azure foundation, identity, CI/CD, and automation (feeds Stages 0-6)
+- **Part 2: On-Premises Discovery** - Active Directory and enterprise network preparation (feeds Stages 6-7)
+- **Part 3: Site-Specific Discovery** - Per-site hardware, network, and workload planning (feeds Stages 8-21)
+
+All discovery outputs populate `cluster-config.csv` and `cluster-configuration.md` for use during provisioning.
+
+## Part 1: Pre-Deployment Discovery
+
+This section covers discovery activities performed **once per deployment program** to establish Azure tenant foundation, CI/CD infrastructure, and automation capabilities.
+
+### Section 1: Azure Tenant and Identity Requirements
+
+**Reference:** [Azure Local Cloud Onboarding Process](https://docs.Azure Local Cloudmgmt.com/Offerings/Professional/Azure/Onboard/)
+
+#### Customer Tenant Information
+
+- [ ] **Tenant Details**
+ - Customer tenant ID: `________________________________`
+ - Primary domain name: `________________________________`
+ - Entra ID licensing level: ☐ P1 ☐ P2 ☐ Other: `____________`
+ - Global Administrator contact: `________________________________`
+ - Global Administrator email: `________________________________`
+
+- [ ] **Azure Local Cloud Service Details**
+ - Service tier: ☐ Professional ☐ Premium ☐ Other: `____________`
+ - Additional services: ☐ SOC ☐ AES ☐ None
+ - Estimated monthly Azure spend: `$____________`
+ - Budget alert threshold: `$____________`
+ - Notification distribution email(s): `________________________________`
+
+#### External Collaboration Settings
+
+- [ ] **Current Guest User Policies**
+ - Guest invitations enabled: ☐ Yes ☐ No
+ - Guest users can invite: ☐ Yes ☐ No
+ - Collaboration restrictions: ☐ Allow any domain ☐ Allow specific domains ☐ Block specific domains
+ - Domain allowlist/blocklist: `________________________________`
+
+- [ ] **MFA and Authentication Requirements**
+ - MFA enforced for all users: ☐ Yes ☐ No
+ - MFA required for external users: ☐ Yes ☐ No
+ - Device compliance required: ☐ Yes ☐ No
+ - Trusted MFA claims from Azure Local Cloud: ☐ Accept ☐ Require re-authentication
+
+#### Conditional Access Policies
+
+- [ ] **External User Access Policies**
+ - Policies blocking external users exist: ☐ Yes ☐ No ☐ Unknown
+ - Policy names affecting guest access: `________________________________`
+ - Exclusions required for management tenants: ☐ Yes ☐ No
+ - Policy exemption approval obtained: ☐ Yes ☐ No ☐ N/A
+
+- [ ] **Required Policy Exclusions**
+ - Azure Local Cloud CSP Tenant ID: `{{Azure Local Cloud_CSP_TENANT_ID}}` (from `infrastructure.yml`) - Exclude: ☐ Yes ☐ No ☐ N/A
+ - Azure Local Cloud MGMT Tenant ID: `{{Azure Local Cloud_MGMT_TENANT_ID}}` (from `infrastructure.yml`) - Exclude: ☐ Yes ☐ No
+
+#### Cross-Tenant Sync Configuration
+
+- [ ] **B2B Collaboration Settings**
+ - Inbound B2B collaboration enabled for Azure Local Cloud: ☐ Yes ☐ No
+ - Inbound B2B direct connect enabled: ☐ Yes ☐ No
+ - Cross-tenant sync enabled: ☐ Yes ☐ No
+ - Trust settings configured (MFA, device compliance): ☐ Yes ☐ No
+
+- [ ] **Azure Local Cloud User Provisioning**
+ - Automatic user provisioning preferred: ☐ Yes ☐ No (manual invites)
+ - User assignment groups identified: ☐ Yes ☐ No
+ - Attribute mapping reviewed: ☐ Yes ☐ No
+
+### Section 2: GitLab and CI/CD Requirements
+
+**Reference:** [Customer source control project Setup Guide](https://docs.Azure Local Cloudmgmt.com/Providers/Gitlab/Implementation/customer_gitlab_project_setup_guide.md)
+
+#### source control project Configuration
+
+- [ ] **Project Naming and Structure**
+ - Customer ID number (CID): `cid_______`
+ - Customer short name (lowercase, no spaces): `________________________________`
+ - source control project name format: `cid###-customer_name`
+ - Final project name: `________________________________`
+ - Service tier (determines project path):
+ - ☐ Professional → `Azure Local Cloud/customers/Professional/`
+ - ☐ Premium → `Azure Local Cloud/customers/Premium/`
+ - ☐ Megaport → `Azure Local Cloud/customers/Megaport/`
+ - ☐ Sandbox → `Azure Local Cloud/[sub-group]/sandbox/`
+
+- [ ] **source control project Settings**
+ - Template to use: ☐ cid0000-customer_name (default) ☐ Other: `____________`
+ - Project avatar/logo available: ☐ Yes ☐ No
+ - Project description: `________________________________`
+ - Merge request approvals required: ☐ 2 (default) ☐ 3 (Azure Local Cloud/_core) ☐ 0 (sandbox)
+ - Approval groups: ☐ CI/CD (default) ☐ pcie (megaport) ☐ Both
+
+#### GitLab Environments
+
+- [ ] **Environment Configuration**
+ - Cloud provider: ☐ Azure ☐ AWS ☐ Multi-cloud
+ - Primary environment name: `________________________________` (e.g., `azr-prod-us`, `aws-prod-us`)
+ - Additional environments needed:
+ - ☐ Development: `________________________________`
+ - ☐ Testing: `________________________________`
+ - ☐ Staging: `________________________________`
+ - ☐ Megaport: `megaport`
+ - ☐ Datadog: `datadog`
+ - ☐ Other: `________________________________`
+
+#### Service Principal Requirements
+
+- [ ] **Automation Service Principal**
+ - Service principal naming convention: `________________________________` (default: `sp-Azure Local Cloud-cicd`)
+ - Permission scope: ☐ Subscription ☐ Resource Group ☐ Custom
+ - Required RBAC roles:
+ - ☐ Contributor (required)
+ - ☐ User Access Administrator (required for RBAC assignments)
+ - ☐ Other: `________________________________`
+ - Required Entra ID roles:
+ - ☐ Application Administrator (for runner deployment)
+ - ☐ Groups Administrator (for group management)
+ - ☐ Other: `________________________________`
+
+- [ ] **Credential Storage**
+ - Azure Key Vault name: `________________________________`
+ - Key Vault resource group: `________________________________`
+ - Secret naming convention: `sp-Azure Local Cloud-cicd-*` (appid, secret, tenantid, objectid)
+ - Secret rotation policy: ☐ 90 days ☐ 180 days ☐ 365 days (max)
+ - Calendar reminders configured for rotation: ☐ Yes ☐ No
+
+### Section 3: CI/CD Infrastructure Requirements
+
+**Reference:** [Deploy Customer CI/CD runners](https://docs.Azure Local Cloudmgmt.com/Providers/Gitlab/Implementation/deploy_customer_runners.md)
+
+#### CI/CD runner Infrastructure Sizing
+
+- [ ] **Workload Characteristics**
+ - Expected pipeline frequency: ☐ Hourly ☐ Daily ☐ On-demand ☐ Other: `____________`
+ - Expected concurrent jobs: ☐ 1-2 ☐ 3-5 ☐ 6-10 ☐ 10+
+ - Typical job duration: ☐ &lt;5 min ☐ 5-15 min ☐ 15-30 min ☐ >30 min
+ - Large Terraform state files expected: ☐ Yes ☐ No
+
+- [ ] **VMSS Configuration**
+ - VM instance size: ☐ Standard_D2s_v3 (default) ☐ Standard_D4s_v3 ☐ Other: `____________`
+ - Autoscaling max instances: ☐ 2 (default) ☐ 3-5 ☐ 6-10
+ - Azure region for runner deployment: `________________________________`
+ - Resource group name: `________________________________` (default: `rg-{cusid}-cicd-prod-{region}-001`)
+
+- [ ] **Network Connectivity**
+ - SSH access required (for Ansible): ☐ Yes (azrshci product) ☐ No
+ - Custom NSG rules needed: ☐ Yes ☐ No
+ - Outbound internet access method: ☐ NAT Gateway (default) ☐ Azure Firewall ☐ Proxy
+
+#### Terraform Backend Configuration
+
+- [ ] **State Storage Requirements**
+ - Storage account naming: `________________________________` (e.g., `sttfstateiic001`)
+ - Storage account resource group: `________________________________` (e.g., `rg-iic-tfstate-prod-eus-001`)
+ - Blob container name: `________________________________` (default: `tfstate`)
+ - Storage redundancy: ☐ LRS ☐ GRS ☐ ZRS ☐ GZRS
+ - Azure region for state storage: `________________________________`
+
+- [ ] **State File Security**
+ - Blob versioning enabled: ☐ Yes ☐ No
+ - Soft delete retention (days): `______` (default: 30)
+ - Encryption at rest: ☐ Microsoft-managed keys ☐ Customer-managed keys
+ - RBAC access control: ☐ Yes (recommended) ☐ Access keys
+
+- [ ] **State Locking**
+ - State locking required: ☐ Yes (recommended) ☐ No
+ - Lock timeout (seconds): `______` (default: Azure handles automatically)
+
+#### Pipeline Configuration
+
+- [ ] **Drift Detection**
+ - Drift detection enabled: ☐ Yes ☐ No
+ - Drift detection schedule: ☐ Daily (weekdays) ☐ Daily (all days) ☐ Weekly ☐ Custom: `____________`
+ - Drift detection cron expression: `________________________________` (default: `00 10 * * 1-5` = 10 AM UTC weekdays)
+ - Drift notification recipients: `________________________________`
+
+- [ ] **Approval Gates**
+ - Manual approval required for production: ☐ Yes ☐ No
+ - Approval timeout (hours): `______`
+ - Approver groups: `________________________________`
+ - Auto-approve for non-production: ☐ Yes ☐ No
+
+- [ ] **Pipeline Integrations**
+ - Slack notifications: ☐ Yes ☐ No - Webhook: `________________________________`
+ - Email notifications: ☐ Yes ☐ No - Recipients: `________________________________`
+ - Microsoft Teams notifications: ☐ Yes ☐ No - Webhook: `________________________________`
+ - Custom integrations: `________________________________`
+
+### Section 4: Azure Local Cloud Access and Group Requirements
+
+**Reference:** [Deploy Azure Local Cloud Entra ID Groups](https://docs.Azure Local Cloudmgmt.com/Providers/Azure/Implementation/Azure Local Cloud-groups-mop.md)
+
+#### Service Tier Group Assignments
+
+- [ ] **Service Tier Configuration**
+ - Service tier: ☐ Professional ☐ Premium ☐ Other: `____________`
+ - Professional tier groups (if applicable):
+ - ☐ `TRP-ENG-CI/CD` (Public Cloud Services - core engineering)
+ - ☐ `TRP-ENG-PCS-L2` (Level 2 engineers)
+ - ☐ `TRP-ENG-PCS-L3` (Level 3 engineers)
+ - ☐ `TRP-MGMT-CI/CD` (Management and leadership)
+ - Premium tier groups (if applicable):
+ - ☐ All Professional groups above
+ - ☐ `TRP-ENG-PCS-PREMIUM` (Premium-specific engineering)
+ - ☐ Additional dedicated resources as contracted
+
+- [ ] **Additional Service Groups**
+ - SOC (Security Operations Center): ☐ Yes ☐ No
+ - If Yes: ☐ `TRP-SEC-SOC` group assignment
+ - AES (Advanced Engineering Services): ☐ Yes ☐ No
+ - If Yes: ☐ `TRP-SEC-SD Advanced Services` group assignment
+ - Other services: `________________________________`
+
+#### RBAC Role Requirements
+
+- [ ] **Azure RBAC Roles**
+ - Azure Local Cloud group RBAC assignment preference:
+ - ☐ Owner (full control, includes RBAC management)
+ - ☐ Contributor + User Access Administrator (recommended, granular permissions)
+ - ☐ Custom role (specify requirements): `________________________________`
+ - Subscription-level roles required: ☐ Yes ☐ No
+ - Resource group-level roles required: ☐ Yes ☐ No
+ - Resource-level roles required: ☐ Yes ☐ No (not typical)
+
+#### Entra ID Role Requirements
+
+- [ ] **Entra ID Admin Roles**
+ - Azure Local Cloud user Entra ID role preference:
+ - ☐ Default roles (Global Reader, Service Support Administrator)
+ - ☐ POLP roles (Directory Readers, Security Reader, Service Support Administrator)
+ - ☐ Custom roles (specify): `________________________________`
+ - Customer preference: ☐ Default ☐ POLP (if customer pushes back on Global Reader)
+ - Justification for POLP if selected: `________________________________`
+
+#### Automation Account Requirements
+
+- [ ] **Group Management Automation**
+ - Automation account name: `________________________________` (default: `aa-Azure Local Cloudentra-{env}-{region}`)
+ - Automation account resource group: `________________________________`
+ - Automation account region: `________________________________`
+ - Group management runbook schedule:
+ - Frequency: ☐ Daily ☐ Twice daily ☐ Hourly ☐ Custom: `____________`
+ - Schedule time (UTC): `____________` (default: 02:00 UTC daily)
+
+- [ ] **Required Microsoft Graph Permissions**
+ - User.Read.All (read user information): ☐ Required
+ - Group.ReadWrite.All (manage group membership): ☐ Required
+ - Directory.Read.All (read directory data): ☐ Required
+ - RoleManagement.ReadWrite.Directory (assign Entra ID roles): ☐ Required if role automation enabled
+
+### Section 5: Azure Landing Zone and Governance
+
+**Reference:** [tf-module-azr-governance](https://github.com/AzureLocal/core/terraform-modules/azure/tf-module-azr-governance)
+
+#### Management Group Hierarchy
+
+- [ ] **Management Group Structure**
+ - Root management group name: `________________________________` (e.g., `CBB Root`)
+ - Azure Local Cloud management group name: `________________________________` (e.g., `Azure Local Cloud`)
+ - Azure Local management group name: `________________________________` (e.g., `CBB Azure Local`)
+ - Additional management groups needed: `________________________________`
+
+- [ ] **Policy Inheritance**
+ - Azure Policy set assignment scope: ☐ Root ☐ Azure Local Cloud MG ☐ Azure Local MG ☐ Subscription
+ - Custom policies required: ☐ Yes ☐ No
+ - Policy exclusions needed: ☐ Yes ☐ No - Specify: `________________________________`
+
+- [ ] **RBAC Inheritance**
+ - RBAC roles inherited from root: ☐ Yes ☐ No
+ - Management group-level role assignments needed: ☐ Yes ☐ No
+ - Custom role definitions required: ☐ Yes ☐ No
+
+#### Subscription Planning
+
+- [ ] **Management Subscription**
+ - Subscription name: `________________________________` (e.g., `Azure Local Cloud Management`)
+ - Subscription ID (if existing): `________________________________`
+ - Subscription owner: ☐ Azure Local Cloud ☐ Customer ☐ Shared
+ - Cost center/billing tag: `________________________________`
+ - Budget alert threshold: `$____________`
+
+- [ ] **Azure Local Subscription(s)**
+ - Number of subscriptions needed: ☐ 1 ☐ 2-5 ☐ 6-10 ☐ 10+
+ - Subscription naming pattern: `________________________________` (e.g., `CBB Azure Local - {Region}`)
+ - Subscription IDs (if existing):
+ 1. `________________________________`
+ 2. `________________________________`
+ 3. `________________________________`
+ - Subscription owners: ☐ Azure Local Cloud ☐ Customer ☐ Shared
+ - Cost centers/billing tags: `________________________________`
+ - Budget alert thresholds: `________________________________`
+
+- [ ] **Subscription Settings**
+ - Resource provider registrations required:
+ - ☐ Microsoft.AzureStackHCI
+ - ☐ Microsoft.ResourceConnector
+ - ☐ Microsoft.Compute
+ - ☐ Microsoft.Storage
+ - ☐ Microsoft.Network
+ - ☐ Microsoft.HybridCompute (Azure Arc)
+ - ☐ Other: `________________________________`
+ - Subscription-level tags:
+ - Environment: `________________________________` (e.g., Production, Development)
+ - CostCenter: `________________________________`
+ - Owner: `________________________________`
+ - Project: `________________________________`
+ - Other: `________________________________`
+
+#### Governance Module Configuration
+
+- [ ] **tf-module-azr-governance Settings**
+ - Module version: `________________________________` (e.g., `~> 1.0`)
+ - Deployment subscription: `________________________________`
+ - Deployment resource group: `________________________________`
+ - Governance scope: ☐ Management Group ☐ Subscription ☐ Resource Group
+
+- [ ] **Regulatory Compliance Requirements**
+ - Compliance frameworks required:
+ - ☐ None
+ - ☐ HIPAA
+ - ☐ PCI DSS
+ - ☐ NIST 800-53
+ - ☐ ISO 27001
+ - ☐ SOC 2
+ - ☐ FedRAMP
+ - ☐ Other: `________________________________`
+ - Compliance reporting frequency: ☐ Daily ☐ Weekly ☐ Monthly
+ - Compliance report recipients: `________________________________`
+
+#### Resource Group Structure
+
+- [ ] **Resource Group Naming Convention**
+ - Naming pattern: `________________________________` (e.g., `rg-{cusid}-{purpose}-{env}-{region}-{instance}`)
+ - Example resource group name: `________________________________` (e.g., `rg-iic-azlocal-prod-eus-001`)
+ - Delimiter: ☐ Hyphen (-) ☐ Underscore (_) ☐ None
+
+- [ ] **Required Resource Groups (Examples)**
+ - Management infrastructure: `________________________________`
+ - Networking infrastructure: `________________________________`
+ - Security infrastructure (Key Vault): `________________________________`
+ - Monitoring infrastructure: `________________________________`
+ - Azure Local clusters (per-site):
+ - Site 1: `________________________________`
+ - Site 2: `________________________________`
+ - Site 3: `________________________________`
+ - Terraform state storage: `________________________________`
+ - CI/CD runner infrastructure: `________________________________`
+
+- [ ] **Resource Group Settings**
+ - Azure region(s) for resource groups: `________________________________` (e.g., `eastus`, `westus2`)
+ - Resource group-level tags:
+ - Purpose: `________________________________`
+ - Environment: `________________________________`
+ - CostCenter: `________________________________`
+ - ManagedBy: ☐ Azure Local Cloud ☐ Customer ☐ Terraform
+ - Other: `________________________________`
+ - Resource locks required: ☐ Yes ☐ No
+ - If Yes, lock type: ☐ ReadOnly ☐ CanNotDelete
+
+#### Tagging Taxonomy
+
+- [ ] **Required Tags (All Resources)**
+ - Environment: ☐ Required - Values: `________________________________` (e.g., Production, Development, Testing)
+ - CostCenter: ☐ Required - Values: `________________________________`
+ - Owner: ☐ Required - Values: `________________________________`
+ - Project: ☐ Required - Values: `________________________________`
+ - ManagedBy: ☐ Required - Values: ☐ Terraform ☐ Manual ☐ Automation
+ - CreatedDate: ☐ Required - Format: `________________________________`
+ - ExpirationDate: ☐ Optional - Format: `________________________________`
+
+- [ ] **Optional Tags**
+ - Application: `________________________________`
+ - Workload: `________________________________`
+ - DR-Tier: `________________________________`
+ - Backup-Policy: `________________________________`
+ - Compliance: `________________________________`
+ - Other: `________________________________`
+
+## Part 2: On-Premises Discovery
+
+This section covers Active Directory and enterprise network preparation.
+
+### Section 8: Active Directory Planning
+
+- [ ] **Domain Configuration**
+ - Domain name: `________________________________`
+ - Forest functional level: `________________________________`
+ - Domain functional level: `________________________________`
+ - DNS servers: `________________________________`
+ - NTP servers: `________________________________`
+
+- [ ] **Organizational Units (OUs)**
+ - Computer OU for Azure Local nodes: `________________________________`
+ - User OU for service accounts: `________________________________`
+ - Group OU for security groups: `________________________________`
+
+- [ ] **Service Accounts**
+ - Azure Local deployment account: `________________________________`
+ - Domain join account: `________________________________`
+ - Backup account: `________________________________`
+
+### Section 9: Enterprise Network Infrastructure Validation
+
+- [ ] **Network Topology**
+ - Core switch models: `________________________________`
+ - Distribution switch models: `________________________________`
+ - Access switch models: `________________________________`
+ - Firewall models: `________________________________`
+
+- [ ] **VLAN Configuration**
+ - Management VLAN: `______`
+ - Storage VLANs: `______`, `______`
+ - VM traffic VLANs: `______`
+
+- [ ] **DHCP and DNS**
+ - DHCP server: `________________________________`
+ - DNS servers: `________________________________`
+ - NTP servers: `________________________________`
+
+## Part 3: Site-Specific Discovery
+
+This section covers per-site hardware, network, and workload planning.
+
+### Section 10: Site Network Infrastructure
+
+- [ ] **Site Details**
+ - Site code: `________________________________`
+ - Site name: `________________________________`
+ - Address: `________________________________`
+ - Contact: `________________________________`
+
+- [ ] **Network Configuration**
+ - Management network: `________________________________`
+ - Storage networks: `________________________________`
+ - VM networks: `________________________________`
+
+### Section 11: Hardware Configuration
+
+- [ ] **Server Inventory**
+ - Number of nodes: `______`
+ - Server models: `________________________________`
+ - Service tags: `________________________________`
+ - iDRAC IPs: `________________________________`
+
+- [ ] **Network Interfaces**
+ - Management NICs: `________________________________`
+ - Storage NICs: `________________________________`
+ - VM NICs: `________________________________`
+
+### Section 12: Naming Standards Workshop
+
+- [ ] **Cluster Naming**
+ - Cluster name: `________________________________`
+ - Node naming pattern: `________________________________`
+ - iDRAC naming pattern: `________________________________`
+
+- [ ] **IP Address Allocation**
+ - Management IPs: `________________________________`
+ - Storage IPs: `________________________________`
+ - VM IPs: `________________________________`
+
+### Section 13: Workload Discovery
+
+- [ ] **Current Workloads**
+ - Number of VMs: `______`
+ - VM types: `________________________________`
+ - Storage requirements: `________________________________`
+ - Network requirements: `________________________________`
+
+- [ ] **Future Workloads**
+ - Planned VMs: `______`
+ - Growth projections: `________________________________`
+
+## Implementation Readiness Checklist
+
+- [ ] All Part 1 discovery completed
+- [ ] All Part 2 discovery completed
+- [ ] All Part 3 discovery completed per site
+- [ ] cluster-config.csv populated
+- [ ] cluster-configuration.md populated
+- [ ] Naming standards finalized
+- [ ] Network configuration validated
+- [ ] Hardware inventory complete
+
+## Discovery Deliverables
+
+- Completed discovery checklist
+- cluster-config.csv
+- cluster-configuration.md
+- Network diagrams
+- Hardware inventory
+- Naming standards document

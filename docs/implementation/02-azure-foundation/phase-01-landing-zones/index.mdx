@@ -1,0 +1,201 @@
+---
+title: "Phase 01: Landing Zones"
+sidebar_label: "Phase 01: Landing Zones"
+sidebar_position: 1
+description: "Phase 01: Landing Zones — choose your deployment model and deploy management groups, subscriptions, and resource groups."
+category: "RUNBOOK"
+scope: "Landing zone deployment"
+purpose: "Deploy management groups, subscriptions, and resource groups"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - phase-01
+ - landing-zones
+ - management-groups
+keywords:
+ - landing zones
+ - management groups
+ - subscriptions
+ - resource groups
+status: "approved"
+---
+
+# Phase 01: Azure Landing Zones
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Landing zone deployment 
+> **PURPOSE**: Deploy management groups, subscriptions, and resource groups 
+> **MASTER REFERENCE**: [Microsoft CAF Landing Zones](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Deploy Azure landing zone architecture including management groups, subscriptions, and resource group structure following Azure Cloud Adoption Framework (CAF) best practices.
+
+All examples on this page use **Infinite azurelocal Corp (IIC)**. Replace names with values from your `infrastructure.yml`.
+
+### What This Accomplishes
+
+- **Management group hierarchy** — governance structure for Azure resources
+- **Subscription organization** — creates and organizes Azure subscriptions
+- **Resource group structure** — organized resource containers for cluster resources
+
+### Prerequisites
+
+:::info Azure Authentication Required
+Before running any scripts in this phase, ensure you have an authenticated Azure session.
+See [Authentication](../../05-authentication.mdx) for options including Azure PowerShell, Azure CLI, and service principal authentication.
+:::
+
+| Run As | Description |
+|--------|-------------|
+| ⚡ **Elevated Admin** | Owner or User Access Administrator at tenant root scope |
+
+- **Entra ID Permissions** — User Access Administrator or Owner role at tenant root scope
+- **Subscription Access** — Access to create subscriptions or EA/MCA enrollment (full deployment)
+- **`infrastructure.yml`** — Configured with management group, subscription, and resource group values
+
+---
+
+## Choose Your Deployment Model
+
+:::warning Decision Required
+Select a deployment model before proceeding. The model determines the management group hierarchy, subscription count, and resource group structure.
+:::
+
+### Deployment Model Comparison
+
+| Aspect | Full CAF/WAF Deployment | Simplified Deployment |
+|--------|-------------------------|----------------------|
+| **Management Groups** | Complete hierarchy per CAF Enterprise-Scale (10+) | Root MG + Landing Zone MG (2) |
+| **Subscriptions** | Dedicated subscription per function (6+) | Single subscription for all resources |
+| **Resource Groups** | Multiple RGs per subscription | Single RG for all cluster resources |
+| **Governance** | MG-level policies with inheritance | Subscription-level policies |
+| **RBAC** | MG-level role assignments | Resource group-level access control |
+| **Cost Tracking** | Subscription-based isolation | Tag-based allocation |
+| **Best For** | Enterprise, regulated, multi-cluster | PoC, labs, single cluster, quick-start |
+| **Complexity** | Higher | Lower |
+| **Setup Time** | ~3 hours | ~1 hour |
+
+---
+
+## Full CAF/WAF Deployment
+
+**Best for**: Enterprise customers, strict governance requirements, multi-environment production, regulated industries
+
+Deploy complete Azure Landing Zone architecture following Microsoft Cloud Adoption Framework and Well-Architected Framework guidelines.
+
+### Architecture Overview
+
+```
+Tenant Root Group
+└── cmp-iic-root # Root MG
+ ├── cmp-platform-iic # Platform Services
+ │ ├── cmp-platform-management-iic
+ │ ├── cmp-platform-connectivity-iic
+ │ ├── cmp-platform-identity-iic
+ │ └── cmp-platform-security-iic
+ ├── cmp-landing-zones-iic # Landing Zones
+ │ ├── cmp-lz-online-iic
+ │ └── cmp-lz-corp-iic
+ ├── cmp-sandbox-iic
+ └── cmp-decommissioned-iic
+```
+
+### Tasks
+
+| Task | Description | Documentation |
+|------|-------------|---------------|
+| **Task 01** | Configure complete management group hierarchy | [Configure Management Groups](./full-deployment/task-01-configure-management-groups) |
+| **Task 02** | Create dedicated subscriptions per function | [Create Subscriptions](./full-deployment/task-02-create-subscriptions) |
+| **Task 03** | Create resource groups in each subscription | [Create Resource Groups](./full-deployment/task-03-create-resource-groups) |
+
+**[➡️ Begin Full CAF/WAF Deployment](./full-deployment/)**
+
+---
+
+## Simplified Deployment
+
+**Best for**: PoC/labs, single cluster deployments, cost-conscious customers, rapid deployment timelines
+
+Deploy streamlined landing zone structure with a root management group, a landing zone management group, a single subscription, and a single resource group.
+
+### Architecture Overview
+
+```
+Tenant Root Group
+└── cmp-iic-root # Root MG
+ └── cmp-landing-zones-iic # Landing Zone MG
+ └── iic-lz-azurelocal-001 # Subscription
+ └── rg-c01-azl-eus-01 # Single resource group
+ ├── Azure Local cluster resources
+ ├── Arc-enabled servers
+ ├── Key Vault
+ └── Storage accounts
+```
+
+### Tasks
+
+| Task | Description | Documentation |
+|------|-------------|---------------|
+| **Task 01** | Configure root and landing zone management groups | [Configure Management Group](./simplified-deployment/task-01-configure-management-group) |
+| **Task 02** | Create or assign single subscription | [Create Subscription](./simplified-deployment/task-02-create-subscription) |
+| **Task 03** | Create single resource group for cluster resources | [Create Resource Groups](./simplified-deployment/task-03-create-resource-groups) |
+
+**[➡️ Begin Simplified Deployment](./simplified-deployment/)**
+
+---
+
+## Deliverables
+
+Regardless of deployment model, the following deliverables are expected at the end of this phase:
+
+- [ ] Management group hierarchy deployed
+- [ ] Subscriptions provisioned and associated with management groups
+- [ ] Resource groups created following naming conventions from `infrastructure.yml`
+
+## Security Considerations
+
+- **RBAC at scale** — management group-level role assignments (full) or resource group-level (simplified)
+- **Policy governance** — centralized policy management and enforcement
+- **Resource organization** — logical separation of resources by environment and purpose
+- **Cost management** — subscription-level budgeting (full) or tag-based allocation (simplified)
+
+## Next Steps
+
+After landing zones are deployed, proceed to the next phase of the Azure Foundation implementation.
+
+## References
+
+- [tf-module-azr-governance (GitLab)](https://github.com/AzureLocal/core/terraform-modules/azure/tf-module-azr-governance)
+- [Azure Cloud Adoption Framework](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/)
+- [Azure Landing Zones](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)
+- [Management Groups Overview](https://learn.microsoft.com/en-us/azure/governance/management-groups/overview)
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| — | [Azure Foundation](../index.mdx) | [Phase 02 — Resource Providers](../phase-02-resource-providers/) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, phase-01, landing-zones, management-groups
+- Keywords: landing zones, management groups, subscriptions, resource groups
+- Author: Azure Local Cloudnology Team
+

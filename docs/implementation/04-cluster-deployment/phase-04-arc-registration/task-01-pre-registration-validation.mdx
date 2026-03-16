@@ -1,0 +1,254 @@
+---
+title: "Task 01: Pre-Registration Environment Validation"
+sidebar_label: "Task 01: Pre-Registration Validation"
+sidebar_position: 1
+description: "Validate identity, permissions, and connectivity before Arc registration"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Pre-Registration Environment Validation
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 04](https://img.shields.io/badge/Phase-04_Arc_Registration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+**Status**: Active | **Estimated Time**: 20 minutes (identity) + 15 min/node (connectivity) | **Last Updated**: 2026-03-07
+
+---
+
+## Overview
+
+Before registering nodes with Azure Arc, validate two categories of prerequisites:
+
+1. **Identity & Permissions** — verify the service principal exists, has the correct RBAC roles on the Arc resource group, and that its secret is accessible in Key Vault. If deploying interactively, verify your own account permissions.
+2. **Connectivity** — run the Environment Checker on each cluster node to confirm end-to-end reachability to all required Azure endpoints.
+
+:::info Two-Part Validation
+**Step 1** (Identity & Permissions) runs from the management server or any Azure-authenticated machine — it validates Azure-side prerequisites. 
+**Step 2** (Connectivity) runs on or against each cluster node — it validates network-level reachability from the node OS itself.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Phase 03 complete | OS configured, hostnames set, nodes restarted |
+| Node access | RDP or console access to each node |
+| Internet connectivity | Nodes can reach PSGallery and Azure endpoints |
+| Azure modules | `Az.Accounts`, `Az.Resources`, `Az.KeyVault` installed on management machine |
+| Service principal | Created with App ID; secret stored in Key Vault |
+
+---
+
+## Step 1: Identity & Permission Checks
+
+Verify the service principal (or interactive user) has the required Azure permissions **before** connecting to cluster nodes. Run from the management server or any machine with Azure authentication.
+
+:::info What Gets Checked
+1. **SPN exists** in Entra ID with the configured App ID
+2. **RBAC roles** — SPN has required permissions on the Arc resource group
+3. **Key Vault** — SPN secret is stored and accessible
+4. **Arc Gateway** — Gateway resource exists and is provisioned (skip with `-NoArcGateway`)
+:::
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (Manual)" default>
+
+Run from any machine with an active Azure session.
+
+```powershell
+# Task 01 Step 1 — Identity & Permission Checks (manual)
+
+Connect-AzAccount -TenantId "REPLACE_TENANT_ID" -SubscriptionId "REPLACE_SUBSCRIPTION_ID"
+
+$SpnAppId = "REPLACE_SPN_APP_ID"
+$ResourceGroup = "REPLACE_RESOURCE_GROUP"
+$VaultName = "REPLACE_VAULT_NAME"
+$SecretName = "REPLACE_SECRET_NAME"
+
+if ($SpnAppId -match '^REPLACE_') { throw 'Edit the REPLACE_ variables before running.' }
+
+# --- Check 1: Verify SPN exists in Entra ID ---
+$spn = Get-AzADServicePrincipal -ApplicationId $SpnAppId -ErrorAction SilentlyContinue
+if ($spn) {
+ Write-Host "[PASS] SPN exists: $($spn.DisplayName) ($SpnAppId)" -ForegroundColor Green
+} else {
+ Write-Host "[FAIL] SPN not found: $SpnAppId" -ForegroundColor Red
+}
+
+# --- Check 2: Verify RBAC roles on the Arc resource group ---
+if ($spn) {
+ $roles = Get-AzRoleAssignment -ObjectId $spn.Id -ResourceGroupName $ResourceGroup `
+ -ErrorAction SilentlyContinue
+ $roles | Format-Table RoleDefinitionName, Scope -AutoSize
+
+ $accepted = @(
+ 'Contributor',
+ 'Azure Connected Machine Onboarding',
+ 'Azure Connected Machine Resource Administrator',
+ 'Azure Stack HCI Administrator'
+ )
+ $matched = $roles | Where-Object { $_.RoleDefinitionName -in $accepted }
+ if ($matched) {
+ $matched | ForEach-Object {
+ Write-Host "[PASS] Role: $($_.RoleDefinitionName)" -ForegroundColor Green
+ }
+ } else {
+ Write-Host "[FAIL] No recognized Arc role on '$ResourceGroup'" -ForegroundColor Red
+ Write-Host " Assign: Azure Connected Machine Onboarding (minimum)" -ForegroundColor Yellow
+ }
+}
+
+# --- Check 3: Verify Key Vault has SPN secret ---
+$secret = Get-AzKeyVaultSecret -VaultName $VaultName -Name $SecretName -ErrorAction SilentlyContinue
+if ($secret -and $secret.Enabled) {
+ Write-Host "[PASS] KV secret '$SecretName' accessible and enabled" -ForegroundColor Green
+ if ($secret.Expires -and $secret.Expires -lt (Get-Date).AddDays(30)) {
+ Write-Host "[WARN] Secret expires $($secret.Expires) — renew soon" -ForegroundColor Yellow
+ }
+} elseif ($secret) {
+ Write-Host "[WARN] KV secret '$SecretName' exists but is DISABLED" -ForegroundColor Yellow
+} else {
+ Write-Host "[FAIL] KV secret '$SecretName' not found in vault '$VaultName'" -ForegroundColor Red
+}
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
+
+Run identity checks only using the `Invoke-ArcPrerequisites-Orchestrated.ps1` script with `-SkipConnectivity`. Reads SPN, resource group, Key Vault, and Arc Gateway details from `infrastructure.yml`.
+
+:::tip Standards-Compliant Script
+**`Invoke-ArcPrerequisites-Orchestrated.ps1`** includes both identity and connectivity checks. Use `-SkipConnectivity` to run identity checks only, or `-SkipIdentity` to run connectivity only. Both run by default. Use `-NoArcGateway` to skip the Arc Gateway validation check.
+:::
+
+```powershell title="Identity checks only (no node connections)"
+# Requires: Connect-AzAccount before running
+# Requires: Az.Accounts, Az.Resources, Az.KeyVault modules
+
+.\scripts\deploy\04-cluster-deployment\phase-04-arc-registration\task-01-pre-registration-validation\powershell\Invoke-ArcPrerequisites-Orchestrated.ps1 `
+ -ConfigPath .\configs\infrastructure-azl-lab.yml `
+ -SkipConnectivity
+```
+
+```powershell title="WhatIf — preview identity checks"
+.\scripts\deploy\04-cluster-deployment\phase-04-arc-registration\task-01-pre-registration-validation\powershell\Invoke-ArcPrerequisites-Orchestrated.ps1 `
+ -ConfigPath .\configs\infrastructure-azl-lab.yml `
+ -SkipConnectivity `
+ -WhatIf
+```
+
+The script performs four checks:
+1. **SPN exists** — queries Entra ID for the service principal by `identity.service_principal.client_id`
+2. **RBAC roles** — verifies the SPN has a recognized role on `compute.azure_local.arc_resource_group` (Contributor, Azure Connected Machine Onboarding, Azure Connected Machine Resource Administrator, or Azure Stack HCI Administrator)
+3. **Key Vault secret** — confirms the SPN secret referenced by `identity.service_principal.secret` is accessible and enabled
+4. **Arc Gateway** — verifies the Arc Gateway resource referenced by `compute.azure_local.arc_gateway_id` exists in Azure and is provisioned. Skip with `-NoArcGateway`
+
+</TabItem>
+</Tabs>
+
+---
+
+## Step 2: Connectivity Validation
+
+Run the Environment Checker **on each cluster node** to confirm end-to-end connectivity to all required Azure endpoints.
+
+:::info Why Run From the Nodes?
+OS configuration is now complete on the cluster nodes. Running Environment Checker directly from the nodes confirms that DNS, firewall, and NIC configuration all work end-to-end from the node itself — not just from the management network.
+:::
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run on each node individually via RDP or console.
+
+```powershell
+# Task 01 Step 2 — Connectivity Validation (run on each node)
+
+Install-Module -Name AzStackHci.EnvironmentChecker -Repository PSGallery -Force -AllowClobber
+Import-Module AzStackHci.EnvironmentChecker
+
+Invoke-AzStackHciConnectivityValidation -Verbose | Format-Table Name, Status, Description -AutoSize
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
+
+Run from management server against all nodes via PSRemoting.
+
+:::tip Standards-Compliant Script
+For production deployments, use **`Invoke-ArcPrerequisites-Orchestrated.ps1`** with `-SkipIdentity` to run connectivity only, or omit it to run both checks. Supports `-ConfigPath`, `-WhatIf`, `-TargetNode`, and `-Credential`. Includes logging, Key Vault credential resolution, and parallel execution. The module must already be installed on each node.
+:::
+
+```powershell
+# Task 01 Step 2 — Connectivity Validation (orchestrated, all nodes)
+# infrastructure.yml variables:
+# compute.cluster_nodes[].management_ip -> $ServerList
+
+$ConfigPath = ".\configs\infrastructure.yml"
+$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
+ ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+
+Invoke-Command ($ServerList) {
+ if (-not (Get-Module -ListAvailable -Name AzStackHci.EnvironmentChecker)) {
+ Install-Module -Name AzStackHci.EnvironmentChecker -Repository PSGallery -Force -AllowClobber
+ }
+ Import-Module AzStackHci.EnvironmentChecker
+ Invoke-AzStackHciConnectivityValidation
+} | Sort -Property PsComputerName
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Expected Results
+
+### Identity & Permissions
+
+| Check | Expected |
+|---|---|
+| SPN exists (Entra ID) | Found with correct App ID and Display Name |
+| RBAC role on Arc resource group | `Contributor` or `Azure Connected Machine Onboarding` |
+| Key Vault secret | Accessible and enabled (not expired) |
+| Arc Gateway | Exists in Azure, provisioning state Succeeded (skip with `-NoArcGateway`) |
+| Current user context | Authenticated to correct tenant and subscription |
+
+### Connectivity
+
+All Environment Checker tests should show `Succeeded`:
+
+| Validation | Expected |
+|---|---|
+| Azure Resource Manager endpoint | Succeeded |
+| Azure Active Directory endpoint | Succeeded |
+| Azure Arc endpoints | Succeeded |
+| Graph API endpoints | Succeeded |
+| Azure Storage endpoints | Succeeded |
+| Windows Update endpoints | Succeeded |
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|---|---|
+| SPN not found | Verify `identity.service_principal.client_id` in `infrastructure.yml` matches Entra ID app registration |
+| No RBAC role on RG | Assign **Azure Connected Machine Onboarding** (minimum) on the Arc resource group |
+| KV secret not accessible | Check Key Vault access policies or RBAC; verify secret name matches the `keyvault://` URI in YAML |
+| Secret expired or disabled | Rotate the SPN secret in Entra ID and update Key Vault |
+| DNS resolution failures | Verify DNS servers in node network config (Phase 03 Task 05) |
+| Timeout errors | Check firewall rules for node IPs |
+| Certificate errors | Add Azure endpoints to TLS inspection bypass |
+| Module install fails | Allow `*.powershellgallery.com` outbound |
+
+---
+
+## Navigation
+
+[↑ Phase 04](./index.mdx) · [Task 02: Register Nodes with Arc →](./task-02-register-cluster-nodes-with-azure-arc.mdx)

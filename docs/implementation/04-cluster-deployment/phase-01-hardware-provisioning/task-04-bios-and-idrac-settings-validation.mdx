@@ -1,0 +1,399 @@
+---
+title: "Task 04: BIOS and iDRAC Settings Validation"
+sidebar_label: "Task 04: BIOS/iDRAC Validation"
+sidebar_position: 4
+description: "Validate BIOS and iDRAC settings against Azure Local requirements using Task 02 discovery data. Generates a per-node compliance report for use in Task 05 remediation."
+category: Runbook
+scope: Azure Local hardware provisioning
+purpose: Verify BIOS and iDRAC settings meet Azure Local validated baseline requirements and identify non-compliant settings for Task 05 remediation
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: 1.1
+tags: ["azure-local", "bios", "idrac", "hardware-provisioning", "compliance", "validation"]
+keywords: ["BIOS validation", "iDRAC settings", "Azure Local requirements", "compliance report", "hardware baseline", "SR-IOV", "Secure Boot", "TPM"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: BIOS and iDRAC Settings Validation
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Azure Local hardware provisioning 
+> **PURPOSE**: Verify BIOS and iDRAC settings meet Azure Local validated baseline requirements and identify non-compliant settings for Task 05 remediation 
+> **MASTER REFERENCE**: [Phase 01: Hardware Provisioning](./index.mdx)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Validate current BIOS and iDRAC settings against the Dell Azure Local validated baseline and Azure Local Cloud enterprise operational standards using configuration data collected in Task 02. Generates a per-node compliance report identifying any settings that require remediation in Task 05.
+
+The orchestrated and standalone script paths **read from Task 02 discovery JSON files — no live iDRAC connection is required** for script-based validation. The Dell iDRAC UI option requires direct access to each node's iDRAC interface.
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Task 02 Complete | BIOS and iDRAC configuration collected in `configs/network-devices/bmc/<service-tag>.json` | Task 02 hardware discovery |
+| iDRAC Access (UI only) | iDRAC web interface reachable (UI tab only) | `infrastructure.yml: nodes.<name>.idrac_ip` |
+| Dell Documentation | Azure Local Validated Node Configuration Guide | [Dell Support](https://www.dell.com/support) |
+
+---
+
+## Required BIOS Settings
+
+### Core Virtualization Settings (All AX Platforms)
+
+| Setting | Required Value | Purpose |
+|---------|---------------|---------|
+| SR-IOV Global Enable | `Enabled` | Network virtualization |
+| Virtualization Technology (VT-x) | `Enabled` | Hyper-V support |
+| VT for Directed I/O (VT-d / x2APIC Mode) | `Enabled` | DMA protection |
+| Logical Processor (Hyperthreading) | `Enabled` | Performance |
+
+### Boot and Security Settings (All AX Platforms)
+
+| Setting | Required Value | Purpose |
+|---------|---------------|---------|
+| Boot Mode | `UEFI` | Modern boot support |
+| Secure Boot | `Enabled` | Security requirement |
+| TPM Security | `On` | BitLocker, Credential Guard |
+| System Profile | `Performance` | Maximum performance |
+| AC Power Recovery | `On` | Auto-restart after power loss |
+| AC Power Recovery Delay | `Random` | Staggered startup |
+
+### Enhanced Security Settings (AX-650, AX-760, AX-4510c, AX-4520c)
+
+| Setting | Required Value | Purpose |
+|---------|---------------|---------|
+| Kernel DMA Protection | `Enabled` | DMA attack protection |
+| TPM PPI Bypass Provision | `Enabled` | Automated TPM provisioning |
+| TPM PPI Bypass Clear | `Enabled` | Automated TPM operations |
+| TPM2 Algorithm Selection | `SHA256` | Modern crypto algorithm |
+| Intel TXT/AMD DRTM | `On` | Trusted execution |
+
+### Advanced Security Settings (AX-760, AX-4510c, AX-4520c)
+
+| Setting | Required Value | Purpose |
+|---------|---------------|---------|
+| SMM Security Mitigation | `Enabled` | SMM protection |
+
+---
+
+## Required iDRAC Settings
+
+| Setting | Required Value | Purpose |
+|---------|---------------|---------|
+| Network: NIC Selection | `Dedicated` | Dedicated management port |
+| Network: Enable NIC | `Enabled` | Management connectivity |
+| IPMI Over LAN | **Not Required** | Azure Local uses Azure Arc |
+| Power: Redundancy Policy | `Input Power Redundant` | Power protection |
+| Power: Enable Hot Spare | `Disabled`¹ | Enterprise load-balanced |
+| Power: Primary PSU | `PSU1` | Primary power source |
+| Session Timeout | `1800` seconds (30 min) | Security |
+| Redfish API | `Enabled` | Remote management |
+
+:::note iDRAC Hot Spare Setting
+¹ **Enterprise vs Dell Default:**
+- **Dell Recommendation:** Hot Spare `Enabled` (one PSU standby, one active)
+- **Enterprise Standard:** Hot Spare `Disabled` (both PSUs active, load-balanced)
+- **Reason:** Enterprise environments prefer both PSUs sharing load evenly for optimal power distribution and thermal management
+:::
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Dell iDRAC UI" default>
+
+For each node, validate BIOS and iDRAC settings directly via the iDRAC web interface.
+
+### BIOS Validation
+
+1. Navigate to `https://<idrac-ip>` and log in with iDRAC credentials
+2. Go to **Configuration** → **BIOS Settings**
+3. Verify settings against the required values in the tables above
+
+**Core Settings (all platforms):**
+
+- [ ] SR-IOV Global Enable: `Enabled`
+- [ ] Virtualization Technology (VT-x): `Enabled`
+- [ ] VT for Directed I/O (x2APIC Mode): `Enabled`
+- [ ] Logical Processor (Hyperthreading): `Enabled`
+- [ ] Boot Mode: `UEFI`
+- [ ] Secure Boot: `Enabled`
+- [ ] TPM Security: `On`
+- [ ] System Profile: `Performance`
+- [ ] AC Power Recovery: `On`
+- [ ] AC Power Recovery Delay: `Random`
+
+**Enhanced Security (AX-650 and later):**
+
+- [ ] Kernel DMA Protection: `Enabled`
+- [ ] TPM PPI Bypass Provision: `Enabled`
+- [ ] TPM PPI Bypass Clear: `Enabled`
+- [ ] TPM2 Algorithm Selection: `SHA256`
+- [ ] Intel TXT/AMD DRTM: `On`
+
+**Advanced Security (AX-760 and later):**
+
+- [ ] SMM Security Mitigation: `Enabled`
+
+### iDRAC Validation
+
+Navigate to **iDRAC Settings** and verify:
+
+- [ ] Network: NIC Selection: `Dedicated`
+- [ ] Network: Enable NIC: `Enabled`
+- [ ] Power: Redundancy Policy: `Input Power Redundant`
+- [ ] Power: Enable Hot Spare: `Disabled`
+- [ ] Power: Primary Power Supply Unit: `PSU1`
+- [ ] Services: Web Server Session Timeout: `≤1800` seconds
+- [ ] Services: Redfish: `Enabled`
+- [ ] Services: NTP: Configured and synchronized
+
+Document any non-compliant settings for remediation in Task 05.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+Validate using the Redfish-collected JSON files from Task 02. **No iDRAC connection required** — all configuration data was captured in Task 02.
+
+`scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-04-bios-and-idrac-settings-validation/powershell/Invoke-BIOSComplianceValidation.ps1`
+
+```powershell
+#Requires -Version 7.0
+# ============================================================================
+# Script: Invoke-BIOSComplianceValidation.ps1
+# Execution: Run FROM management server — reads Task 02 discovery JSON files
+# Prerequisites: powershell-yaml, Task 02 JSON files in configs/network-devices/bmc/
+# No iDRAC connection required
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath = ".\infrastructure.yml",
+
+ [Parameter(Mandatory = $false)]
+ [string]$InventoryPath = ".\configs\network-devices\bmc\*.json",
+
+ [Parameter(Mandatory = $false)]
+ [string]$ReportPath = ".\configs\network-devices\bmc\bios-compliance-report.json"
+)
+
+Import-Module powershell-yaml -ErrorAction Stop
+$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+$inventoryFiles = Get-ChildItem $InventoryPath -ErrorAction Stop
+$allResults = @()
+
+Write-Host "Validating BIOS/iDRAC compliance from Task 02 discovery files..." -ForegroundColor Cyan
+
+foreach ($file in $inventoryFiles) {
+ $inventory = Get-Content $file.FullName | ConvertFrom-Json
+ $serviceTag = $file.BaseName
+
+ Write-Host " Validating: $serviceTag" -ForegroundColor Yellow
+
+ # Invoke-BIOSComplianceValidation.ps1 processes and compares each JSON
+ # against the required baseline for the node's detected platform generation
+ $result = & ".\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-04-bios-and-idrac-settings-validation\powershell\Invoke-BIOSComplianceValidation.ps1" `
+ -InventoryObject $inventory
+
+ $allResults += $result
+ $status = if ($result.Status -eq "PASS") { "Green" } else { "Red" }
+ Write-Host " $($result.Status) — $($result.FailedChecks) failed / $($result.TotalChecks) total" -ForegroundColor $status
+}
+
+$allResults | ConvertTo-Json -Depth 10 | Set-Content $ReportPath -Encoding UTF8
+Write-Host "`nCompliance report: $ReportPath" -ForegroundColor Cyan
+
+$failCount = ($allResults | Where-Object { $_.Status -eq "FAIL" }).Count
+if ($failCount -gt 0) {
+ Write-Host "$failCount node(s) require remediation — proceed to Task 05" -ForegroundColor Yellow
+} else {
+ Write-Host "All nodes PASS — no remediation required" -ForegroundColor Green
+}
+```
+
+**Script validates:**
+- ✅ Core virtualization settings (SR-IOV, VT-x, VT-d, Hyperthreading)
+- ✅ Boot and security settings (UEFI, Secure Boot, TPM, System Profile)
+- ✅ Power management (AC Recovery, AC Recovery Delay)
+- ✅ Platform-specific enhanced security (Kernel DMA, TPM PPI, TXT/DRTM) — AX-650+
+- ✅ Advanced security (SMM mitigation) — AX-760+
+- ✅ iDRAC network, power redundancy, session timeout, Redfish API
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+#Requires -Version 5.1
+# ============================================================================
+# Script: Invoke-BIOSComplianceValidation-Standalone.ps1
+# Execution: Run FROM any workstation — reads Task 02 discovery JSON files
+# Prerequisites: Task 02 JSON files present, no iDRAC connection required
+# ============================================================================
+
+#region CONFIGURATION
+$InventoryPath = ".\configs\network-devices\bmc\*.json"
+$ReportPath = ".\configs\network-devices\bmc\bios-compliance-report.json"
+
+# Required BIOS settings baseline (all AX platforms)
+$requiredBIOS = @{
+ SriovGlobalEnable = "Enabled"
+ VirtualizationTechnology = "Enabled"
+ VtForDirectedIo = "Enabled"
+ LogicalProcessor = "Enabled"
+ BootMode = "Uefi"
+ SecureBoot = "Enabled"
+ TpmSecurity = "On"
+ SysProfile = "PerfOptimized"
+ AcPwrRcvry = "On"
+ AcPwrRcvryDelay = "Random"
+}
+
+# Required iDRAC settings baseline
+$requirediDRAC = @{
+ NicSelection = "Dedicated"
+ NicEnable = "Enabled"
+ PowerRedundancy = "InputPowerRedundant"
+ HotSpare = "Disabled"
+ PrimaryPSU = "PSU1"
+ WebSessionTimeout = 1800
+ RedfishEnabled = "Enabled"
+}
+#endregion
+
+$inventoryFiles = Get-ChildItem $InventoryPath
+$allResults = @()
+
+foreach ($file in $inventoryFiles) {
+ $inv = Get-Content $file.FullName | ConvertFrom-Json
+ $failures = @()
+
+ # Validate BIOS
+ foreach ($key in $requiredBIOS.Keys) {
+ $actual = $inv.BIOS.$key
+ if ($actual -ne $requiredBIOS[$key]) {
+ $failures += [PSCustomObject]@{
+ Setting = $key
+ Expected = $requiredBIOS[$key]
+ Actual = $actual
+ Category = "BIOS"
+ }
+ }
+ }
+
+ # Validate iDRAC
+ foreach ($key in $requirediDRAC.Keys) {
+ $actual = $inv.iDRAC.$key
+ if ($actual -ne $requirediDRAC[$key]) {
+ $failures += [PSCustomObject]@{
+ Setting = $key
+ Expected = $requirediDRAC[$key]
+ Actual = $actual
+ Category = "iDRAC"
+ }
+ }
+ }
+
+ $result = [PSCustomObject]@{
+ ServiceTag = $file.BaseName
+ TotalChecks = $requiredBIOS.Count + $requirediDRAC.Count
+ FailedChecks = $failures.Count
+ PassedChecks = ($requiredBIOS.Count + $requirediDRAC.Count) - $failures.Count
+ Status = if ($failures.Count -eq 0) { "PASS" } else { "FAIL" }
+ FailedSettings = $failures
+ }
+
+ $allResults += $result
+ $color = if ($result.Status -eq "PASS") { "Green" } else { "Red" }
+ Write-Host "$($result.ServiceTag): $($result.Status) ($($result.FailedChecks) failed)" -ForegroundColor $color
+}
+
+$allResults | ConvertTo-Json -Depth 10 | Set-Content $ReportPath -Encoding UTF8
+Write-Host "`nReport saved: $ReportPath" -ForegroundColor Cyan
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Example Compliance Report Output
+
+```json
+{
+ "ServiceTag": "8T6GDB4",
+ "TotalChecks": 24,
+ "PassedChecks": 20,
+ "FailedChecks": 4,
+ "Status": "FAIL",
+ "FailedSettings": [
+ {
+ "Setting": "PowerRedundancy",
+ "Expected": "InputPowerRedundant",
+ "Actual": "NoRedundancy",
+ "Category": "iDRAC"
+ },
+ {
+ "Setting": "HotSpare",
+ "Expected": "Disabled",
+ "Actual": "Enabled",
+ "Category": "iDRAC"
+ }
+ ]
+}
+```
+
+---
+
+## Validation Checklist
+
+- [ ] BIOS settings validated for all nodes
+- [ ] iDRAC settings validated for all nodes
+- [ ] Compliance report generated with per-node PASS/FAIL status
+- [ ] Non-compliant settings identified and documented
+- [ ] All nodes PASS — OR — remediation list created for Task 05
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Inventory JSON not found | Task 02 not complete | Run Task 02 hardware discovery first |
+| Null/empty BIOS values | Dell factory defaults not yet applied | Expected — Task 05 remediation will configure |
+| Power settings show FAIL | Not configured from factory | Expected — Task 05 will apply correct settings |
+| Platform not detected | Missing model info in JSON | Verify Task 02 collected full inventory |
+| iDRAC unreachable (UI only) | Network connectivity | Verify iDRAC IP assignment from Task 01 |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 03: Management NIC Reservations](./task-03-create-dhcp-reservations-for-management-nics.mdx) | [↑ Phase 01: Hardware Provisioning](./index.mdx) | [Task 05: BIOS/iDRAC Remediation →](./task-05-bios-and-idrac-settings-remediation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Fix tab labels, script paths, input/output paths, Step→Task references, standards alignment |

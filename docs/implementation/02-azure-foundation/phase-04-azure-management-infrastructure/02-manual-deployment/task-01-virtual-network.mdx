@@ -1,0 +1,517 @@
+---
+title: "Task 01: Virtual Network & Subnets"
+sidebar_label: "Task 01: Virtual Network"
+sidebar_position: 1
+description: "Create the Azure Virtual Network and subnets for Azure Local management infrastructure."
+category: Runbook
+scope: Virtual network deployment
+purpose: Create management VNet and subnets for Azure Local infrastructure
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, virtual-network, subnets, networking, management-infrastructure]
+keywords: [virtual network, VNet, subnets, GatewaySubnet, AzureBastionSubnet, IP addressing]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Virtual Network & Subnets
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Virtual network deployment 
+> **PURPOSE**: Create management VNet and subnets 
+> **MASTER REFERENCE**: [Microsoft Learn - Virtual Networks](https://learn.microsoft.com/en-us/azure/virtual-network/virtual-networks-overview)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This task creates the management Virtual Network (VNet) and all required subnets for Azure Local infrastructure. This VNet hosts management VMs (Domain Controllers, Utility Server, NDM Server, Lighthouse Server) and provides connectivity to on-premises via VPN.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::info Terraform Reference
+**Module:** `tf-module-azr-local` 
+**File:** `network.tf` 
+**Mode:** Management
+:::
+
+### Components Created
+
+| Resource | Name Pattern | Purpose |
+|----------|-------------|---------|
+| Virtual Network | `vnet-azrl-{env}-{region}-01` | Management address space |
+| GatewaySubnet | `GatewaySubnet` | VPN Gateway (required name) |
+| Management Subnet | `snet-azrl-{env}-{region}-01` | Management VMs |
+| Bastion Subnet | `AzureBastionSubnet` | Azure Bastion (required name, /26 min) |
+| Endpoints Subnet | `snet-endpoints-{env}-{region}-01` | Private Endpoints |
+
+### Default Subnet Layout
+
+| Subnet | Default CIDR | Notes |
+|--------|-------------|-------|
+| `GatewaySubnet` | `10.x.x.0/27` | Required name, no NSG |
+| `snet-azrl-*` | `10.x.x.32/27` | DCs, Utility, NDM, Lighthouse |
+| `AzureBastionSubnet` | `10.x.x.64/26` | Required name, /26 minimum |
+| `snet-endpoints-*` | `10.x.x.128/27` | Key Vault, Storage endpoints |
+
+## Prerequisites
+
+- [ ] [Phase 01: Landing Zones](../../phase-01-landing-zones/) completed — subscription and resource groups exist
+- [ ] [Phase 03: RBAC Permissions](../../phase-03-rbac-permissions/) completed — deployment identity has Network Contributor role
+- [ ] Network IP address ranges documented and confirmed (no conflicts with on-prem)
+- [ ] Landing zone model confirmed (Single Subscription or CAF/WAF)
+
+---
+
+## Single Subscription Model
+
+In the single subscription model, all management infrastructure is deployed to a single subscription under one resource group.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+| VNet Name | `vnet-azrl-{env}-{region}-01` | `network.azure_vnets.management.name` |
+| Location | Azure region | `network.azure_vnets.management.location` |
+| Address Space | `10.x.x.0/24` | `network.azure_vnets.management.cidr` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Navigate to Virtual Networks**:
+ - In Azure Portal, search for **Virtual networks**
+ - Click **+ Create**
+
+2. **Basics tab**:
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Subscription | Your subscription | `azure.subscriptions.<name>.id` |
+ | Resource group | `rg-azrlmgmt-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+ | Virtual network name | `vnet-azrl-{env}-{region}-01` | `network.azure_vnets.management.name` |
+ | Region | Your region | `network.azure_vnets.management.location` |
+
+3. **IP Addresses tab**:
+ - Set IPv4 address space to value from `network.azure_vnets.management.cidr`
+ - Add subnets:
+
+ | Subnet Name | Address Range | Source |
+ |-------------|--------------|--------|
+ | `GatewaySubnet` | `/27` range | `network.azure_vnets.management.subnets.gateway.cidr` |
+ | Management subnet | `/27` range | `network.azure_vnets.management.subnets.management.cidr` |
+ | `AzureBastionSubnet` | `/26` range | `network.azure_vnets.management.subnets.bastion.cidr` |
+ | Endpoints subnet | `/27` range | `network.azure_vnets.management.subnets.privateendpoints.cidr` |
+
+4. **Security tab**: Leave defaults (no Bastion/Firewall/DDoS at this stage)
+
+5. **Tags tab**: Apply standard tags per `tags.*` config paths
+
+6. **Review + create**: Verify settings → Click **Create**
+
+#### Validation
+
+- [ ] VNet created successfully in the correct resource group
+- [ ] All four subnets visible under the VNet
+- [ ] Address space matches `network.azure_vnets.management.cidr`
+- [ ] GatewaySubnet has no NSG attached
+
+#### Links
+
+- [Microsoft Learn: Create a Virtual Network](https://learn.microsoft.com/en-us/azure/virtual-network/quick-create-portal)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-01-virtual-network/powershell/New-VirtualNetwork.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| PowerShell + Azure CLI | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-01-virtual-network/azure-cli/New-VirtualNetwork.azcli.ps1` |
+| Bash + Azure CLI | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-01-virtual-network/bash/invoke-virtual-network.sh` |
+
+:::tip Same Script for Both Landing Zone Models
+This script reads `infrastructure.yml` directly — subscription, resource group, and all resource names come from the config. The config is pre-populated for your landing zone model during Planning & Discovery, so **one script works for both models**.
+:::
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-VirtualNetwork.ps1
+# Execution: Run from management workstation — reads infrastructure.yml
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "configs/infrastructure.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+# Import helpers
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+
+# Load configuration
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# Extract values from configuration
+$SubscriptionId = $config.azure.subscriptions.($config.network.azure_vnets.management.subscription).id
+$ResourceGroup = $config.network.azure_vnets.management.resource_group
+$VNetName = $config.network.azure_vnets.management.name
+$Location = $config.network.azure_vnets.management.location
+$AddressSpace = $config.network.azure_vnets.management.cidr
+
+# Subnet definitions from config
+$Subnets = @(
+ @{ Name = $config.network.azure_vnets.management.subnets.gateway.name
+ Prefix = $config.network.azure_vnets.management.subnets.gateway.cidr },
+ @{ Name = $config.network.azure_vnets.management.subnets.management.name
+ Prefix = $config.network.azure_vnets.management.subnets.management.cidr },
+ @{ Name = $config.network.azure_vnets.management.subnets.bastion.name
+ Prefix = $config.network.azure_vnets.management.subnets.bastion.cidr },
+ @{ Name = $config.network.azure_vnets.management.subnets.privateendpoints.name
+ Prefix = $config.network.azure_vnets.management.subnets.privateendpoints.cidr }
+)
+
+# Set subscription context
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+Write-LogInfo "Context set to subscription: $SubscriptionId"
+
+# Build subnet configurations
+$subnetConfigs = foreach ($subnet in $Subnets) {
+ New-AzVirtualNetworkSubnetConfig -Name $subnet.Name -AddressPrefix $subnet.Prefix
+}
+
+# Create VNet
+Write-LogInfo "Creating VNet: $VNetName in $ResourceGroup ($Location)"
+
+$vnet = New-AzVirtualNetwork `
+ -Name $VNetName `
+ -ResourceGroupName $ResourceGroup `
+ -Location $Location `
+ -AddressPrefix $AddressSpace `
+ -Subnet $subnetConfigs
+
+Write-LogSuccess "VNet created: $($vnet.Id)"
+
+# Return object for pipeline
+$vnet
+```
+
+#### Validation
+
+```powershell
+# Verify VNet creation
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+$vnet | Format-List Name, Location, AddressSpace
+$vnet.Subnets | Format-Table Name, AddressPrefix
+```
+
+**Validation Script**: `scripts/validation/02-azure-foundation/phase-04/Test-VirtualNetwork.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script with no external dependencies — no config file, no helpers needed. Ideal for sharing, demos, or environments without the toolkit.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-VirtualNetwork-Standalone.ps1
+# Execution: Run anywhere — fully self-contained, no external dependencies
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Target subscription ID
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01" # Management resource group
+$VNetName = "vnet-azrl-azl-eus-01" # Virtual network name
+$Location = "eastus" # Azure region
+$AddressSpace = "10.250.1.0/24" # VNet address space
+
+# Subnet definitions
+$GatewaySubnetCidr = "10.250.1.0/27" # GatewaySubnet (VPN Gateway)
+$MgmtSubnetName = "snet-azrl-azl-eus-01" # Management subnet name
+$MgmtSubnetCidr = "10.250.1.32/27" # Management subnet CIDR
+$BastionSubnetCidr = "10.250.1.64/26" # AzureBastionSubnet (/26 min)
+$EndpointsSubnetName = "snet-endpoints-azl-eus-01" # Private endpoints subnet name
+$EndpointsSubnetCidr = "10.250.1.128/27" # Private endpoints CIDR
+#endregion CONFIGURATION
+
+# Set subscription context
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Build subnet configurations
+$subnetConfigs = @(
+ New-AzVirtualNetworkSubnetConfig -Name "GatewaySubnet" -AddressPrefix $GatewaySubnetCidr
+ New-AzVirtualNetworkSubnetConfig -Name $MgmtSubnetName -AddressPrefix $MgmtSubnetCidr
+ New-AzVirtualNetworkSubnetConfig -Name "AzureBastionSubnet" -AddressPrefix $BastionSubnetCidr
+ New-AzVirtualNetworkSubnetConfig -Name $EndpointsSubnetName -AddressPrefix $EndpointsSubnetCidr
+)
+
+# Create VNet
+Write-Host "Creating VNet: $VNetName" -ForegroundColor Cyan
+
+$vnet = New-AzVirtualNetwork `
+ -Name $VNetName `
+ -ResourceGroupName $ResourceGroup `
+ -Location $Location `
+ -AddressPrefix $AddressSpace `
+ -Subnet $subnetConfigs
+
+Write-Host "✅ VNet '$VNetName' created successfully" -ForegroundColor Green
+
+# Verify
+$vnet.Subnets | Format-Table Name, AddressPrefix
+```
+
+:::info No External Dependencies
+This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `infrastructure.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] VNet created in the correct resource group
+- [ ] All four subnets present with correct CIDRs
+- [ ] GatewaySubnet has no NSG attached
+- [ ] Address space does not conflict with on-premises networks
+
+---
+
+## CAF/WAF Landing Zone Model
+
+In the CAF/WAF model, networking resources are deployed to the **Connectivity subscription** under the Connectivity management group, separate from management and identity resources.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Connectivity** subscription | `azure.subscriptions.connectivity.id` |
+| Resource Group | `rg-azrlconn-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+| VNet Name | `vnet-azrl-{env}-{region}-01` | `network.azure_vnets.management.name` |
+| Location | Azure region | `network.azure_vnets.management.location` |
+| Address Space | `10.x.x.0/24` | `network.azure_vnets.management.cidr` |
+
+:::warning Different Subscription Target
+In CAF/WAF, this VNet is created in the **Connectivity** subscription — not the same subscription as management VMs. VNet peering or cross-subscription subnet references may be required for VM NICs.
+:::
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Navigate to Virtual Networks**:
+ - In Azure Portal, search for **Virtual networks**
+ - Click **+ Create**
+
+2. **Basics tab**:
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Subscription | **Connectivity** subscription | `azure.subscriptions.connectivity.id` |
+ | Resource group | `rg-azrlconn-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+ | Virtual network name | `vnet-azrl-{env}-{region}-01` | `network.azure_vnets.management.name` |
+ | Region | Your region | `network.azure_vnets.management.location` |
+
+3. **IP Addresses tab**:
+ - Set IPv4 address space to value from `network.azure_vnets.management.cidr`
+ - Add subnets identical to Single Subscription model (same names, same CIDRs)
+
+4. **Security tab**: Leave defaults
+
+5. **Tags tab**: Apply standard tags per `tags.*` config paths
+
+6. **Review + create**: Verify settings → Click **Create**
+
+#### Validation
+
+- [ ] VNet created in the **Connectivity** subscription and resource group
+- [ ] All four subnets visible under the VNet
+- [ ] Address space matches config
+- [ ] GatewaySubnet has no NSG attached
+
+#### Links
+
+- [Microsoft Learn: Hub-spoke network topology](https://learn.microsoft.com/en-us/azure/architecture/networking/architecture/hub-spoke)
+- [Microsoft Learn: Create a Virtual Network](https://learn.microsoft.com/en-us/azure/virtual-network/quick-create-portal)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+
+:::tip Same Script — Different Config
+The orchestrated script is **identical** to the Single Subscription version. The `infrastructure.yml` is pre-populated with the correct Connectivity subscription and resource group for your CAF/WAF landing zone. No code change required.
+:::
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-01-virtual-network/powershell/New-VirtualNetwork.ps1`
+
+See the [Single Subscription → Azure CLI / PowerShell](#azure-cli--powershell) tab above for the full script. The only difference is the values in `infrastructure.yml`.
+
+#### Validation
+
+```powershell
+# Verify VNet in Connectivity subscription
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+$vnet | Format-List Name, ResourceGroupName, Location, AddressSpace
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — edit the CONFIGURATION block for CAF/WAF naming patterns.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-VirtualNetwork-Standalone.ps1
+# Execution: Run anywhere — fully self-contained (CAF/WAF Landing Zone)
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+#region CONFIGURATION
+# ── CAF/WAF Landing Zone values ──────────────────────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Connectivity subscription ID
+$ResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
+$VNetName = "vnet-azrl-azl-eus-01" # Virtual network name
+$Location = "eastus" # Azure region
+$AddressSpace = "10.250.1.0/24" # VNet address space
+
+# Subnet definitions (same as single-sub model)
+$GatewaySubnetCidr = "10.250.1.0/27" # GatewaySubnet
+$MgmtSubnetName = "snet-azrl-azl-eus-01" # Management subnet name
+$MgmtSubnetCidr = "10.250.1.32/27" # Management subnet CIDR
+$BastionSubnetCidr = "10.250.1.64/26" # AzureBastionSubnet
+$EndpointsSubnetName = "snet-endpoints-azl-eus-01" # Endpoints subnet name
+$EndpointsSubnetCidr = "10.250.1.128/27" # Endpoints CIDR
+#endregion CONFIGURATION
+
+# Set subscription context
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Build subnet configurations
+$subnetConfigs = @(
+ New-AzVirtualNetworkSubnetConfig -Name "GatewaySubnet" -AddressPrefix $GatewaySubnetCidr
+ New-AzVirtualNetworkSubnetConfig -Name $MgmtSubnetName -AddressPrefix $MgmtSubnetCidr
+ New-AzVirtualNetworkSubnetConfig -Name "AzureBastionSubnet" -AddressPrefix $BastionSubnetCidr
+ New-AzVirtualNetworkSubnetConfig -Name $EndpointsSubnetName -AddressPrefix $EndpointsSubnetCidr
+)
+
+# Create VNet
+Write-Host "Creating VNet: $VNetName in Connectivity subscription" -ForegroundColor Cyan
+
+$vnet = New-AzVirtualNetwork `
+ -Name $VNetName `
+ -ResourceGroupName $ResourceGroup `
+ -Location $Location `
+ -AddressPrefix $AddressSpace `
+ -Subnet $subnetConfigs
+
+Write-Host "✅ VNet '$VNetName' created successfully" -ForegroundColor Green
+
+# Verify
+$vnet.Subnets | Format-Table Name, AddressPrefix
+```
+
+:::info No External Dependencies
+This script is completely self-contained. Edit the `#region CONFIGURATION` block for your CAF/WAF Connectivity subscription values.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] VNet created in the **Connectivity** subscription resource group
+- [ ] All four subnets present with correct CIDRs
+- [ ] Address space does not conflict with on-premises or other VNets
+- [ ] GatewaySubnet has no NSG attached
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| Address space overlaps | Conflict with existing VNet or on-prem range | Choose non-overlapping CIDR from Planning & Discovery |
+| Subnet creation fails | Address prefix outside VNet address space | Verify subnet CIDRs fit within VNet CIDR |
+| GatewaySubnet too small | Less than /27 | Use /27 minimum for VPN Gateway |
+| AzureBastionSubnet too small | Less than /26 | Use /26 minimum for Azure Bastion |
+| Permission denied | Missing Network Contributor role | Verify RBAC from Phase 03 |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Manual Deployment Index](./index.mdx) | [Manual Deployment Index](./index.mdx) | [Task 02: VPN Gateway](./task-02-vpn-gateway) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, virtual-network, subnets, networking, management-infrastructure
+- Keywords: virtual network, VNet, subnets, GatewaySubnet, AzureBastionSubnet, IP addressing
+- Author: Azure Local Cloudnology Team

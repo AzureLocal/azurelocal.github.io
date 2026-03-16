@@ -1,0 +1,451 @@
+---
+title: "Task 03: Site-to-Site VPN Connection"
+sidebar_label: "Task 03: S2S VPN Connection"
+sidebar_position: 3
+description: "Create the Local Network Gateway and Site-to-Site VPN connection between Azure and on-premises infrastructure."
+category: Runbook
+scope: S2S VPN Connection deployment
+purpose: Establish IPsec tunnel to on-premises network
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, vpn-connection, s2s, ipsec, networking]
+keywords: [site-to-site, VPN connection, local network gateway, IPsec, IKEv2, BGP]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Site-to-Site VPN Connection
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: S2S VPN Connection deployment 
+> **PURPOSE**: Establish IPsec tunnel to on-premises network 
+> **MASTER REFERENCE**: [Microsoft Learn - S2S VPN Connection](https://learn.microsoft.com/en-us/azure/vpn-gateway/tutorial-site-to-site-portal)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This task creates the Local Network Gateway (representing the on-premises VPN device) and the Site-to-Site VPN Connection linking the Azure VPN Gateway (Task 02) to the on-premises network. The shared key is stored in Key Vault and retrieved at deployment time.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::info Terraform Reference
+**Module:** `tf-module-azr-local` 
+**File:** `network.tf` 
+**Mode:** Management
+:::
+
+### Components Created
+
+| Resource | Name Pattern | Purpose |
+|----------|-------------|---------|
+| Local Network Gateway | `lgw-{workload}-{env}-{region}-{instance}` | On-prem VPN device representation |
+| VPN Connection | `vnc-{workload}-{env}-{region}-{instance}` | IPsec/IKEv2 tunnel |
+
+### Connection Configuration
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| Connection Type | IPsec | `network.vpn.connection.type` |
+| Protocol | IKEv2 | `network.vpn.connection.protocol` |
+| BGP Enabled | Per config | `network.vpn.connection.enable_bgp` |
+| Routing Weight | Per config | `network.vpn.connection.routing_weight` |
+| Shared Key | Key Vault reference | `network.vpn.connection.shared_key` |
+
+## Prerequisites
+
+- [ ] [Task 02: VPN Gateway](./task-02-vpn-gateway) completed — VPN Gateway is provisioned
+- [ ] On-premises VPN device IP confirmed (e.g., `network.vpn.local_gateway.gateway_ip`)
+- [ ] On-premises address prefixes confirmed (e.g., `network.vpn.local_gateway.local_address_prefixes`)
+- [ ] Shared key stored in Key Vault at the URI in `network.vpn.connection.shared_key`
+- [ ] BGP ASN for on-premises device confirmed (if BGP enabled)
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
+| Resource Group | `rg-{workload}-{env}-{region}-01` | `network.vpn.local_gateway.resource_group` |
+| Local Gateway Name | `lgw-{workload}-{env}-{region}-01` | `network.vpn.local_gateway.name` |
+| Connection Name | `vnc-{workload}-{env}-{region}-01` | `network.vpn.connection.name` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Create Local Network Gateway**:
+ - Search for **Local network gateways** → **+ Create**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | `lgw-{workload}-{env}-{region}-01` | `network.vpn.local_gateway.name` |
+ | Resource Group | Same as VPN Gateway | `network.vpn.local_gateway.resource_group` |
+ | Region | Your region | `azure.region` |
+ | Endpoint | IP address | — |
+ | IP address | On-prem device IP | `network.vpn.local_gateway.gateway_ip` |
+ | Address Space | On-prem prefixes | `network.vpn.local_gateway.local_address_prefixes` |
+
+2. **Configure BGP on Local Gateway** (if enabled):
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Configure BGP | Yes | `network.vpn.local_gateway.bgp.enabled` |
+ | ASN | On-prem ASN | `network.vpn.local_gateway.bgp.asn` |
+ | BGP peer address | On-prem BGP peer | `network.vpn.local_gateway.bgp.bgp_peering_address` |
+
+3. **Create VPN Connection**:
+ - Navigate to VPN Gateway → **Connections** → **+ Add**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | `vnc-{workload}-{env}-{region}-01` | `network.vpn.connection.name` |
+ | Connection type | Site-to-site (IPsec) | `network.vpn.connection.type` |
+ | Local network gateway | Select from Step 1 | `network.vpn.local_gateway.name` |
+ | Shared key (PSK) | From Key Vault | `network.vpn.connection.shared_key` |
+ | IKE Protocol | IKEv2 | `network.vpn.connection.protocol` |
+ | Enable BGP | Per config | `network.vpn.connection.enable_bgp` |
+
+4. **Configure On-Premises Device**: Configure the on-premises VPN device (e.g., `network.vpn.local_gateway.device`) with matching settings.
+
+5. **Review + create**: Verify → Click **OK**
+
+#### Validation
+
+- [ ] Local Network Gateway provisioning state: **Succeeded**
+- [ ] VPN Connection status: **Connected**
+- [ ] BGP peers established (if BGP enabled)
+
+#### Links
+
+- [Microsoft Learn: Create S2S Connection](https://learn.microsoft.com/en-us/azure/vpn-gateway/tutorial-site-to-site-portal)
+- [VPN Device Configuration](https://learn.microsoft.com/en-us/azure/vpn-gateway/vpn-gateway-about-vpn-devices)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-03-s2s-vpn-connection/powershell/New-VpnConnection.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| PowerShell + Azure CLI | `task-03-s2s-vpn-connection/azure-cli/New-VpnConnection.azcli.ps1` |
+| Bash + Azure CLI | `task-03-s2s-vpn-connection/bash/invoke-vpn-connection.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-VpnConnection.ps1
+# Execution: Run from management workstation — reads infrastructure.yml
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources, Az.KeyVault
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "configs/infrastructure.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/keyvault-helper.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# Extract values
+$SubscriptionId = $config.azure.subscriptions.($config.network.azure_vnets.management.subscription).id
+$Location = $config.network.azure_vnets.management.location
+$GwResourceGroup = $config.network.vpn.azure_gateway.resource_group
+$GatewayName = $config.network.vpn.azure_gateway.name
+
+# Local Gateway
+$LgwName = $config.network.vpn.local_gateway.name
+$LgwResourceGroup = $config.network.vpn.local_gateway.resource_group
+$LgwGatewayIp = $config.network.vpn.local_gateway.gateway_ip
+$LgwPrefixes = $config.network.vpn.local_gateway.local_address_prefixes
+$LgwBgpEnabled = [bool]$config.network.vpn.local_gateway.bgp.enabled
+$LgwBgpAsn = $config.network.vpn.local_gateway.bgp.asn
+$LgwBgpPeer = $config.network.vpn.local_gateway.bgp.bgp_peering_address
+
+# Connection
+$ConnName = $config.network.vpn.connection.name
+$ConnResourceGroup = $config.network.vpn.connection.resource_group
+$ConnEnableBgp = [bool]$config.network.vpn.connection.enable_bgp
+$ConnRoutingWeight = $config.network.vpn.connection.routing_weight
+$SharedKeyUri = $config.network.vpn.connection.shared_key
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Resolve shared key from Key Vault
+$SharedKey = Get-KeyVaultSecret -SecretUri $SharedKeyUri
+
+# Create Local Network Gateway
+Write-LogInfo "Creating Local Network Gateway: $LgwName"
+$lgwParams = @{
+ Name = $LgwName
+ ResourceGroupName = $LgwResourceGroup
+ Location = $Location
+ GatewayIpAddress = $LgwGatewayIp
+ AddressPrefix = $LgwPrefixes
+}
+if ($LgwBgpEnabled) {
+ $lgwParams.Asn = $LgwBgpAsn
+ $lgwParams.BgpPeeringAddress = $LgwBgpPeer
+}
+$lgw = New-AzLocalNetworkGateway @lgwParams
+
+# Create VPN Connection
+$vpnGw = Get-AzVirtualNetworkGateway -Name $GatewayName -ResourceGroupName $GwResourceGroup
+
+Write-LogInfo "Creating VPN Connection: $ConnName"
+$connParams = @{
+ Name = $ConnName
+ ResourceGroupName = $ConnResourceGroup
+ Location = $Location
+ VirtualNetworkGateway1 = $vpnGw
+ LocalNetworkGateway2 = $lgw
+ ConnectionType = "IPsec"
+ SharedKey = $SharedKey
+ EnableBgp = $ConnEnableBgp
+ RoutingWeight = $ConnRoutingWeight
+}
+$conn = New-AzVirtualNetworkGatewayConnection @connParams
+
+Write-LogSuccess "VPN Connection created: $($conn.Name) — Status: $($conn.ConnectionStatus)"
+```
+
+#### Validation
+
+```powershell
+Get-AzVirtualNetworkGatewayConnection -Name $ConnName -ResourceGroupName $ConnResourceGroup | Format-List Name, ConnectionStatus, EnableBgp, RoutingWeight
+```
+
+**Validation Script**: `scripts/validation/02-azure-foundation/phase-04/Test-VpnConnection.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers needed.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-VpnConnection-Standalone.ps1
+# Execution: Run anywhere — fully self-contained
+# Prerequisites: Az.Network, Az.KeyVault modules, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.KeyVault
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Target subscription
+$Location = "eastus" # Azure region
+$GwResourceGroup = "rg-c01azlral-azl-eus-01" # VPN Gateway resource group
+$GatewayName = "vpng-azrl-azl-eus-01" # VPN Gateway name
+
+# Local Network Gateway
+$LgwName = "lgw-c01azlral-azl-eus-01" # Local gateway name
+$LgwResourceGroup = "rg-c01azlral-azl-eus-01" # Local gateway resource group
+$LgwGatewayIp = "216.145.66.201" # On-prem device public IP
+$LgwPrefixes = @("192.168.203.0/24","10.245.64.0/24") # On-prem address prefixes
+$LgwBgpEnabled = $true # BGP on local gateway
+$LgwBgpAsn = 65421 # On-prem BGP ASN
+$LgwBgpPeer = "169.254.21.1" # On-prem BGP peer address
+
+# Connection
+$ConnName = "vnc-c01azlral-azl-eus-01" # Connection name
+$ConnEnableBgp = $true # Enable BGP on connection
+$ConnRoutingWeight = 0 # Routing weight
+$KeyVaultName = "kv-demos-platform" # Key Vault for shared key
+$SharedKeySecret = "vpn-shared-key" # Secret name in Key Vault
+#endregion CONFIGURATION
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Retrieve shared key from Key Vault
+$SharedKey = (Get-AzKeyVaultSecret -VaultName $KeyVaultName -Name $SharedKeySecret).SecretValueText
+
+# Create Local Network Gateway
+Write-Host "Creating Local Network Gateway: $LgwName" -ForegroundColor Cyan
+$lgwParams = @{
+ Name = $LgwName
+ ResourceGroupName = $LgwResourceGroup
+ Location = $Location
+ GatewayIpAddress = $LgwGatewayIp
+ AddressPrefix = $LgwPrefixes
+}
+if ($LgwBgpEnabled) {
+ $lgwParams.Asn = $LgwBgpAsn
+ $lgwParams.BgpPeeringAddress = $LgwBgpPeer
+}
+$lgw = New-AzLocalNetworkGateway @lgwParams
+
+# Get VPN Gateway
+$vpnGw = Get-AzVirtualNetworkGateway -Name $GatewayName -ResourceGroupName $GwResourceGroup
+
+# Create VPN Connection
+Write-Host "Creating VPN Connection: $ConnName" -ForegroundColor Cyan
+$conn = New-AzVirtualNetworkGatewayConnection -Name $ConnName `
+ -ResourceGroupName $LgwResourceGroup -Location $Location `
+ -VirtualNetworkGateway1 $vpnGw -LocalNetworkGateway2 $lgw `
+ -ConnectionType IPsec -SharedKey $SharedKey `
+ -EnableBgp:$ConnEnableBgp -RoutingWeight $ConnRoutingWeight
+
+Write-Host "VPN Connection '$ConnName' created — Status: $($conn.ConnectionStatus)" -ForegroundColor Green
+```
+
+:::info No External Dependencies
+Self-contained. Edit the `#region CONFIGURATION` block and run.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Local Network Gateway provisioned
+- [ ] VPN Connection status: **Connected**
+- [ ] BGP peering established (if enabled)
+- [ ] On-premises routes visible in effective routes
+
+---
+
+## CAF/WAF Landing Zone Model
+
+In the CAF/WAF model, the Local Network Gateway and VPN Connection are deployed in the **Connectivity subscription** alongside the VPN Gateway.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Connectivity** subscription | `azure.subscriptions.connectivity.id` |
+| Resource Group | `rg-azrlconn-{env}-{region}-01` | `network.vpn.local_gateway.resource_group` |
+| Local Gateway Name | `lgw-{workload}-{env}-{region}-01` | `network.vpn.local_gateway.name` |
+| Connection Name | `vnc-{workload}-{env}-{region}-01` | `network.vpn.connection.name` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+Follow the same procedure as [Single Subscription → Azure Portal](#azure-portal) above, targeting the **Connectivity** subscription:
+
+| Field | Value |
+|-------|-------|
+| Subscription | **Connectivity** subscription |
+| Resource group | `rg-azrlconn-{env}-{region}-01` |
+
+All other settings (local gateway IP, prefixes, BGP, shared key) remain identical.
+
+#### Validation
+
+- [ ] Resources in **Connectivity** subscription
+- [ ] VPN Connection status: **Connected**
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+:::tip Same Script — Different Config
+The orchestrated script is identical. `infrastructure.yml` contains the correct Connectivity subscription values for CAF/WAF.
+:::
+
+See the [Single Subscription → Azure CLI / PowerShell](#azure-cli--powershell) tab for the full script.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+Use the same standalone script from Single Subscription, updating the `#region CONFIGURATION` block:
+
+```powershell
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Connectivity subscription ID
+$GwResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
+$LgwResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
+# ... remaining values same as single-sub
+#endregion CONFIGURATION
+```
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] All resources in **Connectivity** subscription
+- [ ] VPN Connection status: **Connected**
+- [ ] BGP peering active (if enabled)
+- [ ] End-to-end connectivity verified from on-premises
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| Connection stuck at **Connecting** | Shared key mismatch | Verify PSK matches on both sides |
+| Connection stuck at **Connecting** | On-prem device not configured | Configure on-prem VPN device with matching settings |
+| BGP peers not established | ASN mismatch or APIPA mismatch | Verify ASN and APIPA addresses match both sides |
+| Cannot resolve Key Vault secret | Missing RBAC or network access | Add `Key Vault Secrets User` role; check firewall |
+| Local gateway IP incorrect | Wrong public IP for on-prem device | Update `network.vpn.local_gateway.gateway_ip` |
+| IKE Phase 1 failure | Encryption/integrity mismatch | Align IKE parameters between Azure and on-prem device |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 02: VPN Gateway](./task-02-vpn-gateway) | [Manual Deployment Index](./index.mdx) | [Task 04: P2S VPN Connection](./task-04-p2s-vpn-connection) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, vpn-connection, s2s, ipsec, networking
+- Keywords: site-to-site, VPN connection, local network gateway, IPsec, IKEv2, BGP
+- Author: Azure Local Cloudnology Team

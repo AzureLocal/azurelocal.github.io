@@ -1,0 +1,109 @@
+---
+title: "Task 01: Bootstrap"
+sidebar_position: 1
+description: "Run the bootstrap script to establish initial CI/CD access"
+---
+
+# Task 01: Bootstrap
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure-0078D4?style=flat-square&logo=microsoftazure)](https://portal.azure.com)
+
+> **DOCUMENT CATEGORY**: Runbook Step 
+> **SCOPE**: CI/CD service principal bootstrap 
+> **PURPOSE**: Create Azure Local Cloud-cicd app registration and service principal 
+> **MASTER REFERENCE**: [bash-azr-automation](https://github.com/AzureLocal/core/bash-azr-automation)
+
+**Status**: Active 
+**Applies To**: All Azure Local deployments 
+**Last Updated**: 2026-01-30
+
+---
+
+> **Source:** bash-azr-automation/cicd-access.sh
+
+---
+
+## Objective
+
+Create the `Azure Local Cloud-cicd` app registration and service principal in the customer tenant for CI/CD pipeline pipeline authentication.
+
+---
+
+## Prerequisites
+
+- [ ] B2B configuration complete (Stage 00)
+- [ ] Azure CLI installed and authenticated to customer tenant
+- [ ] Access to customer subscription(s)
+- [ ] `access.json` file from bash-azr-automation repo
+
+---
+
+## Procedure
+
+### Run the Bootstrap Script
+
+1. Clone the `bash-azr-automation` repository
+2. Navigate to the directory containing `cicd-access.sh`
+3. Run the script with all customer subscription IDs:
+
+```bash
+./cicd-access.sh "subscription-id-1" "subscription-id-2"
+```
+
+### What the Script Does
+
+1. **Creates App Registration:** `Azure Local Cloud-cicd`
+2. **Creates Service Principal** for the app
+3. **Creates Secret** with 2-year expiration
+4. **Assigns RBAC Roles** per subscription:
+ - `Contributor`
+ - `User Access Administrator`
+5. **Registers Provider:** `Microsoft.Compute`
+6. **Enables Feature:** `Microsoft.Compute/EncryptionAtHost`
+7. **Configures API Permissions:** `RoleManagement.ReadWrite.Directory`
+
+### Grant Admin Consent
+
+After script completion:
+
+1. Navigate to **Entra ID** → **App registrations** → **Azure Local Cloud-cicd**
+2. Select **API permissions**
+3. Click **Grant admin consent for \<tenant\>**
+
+### Record Output Values
+
+Save these values for GitLab environment variables:
+
+| Value | GitLab Variable |
+|-------|-----------------|
+| App ID | `ARM_CLIENT_ID` |
+| App password | `ARM_CLIENT_SECRET` |
+| Tenant ID | `ARM_TENANT_ID` |
+
+---
+
+## Verification
+
+- [ ] `Azure Local Cloud-cicd` app registration exists
+- [ ] Service principal created
+- [ ] RBAC roles assigned on all subscriptions
+- [ ] Admin consent granted for API permissions
+- [ ] Output values recorded
+
+---
+
+## Troubleshooting
+
+**App already exists:**
+```
+Azure Local Cloud-cicd app registration already exists. If you need to rerun this, 
+please delete the app registration first before trying again.
+```
+→ Delete existing app registration and rerun
+
+---
+
+## References
+
+- [Azure AD App Registrations](https://learn.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)

@@ -1,0 +1,152 @@
+---
+title: "Phase 02: Resource Providers"
+sidebar_label: "Phase 02: Resource Providers"
+sidebar_position: 2
+description: "Phase 02: Register required Azure resource providers for Azure Local deployment."
+category: "RUNBOOK"
+scope: "Azure resource provider registration"
+purpose: "Register required providers for Azure Local"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - phase-02
+ - resource-providers
+keywords:
+ - resource providers
+ - provider registration
+ - Azure Local requirements
+status: "approved"
+---
+
+# Phase 02: Resource Providers
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Azure resource provider registration 
+> **PURPOSE**: Register required providers for Azure Local 
+> **MASTER REFERENCE**: [Microsoft Learn — Resource Providers](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Azure Local requires specific resource providers to be registered in your Azure subscription before deployment. This phase ensures all required providers are registered and validated.
+
+### What This Accomplishes
+
+- **Provider registration** — registers all Azure resource providers required for Azure Local
+- **Validation** — verifies all providers are in "Registered" state
+- **Foundation ready** — prepares subscription for subsequent RBAC and deployment phases
+
+### Prerequisites
+
+:::info Azure Authentication Required
+Before running any scripts in this phase, ensure you have an authenticated Azure session.
+See [Authentication](../../05-authentication.mdx) for options including Azure PowerShell, Azure CLI, and service principal authentication.
+:::
+
+| Run As | Description |
+|--------|-------------|
+| ⚡ **Elevated Admin** | Contributor or Owner role at subscription level |
+
+- **Landing Zones Complete** — [Phase 01: Landing Zones](../phase-01-landing-zones/) completed
+- **Subscription Access** — Contributor or Owner role at subscription level
+- **`infrastructure.yml`** — Configured with target subscription ID
+
+:::info Subscription-Level Permission Required
+Resource provider registration requires **Contributor** or **Owner** role at the **subscription level**. Users with only resource group-level permissions cannot register providers.
+:::
+
+---
+
+## Required Resource Providers
+
+Azure Local requires the following 12 resource providers:
+
+| Provider Namespace | Purpose | Critical |
+|-------------------|---------|:--------:|
+| `Microsoft.HybridCompute` | Azure Arc-enabled servers | ✅ |
+| `Microsoft.GuestConfiguration` | Azure Policy guest configuration | ✅ |
+| `Microsoft.HybridConnectivity` | Azure Arc connectivity | ✅ |
+| `Microsoft.AzureStackHCI` | Azure Local cluster management (core) | ✅ |
+| `Microsoft.Kubernetes` | Azure Arc-enabled Kubernetes | ✅ |
+| `Microsoft.KubernetesConfiguration` | Kubernetes configuration | ✅ |
+| `Microsoft.ExtendedLocation` | Custom locations for Arc | ✅ |
+| `Microsoft.ResourceConnector` | Azure Arc Resource Bridge | ✅ |
+| `Microsoft.HybridContainerService` | Hybrid container workloads | ✅ |
+| `Microsoft.Attestation` | Security attestation | ✅ |
+| `Microsoft.Storage` | Storage accounts for deployment | ✅ |
+| `Microsoft.Insights` | Monitoring and logging (Key Vault audit) | ✅ |
+
+:::warning Microsoft.Insights is Critical
+The `Microsoft.Insights` provider is **required** for Key Vault diagnostic logging. Deployment will fail without this provider registered, as it breaks diagnostic account creation and Key Vault audit logging.
+:::
+
+---
+
+## Tasks
+
+| Task | Description | Duration |
+|------|-------------|----------|
+| **[Task 01: Register Resource Providers](./task-01-register-resource-providers)** | Register all required providers in target subscription | 5–15 min |
+| **[Task 02: Verify Provider Registration](./task-02-verify-provider-registration)** | Validate all providers show "Registered" status | 2–5 min |
+
+---
+
+## Configuration Reference
+
+| Config Path | Description |
+|-------------|-------------|
+| `infrastructure.yml → azure.subscriptions.lab.id` | Target subscription for provider registration |
+
+### IIC Example
+
+```
+Subscription: iic-lz-azurelocal-001 (azure.subscriptions.lab.name)
+```
+
+All 12 providers are registered against this single subscription. In the full deployment model, providers must be registered in each subscription that hosts Azure Local resources.
+
+---
+
+## Validation
+
+After completing this phase, verify:
+
+- [ ] All 12 resource providers show "Registered" status
+- [ ] No providers show "NotRegistered", "Unregistered", or "Registering" status
+- [ ] Azure Activity Log shows successful registration events
+
+## Next Steps
+
+After resource providers are registered, proceed to [Phase 03: RBAC & Permissions](../phase-03-rbac-permissions/) to configure role-based access control.
+
+## References
+
+- [Microsoft Learn — Resource Providers and Types](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types)
+- [Microsoft Learn — Register Resource Provider](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types#register-resource-provider)
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 01 — Landing Zones](../phase-01-landing-zones/) | [Azure Foundation](../index.mdx) | [Phase 03 — RBAC Permissions](../phase-03-rbac-permissions/) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, phase-02, resource-providers
+- Keywords: resource providers, provider registration, Azure Local requirements
+- Author: Azure Local Cloudnology Team

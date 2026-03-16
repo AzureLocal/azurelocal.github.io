@@ -1,0 +1,133 @@
+---
+title: "Task 04: Verify Arc Registration and Connectivity"
+sidebar_label: "Task 04: Verify Arc Registration"
+sidebar_position: 4
+description: "Verify that Azure Arc registration is successful and connectivity is established for all cluster nodes"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Verify Arc Registration and Connectivity
+
+<span class="badge badge--primary">Runbook</span> <span class="badge badge--info">Phase 04 — Arc Registration</span> <span class="badge badge--success">Azure Local</span>
+
+**Status:** Production-ready
+
+---
+
+## Overview
+
+After Arc registration and bootstrap complete, verify that all cluster nodes are properly registered, connected, and ready for Azure Local cluster deployment.
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Arc registration | Completed via Task 02 |
+| Bootstrap status | `Succeeded` on all nodes (Task 03) |
+| Azure modules | `Az.Accounts`, `Az.ConnectedMachine` |
+| Node access | WinRM to all cluster nodes |
+
+---
+
+## Verification
+
+<Tabs>
+<TabItem value="direct" label="Direct (per node)" default>
+
+**Run on each cluster node** to verify the local Arc agent:
+
+```powershell
+# Check Arc agent service
+Get-Service himds | Format-Table Name, Status, StartType
+
+# Show Arc agent registration details
+& "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe" show
+
+# Test endpoint connectivity through Arc Gateway
+& "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe" check
+```
+
+**Script:** `Confirm-ArcRegistration.ps1` — see `azl-toolkit` repo → `scripts/deploy/.../task-04-.../powershell/`
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated (all nodes)">
+
+**Run from the management server.** Reads node IPs from `infrastructure.yml` and verifies Arc agent + Azure resource status across all nodes:
+
+:::tip Standards-Compliant Script
+For production deployments, use **`Invoke-ArcVerification-Orchestrated.ps1`** from the `azl-toolkit` repo. Supports `-WhatIf`, `-TargetNode`, `-SkipAzureCheck`, `-Credential`, logging, and parallel execution with detailed pass/fail summary per check per node.
+:::
+
+```powershell
+$ConfigPath = ".\configs\infrastructure.yml"
+$cfg = Get-Content $ConfigPath
+
+$ServerList = ($cfg | Select-String 'management_ip:\s+"?([^"\s]+)' -AllMatches).Matches |
+ ForEach-Object { $_.Groups[1].Value }
+
+$ResourceGroup = ($cfg | Select-String 'resource_group:\s+"?([^"\s]+)').Matches[0].Groups[1].Value
+$SubscriptionId = ($cfg | Select-String 'subscription_id:\s+"?([^"\s]+)').Matches[0].Groups[1].Value
+
+# Check local Arc agent on every node
+Invoke-Command -ComputerName $ServerList -ScriptBlock {
+ $svc = Get-Service himds -ErrorAction SilentlyContinue
+ $agent = & "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe" show 2>&1
+ $status = ($agent | Select-String 'Agent Status\s*:\s*(.+)').Matches[0].Groups[1].Value
+ [PSCustomObject]@{ Service = $svc.Status; AgentStatus = $status }
+} | Sort-Object PSComputerName | Format-Table PSComputerName, Service, AgentStatus
+
+# Check Azure-side resource status
+Connect-AzAccount -SubscriptionId $SubscriptionId | Out-Null
+Get-AzConnectedMachine -ResourceGroupName $ResourceGroup |
+ Select-Object Name, Status, AgentVersion, LastStatusChange |
+ Format-Table -AutoSize
+```
+
+**Scripts:** See `azl-toolkit` repo → `scripts/deploy/.../task-04-.../powershell/`
+- `Confirm-ArcRegistration-Orchestrated.ps1` — Quick inline reference script
+- `Invoke-ArcVerification-Orchestrated.ps1` — Standards-compliant script with logging, `-WhatIf`, `-SkipAzureCheck`, parallel execution, and detailed pass/fail summary
+
+</TabItem>
+</Tabs>
+
+---
+
+## Expected Results
+
+| Check | Expected |
+|---|---|
+| `himds` service | `Running` on every node |
+| `azcmagent show` → Agent Status | `Connected` |
+| `azcmagent check` | All endpoints reachable |
+| `Get-AzConnectedMachine` → Status | `Connected` for every node |
+| Arc Gateway | Resource ID populated (if using gateway) |
+
+---
+
+## Troubleshooting
+
+| Symptom | Resolution |
+|---|---|
+| `himds` service stopped | `Start-Service himds` — if it fails, check `C:\ProgramData\AzureConnectedMachineAgent\Log\himds.log` |
+| `azcmagent show` → Disconnected | Run `azcmagent connect` again or check network/proxy |
+| `azcmagent check` fails endpoints | Verify firewall rules allow `*.guestconfiguration.azure.com`, `*.his.arc.azure.com` |
+| Node missing from `Get-AzConnectedMachine` | Re-run Task 02 registration for that node |
+| Extensions not provisioned | Extensions are deployed during cluster deployment — not required at this stage |
+
+---
+
+## Azure Portal Verification
+
+For manual confirmation:
+
+1. Navigate to **Azure Arc → Machines** in the [Azure Portal](https://portal.azure.com)
+2. Filter by resource group from `infrastructure.yml`
+3. Confirm all nodes show **Connected** status
+4. Click each node → **Properties** → verify subscription, resource group, and region
+5. If using Arc Gateway: **Networking → Gateway configuration** → verify gateway resource ID
+
+---
+
+**Navigation:** [← Task 03: Monitor Bootstrap](./task-03-monitor-bootstrap-process.mdx) | [↑ Phase 04 Index](./index.mdx) | [→ Phase 05: Cluster Deployment](../phase-05-cluster-deployment/)

@@ -1,0 +1,691 @@
+---
+title: "Task 07: Logical Network Creation"
+sidebar_label: "Task 07: Logical Networks"
+sidebar_position: 8
+description: "Create Azure Local logical networks for Arc VM network connectivity"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 07 — Logical Network Creation
+
+> **DOCUMENT CATEGORY**: Implementation Guide
+> **SCOPE**: Phase 06 — Post-Deployment | Azure Local Anywhere
+> **PURPOSE**: Create all logical networks defined in `infrastructure.yml`. Each entry is
+> provisioned as an Azure resource on the cluster's Hyper-V vSwitch, providing the network
+> layer for Arc VM deployment — with Static IP pools or Dynamic (DHCP) allocation, VLAN
+> isolation, and optional static routes, exactly as configured.
+
+[![Phase](https://img.shields.io/badge/Phase-06%20Post--Deployment-blue)](.)
+[![Status](https://img.shields.io/badge/Status-Active-green)](.)
+
+**Objective:** Create every logical network entry in `networking.logical_networks[]` on the
+Azure Local cluster. The Orchestrated script reads the YAML config and deploys each network
+as-configured — Static or Dynamic, with or without routes. The Standalone script has
+hardcoded values for one-off use or when running outside the toolkit.
+
+:::info This task creates the VM network layer — not the physical switch config
+Logical networks bind to a Hyper-V vSwitch (already on the cluster from deployment) and
+map to a physical VLAN. Switch VLAN configuration and `network_intents` were completed
+during Phase 05. This task creates the Azure resource representations.
+:::
+
+**Prerequisites:**
+
+- Azure Local cluster deployed and Arc-enabled (Phase 05 complete)
+- CSV volumes created and healthy (Task 05 complete)
+- `az stack-hci-vm` CLI extension installed: `az extension add --name stack-hci-vm`
+- Azure identity authenticated: `az login` or `Connect-AzAccount`
+- `powershell-yaml` module installed: `Install-Module powershell-yaml -Scope CurrentUser`
+- `networking.logical_networks` block populated in `infrastructure.yml`
+
+---
+
+## Create Logical Networks
+
+<Tabs groupId="lnet-method">
+<TabItem value="portal" label="Azure Portal" default>
+
+**When to use:** Creating a single logical network, visually confirming VLAN and IP pool
+details, or when CLI access is unavailable.
+
+**Prerequisites:** Contributor rights on the cluster resource group in the Azure Portal.
+
+---
+
+**Steps (repeat for each logical network):**
+
+1. Navigate to your Azure Local cluster resource:
+ **Azure Portal** → **Azure Local** → `iic-clus01`
+
+2. In the left navigation, select **Resources** → **Logical networks**
+
+3. Click **+ Create**
+
+4. On the **Basics** tab, fill in:
+ - **Subscription:** `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+ - **Resource group:** `rg-iic01-azl-eus-01`
+ - **Logical network name:** e.g. `ln-iic01-management-100`
+ - **Custom location:** `cl-iic01`
+ - **Virtual switch name:** `ConvergedSwitch(hci)`
+
+ :::tip Finding the vSwitch name
+ If you're unsure of the vSwitch name, run the following on any cluster node:
+ ```powershell
+ Invoke-Command -ComputerName iic-01-n01 -ScriptBlock { Get-VMSwitch | Select-Object Name, SwitchType }
+ ```
+ :::
+
+5. Click **Next: Network configuration**
+
+6. On the **Network configuration** tab:
+ - **VLAN ID:** enter the VLAN number (e.g. `100`)
+ - Click **+ Add subnet**
+ - **Subnet name:** `default`
+ - **IP allocation method:** `Static` or `Dynamic`
+
+ For **Static** networks:
+ - **Address prefix:** e.g. `10.100.0.0/24`
+ - **Default gateway:** e.g. `10.100.0.1`
+ - **DNS servers:** e.g. `10.100.0.10`, `10.100.0.11`
+ - Click **+ Add IP pool:**
+ - **Pool name:** e.g. `pool-mgmt-vms`
+ - **Start IP:** e.g. `10.100.0.50`
+ - **End IP:** e.g. `10.100.0.200`
+
+ For **Dynamic** (DHCP) networks:
+ - Address prefix, IP pools, and gateway are not required
+ - Supply **DNS servers** under DHCP options
+
+ - Click **Add**
+
+7. Click **Review + create** → **Create**
+
+8. Repeat for each additional logical network in `networking.logical_networks[]`.
+
+**Standard IIC logical networks — example portal values:**
+
+| Network name | VLAN | Subnet | Gateway | IP pool range | Alloc |
+|---|---|---|---|---|---|
+| `ln-iic01-management-100` | 100 | `10.100.0.0/24` | `10.100.0.1` | `10.100.0.50–200` | Static |
+| `ln-iic01-production-200` | 200 | `10.200.0.0/24` | `10.200.0.1` | `10.200.0.50–250` | Static |
+| `ln-iic01-avd-300` | 300 | *(DHCP)* | *(DHCP)* | *(DHCP)* | Dynamic |
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated">
+
+**When to use:** Automated or repeatable deployment. Reads all logical network definitions
+from `networking.logical_networks[]` in `infrastructure.yml` and creates every enabled
+entry. Entries with `enabled: false` are skipped. Already-existing networks are skipped.
+Run from the management server (toolkit repo root).
+
+**Script:**
+[`Invoke-LogicalNetworks-Orchestrated.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-logical-network-creation/powershell/Invoke-LogicalNetworks-Orchestrated.ps1)
+
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+ task-07-logical-network-creation/powershell/Invoke-LogicalNetworks-Orchestrated.ps1
+```
+
+```powershell title="Invoke-LogicalNetworks-Orchestrated.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+ Orchestrated: creates all logical networks defined in infrastructure.yml.
+
+.DESCRIPTION
+ Phase 06 — Post-Deployment | Task 07 — Logical Network Creation
+
+ Reads every entry from networking.logical_networks[] in the infrastructure YAML
+ and calls az stack-hci-vm network lnet create for each one. Entries with
+ enabled: false are skipped. Networks that already exist are skipped.
+
+ Both Static (IP pools + default gateway route) and Dynamic (DHCP) allocation
+ methods are supported. Static routes defined in routes[] are appended to the
+ subnet configuration. The Hyper-V vSwitch name is read from
+ compute.azure_local.vm_switch_name; when empty, it is auto-discovered from the
+ first available cluster node via Get-VMSwitch over PSRemoting.
+
+.PARAMETER ConfigPath
+ Path to infrastructure YAML. Defaults to configs\infrastructure.yml in CWD.
+
+.PARAMETER Credential
+ Credential used for PSRemoting vSwitch discovery. If omitted, resolved via
+ Key Vault (Resolve-KeyVaultRef) then interactive Get-Credential prompt.
+ Not needed when vm_switch_name is populated in the config.
+
+.PARAMETER TargetNode
+ Limit vSwitch auto-discovery to specific node(s). If empty, uses the first
+ key in compute.nodes. Ignored when vm_switch_name is set in config.
+
+.PARAMETER WhatIf
+ Dry-run mode: logs all planned operations without making any changes.
+
+.PARAMETER LogPath
+ Override log file path. Default: logs\task-07-logical-network-creation\
+ <YYYY-MM-DD_HHmmss>_LogicalNetworks.log (relative to CWD).
+
+.EXAMPLE
+ # Run from repo root with default config:
+ .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1
+
+.EXAMPLE
+ # Dry-run:
+ .\...\Invoke-LogicalNetworks-Orchestrated.ps1 -WhatIf
+
+.EXAMPLE
+ # Specific config file:
+ .\...\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath "configs/infrastructure-azl-demo.yml"
+
+.NOTES
+ Requires: powershell-yaml module (Install-Module powershell-yaml -Scope CurrentUser)
+ Requires: az CLI authenticated (az login)
+ Requires: az stack-hci-vm extension (az extension add --name stack-hci-vm)
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+ [string] $ConfigPath = "",
+ [PSCredential]$Credential,
+ [string[]] $TargetNode = @(),
+ [switch] $WhatIf,
+ [string] $LogPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region LOGGING -----------------------------------------------------------------
+$taskFolderName = "task-07-logical-network-creation"
+$timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+
+if ([string]::IsNullOrEmpty($LogPath)) {
+ $logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
+ $LogPath = Join-Path $logDir "${timestamp}_LogicalNetworks.log"
+}
+
+$logDir = Split-Path $LogPath -Parent
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+function Write-Log {
+ param(
+ [string]$Message,
+ [ValidateSet("INFO", "WARN", "ERROR", "SUCCESS")]
+ [string]$Level = "INFO"
+ )
+ $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+ $entry = "[$ts] [$Level] $Message"
+ $color = switch ($Level) {
+ "ERROR" { "Red" }
+ "WARN" { "Yellow" }
+ "SUCCESS" { "Green" }
+ default { "Cyan" }
+ }
+ $entry | Tee-Object -FilePath $LogPath -Append | Out-Null
+ Write-Host $entry -ForegroundColor $color
+}
+
+Write-Log "======================================================="
+Write-Log " Task 07 — Logical Network Creation (Orchestrated)"
+Write-Log " Log: $LogPath"
+if ($WhatIf) { Write-Log " [WhatIf] Dry-run mode — no changes will be made" "WARN" }
+Write-Log "======================================================="
+#endregion
+
+#region CONFIG LOADING ----------------------------------------------------------
+if ([string]::IsNullOrEmpty($ConfigPath)) {
+ $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+}
+if (-not (Test-Path $ConfigPath)) {
+ Write-Log "Config not found: $ConfigPath" "ERROR"; throw "Config not found"
+}
+
+Write-Log "Loading config: $ConfigPath"
+Import-Module powershell-yaml -ErrorAction Stop
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+# Subscription / RG / Location — support both infrastructure.yml and infrastructure-azl-lab.yml layouts
+$subscriptionId = if ($cfg.azure_platform.subscriptions.demo.id) {
+ $cfg.azure_platform.subscriptions.demo.id # azure_platform.subscriptions.demo.id
+ } elseif ($cfg.azure_local.subscription) {
+ $cfg.azure_local.subscription # azure_local.subscription (temp layout)
+ } else { throw "Cannot resolve subscription ID from config" }
+
+$resourceGroup = if ($cfg.azure_platform.resource_group_name) {
+ $cfg.azure_platform.resource_group_name # azure_platform.resource_group_name
+ } elseif ($cfg.compute.azure_local.arc_resource_group) {
+ $cfg.compute.azure_local.arc_resource_group # compute.azure_local.arc_resource_group
+ } elseif ($cfg.azure_local.resource_group) {
+ $cfg.azure_local.resource_group # azure_local.resource_group (temp layout)
+ } else { throw "Cannot resolve resource group from config" }
+
+$location = if ($cfg.azure_platform.region) {
+ $cfg.azure_platform.region # azure_platform.region
+ } elseif ($cfg.azure_local.location) {
+ $cfg.azure_local.location # azure_local.location (temp layout)
+ } else { throw "Cannot resolve location from config" }
+
+# Custom location name — support multiple config layouts
+$customLocationName = if ($cfg.compute.azure_local.azure_custom_location_name) {
+ $cfg.compute.azure_local.azure_custom_location_name # compute.azure_local.azure_custom_location_name
+ } elseif ($cfg.compute.azure_local.custom_location_name) {
+ $cfg.compute.azure_local.custom_location_name # compute.azure_local.custom_location_name
+ } elseif ($cfg.azure_local.custom_location_name) {
+ $cfg.azure_local.custom_location_name # azure_local.custom_location_name (temp layout)
+ } else { throw "Cannot resolve custom_location_name from config" }
+
+# vSwitch name — may be empty (triggers auto-discovery below)
+$vmSwitchName = [string]($cfg.compute.azure_local.vm_switch_name) # compute.azure_local.vm_switch_name
+
+# Logical networks array — support both layouts
+$logicalNetworks = if ($cfg.networking.logical_networks) {
+ $cfg.networking.logical_networks # networking.logical_networks[]
+ } elseif ($cfg.logical_networks) {
+ $cfg.logical_networks # logical_networks[] (temp layout)
+ } else { $null }
+
+if (-not $logicalNetworks -or $logicalNetworks.Count -eq 0) {
+ Write-Log "No logical_networks entries found in config — nothing to do." "WARN"
+ exit 0
+}
+
+# Cluster nodes for vSwitch discovery
+$clusterNodes = @()
+if ($cfg.compute.nodes) { $clusterNodes = @($cfg.compute.nodes.Keys) } # compute.nodes.* (standard layout)
+elseif ($cfg.nodes) { $clusterNodes = @($cfg.nodes.Keys) } # nodes.* (temp layout)
+
+Write-Log "Subscription: $subscriptionId"
+Write-Log "Resource Group: $resourceGroup"
+Write-Log "Location: $location"
+Write-Log "Custom Location: $customLocationName"
+Write-Log "Networks: $($logicalNetworks.Count) defined"
+#endregion
+
+#region VSWITCH DISCOVERY -------------------------------------------------------
+if ([string]::IsNullOrWhiteSpace($vmSwitchName)) {
+ Write-Log "vm_switch_name not configured — auto-discovering from cluster node..." "WARN"
+
+ $discoveryNode = if ($TargetNode.Count -gt 0) { $TargetNode[0] }
+ elseif ($clusterNodes.Count -gt 0) { $clusterNodes[0] }
+ else { throw "No cluster nodes found in config and no -TargetNode specified" }
+
+ Write-Log "Discovery node: $discoveryNode"
+
+ if (-not $Credential) {
+ Write-Log "No credential supplied — attempting Key Vault resolution..." "WARN"
+ # Key Vault fallback: dot-source helpers\keyvault-helper.ps1 if available
+ $kvHelper = Join-Path (Get-Location).Path "scripts\common\utilities\helpers\keyvault-helper.ps1"
+ if (Test-Path $kvHelper) {
+ . $kvHelper
+ try { $Credential = Resolve-KeyVaultRef -ConfigPath $ConfigPath } catch { $Credential = $null }
+ }
+ if (-not $Credential) {
+ Write-Log "Prompting for credentials..." "WARN"
+ $Credential = Get-Credential -Message "Enter credentials for $discoveryNode"
+ }
+ }
+
+ $invokeParams = @{
+ ComputerName = $discoveryNode
+ ScriptBlock = { (Get-VMSwitch | Where-Object { $_.SwitchType -eq "External" } | Select-Object -First 1).Name }
+ }
+ if ($Credential) { $invokeParams['Credential'] = $Credential }
+
+ try {
+ if ($WhatIf) {
+ Write-Log "[WhatIf] Would discover vSwitch from node $discoveryNode — using placeholder 'ConvergedSwitch(hci)'" "WARN"
+ $vmSwitchName = "ConvergedSwitch(hci)"
+ } else {
+ $vmSwitchName = Invoke-Command @invokeParams
+ if ([string]::IsNullOrWhiteSpace($vmSwitchName)) {
+ throw "No External vSwitch found on $discoveryNode"
+ }
+ Write-Log "Discovered vSwitch: $vmSwitchName" "SUCCESS"
+ }
+ } catch {
+ Write-Log "vSwitch discovery failed on ${discoveryNode}: $_" "ERROR"
+ throw
+ }
+} else {
+ Write-Log "Using vSwitch from config: $vmSwitchName"
+}
+#endregion
+
+#region CREDENTIAL / AUTH VERIFICATION -----------------------------------------
+Write-Log "Verifying Azure CLI authentication..."
+$accountInfo = az account show --output json 2>$null | ConvertFrom-Json
+if (-not $accountInfo) {
+ Write-Log "Not logged in. Run 'az login' first." "ERROR"; throw "Azure CLI not authenticated"
+}
+Write-Log "Authenticated as: $($accountInfo.user.name) (sub: $($accountInfo.id))"
+#endregion
+
+#region CUSTOM LOCATION RESOLUTION ---------------------------------------------
+Write-Log "Resolving custom location: $customLocationName"
+$customLocationId = az customlocation show `
+ --subscription $subscriptionId `
+ --resource-group $resourceGroup `
+ --name $customLocationName `
+ --query "id" `
+ --output tsv 2>$null
+
+if ([string]::IsNullOrWhiteSpace($customLocationId)) {
+ Write-Log "Could not resolve custom location '$customLocationName' in '$resourceGroup'" "ERROR"
+ throw "Custom location not found"
+}
+Write-Log "Custom location resolved" "SUCCESS"
+#endregion
+
+#region LOGICAL NETWORK CREATION -----------------------------------------------
+$created = 0; $skipped = 0; $failed = 0
+
+foreach ($lnet in $logicalNetworks) {
+ # Skip entries explicitly disabled
+ if ($null -ne $lnet.enabled -and $lnet.enabled -eq $false) {
+ Write-Log "Skipping disabled network: $($lnet.name)" "WARN"
+ $skipped++
+ continue
+ }
+
+ $lnetName = $lnet.name
+ $vlanId = [int]$lnet.vlan_id
+ $allocMethod = if ($lnet.ip_allocation_method) { $lnet.ip_allocation_method } else { "Static" }
+
+ Write-Log ""
+ Write-Log "--- $lnetName (VLAN $vlanId | $allocMethod) ---"
+
+ # Skip if already exists
+ if ($WhatIf) {
+ Write-Log "[WhatIf] Would check if '$lnetName' exists in $resourceGroup" "WARN"
+ } else {
+ $existing = az stack-hci-vm network lnet show `
+ --subscription $subscriptionId `
+ --resource-group $resourceGroup `
+ --name $lnetName 2>$null
+
+ if ($LASTEXITCODE -eq 0 -and $existing) {
+ Write-Log "Already exists — skipped: $lnetName" "WARN"
+ $skipped++
+ continue
+ }
+ }
+
+ # ── Build subnet object ──────────────────────────────────────────────────
+ $subnetObj = [ordered]@{
+ name = "default"
+ ipAllocationMethod = $allocMethod
+ }
+
+ if ($allocMethod -eq "Static") {
+ $subnetObj['addressPrefix'] = $lnet.address_prefix
+
+ # DNS servers
+ if ($lnet.dns_servers -and $lnet.dns_servers.Count -gt 0) {
+ $subnetObj['dnsServers'] = @($lnet.dns_servers)
+ }
+
+ # IP pools
+ if ($lnet.ip_pools -and $lnet.ip_pools.Count -gt 0) {
+ $subnetObj['ipPools'] = @($lnet.ip_pools | ForEach-Object {
+ [ordered]@{
+ name = if ($_.name) { $_.name } else { "pool-01" }
+ start = $_.start
+ end = $_.end
+ ipPoolType = @(if ($_.type) { $_.type } else { "vm" })
+ }
+ })
+ }
+
+ # Default gateway — added as a static route to subnet
+ if ($lnet.default_gateway) {
+ $subnetObj['routes'] = [System.Collections.Generic.List[object]]::new()
+ $null = $subnetObj['routes'].Add([ordered]@{
+ name = "default-gw"
+ addressPrefix = "0.0.0.0/0"
+ nextHop = $lnet.default_gateway
+ })
+ }
+ }
+
+ if ($allocMethod -eq "Dynamic") {
+ # DHCP options
+ if ($lnet.dhcp_options) {
+ $dhcp = [ordered]@{}
+ if ($lnet.dhcp_options.dns_servers -and $lnet.dhcp_options.dns_servers.Count -gt 0) {
+ $dhcp['dnsServers'] = @($lnet.dhcp_options.dns_servers)
+ }
+ if ($lnet.dhcp_options.domain_name) { $dhcp['domainName'] = $lnet.dhcp_options.domain_name }
+ if ($lnet.dhcp_options.ntp_servers -and $lnet.dhcp_options.ntp_servers.Count -gt 0) {
+ $dhcp['ntpServers'] = @($lnet.dhcp_options.ntp_servers)
+ }
+ if ($dhcp.Count -gt 0) { $subnetObj['dhcpOptions'] = $dhcp }
+ }
+ }
+
+ # Extra static routes (applies to both Static and Dynamic)
+ if ($lnet.routes -and $lnet.routes.Count -gt 0) {
+ $extraRoutes = @($lnet.routes | ForEach-Object {
+ [ordered]@{
+ name = if ($_.name) { $_.name } else { "route-$($_.address_prefix -replace '[.:/]','-')" }
+ addressPrefix = $_.address_prefix
+ nextHop = $_.next_hop
+ }
+ })
+ if ($subnetObj['routes']) { foreach ($r in $extraRoutes) { $null = $subnetObj['routes'].Add($r) } }
+ else { $subnetObj['routes'] = $extraRoutes }
+ }
+
+ $subnetJson = @($subnetObj) | ConvertTo-Json -Depth 10 -Compress
+
+ # ── Build and execute az command ─────────────────────────────────────────
+ $createArgs = @(
+ "stack-hci-vm", "network", "lnet", "create",
+ "--subscription", $subscriptionId,
+ "--resource-group", $resourceGroup,
+ "--custom-location", $customLocationId,
+ "--location", $location,
+ "--name", $lnetName,
+ "--vm-switch-name", $vmSwitchName,
+ "--vlan", "$vlanId",
+ "--subnets", $subnetJson,
+ "--output", "none"
+ )
+
+ if ($lnet.display_name) {
+ $createArgs += @("--tags", "displayName=$($lnet.display_name)")
+ }
+
+ if ($WhatIf) {
+ Write-Log "[WhatIf] Would create: $lnetName" "WARN"
+ Write-Log "[WhatIf] VLAN $vlanId | $allocMethod | prefix: $($lnet.address_prefix) | switch: $vmSwitchName" "WARN"
+ $created++
+ } else {
+ Write-Log "Creating: $lnetName..."
+ & az @createArgs
+ if ($LASTEXITCODE -ne 0) {
+ Write-Log "Failed to create $lnetName (exit $LASTEXITCODE)" "ERROR"
+ $failed++
+ } else {
+ Write-Log "Created: $lnetName" "SUCCESS"
+ $created++
+ }
+ }
+}
+#endregion
+
+#region SUMMARY -----------------------------------------------------------------
+Write-Log ""
+Write-Log "======================================================="
+Write-Log " Summary"
+Write-Log " Created : $created"
+Write-Log " Skipped : $skipped"
+Write-Log " Failed : $failed"
+Write-Log "======================================================="
+
+if ($WhatIf) {
+ Write-Log "Dry-run complete. Re-run without -WhatIf to apply." "WARN"
+}
+
+if ($failed -gt 0) {
+ throw "$failed logical network(s) failed to create. Review log: $LogPath"
+}
+#endregion
+```
+
+**Run from the toolkit repo root:**
+
+```powershell title="Run Orchestrated script"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1
+
+# Dry-run first:
+.\...\Invoke-LogicalNetworks-Orchestrated.ps1 -WhatIf
+
+# Specific config:
+.\...\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath "configs/infrastructure-azl-demo.yml"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone">
+
+**When to use:** One-off creation from any workstation, sharing with a customer, or when
+running outside the toolkit. All values are hardcoded in the `#region CONFIGURATION` block.
+No YAML file or toolkit clone required.
+
+**Script:**
+[`New-LogicalNetworks-Standalone.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-logical-network-creation/powershell/New-LogicalNetworks-Standalone.ps1)
+
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+ task-07-logical-network-creation/powershell/New-LogicalNetworks-Standalone.ps1
+```
+
+```powershell title="New-LogicalNetworks-Standalone.ps1 — CONFIGURATION region"
+#region CONFIGURATION -----------------------------------------------------------
+
+# ─── Azure Scope ────────────────────────────────────────────────────────────────
+$subscription_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+$resource_group = "rg-iic01-azl-eus-01"
+$location = "eastus"
+
+# Full custom location ARM resource ID
+# Found via: az customlocation list --resource-group <rg> --query "[].{Name:name,Id:id}" --output table
+$custom_location_id = "/subscriptions/a1b2c3d4-e5f6-7890-abcd-ef1234567890/resourceGroups/rg-iic01-azl-eus-01/providers/Microsoft.ExtendedLocation/customLocations/cl-iic01"
+
+# Hyper-V virtual switch name (from Get-VMSwitch on a cluster node)
+$vm_switch_name = "ConvergedSwitch(hci)"
+
+# ─── Logical Networks ────────────────────────────────────────────────────────────
+# ip_allocation_method: "Static" or "Dynamic"
+# Static — requires address_prefix, default_gateway, ip_pools
+# Dynamic — requires dhcp_options; address_prefix / ip_pools are not used
+
+$logical_networks = @(
+ # ── Static network example: Management ──────────────────────────────────────
+ @{
+ name = "ln-iic01-management-100"
+ display_name = "Management Network"
+ vlan_id = 100
+ address_prefix = "10.100.0.0/24"
+ default_gateway = "10.100.0.1"
+ ip_allocation_method = "Static"
+ dns_servers = @("10.100.0.10", "10.100.0.11")
+ ip_pools = @(
+ @{ name = "pool-mgmt-vms"; start = "10.100.0.50"; end = "10.100.0.200"; type = "vm" }
+ )
+ routes = @()
+ },
+
+ # ── Static network example: Production ──────────────────────────────────────
+ @{
+ name = "ln-iic01-production-200"
+ display_name = "Production Network"
+ vlan_id = 200
+ address_prefix = "10.200.0.0/24"
+ default_gateway = "10.200.0.1"
+ ip_allocation_method = "Static"
+ dns_servers = @("10.100.0.10", "10.100.0.11")
+ ip_pools = @(
+ @{ name = "pool-prod-vms"; start = "10.200.0.50"; end = "10.200.0.250"; type = "vm" }
+ )
+ routes = @()
+ },
+
+ # ── Dynamic network example: AVD (DHCP) ─────────────────────────────────────
+ @{
+ name = "ln-iic01-avd-300"
+ display_name = "AVD Network"
+ vlan_id = 300
+ ip_allocation_method = "Dynamic"
+ dhcp_options = @{
+ dns_servers = @("10.100.0.10", "10.100.0.11")
+ domain_name = "azurelocal.cloud"
+ }
+ routes = @()
+ }
+)
+
+#endregion
+```
+
+**Usage:**
+
+```powershell
+# 1. Download or copy the script
+# 2. Edit the #region CONFIGURATION block with your environment values
+# 3. Run:
+.\New-LogicalNetworks-Standalone.ps1
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+After all logical networks are created, confirm they are in a **Succeeded** provisioning
+state and are visible on the cluster's Logical networks blade.
+
+```powershell title="List all logical networks in the resource group"
+az stack-hci-vm network lnet list `
+ --subscription a1b2c3d4-e5f6-7890-abcd-ef1234567890 `
+ --resource-group rg-iic01-azl-eus-01 `
+ --output table
+```
+
+```powershell title="Check a specific logical network"
+az stack-hci-vm network lnet show `
+ --subscription a1b2c3d4-e5f6-7890-abcd-ef1234567890 `
+ --resource-group rg-iic01-azl-eus-01 `
+ --name ln-iic01-management-100 `
+ --query "{Name:name, State:provisioningState, VLAN:properties.networkType}" `
+ --output table
+```
+
+**Expected results:**
+
+| Name | State | VLAN |
+|------|-------|------|
+| `ln-iic01-management-100` | Succeeded | 100 |
+| `ln-iic01-production-200` | Succeeded | 200 |
+| `ln-iic01-avd-300` | Succeeded | 300 |
+
+:::warning Logical network stuck in "Updating" or "Failed"
+If a logical network enters `Failed` state or stays in `Updating` for more than 5 minutes:
+1. Check the cluster Arc resource bridge (`az arcappliance show`) is in a healthy state
+2. Confirm the vSwitch name matches exactly (case-sensitive): `Get-VMSwitch` on a cluster node
+3. Verify the VLAN ID does not conflict with an existing logical network on the cluster
+4. Delete the failed resource and re-run:
+ `az stack-hci-vm network lnet delete --name <lnet-name> --resource-group <rg> --yes`
+:::
+
+---
+
+## Navigation
+
+| | |
+|---|---|
+| ← Previous | [Task 06 — VM Image Downloads](./task-06-image-downloads.mdx) |
+| ↑ Phase Index | [Phase 06 — Post-Deployment Index](./index.mdx) |
+| → Next | [Task 08 — Post-Deployment Verification](./task-08-post-deployment-verification.mdx) |

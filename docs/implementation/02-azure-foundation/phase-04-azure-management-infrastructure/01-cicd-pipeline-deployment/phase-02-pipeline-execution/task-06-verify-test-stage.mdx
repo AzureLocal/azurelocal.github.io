@@ -1,0 +1,153 @@
+---
+title: "Task 06: Verify Test Stage"
+sidebar_position: 6
+description: "Verify automated tests confirm successful deployment"
+---
+
+# Task 06: Verify Test Stage
+
+> **Objective**: Verify automated tests validate successful infrastructure deployment 
+> **Duration**: ~5 minutes
+
+---
+
+## What Happens
+
+The test stage runs automated validation:
+1. **Resource Existence Checks** - Verify all resources were created
+2. **Configuration Validation** - Confirm settings match specification
+3. **Connectivity Tests** - Basic reachability checks
+4. **State Verification** - Confirm resources are in expected state
+
+---
+
+## Procedure
+
+### 1. Watch Test Job
+
+Click the **test** job in the pipeline to see test execution.
+
+### 2. Review Test Results
+
+Example test output:
+```
+Running validation tests...
+
+✓ Resource Group exists: rg-cid1234-prd-eus-management
+✓ Virtual Network exists: vnet-cid1234-prd-eus-hub
+✓ VPN Gateway exists and is provisioned
+✓ VPN Gateway BGP is configured
+✓ Azure Bastion exists and is running
+✓ Key Vault exists and is accessible
+✓ Log Analytics Workspace exists
+✓ All required subnets created
+✓ NSGs attached to subnets
+✓ Private DNS Zone created
+
+All tests passed! ✓
+```
+
+### 3. Check for Failed Tests
+
+If any test fails:
+```
+✗ VPN Gateway BGP peering not established
+ Expected: Connected
+ Actual: Connecting
+```
+
+Some tests may show warnings on first run (e.g., BGP peering takes additional time).
+
+---
+
+## Test Categories
+
+### Resource Existence (Critical)
+- ✅ All resource groups created
+- ✅ VNet and subnets exist
+- ✅ VPN Gateway provisioned
+- ✅ Bastion host exists
+- ✅ Key Vault accessible
+- ✅ Storage accounts created
+
+### Configuration (Important)
+- ✅ VPN Gateway SKU correct
+- ✅ Subnet sizes match specification
+- ✅ Key Vault policies configured
+- ✅ NSGs attached
+
+### State (Nice-to-have)
+- ⚠️ VPN Gateway connections (may not be complete yet)
+- ⚠️ BGP peering status (takes additional time)
+
+---
+
+## Expected Results
+
+### Management Mode
+```
+Tests Run: 35
+Passed: 35
+Failed: 0
+Warnings: 2 (VPN connectivity - BGP peering establishing)
+```
+
+### Cluster Mode
+```
+Tests Run: 15
+Passed: 15
+Failed: 0
+Warnings: 0
+```
+
+---
+
+## If Tests Fail
+
+**Critical failures:**
+- Resource groups missing
+- VPN Gateway failed to create
+- Key Vault not accessible
+
+**Action:** Review apply stage logs, check Azure Portal, see troubleshooting in Phase 03.
+
+**Warning/Info items:**
+- VPN BGP not yet connected (will establish within 10-15 min)
+- Optional servers not deployed (expected if disabled)
+
+**Action:** Continue to Phase 03 validation.
+
+---
+
+## Validation
+
+- [ ] Test stage completed
+- [ ] Critical tests passed (resource existence)
+- [ ] Configuration tests passed
+- [ ] Any failures understood and documented
+- [ ] Pipeline shows green success status
+
+---
+
+## Pipeline Complete
+
+**If all stages passed:**
+```
+✓ Validate (2 min)
+✓ Plan (3 min)
+✓ Approve (manual)
+✓ Apply (45-90 min)
+✓ Test (5 min)
+
+Pipeline Status: PASSED ✓
+```
+
+Deployment complete! Proceed to Phase 03 for detailed validation.
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 05 - Apply Stage](./task-05-monitor-apply-stage.mdx) | [Phase 02 - Execution](./index.mdx) | [Phase 03 - Validation](../phase-03-validation/) |

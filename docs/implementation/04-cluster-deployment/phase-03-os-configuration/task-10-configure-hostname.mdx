@@ -1,0 +1,156 @@
+---
+title: "Task 10: Configure Hostname"
+sidebar_label: "Task 10: Hostname"
+sidebar_position: 10
+description: "Set the computer hostname for each node according to naming standards"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 10: Configure Hostname
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+**Status**: Active | **Estimated Time**: 5 minutes per node | **Last Updated**: 2026-03-04
+
+---
+
+## Overview
+
+Rename each node to its target hostname from `infrastructure.yml`. Nodes must restart to apply the change.
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Tasks 01–09 complete | Unused adapters disabled |
+| Hostnames from infrastructure.yml | `cluster_nodes[].hostname` |
+
+---
+
+## Config Reference
+
+| YAML Key | Variable | Example |
+|---|---|---|
+| `cluster_nodes[].hostname` | `$NewHostname` | `azlocal-node01` |
+| `cluster_nodes[].management_ip` | `$ServerList` / `$node.ip` | `10.0.0.11` |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="sconfig" label="SConfig (Recommended)" default>
+
+Run on each node via console, KVM, or RDP. SConfig is the simplest method.
+
+1. At the PowerShell prompt, type `SConfig` and press Enter
+2. Select **option 2** — Computer Name
+3. Type the hostname from `infrastructure.yml` (`cluster_nodes[].hostname`)
+4. Press Enter and confirm
+5. Select **Yes** to restart now
+
+Repeat on each node.
+
+</TabItem>
+<TabItem value="direct" label="Direct (On Node)">
+
+Run on each node individually via console, KVM, or RDP.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname/powershell/Set-NodeHostname.ps1`
+
+```powershell
+$NewHostname = "REPLACE_WITH_HOSTNAME" # cluster_nodes[].hostname
+
+if ($NewHostname -match "^REPLACE_") {
+ Write-Host "[ERROR] Set `$NewHostname before running" -ForegroundColor Red; exit 1
+}
+
+Rename-Computer -NewName $NewHostname -Force
+
+Write-Host "[PASS] Hostname set. Restart required." -ForegroundColor Green
+Restart-Computer -Force
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
+
+Run from the management server. Reads all node IPs and hostnames from `infrastructure.yml`, renames each node, restarts it, and waits for it to come back online.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname/powershell/Invoke-ConfigureHostname-Orchestrated.ps1`
+
+```powershell
+# Task 10 - Configure Hostname (orchestrated, all nodes)
+# infrastructure.yml variables:
+# cluster_nodes[].management_ip -> connection IP per node
+# cluster_nodes[].hostname -> target hostname per node
+
+$ConfigPath = "$env:USERPROFILE\infrastructure.yml"
+$lines = Get-Content $ConfigPath
+$nodes = @()
+$current = $null
+foreach ($line in $lines) {
+ if ($line -match '^\s*-\s*hostname:\s*"?([^"]+)"?') { $current = @{ hostname = $Matches[1].Trim(); ip = "" } }
+ elseif ($line -match '^\s+management_ip:\s*"?([^"]+)"?' -and $current) { $current.ip = $Matches[1].Trim() }
+ if ($current -and $current.ip -and $current.hostname) { $nodes += [PSCustomObject]$current; $current = $null }
+}
+
+foreach ($node in $nodes) {
+ Invoke-Command -ComputerName $node.ip -ArgumentList $node.hostname -ScriptBlock {
+ param($name)
+ Rename-Computer -NewName $name -Force
+ }
+ Restart-Computer -ComputerName $node.ip -Force
+ Write-Host "[$($node.ip)] Renamed to $($node.hostname) -- restarting"
+}
+
+Write-Host "Waiting 60s for nodes to come back online..."
+Start-Sleep -Seconds 60
+
+foreach ($node in $nodes) {
+ $reported = Invoke-Command -ComputerName $node.ip -ScriptBlock { $env:COMPUTERNAME }
+ Write-Host "[$($node.ip)] Online - hostname: $reported"
+}
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+```powershell
+# Confirm hostname on each node
+$env:COMPUTERNAME
+# or remotely:
+Invoke-Command -ComputerName <ip> -ScriptBlock { $env:COMPUTERNAME }
+```
+
+---
+
+## Validation Checklist
+
+- [ ] Each node reports the correct hostname
+- [ ] All nodes accessible after restart
+- [ ] Hostnames match `cluster_nodes[].hostname` in infrastructure.yml
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|---|---|
+| Node didn't come back after restart | Wait another 60s then ping the management IP |
+| Hostname not applied | Confirm `Rename-Computer` ran without error; restart if needed |
+
+---
+
+## Navigation
+
+[← Task 09: Disable Adapters](./task-09-disable-unused-network-adapters.mdx) · [↑ Phase 03](./index.mdx) · [Task 11: Clear Storage →](./task-11-clear-previous-storage-configuration-conditional.mdx)

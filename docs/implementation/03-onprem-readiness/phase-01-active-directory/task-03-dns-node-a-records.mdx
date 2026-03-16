@@ -1,0 +1,257 @@
+---
+title: "Task 03: DNS Node A Records"
+sidebar_label: "Task 03: DNS Node A Records"
+sidebar_position: 3
+description: "Step 3 - DNS Node A Records (task-03-dns-node-a-records.mdx)"
+category: Runbook
+scope: DNS configuration for cluster nodes
+purpose: Pre-create A records for Azure Local nodes
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-03
+version: 1.1
+tags: ["azure-local", "dns", "a-records", "active-directory"]
+keywords: ["DNS", "A records", "forward lookup zone", "node hostname"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# DNS Node A Records
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: DNS configuration for cluster nodes 
+> **PURPOSE**: Pre-create A records for Azure Local nodes 
+> **MASTER REFERENCE**: [Microsoft Learn - Network Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/network-requirements) 
+
+**Status**: Active
+
+---
+
+## Overview
+
+Pre-create forward lookup A records for each Azure Local node hostname before deployment.
+
+### What This Accomplishes
+
+- DNS name resolution for cluster nodes
+- Pre-staged DNS records for controlled environments
+- Documentation of hostname to IP mappings
+
+:::info
+
+The active directory information in these documents should have been decided in the [planning phase](../../../planning/) and discovery phases. These are just examples. Please update your scripts with the right OU information, right security groups, DNS, etc.
+
+:::
+
+## Prerequisites
+
+- DNS Manager access or DNS Server tools
+- Node hostnames and management IP addresses
+- Authoritative DNS server permissions
+
+## DNS Record Creation
+
+Pre-create forward lookup A records for each Azure Local node hostname. Do NOT create cluster name (CNO) or virtual client access name (VCO) records now—those are generated later by the failover cluster process.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="DNS Manager" default>
+
+1. Open DNS Manager on an authoritative domain DNS server.
+2. Expand Forward Lookup Zones → select the Active Directory–integrated zone (for example, `hybrid.mgmt`).
+3. For each node:
+ - Right‑click the zone → New Host (A or AAAA).
+ - Enter node name (for example, `hcinode01`) and its management IPv4 address.
+ - Leave "Create associated PTR record" unchecked unless the reverse zone is already delegated and managed.
+ - Click Add Host.
+4. Repeat for all node hostnames (example: `hcinode01`, `hcinode02`, `hcinode03`, `hcinode04`).
+5. Document the mapping (hostname ↔ IP) in the deployment artifacts and store in version control.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+> **When to use**: Managing from a domain-joined management server — config-driven via infrastructure.yml
+
+#### Script
+
+**Primary**: `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records/powershell/Invoke-DNSNodeRecords.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records/azure-cli/Invoke-DNSNodeRecords.ps1` |
+| Bash | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records/bash/invoke-dns-node-records.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Invoke-DNSNodeRecords.ps1
+# Execution: Run FROM management server — reads infrastructure.yml
+# Prerequisites: powershell-yaml module, DnsServer RSAT, DNS admin access
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath
+)
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($ConfigPath) {
+ $ConfigFile = $ConfigPath
+} else {
+ $ConfigFile = Join-Path $ScriptDir "..\..\..\..\configs\infrastructure.yml"
+}
+if (!(Test-Path $ConfigFile)) { throw "infrastructure.yml not found at $ConfigFile" }
+
+Import-Module powershell-yaml -ErrorAction Stop
+Import-Module DnsServer
+
+$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
+$zoneName = $config["active_directory"]["domain"]["fqdn"]
+
+# Build node map from cluster ARM deployment node names and starting IP
+# Update infrastructure.yml: active_directory section with node records if defined,
+# otherwise populate $nodeMap from your site planning documentation.
+$nodeMap = [ordered]@{}
+$nodeIds = $config["cluster_arm_deployment"]["arc_node_resource_ids"]
+if ($nodeIds) {
+ $startIp = [System.Net.IPAddress]::Parse($config["cluster_arm_deployment"]["starting_ip"])
+ $bytes = $startIp.GetAddressBytes()
+ $offset = 0
+ foreach ($id in $nodeIds) {
+ $nodeName = ($id -split '/')[-1]
+ $bytes[3] = [byte]([int]$bytes[3] + $offset)
+ $nodeMap[$nodeName] = ([System.Net.IPAddress]::new($bytes)).ToString()
+ $offset++
+ }
+}
+
+if ($nodeMap.Count -eq 0) {
+ Write-Warning "No nodes found in infrastructure.yml — populate cluster_arm_deployment.arc_node_resource_ids or define nodes manually."
+ return
+}
+
+Write-Host "[1/2] Creating DNS A records in zone: $zoneName" -ForegroundColor Cyan
+
+foreach ($nodeName in $nodeMap.Keys) {
+ $ip = $nodeMap[$nodeName]
+ if (-not (Get-DnsServerResourceRecord -ZoneName $zoneName -Name $nodeName -RRType A -ErrorAction SilentlyContinue)) {
+ Add-DnsServerResourceRecordA -ZoneName $zoneName -Name $nodeName -IPv4Address $ip `
+ -AllowUpdateAny -CreatePtr:$false -TimeToLive (New-TimeSpan -Hours 1)
+ Write-Host " Created: $nodeName.$zoneName -> $ip" -ForegroundColor Green
+ } else {
+ Write-Host " Exists: $nodeName.$zoneName" -ForegroundColor Yellow
+ }
+}
+
+Write-Host "[2/2] Verifying A records..." -ForegroundColor Cyan
+Get-DnsServerResourceRecord -ZoneName $zoneName -RRType A |
+ Where-Object { $_.HostName -in $nodeMap.Keys } |
+ Select-Object HostName, @{n='IPv4';e={$_.RecordData.IPv4Address}}
+```
+
+#### Validation
+
+```powershell
+$zoneName = $config["active_directory"]["domain"]["fqdn"]
+$nodeMap.Keys | ForEach-Object { Resolve-DnsName "$_.$zoneName" -ErrorAction SilentlyContinue | Select-Object Name, IPAddress }
+```
+
+**Validation Script**: `scripts/validation/03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records/powershell/Test-DNSNodeRecords.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+
+```powershell
+#region CONFIGURATION
+$ZoneName = "hybrid.mgmt"
+$NodeMap = @{
+ 'hcinode01' = '10.50.10.11'
+ 'hcinode02' = '10.50.10.12'
+ 'hcinode03' = '10.50.10.13'
+ 'hcinode04' = '10.50.10.14'
+}
+#endregion
+
+Import-Module DnsServer
+foreach ($node in $NodeMap.Keys) {
+ $ip = $NodeMap[$node]
+ if (-not (Get-DnsServerResourceRecord -ZoneName $ZoneName -Name $node -RRType A -EA SilentlyContinue)) {
+ Add-DnsServerResourceRecordA -ZoneName $ZoneName -Name $node -IPv4Address $ip `
+ -AllowUpdateAny -CreatePtr:$false -TimeToLive (New-TimeSpan -Hours 1)
+ Write-Host "Created: $node.$ZoneName -> $ip" -ForegroundColor Green
+ }
+}
+Get-DnsServerResourceRecord -ZoneName $ZoneName -RRType A | Where-Object { $_.HostName -in $NodeMap.Keys } |
+ Select-Object HostName, @{n='IPv4';e={$_.RecordData.IPv4Address}}
+```
+
+
+</TabItem>
+</Tabs>
+
+## Verification
+
+```powershell
+$ZoneName = (Get-ADDomain).DNSRoot
+'hcinode01','hcinode02','hcinode03','hcinode04' | ForEach-Object { Resolve-DnsName "$_.${ZoneName}" -ErrorAction SilentlyContinue | Select Name,IPAddress }
+```
+
+## Notes
+
+- Only node hostnames are created now; cluster CNO/VCO records are deferred until cluster creation.
+- If dynamic secure updates are allowed and change control permits, this step can be skipped; retain the section for controlled environments.
+- Reverse (PTR) records are optional; create only if the reverse zone is already in scope.
+
+## Validation Checklist
+
+- [ ] DNS Manager or PowerShell access available
+- [ ] Node hostnames and IPs documented
+- [ ] A records created for all nodes
+- [ ] Records resolve correctly
+- [ ] Mappings documented in deployment artifacts
+
+## Next Steps
+
+After configuring DNS records, proceed to [Task 4 - Service & Admin Accounts](./task-04-service-admin-accounts) for account creation.
+
+## Troubleshooting
+
+### Common Issues
+
+**DNS Record Creation Fails**: Check DNS server permissions and zone access.
+
+**Records Not Resolving**: Verify DNS server configuration and replication.
+
+**Dynamic Updates Blocked**: Use manual creation in controlled environments.
+
+### Support Resources
+
+- [DNS Record Management](https://learn.microsoft.com/en-us/windows-server/networking/dns/manage-dns-records)
+- [Azure Local DNS Requirements](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-active-directory)
+
+
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 02: Security Groups](./task-02-security-groups.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Task 04: Service & Admin Accounts →](./task-04-service-admin-accounts.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Standardized runbook format |
+
+---
+

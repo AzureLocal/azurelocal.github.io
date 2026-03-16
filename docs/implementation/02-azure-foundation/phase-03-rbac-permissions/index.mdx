@@ -1,0 +1,169 @@
+---
+title: "Phase 03: RBAC Permissions"
+sidebar_label: "Phase 03: RBAC Permissions"
+sidebar_position: 3
+description: "Configure RBAC permissions and create deployment service principal for Azure Local"
+category: "RUNBOOK"
+scope: "Role-based access control configuration for Azure Local deployment"
+purpose: "Create deployment SPN and assign required RBAC roles"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - phase-03
+ - rbac
+ - service-principal
+keywords:
+ - RBAC
+ - role assignment
+ - service principal
+ - sp-azurelocal-deploy
+status: "approved"
+---
+
+# Phase 03: RBAC Permissions
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Role-based access control configuration for Azure Local deployment 
+> **PURPOSE**: Create deployment SPN and assign required RBAC roles 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure RBAC](https://learn.microsoft.com/en-us/azure/role-based-access-control/overview)
+
+**Status**: Active 
+**Applies To**: Phase 03 — Azure Foundation 
+**Last Updated**: 2026-03-02
+
+---
+
+## Table of Contents
+
+- [Task 01 — Create Azure Local Deployment SPN](./task-01-create-azure-local-deployment-spn.mdx)
+- [Task 02 — Assign RBAC Roles](./task-02-assign-rbac-roles.mdx)
+
+---
+
+## Stage Details
+
+### Objective
+
+Configure Role-Based Access Control (RBAC) permissions required for Azure Local deployment by creating a dedicated service principal and assigning the required roles for both portal-based and ARM template deployments.
+
+### Prerequisites
+
+:::info Azure Authentication Required
+Before running any scripts in this phase, ensure you have an authenticated Azure session.
+See Authentication & Session Setup for options including Azure PowerShell, Azure CLI, and service principal authentication.
+:::
+
+| Prerequisite | Details |
+|-------------|---------|
+| **Run As** | User Access Administrator at subscription level |
+| **Prior Phase** | [Phase 02: Resource Providers](../phase-02-resource-providers/) completed |
+| **Azure Session** | Authenticated with Owner or User Access Administrator role |
+
+:::warning This Phase Enables the Permission Transition
+**Task 02** is the **Permission Transition Point**. After completing Task 02, the deployment SPN and deployment user will have the required RBAC roles. All subsequent phases can use deployment credentials instead of elevated admin.
+:::
+
+### Tasks
+
+| Task | Description | Duration | Run As |
+|------|-------------|----------|--------|
+| [Task 01: Create Deployment SPN](./task-01-create-azure-local-deployment-spn) | Create service principal for deployment automation | 10–15 min | Elevated Admin |
+| [Task 02: Assign RBAC Roles](./task-02-assign-rbac-roles) | Assign required roles to SPN and deployment user | 5–10 min | Elevated Admin |
+
+### Validation
+
+- [ ] Deployment service principal `sp-azurelocal-deploy` created in Entra ID
+- [ ] Service principal credentials stored in platform Key Vault
+- [ ] Subscription-level roles assigned: Contributor, User Access Administrator, Azure Stack HCI Administrator, Reader
+- [ ] Resource group-level roles assigned at cluster RG: Key Vault Data Access Administrator, Key Vault Secrets Officer, Key Vault Contributor, Storage Account Contributor, Azure Connected Machine Onboarding, Azure Connected Machine Resource Administrator
+
+### Outcome
+
+Deployment service principal exists with all required RBAC permissions. All subsequent phases can authenticate using the deployment SPN instead of elevated admin credentials.
+
+---
+
+## Required RBAC Roles
+
+Azure Local deployment requires specific RBAC roles regardless of the deployment method. These roles enable Arc-enablement of machines, resource management, and Azure Local cluster operations.
+
+### Subscription-Level Roles
+
+| Role | Purpose |
+|------|---------|
+| `Contributor` | Create and manage Azure resources |
+| `User Access Administrator` | Manage RBAC role assignments |
+| `Azure Stack HCI Administrator` | Manage Azure Local cluster resources |
+| `Reader` | View Azure resources and configurations |
+
+### Resource Group-Level Roles
+
+These roles are assigned at the **Azure Local cluster resource group** (e.g., `rg-c01-azl-eus-01`), **not** the platform Key Vault resource group.
+
+| Role | Purpose |
+|------|---------|
+| `Key Vault Data Access Administrator` | Manage data plane permissions to deployment Key Vault |
+| `Key Vault Secrets Officer` | Read and write secrets in deployment Key Vault |
+| `Key Vault Contributor` | Create and manage Key Vault resources |
+| `Storage Account Contributor` | Create storage accounts for deployment |
+| `Azure Connected Machine Onboarding` | Register machines with Azure Arc |
+| `Azure Connected Machine Resource Administrator` | Manage Arc-enabled machine resources |
+
+:::warning Scope Is the Azure Local Cluster Resource Group
+All resource group-level roles **MUST** be assigned at the cluster resource group:
+
+```
+/subscriptions/<subscription-id>/resourceGroups/<cluster-resource-group>
+```
+
+Example:
+
+```
+/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-c01-azl-eus-01
+```
+:::
+
+---
+
+## IIC Example — Config Values
+
+The following values from `infrastructure.yml` are used during this phase:
+
+```yaml title="infrastructure.yml (IIC example)"
+azure:
+ tenant_id: "12345678-1234-1234-1234-123456789012"
+ subscriptions:
+ lab:
+ id: "00000000-1111-2222-3333-444444444444"
+ name: "iic-lz-azurelocal-001"
+
+azure_resources:
+ resource_group_name: "rg-c01-azl-eus-01"
+
+service_principal:
+ name: "sp-azurelocal-deploy"
+```
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 02 — Resource Providers](../phase-02-resource-providers/) | [Azure Foundation Index](../index.mdx) | [Phase 04 — Azure Management Infrastructure](../phase-04-azure-management-infrastructure/) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, phase-03, rbac, service-principal
+- Keywords: RBAC, role assignment, service principal, sp-azurelocal-deploy
+- Author: Azure Local Cloudnology Team

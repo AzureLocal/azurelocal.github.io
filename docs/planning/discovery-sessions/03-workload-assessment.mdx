@@ -1,0 +1,412 @@
+---
+title: "Workload Assessment"
+sidebar_label: "Workload Assessment"
+sidebar_position: 4
+description: "Workload discovery and assessment procedures"
+---
+
+# Workload Discovery and Assessment
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Application and workload evaluation 
+> **PURPOSE**: Assess customer workloads for Azure Local 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Local Workloads](https://learn.microsoft.com/en-us/azure/azure-local/overview)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Workload discovery and assessment is a critical phase where deployment teams evaluate customer applications and services to determine:
+
+- **Resource requirements** - Compute, memory, storage, and IOPS
+- **Performance characteristics** - Baselines and SLA requirements
+- **Network dependencies** - Connectivity and security zone placement
+- **Migration complexity** - Compatibility and sequencing
+- **Backup and DR requirements** - RTO, RPO, and recovery procedures
+
+:::tip Assessment Scope
+Complete workload assessment for all applications that will run on Azure Local. This information directly impacts cluster sizing, network design, and migration planning.
+:::
+
+---
+
+## Application Inventory
+
+### Workload Catalog Template
+
+Complete the following for each application:
+
+| Field | Value |
+|-------|-------|
+| **Application Name** | `________________________` |
+| **Application Version** | `________________________` |
+| **Application Owner** | `________________________` |
+| **Owner Contact** | `________________________` |
+| **Business Unit** | `________________________` |
+| **Business Criticality** | ☐ Tier 1 (Critical) ☐ Tier 2 (Important) ☐ Tier 3 (Standard) |
+
+### Current Hosting Information
+
+| Field | Value |
+|-------|-------|
+| **Current Platform** | ☐ Physical ☐ VMware ☐ Hyper-V ☐ Cloud ☐ Other: `________` |
+| **Current Location** | `________________________` |
+| **Current Hostname(s)** | `________________________` |
+| **Operating System** | `________________________` |
+| **OS Version** | `________________________` |
+| **Virtualized** | ☐ Yes ☐ No |
+| **Number of Instances** | `____` |
+
+### Target Placement
+
+| Field | Value |
+|-------|-------|
+| **Target Azure Local Cluster** | `________________________` |
+| **Target Site** | `________________________` |
+| **Target Resource Group** | `________________________` |
+| **Migration Priority** | ☐ Wave 1 ☐ Wave 2 ☐ Wave 3 ☐ Wave 4 |
+| **Migration Method** | ☐ P2V ☐ V2V ☐ Fresh Install ☐ Replatform |
+
+---
+
+## Resource Requirements
+
+### Compute and Memory
+
+Complete current and target resource specifications:
+
+| Resource | Current | Peak Utilization | Target | Notes |
+|----------|---------|------------------|--------|-------|
+| **vCPUs** | `____` | `____` % | `____` | |
+| **RAM (GB)** | `____` | `____` % | `____` | |
+| **GPU Required** | ☐ Yes ☐ No | | | Type: `________` |
+
+### Storage Requirements
+
+| Storage | Current Size | Current IOPS | Target Size | Target IOPS | Notes |
+|---------|--------------|--------------|-------------|-------------|-------|
+| **OS Disk** | `____` GB | `______` | `____` GB | `______` | |
+| **Data Disk 1** | `____` GB | `______` | `____` GB | `______` | |
+| **Data Disk 2** | `____` GB | `______` | `____` GB | `______` | |
+| **Data Disk 3** | `____` GB | `______` | `____` GB | `______` | |
+| **Total Storage** | `____` GB | | `____` GB | | |
+
+### Storage Performance Characteristics
+
+| Metric | Current Baseline | Required SLA | Notes |
+|--------|------------------|--------------|-------|
+| **Read IOPS** | `____________` | `____________` | |
+| **Write IOPS** | `____________` | `____________` | |
+| **Read Throughput (MB/s)** | `____________` | `____________` | |
+| **Write Throughput (MB/s)** | `____________` | `____________` | |
+| **Read Latency (ms)** | `____________` | `____________` | Target < 10ms |
+| **Write Latency (ms)** | `____________` | `____________` | Target < 10ms |
+
+---
+
+## Network Dependencies
+
+### Application Network Requirements
+
+| Network Type | VLAN/Subnet | Port(s) | Protocol | Direction | Purpose |
+|--------------|-------------|---------|----------|-----------|---------|
+| **Management** | `________` | `______` | `______` | `______` | `____________` |
+| **Production** | `________` | `______` | `______` | `______` | `____________` |
+| **Database** | `________` | `______` | `______` | `______` | `____________` |
+| **Backup** | `________` | `______` | `______` | `______` | `____________` |
+| **External** | `________` | `______` | `______` | `______` | `____________` |
+
+### Firewall Rule Requirements
+
+| Source | Destination | Port(s) | Protocol | Purpose | Status |
+|--------|-------------|---------|----------|---------|--------|
+| `____________` | `____________` | `______` | `______` | `____________` | ☐ Existing ☐ New |
+| `____________` | `____________` | `______` | `______` | `____________` | ☐ Existing ☐ New |
+| `____________` | `____________` | `______` | `______` | `____________` | ☐ Existing ☐ New |
+
+### Load Balancer Requirements
+
+| Field | Value |
+|-------|-------|
+| **Load Balancer Required** | ☐ Yes ☐ No |
+| **Load Balancer Type** | ☐ Azure Load Balancer ☐ Software LB ☐ Hardware LB |
+| **Load Balancing Algorithm** | ☐ Round Robin ☐ Least Connections ☐ Source IP |
+| **Health Check Protocol** | ☐ HTTP ☐ HTTPS ☐ TCP |
+| **Health Check Port** | `____________` |
+| **Session Persistence** | ☐ Required ☐ Not Required |
+
+### External Connectivity
+
+| Field | Value |
+|-------|-------|
+| **Public IP Required** | ☐ Yes ☐ No |
+| **DNS Hostname** | `________________________` |
+| **SSL Certificate Required** | ☐ Yes ☐ No |
+| **Certificate Provider** | `________________________` |
+| **VPN Connectivity Required** | ☐ Yes ☐ No |
+
+---
+
+## Security Zone Classification
+
+### Security Zone Assignment
+
+| Zone | Description | Network Isolation | Access Controls |
+|------|-------------|-------------------|-----------------|
+| ☐ **DMZ** | Internet-facing applications | Separate VLAN, firewall restricted | WAF, strict ingress rules |
+| ☐ **Internal** | Internal business applications | Standard internal network | Standard firewall rules |
+| ☐ **Secure** | Sensitive data processing | Isolated VLAN, enhanced monitoring | MFA, privileged access |
+| ☐ **Isolated** | Highly restricted systems | Air-gapped or very restricted | Physical/logical isolation |
+
+### Data Classification
+
+| Field | Value |
+|-------|-------|
+| **Data Classification** | ☐ Public ☐ Internal ☐ Confidential ☐ Restricted |
+| **Contains PII** | ☐ Yes ☐ No |
+| **Contains PHI** | ☐ Yes ☐ No |
+| **Contains PCI Data** | ☐ Yes ☐ No |
+| **Data Residency Requirements** | `________________________` |
+
+### Compliance Requirements
+
+| Compliance Framework | Required | Notes |
+|---------------------|----------|-------|
+| **HIPAA** | ☐ Yes ☐ No | `________________________` |
+| **PCI DSS** | ☐ Yes ☐ No | `________________________` |
+| **SOC 2** | ☐ Yes ☐ No | `________________________` |
+| **NIST 800-53** | ☐ Yes ☐ No | `________________________` |
+| **ISO 27001** | ☐ Yes ☐ No | `________________________` |
+| **FedRAMP** | ☐ Yes ☐ No | `________________________` |
+| **Other** | ☐ Yes ☐ No | `________________________` |
+
+### Security Controls Required
+
+- [ ] Encryption at rest required
+- [ ] Encryption in transit required
+- [ ] MFA for application access
+- [ ] Audit logging enabled
+- [ ] Vulnerability scanning required
+- [ ] Endpoint protection required
+- [ ] Network segmentation required
+- [ ] Privileged access management
+- [ ] Data loss prevention (DLP)
+
+---
+
+## Performance Baselines
+
+### Current Performance Metrics
+
+Capture current performance metrics during typical and peak usage:
+
+| Metric | Typical | Peak | Peak Time | Measurement Period |
+|--------|---------|------|-----------|-------------------|
+| **CPU Utilization** | `____` % | `____` % | `________` | `____________` |
+| **Memory Utilization** | `____` % | `____` % | `________` | `____________` |
+| **Disk Read IOPS** | `______` | `______` | `________` | `____________` |
+| **Disk Write IOPS** | `______` | `______` | `________` | `____________` |
+| **Network Throughput (Mbps)** | `______` | `______` | `________` | `____________` |
+| **Active Connections** | `______` | `______` | `________` | `____________` |
+| **Response Time (ms)** | `______` | `______` | `________` | `____________` |
+
+### Performance SLAs
+
+| SLA Metric | Target | Measurement Method | Escalation |
+|------------|--------|-------------------|------------|
+| **Availability** | `____` % | `____________` | `____________` |
+| **Response Time** | `____` ms | `____________` | `____________` |
+| **Transaction Rate** | `____` /sec | `____________` | `____________` |
+| **Error Rate** | `____` % | `____________` | `____________` |
+
+---
+
+## Backup and DR Requirements
+
+### Backup Specifications
+
+| Field | Value |
+|-------|-------|
+| **Backup Required** | ☐ Yes ☐ No |
+| **Backup Solution** | ☐ Azure Backup ☐ Azure Backup ☐ Third-party: `________` |
+| **Backup Frequency** | ☐ Hourly ☐ Daily ☐ Weekly ☐ Custom: `________` |
+| **Backup Window** | Start: `______` End: `______` |
+| **Retention Period** | `____________` days/weeks/months/years |
+| **Backup Type** | ☐ Full ☐ Incremental ☐ Differential |
+| **Application-Consistent** | ☐ Required ☐ Not Required |
+
+### Recovery Point and Time Objectives
+
+| Field | Value | Justification |
+|-------|-------|---------------|
+| **RPO (Recovery Point Objective)** | `____________` hours | `________________________` |
+| **RTO (Recovery Time Objective)** | `____________` hours | `________________________` |
+| **Maximum Data Loss Acceptable** | `____________` hours | |
+| **Maximum Downtime Acceptable** | `____________` hours | |
+
+### Disaster Recovery
+
+| Field | Value |
+|-------|-------|
+| **DR Required** | ☐ Yes ☐ No |
+| **DR Solution** | ☐ Azure Site Recovery ☐ Storage Replica ☐ Third-party: `________` |
+| **DR Site** | `________________________` |
+| **Replication Mode** | ☐ Synchronous ☐ Asynchronous |
+| **Failover Type** | ☐ Automatic ☐ Manual |
+| **DR Testing Frequency** | ☐ Quarterly ☐ Semi-annually ☐ Annually |
+| **Last DR Test Date** | `____________` |
+| **DR Runbook Documented** | ☐ Yes ☐ No |
+
+---
+
+## Application Dependencies
+
+### Upstream Dependencies (Services This Application Needs)
+
+| Dependency | Type | Hostname/IP | Port | Protocol | Critical |
+|------------|------|-------------|------|----------|----------|
+| `____________` | ☐ Database ☐ API ☐ Auth ☐ Storage ☐ Other | `____________` | `____` | `____` | ☐ Yes ☐ No |
+| `____________` | ☐ Database ☐ API ☐ Auth ☐ Storage ☐ Other | `____________` | `____` | `____` | ☐ Yes ☐ No |
+| `____________` | ☐ Database ☐ API ☐ Auth ☐ Storage ☐ Other | `____________` | `____` | `____` | ☐ Yes ☐ No |
+
+### Downstream Dependencies (Services That Need This Application)
+
+| Dependent | Type | Purpose | Impact if Unavailable |
+|-----------|------|---------|----------------------|
+| `____________` | `____________` | `____________` | `____________` |
+| `____________` | `____________` | `____________` | `____________` |
+| `____________` | `____________` | `____________` | `____________` |
+
+### Dependency Map
+
+Document application dependencies in a visual diagram or table:
+
+```
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│ Web App │────▶│ API Tier │────▶│ Database │
+│ (IIS/Web) │ │ (.NET) │ │ (SQL Server)│
+└─────────────┘ └─────────────┘ └─────────────┘
+ │ │
+ ▼ ▼
+┌─────────────┐ ┌─────────────┐
+│ Auth │ │ Cache │
+│ (Entra ID) │ │ (Redis) │
+└─────────────┘ └─────────────┘
+```
+
+---
+
+## Migration Complexity Rating
+
+### Compatibility Assessment
+
+| Factor | Assessment | Notes |
+|--------|------------|-------|
+| **OS Compatibility** | ☐ Compatible ☐ Requires Upgrade ☐ Not Compatible | `____________` |
+| **Virtualization Support** | ☐ Supported ☐ Untested ☐ Not Supported | `____________` |
+| **Hardware Dependencies** | ☐ None ☐ USB ☐ Dongle ☐ Other: `________` | `____________` |
+| **License Portability** | ☐ Portable ☐ Requires New License ☐ Unknown | `____________` |
+| **Application Support** | ☐ Vendor Supported ☐ Community ☐ End of Life | `____________` |
+
+### Migration Complexity Score
+
+Rate each factor 1-5 (1=Low complexity, 5=High complexity):
+
+| Factor | Score (1-5) | Notes |
+|--------|-------------|-------|
+| **Technical Complexity** | `__` | OS/app compatibility, dependencies |
+| **Data Volume** | `__` | Amount of data to migrate |
+| **Downtime Sensitivity** | `__` | Business tolerance for outage |
+| **Testing Requirements** | `__` | Amount of validation needed |
+| **Rollback Complexity** | `__` | Difficulty to revert if needed |
+| **Total Score** | `__` / 25 | |
+
+**Complexity Rating:**
+- 5-10: Low complexity - Wave 1 candidate
+- 11-17: Medium complexity - Wave 2 candidate
+- 18-25: High complexity - Wave 3/4 candidate
+
+### Migration Method
+
+| Method | Description | Use Case |
+|--------|-------------|----------|
+| ☐ **P2V** | Physical to Virtual conversion | Physical servers to VM |
+| ☐ **V2V** | Virtual to Virtual migration | VMware/Hyper-V to Azure Local |
+| ☐ **Fresh Install** | New installation with data migration | Legacy apps, major upgrades |
+| ☐ **Replatform** | Rebuild on new platform | Cloud-native transformation |
+| ☐ **Containerize** | Package as container | Modernization initiative |
+
+---
+
+## Migration Wave Planning
+
+### Wave Assignments
+
+Organize applications into migration waves based on complexity and dependencies:
+
+| Wave | Timeline | Criteria | Applications |
+|------|----------|----------|--------------|
+| **Wave 1** | Week 1-2 | Low complexity, few dependencies, non-critical | `________________________` |
+| **Wave 2** | Week 3-4 | Medium complexity, some dependencies | `________________________` |
+| **Wave 3** | Week 5-6 | Higher complexity, critical apps | `________________________` |
+| **Wave 4** | Week 7-8 | Highest complexity, most dependencies | `________________________` |
+
+### Wave 1 Candidates (Pilot)
+
+Best candidates for initial migration:
+
+- [ ] Low business criticality (Tier 3)
+- [ ] Minimal dependencies
+- [ ] Standard OS and applications
+- [ ] Flexible maintenance window
+- [ ] Tolerant users for testing
+
+### Dependency Sequencing
+
+Ensure applications are migrated in the correct order:
+
+1. **Infrastructure Services First**: DNS, AD, authentication
+2. **Database Tier**: Migrate databases before dependent apps
+3. **Middle Tier**: API servers, application servers
+4. **Frontend**: Web servers, client-facing applications
+5. **Dependent Services**: Monitoring, backup, ancillary services
+
+---
+
+## Workload Assessment Deliverables
+
+### Per-Application Outputs
+
+- [ ] Application inventory form completed
+- [ ] Resource requirements documented (CPU, RAM, storage, IOPS)
+- [ ] Network dependencies mapped
+- [ ] Security zone and compliance requirements identified
+- [ ] Performance baselines captured
+- [ ] Backup and DR requirements defined
+- [ ] Migration complexity rated
+- [ ] Migration wave assigned
+
+### Aggregate Outputs
+
+- [ ] Total resource requirements summary (cluster sizing input)
+- [ ] Network design requirements summary
+- [ ] Complete dependency map
+- [ ] Migration wave schedule
+- [ ] Risk assessment summary
+- [ ] Compliance requirements matrix
+
+---
+
+## Next Steps
+
+After completing workload assessment:
+
+1. **Proceed to [Data Consolidation](./04-data-consolidation.mdx)** to organize all discovery findings
+2. **Update cluster sizing** based on aggregate resource requirements
+3. **Finalize migration schedule** with application owners
+4. **Create migration runbooks** for each application wave

@@ -1,0 +1,94 @@
+---
+title: "Task 01: Deploy Runners"
+sidebar_position: 1
+description: "Deploy CI/CD runners to Azure"
+---
+
+# Task 01: Deploy Runners
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?style=flat-square&logo=terraform)](https://terraform.io)
+
+> **DOCUMENT CATEGORY**: Runbook Step 
+> **SCOPE**: CI/CD runner deployment to Azure 
+> **PURPOSE**: Deploy customer CI/CD runners using Terraform module 
+> **MASTER REFERENCE**: [tf-module-azr-gitlab-runner](https://github.com/AzureLocal/core/terraform-modules/azure/tf-module-azr-gitlab-runner)
+
+**Status**: Active 
+**Applies To**: All Azure Local deployments 
+**Last Updated**: 2026-01-30
+
+---
+
+> **Source:** tf-module-azr-gitlab-runner + deploy_customer_runners.md
+
+---
+
+## Objective
+
+Deploy customer CI/CD runners to their Azure environment using the Azure Local Cloud Terraform module.
+
+---
+
+## Prerequisites
+
+- [ ] CI/CD setup complete (Stage 01)
+- [ ] Environment variables configured
+- [ ] Azure Local Cloud local development environment ([local-dev](https://github.com/AzureLocal/core/local-dev))
+- [ ] GitLab access to customer project
+- [ ] GitLab access to runner Terraform module
+
+---
+
+## Procedure
+
+### Clone Customer Repository
+
+1. Navigate to customer repo in GitLab
+2. Click **Code** → Copy **Clone with SSH** link
+3. In VSCode terminal:
+
+```bash
+cd ~/code
+git clone <paste_clone_link>
+cd <customer-repo>
+code .
+```
+
+### Prepare Repository
+
+Follow the README for [cid0000-customer_name template](https://github.com/AzureLocal/templates/cid0000-customer_name) to prepare the repo.
+
+### Deploy Runner
+
+Follow the README for the Azure Runner Module:
+- [tf-module-azr-gitlab-runner](https://github.com/AzureLocal/core/terraform-modules/azure/tf-module-azr-gitlab-runner)
+
+Example Terraform configuration:
+
+```hcl
+module "runner" {
+ source = "github.com/AzureLocal/tf-module-azr-gitlab-runner/azurerm"
+ version = "~> 1.0"
+
+ location = "northcentralus"
+ environment = "prod"
+ subscription_id = data.azurerm_subscription.current.id
+ tags = local.tags
+}
+```
+
+---
+
+## Verification
+
+- [ ] Runner deployed to Azure
+- [ ] Runner registered in GitLab
+- [ ] Runner available for CI/CD jobs
+
+---
+
+## References
+
+- [Azure Runner Module | tf-module-azr-gitlab-runner](https://github.com/AzureLocal/core/terraform-modules/azure/tf-module-azr-gitlab-runner)
+- [AWS Runner Module | tf-module-aws-gitlab-runner](https://github.com/AzureLocal/core/terraform-modules/aws/tf-module-aws-gitlab-runner)

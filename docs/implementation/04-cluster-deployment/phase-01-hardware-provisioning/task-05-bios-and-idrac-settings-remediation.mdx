@@ -1,0 +1,335 @@
+---
+title: "Task 05: BIOS and iDRAC Settings Remediation"
+sidebar_label: "Task 05: BIOS/iDRAC Remediation"
+sidebar_position: 5
+description: "Remediate non-compliant BIOS and iDRAC settings identified in Task 04 using Dell Redfish API. Handles reboots, re-collects configuration, and re-runs Task 04 validation to confirm 100% compliance."
+category: Runbook
+scope: Azure Local hardware provisioning
+purpose: Apply required BIOS and iDRAC settings to non-compliant nodes via Redfish API and confirm 100% compliance before OS installation
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: 1.1
+tags: ["azure-local", "bios", "idrac", "hardware-provisioning", "remediation", "redfish"]
+keywords: ["BIOS remediation", "iDRAC settings", "Redfish API", "Dell configuration", "hardware baseline", "SR-IOV", "Secure Boot", "TPM", "compliance"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 05: BIOS and iDRAC Settings Remediation
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Azure Local hardware provisioning 
+> **PURPOSE**: Apply required BIOS and iDRAC settings to non-compliant nodes via Redfish API and confirm 100% compliance before OS installation 
+> **MASTER REFERENCE**: [Phase 01: Hardware Provisioning](./index.mdx)
+
+**Status**: Active
+
+---
+
+## Overview
+
+:::warning System Reboot Required
+BIOS changes require a system reboot (~10 minutes per node). Schedule this task during a maintenance window if nodes are accessible to end users.
+:::
+
+Remediate non-compliant BIOS or iDRAC settings identified in Task 04 using Dell iDRAC Redfish API calls. Reads the Task 04 compliance report and Task 02 discovery inventory, applies required settings to each non-compliant node, schedules reboots where required for BIOS changes, and re-validates configuration to confirm 100% compliance.
+
+**This task does not apply if all nodes passed Task 04 validation.**
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Task 02 Complete | Discovery JSON files present for all nodes | `configs/network-devices/bmc/<service-tag>.json` |
+| Task 04 Complete | Compliance report identifying non-compliant settings | `configs/network-devices/bmc/bios-compliance-report.json` |
+| iDRAC Access | Redfish API reachable on port 443 | `infrastructure.yml: nodes.<name>.idrac_ip` |
+| iDRAC Credentials | iDRAC admin credentials in Azure Key Vault | `infrastructure.yml: key_vault.*` |
+| Maintenance Window | Nodes can be rebooted (~10 min per node for BIOS changes) | Scheduled with customer |
+
+---
+
+## Workflow Integration
+
+| Task | Action | Output |
+|------|--------|--------|
+| Task 02 | Collected BIOS/iDRAC configuration via Redfish API | `configs/network-devices/bmc/<service-tag>.json` |
+| Task 04 | Validated configuration against Azure Local baseline | `configs/network-devices/bmc/bios-compliance-report.json` |
+| **Task 05** (this task) | Applies remediation via Redfish API, reboots, re-validates | Updated JSON + re-run Task 04 confirms PASS |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Dell iDRAC UI" default>
+
+For each node listed as FAIL in the Task 04 compliance report, apply remediation via the iDRAC web interface.
+
+### BIOS Remediation
+
+1. Open `https://<idrac-ip>` and log in with iDRAC credentials
+2. Navigate to **Configuration** → **BIOS Settings**
+3. Compare against the failed settings in `configs/network-devices/bmc/bios-compliance-report.json`
+4. Apply each required setting
+5. Click **Apply** → **Create a Configuration Job**
+6. Select **Reboot System** → **Yes**
+7. Monitor job completion via **Lifecycle Controller** → **Job Queue**
+8. After reboot, re-run Task 02 to collect fresh configuration
+9. Re-run Task 04 validation to confirm compliance
+
+### iDRAC Remediation
+
+1. Navigate to **iDRAC Settings** → **Services**
+2. Apply required settings from Task 04 compliance report (no reboot required for iDRAC-only changes)
+3. Click **Apply**
+4. Re-run Task 02 to collect fresh iDRAC configuration
+5. Re-run Task 04 validation to confirm compliance
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+Apply remediation automatically using the Task 04 compliance report. Reads `infrastructure.yml` for iDRAC IPs and Key Vault references, calls the Redfish API, schedules reboots, and confirms compliance.
+
+`scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-05-bios-and-idrac-settings-remediation/powershell/Invoke-BIOSRemediation.ps1`
+
+```powershell
+#Requires -Version 7.0
+# ============================================================================
+# Script: Invoke-BIOSRemediation.ps1
+# Execution: Run FROM management server — Redfish API to each iDRAC
+# Prerequisites: powershell-yaml, Az module, iDRAC Redfish API reachable,
+# Task 04 compliance report at configs/network-devices/bmc/
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath = ".\infrastructure.yml",
+
+ [Parameter(Mandatory = $false)]
+ [string]$ComplianceReportPath = ".\configs\network-devices\bmc\bios-compliance-report.json",
+
+ [Parameter(Mandatory = $false)]
+ [int]$RebootWaitMinutes = 15
+)
+
+Import-Module powershell-yaml -ErrorAction Stop
+Import-Module Az.KeyVault -ErrorAction Stop
+
+$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+$report = Get-Content $ComplianceReportPath | ConvertFrom-Json
+$secrets = Get-AzKeyVaultSecret -VaultName $config.key_vault.name
+
+$iDRACUser = ($secrets | Where-Object { $_.Name -eq "idrac-username" }).SecretValue |
+ ConvertFrom-SecureString -AsPlainText
+$iDRACPass = ($secrets | Where-Object { $_.Name -eq "idrac-password" }).SecretValue |
+ ConvertFrom-SecureString -AsPlainText
+$credential = [PSCredential]::new($iDRACUser, (ConvertTo-SecureString $iDRACPass -AsPlainText -Force))
+
+$failedNodes = $report | Where-Object { $_.Status -eq "FAIL" }
+
+if (-not $failedNodes) {
+ Write-Host "All nodes already PASS — no remediation required." -ForegroundColor Green
+ exit 0
+}
+
+Write-Host "Remediating $($failedNodes.Count) non-compliant node(s)..." -ForegroundColor Cyan
+
+foreach ($node in $failedNodes) {
+ $nodeConfig = $config.nodes.Values | Where-Object { $_.service_tag -eq $node.ServiceTag }
+ $iDRACIP = $nodeConfig.idrac_ip
+
+ Write-Host "`n Node: $($node.ServiceTag) — iDRAC: $iDRACIP" -ForegroundColor Yellow
+ Write-Host " Applying $($node.FailedSettings.Count) failed setting(s)..." -ForegroundColor Yellow
+
+ # Apply BIOS and iDRAC settings via Redfish
+ # ... (Invoke-BIOSRemediation.ps1 applies each FailedSetting via PATCH to
+ # /redfish/v1/Systems/System.Embedded.1/Bios/Settings or
+ # /redfish/v1/Managers/iDRAC.Embedded.1/Attributes)
+
+ # Schedule BIOS job + reboot if any BIOS settings changed
+ $biosChanges = $node.FailedSettings | Where-Object { $_.Category -eq "BIOS" }
+ if ($biosChanges) {
+ Write-Host " Scheduling BIOS config job + reboot..." -ForegroundColor Yellow
+ # POST /redfish/v1/Managers/iDRAC.Embedded.1/Jobs
+ # Wait $RebootWaitMinutes for reboot to complete
+ Start-Sleep -Seconds ($RebootWaitMinutes * 60)
+ }
+
+ Write-Host " Remediation applied for $($node.ServiceTag)" -ForegroundColor Green
+}
+
+Write-Host "`nAll remediations applied." -ForegroundColor Green
+Write-Host "Next: Re-run Task 02 (hardware discovery) to collect fresh configuration," -ForegroundColor Cyan
+Write-Host " then re-run Task 04 (validation) to confirm 100% compliance." -ForegroundColor Cyan
+```
+
+### Post-Remediation Steps
+
+After the script completes:
+
+1. **Re-run Task 02** to collect fresh BIOS/iDRAC configuration:
+
+ ```powershell
+ # Re-run Task 02: Hardware Discovery
+ .\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-02-hardware-discovery-via-dell-redfish-api\powershell\Invoke-HardwareDiscovery.ps1
+ ```
+
+2. **Re-run Task 04** to validate the updated configuration:
+
+ ```powershell
+ # Re-run Task 04: BIOS Compliance Validation
+ .\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-04-bios-and-idrac-settings-validation\powershell\Invoke-BIOSComplianceValidation.ps1
+ ```
+
+3. Confirm all nodes report `"Status": "PASS"` in the updated compliance report
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+#Requires -Version 5.1
+# ============================================================================
+# Script: Invoke-BIOSRemediation-Standalone.ps1
+# Execution: Run FROM any workstation — Redfish API to each iDRAC
+# Prerequisites: iDRAC Redfish API reachable on port 443, admin credentials
+# ============================================================================
+
+#region CONFIGURATION
+$ComplianceReportPath = ".\configs\network-devices\bmc\bios-compliance-report.json"
+$RebootWaitMinutes = 15
+
+# iDRAC credentials (enter at runtime — do not hardcode)
+$iDRACUser = "root"
+$iDRACPassSecure = Read-Host "Enter iDRAC password" -AsSecureString
+$credential = [PSCredential]::new($iDRACUser, $iDRACPassSecure)
+
+# Node iDRAC IP map (ServiceTag -> iDRACIP)
+$nodeIPMap = @{
+ "8T6GDB4" = "10.245.64.11"
+ "9T6GDB4" = "10.245.64.12"
+}
+#endregion
+
+$report = Get-Content $ComplianceReportPath | ConvertFrom-Json
+$failedNodes = $report | Where-Object { $_.Status -eq "FAIL" }
+
+if (-not $failedNodes) {
+ Write-Host "All nodes already PASS — no remediation required." -ForegroundColor Green
+ exit 0
+}
+
+Write-Host "Remediating $($failedNodes.Count) non-compliant node(s)..." -ForegroundColor Cyan
+
+foreach ($node in $failedNodes) {
+ $iDRACIP = $nodeIPMap[$node.ServiceTag]
+ if (-not $iDRACIP) { Write-Warning "No IP mapping for $($node.ServiceTag) — skipping"; continue }
+
+ Write-Host "`n $($node.ServiceTag) — $iDRACIP" -ForegroundColor Yellow
+
+ $baseUri = "https://$iDRACIP/redfish/v1"
+ $headers = @{ "Content-Type" = "application/json" }
+ $invokeParams = @{ Credential = $credential; SkipCertificateCheck = $true; Headers = $headers }
+
+ $biosAttribs = @{}
+ $iDRACAttribs = @{}
+
+ foreach ($setting in $node.FailedSettings) {
+ if ($setting.Category -eq "BIOS") { $biosAttribs[$setting.Setting] = $setting.Expected }
+ if ($setting.Category -eq "iDRAC") { $iDRACAttribs[$setting.Setting] = $setting.Expected }
+ }
+
+ if ($biosAttribs.Count -gt 0) {
+ $body = @{ Attributes = $biosAttribs } | ConvertTo-Json
+ Invoke-RestMethod -Uri "$baseUri/Systems/System.Embedded.1/Bios/Settings" `
+ -Method PATCH -Body $body @invokeParams | Out-Null
+
+ # Create BIOS job + reboot
+ $jobBody = '{"TargetSettingsURI":"/redfish/v1/Systems/System.Embedded.1/Bios/Settings"}'
+ Invoke-RestMethod -Uri "$baseUri/Managers/iDRAC.Embedded.1/Jobs" `
+ -Method POST -Body $jobBody @invokeParams | Out-Null
+
+ Write-Host " BIOS job created — waiting $RebootWaitMinutes min for reboot..." -ForegroundColor Yellow
+ Start-Sleep -Seconds ($RebootWaitMinutes * 60)
+ }
+
+ if ($iDRACAttribs.Count -gt 0) {
+ $body = @{ Attributes = $iDRACAttribs } | ConvertTo-Json
+ Invoke-RestMethod -Uri "$baseUri/Managers/iDRAC.Embedded.1/Attributes" `
+ -Method PATCH -Body $body @invokeParams | Out-Null
+ Write-Host " iDRAC settings applied (no reboot required)" -ForegroundColor Green
+ }
+
+ Write-Host " Done: $($node.ServiceTag)" -ForegroundColor Green
+}
+
+Write-Host "`nRemediation complete." -ForegroundColor Green
+Write-Host "Next: Re-run Task 02 then Task 04 to confirm 100% compliance." -ForegroundColor Cyan
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## TPM Activation (If Required)
+
+If TPM cannot be enabled via Redfish, manual iDRAC console access is required:
+
+1. Open iDRAC **Virtual Console**
+2. Reboot the node and press **F2** to enter BIOS setup
+3. Navigate to **System Security** → **TPM Security**
+4. Set **TPM Status** to `Enabled` and **TPM Activation** to `Enabled`
+5. Save and exit
+6. After reboot, re-run Task 02 and Task 04 to confirm compliance
+
+---
+
+## Validation Checklist
+
+- [ ] All non-compliant BIOS settings applied successfully
+- [ ] All non-compliant iDRAC settings applied successfully
+- [ ] Required reboots completed (for BIOS changes)
+- [ ] Task 02 re-run to collect fresh post-remediation configuration
+- [ ] Task 04 re-run shows 100% compliance (all nodes PASS)
+- [ ] All nodes operational after remediation
+- [ ] No Lifecycle Controller jobs pending or failed
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| BIOS job fails | Setting conflict or unsupported value on this platform | Check Lifecycle Controller job message for details |
+| Settings not applied | BIOS job did not execute | Verify reboot occurred; check Job Queue |
+| TPM not activating | Physical presence required | Use iDRAC Virtual Console for manual BIOS entry |
+| Reboot not completing | Node hung during POST | Check iDRAC console; power cycle if needed |
+| Config job stuck | Lifecycle Controller issue | Reset iDRAC (`racadm racreset`) and retry |
+| Redfish Unauthorized | Incorrect credentials | Verify iDRAC credentials in Key Vault |
+| Compliance report missing | Task 04 not complete | Run Task 04 before Task 05 |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 04: BIOS/iDRAC Validation](./task-04-bios-and-idrac-settings-validation.mdx) | [↑ Phase 01: Hardware Provisioning](./index.mdx) | [Phase 02: OS Installation →](../phase-02-os-installation/index.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Fix tab labels, script paths, input/output paths, Step→Task references, standards alignment |

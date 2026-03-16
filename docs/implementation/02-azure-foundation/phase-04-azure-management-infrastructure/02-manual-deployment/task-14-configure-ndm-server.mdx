@@ -1,0 +1,428 @@
+---
+title: "Task 14: Configure NDM Server"
+sidebar_label: "Task 14: NDM Server"
+sidebar_position: 14
+description: "Configure the Network/DevOps Management (NDM) server for SYSLOG collection, SNMP monitoring, and network device management."
+category: Runbook
+scope: NDM server configuration for network monitoring
+purpose: Establish centralized SYSLOG/SNMP collection for Azure Local infrastructure
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, ndm, syslog, snmp, network-monitoring, linux]
+keywords: [NDM, syslog, SNMP, rsyslog, network monitoring, Ubuntu]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 14: Configure NDM Server
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: NDM server configuration for network monitoring 
+> **PURPOSE**: Establish centralized SYSLOG/SNMP collection for Azure Local infrastructure 
+> **MASTER REFERENCE**: [Ubuntu Server Documentation](https://ubuntu.com/server/docs)
+
+**Status**: Active
+
+---
+
+## Overview
+
+The NDM (Network/DevOps Management) server is an Ubuntu Linux VM that provides centralized SYSLOG collection and SNMP monitoring for the Azure Local infrastructure. Network devices, switches, and management appliances forward logs to this server.
+
+:::info Task Classification
+**Execution Target**: Linux Server (SSH-based configuration) 
+**Tab Profile**: 3 tabs — SSH Console · Orchestrated Script (Mgmt Server) · Standalone Script
+:::
+
+### Configuration Summary
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| VM Name | `vm-ndm-azl-eus-01` | `azure_vms.ndm.name` |
+| Hostname | `ndm-eus-01` | `azure_vms.ndm.hostname` |
+| FQDN | `ndm-eus-01.azrl.mgmt` | `azure_vms.ndm.fqdn` |
+| IP Address | `10.250.1.39` | `azure_vms.ndm.private_ip` |
+| OS | Ubuntu 24.04 LTS | `azure_vms.ndm.os` |
+| Role | SYSLOG/SNMP | `azure_vms.ndm.role` |
+| VM Size | `Standard_D2s_v4` | `azure_vms.ndm.vm_size` |
+
+### Services to Configure
+
+| Service | Purpose | Port |
+|---------|---------|------|
+| rsyslog | SYSLOG collection | UDP 514 |
+| snmpd | SNMP agent | UDP 161 |
+| Azure Monitor Agent | Log forwarding to Log Analytics | — |
+
+## Prerequisites
+
+- [ ] [Task 11: Deploy Management VMs](./task-11-deploy-management-vms) completed — NDM VM running
+- [ ] SSH access via Bastion or direct SSH
+- [ ] NSG allows SYSLOG (UDP 514) and SNMP (UDP 161) from management subnet
+- [ ] VM admin credentials available
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Target VM | NDM | `azure_vms.ndm` |
+| Resource Group | `rg-azrlmgmt-azl-eus-01` | `azure_vms.ndm.resource_group` |
+| Subnet | `snet-azrl-azl-eus-01` | `azure_vms.ndm.subnet` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="SSH Console" default>
+
+### SSH Console
+
+> **When to use**: Single deployment, interactive SSH session via Bastion
+
+#### Procedure — System Update
+
+1. **Connect to NDM VM** via Bastion SSH or serial console
+
+2. **Update system packages**:
+ ```bash
+ sudo apt update && sudo apt upgrade -y
+ ```
+
+3. **Set hostname** (if not set by cloud-init):
+ ```bash
+ sudo hostnamectl set-hostname ndm-eus-01
+ ```
+
+#### Procedure — Configure rsyslog
+
+4. **Enable remote SYSLOG reception**:
+ ```bash
+ sudo nano /etc/rsyslog.conf
+ ```
+ Uncomment or add:
+ ```
+ module(load="imudp")
+ input(type="imudp" port="514")
+ module(load="imtcp")
+ input(type="imtcp" port="514")
+ ```
+
+5. **Create log separation rules**:
+ ```bash
+ sudo nano /etc/rsyslog.d/10-network-devices.conf
+ ```
+ Content:
+ ```
+ # Separate network device logs by source IP
+ template(name="RemoteHost" type="string" string="/var/log/remote/%HOSTNAME%/%$YEAR%-%$MONTH%-%$DAY%.log")
+ if $fromhost-ip != '127.0.0.1' then ?RemoteHost
+ & stop
+ ```
+
+6. **Create log directory**:
+ ```bash
+ sudo mkdir -p /var/log/remote
+ sudo chown syslog:adm /var/log/remote
+ ```
+
+7. **Restart rsyslog**:
+ ```bash
+ sudo systemctl restart rsyslog
+ sudo systemctl enable rsyslog
+ ```
+
+#### Procedure — Configure SNMP
+
+8. **Install SNMP daemon**:
+ ```bash
+ sudo apt install -y snmpd snmp
+ ```
+
+9. **Configure SNMP**:
+ ```bash
+ sudo nano /etc/snmp/snmpd.conf
+ ```
+ Key settings:
+ ```
+ agentaddress udp:161
+ rocommunity public 10.250.1.0/24
+ sysLocation "Azure Local Management"
+ sysContact "Azure Local Cloud Azure Local Cloud"
+ ```
+
+10. **Restart SNMP**:
+ ```bash
+ sudo systemctl restart snmpd
+ sudo systemctl enable snmpd
+ ```
+
+#### Procedure — Configure Log Rotation
+
+11. **Add logrotate config**:
+ ```bash
+ sudo nano /etc/logrotate.d/remote-syslog
+ ```
+ Content:
+ ```
+ /var/log/remote/*/*.log {
+ daily
+ rotate 30
+ compress
+ delaycompress
+ missingok
+ notifempty
+ postrotate
+ /usr/lib/rsyslog/rsyslog-rotate
+ endscript
+ }
+ ```
+
+#### Validation
+
+- [ ] rsyslog listening: `sudo ss -ulnp | grep 514`
+- [ ] SNMP listening: `sudo ss -ulnp | grep 161`
+- [ ] Test syslog: `logger -n 10.250.1.39 -P 514 "Test message"` from another host
+- [ ] Logs appearing: `ls /var/log/remote/`
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+### Orchestrated Script (Mgmt Server)
+
+> **When to use**: Run from management workstation via SSH — reads `infrastructure.yml`
+
+#### Script
+
+**Path**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-14-configure-ndm-server/bash/invoke-configure-ndm.sh`
+
+#### Code
+
+```bash
+#!/bin/bash
+# ============================================================================
+# Script: invoke-configure-ndm.sh
+# Execution: Run from management workstation via SSH to NDM
+# Prerequisites: SSH access, yq installed on mgmt workstation
+# ============================================================================
+
+set -euo pipefail
+
+CONFIG_PATH="${1:-configs/infrastructure.yml}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source helpers
+source "$SCRIPT_DIR/../../../../../common/utilities/helpers/config-loader.sh"
+source "$SCRIPT_DIR/../../../../../common/utilities/helpers/logging.sh"
+
+# Read config
+NDM_IP=$(yq '.azure_vms.ndm.private_ip' "$CONFIG_PATH")
+NDM_HOSTNAME=$(yq '.azure_vms.ndm.hostname' "$CONFIG_PATH")
+ADMIN_USER="azureadmin"
+
+log_info "Configuring NDM server at $NDM_IP"
+
+ssh "$ADMIN_USER@$NDM_IP" << 'REMOTE_SCRIPT'
+set -euo pipefail
+
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Set hostname
+sudo hostnamectl set-hostname "$NDM_HOSTNAME"
+
+# Configure rsyslog
+sudo tee /etc/rsyslog.d/10-remote.conf > /dev/null << 'RSYSLOG'
+module(load="imudp")
+input(type="imudp" port="514")
+module(load="imtcp")
+input(type="imtcp" port="514")
+template(name="RemoteHost" type="string" string="/var/log/remote/%HOSTNAME%/%$YEAR%-%$MONTH%-%$DAY%.log")
+if $fromhost-ip != '127.0.0.1' then ?RemoteHost
+& stop
+RSYSLOG
+
+sudo mkdir -p /var/log/remote
+sudo chown syslog:adm /var/log/remote
+sudo systemctl restart rsyslog
+sudo systemctl enable rsyslog
+
+# Install and configure SNMP
+sudo apt install -y snmpd snmp
+sudo tee /etc/snmp/snmpd.conf > /dev/null << 'SNMP'
+agentaddress udp:161
+rocommunity public 10.250.1.0/24
+sysLocation "Azure Local Management"
+sysContact "Azure Local Cloud Azure Local Cloud"
+SNMP
+
+sudo systemctl restart snmpd
+sudo systemctl enable snmpd
+
+echo "NDM configuration complete"
+REMOTE_SCRIPT
+
+log_success "NDM server configured at $NDM_IP"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Self-contained bash script. Copy to NDM VM and run directly.
+
+#### Code
+
+```bash
+#!/bin/bash
+# ============================================================================
+# Script: configure-ndm-standalone.sh
+# Execution: Copy to NDM VM and run as root
+# ============================================================================
+
+#region CONFIGURATION
+NDM_HOSTNAME="ndm-eus-01"
+SYSLOG_PORT="514"
+SNMP_PORT="161"
+MGMT_SUBNET="10.250.1.0/24"
+#endregion CONFIGURATION
+
+set -euo pipefail
+
+echo "=== NDM Server Configuration ==="
+
+# Update system
+echo "[1/6] Updating system packages..."
+sudo apt update && sudo apt upgrade -y
+
+# Set hostname
+echo "[2/6] Setting hostname to $NDM_HOSTNAME..."
+sudo hostnamectl set-hostname "$NDM_HOSTNAME"
+
+# Configure rsyslog
+echo "[3/6] Configuring rsyslog on port $SYSLOG_PORT..."
+sudo tee /etc/rsyslog.d/10-remote.conf > /dev/null << EOF
+module(load="imudp")
+input(type="imudp" port="$SYSLOG_PORT")
+module(load="imtcp")
+input(type="imtcp" port="$SYSLOG_PORT")
+template(name="RemoteHost" type="string" string="/var/log/remote/%HOSTNAME%/%\$YEAR%-%\$MONTH%-%\$DAY%.log")
+if \$fromhost-ip != '127.0.0.1' then ?RemoteHost
+& stop
+EOF
+
+sudo mkdir -p /var/log/remote
+sudo chown syslog:adm /var/log/remote
+sudo systemctl restart rsyslog
+sudo systemctl enable rsyslog
+
+# Configure SNMP
+echo "[4/6] Installing and configuring SNMP on port $SNMP_PORT..."
+sudo apt install -y snmpd snmp
+sudo tee /etc/snmp/snmpd.conf > /dev/null << EOF
+agentaddress udp:$SNMP_PORT
+rocommunity public $MGMT_SUBNET
+sysLocation "Azure Local Management"
+sysContact "Azure Local Cloud Azure Local Cloud"
+EOF
+
+sudo systemctl restart snmpd
+sudo systemctl enable snmpd
+
+# Log rotation
+echo "[5/6] Configuring log rotation..."
+sudo tee /etc/logrotate.d/remote-syslog > /dev/null << 'EOF'
+/var/log/remote/*/*.log {
+ daily
+ rotate 30
+ compress
+ delaycompress
+ missingok
+ notifempty
+ postrotate
+ /usr/lib/rsyslog/rsyslog-rotate
+ endscript
+}
+EOF
+
+# Validate
+echo "[6/6] Validating..."
+echo "rsyslog: $(sudo ss -ulnp | grep -c $SYSLOG_PORT) listeners"
+echo "snmpd: $(sudo ss -ulnp | grep -c $SNMP_PORT) listeners"
+
+echo ""
+echo "=== NDM Server Configuration Complete ==="
+```
+
+:::info No External Dependencies
+Self-contained. Edit `#region CONFIGURATION` and run directly on the NDM VM.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] rsyslog listening on UDP 514: `sudo ss -ulnp | grep 514`
+- [ ] SNMP listening on UDP 161: `sudo ss -ulnp | grep 161`
+- [ ] Test syslog reception from management subnet
+- [ ] Log rotation configured: `logrotate -d /etc/logrotate.d/remote-syslog`
+- [ ] Azure Monitor Agent reporting to Log Analytics
+
+---
+
+## CAF/WAF Landing Zone Model
+
+NDM server configuration is identical regardless of landing zone model — it runs on the VM in the **Management subscription**.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Management** subscription | `azure.subscriptions.management.id` |
+| Target VM | NDM in Management spoke | `azure_vms.ndm` |
+
+### Execution Options
+
+The execution is the same as Single Subscription — the scripts run on the VM regardless of which subscription it resides in.
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| rsyslog not receiving | NSG blocking UDP 514 | Add inbound rule for UDP 514 from management subnet |
+| SNMP not responding | snmpd not started | `sudo systemctl start snmpd` and check config syntax |
+| Disk filling with logs | Log rotation not active | Verify logrotate cron job: `systemctl status logrotate.timer` |
+| SSH connection refused | sshd not running or key issue | Check `systemctl status sshd` and authorized_keys |
+| Package install fails | No internet access | Verify NAT Gateway (Task 07) and DNS resolution |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 13: Utility Server](./task-13-configure-utility-server) | [Manual Deployment Index](./index.mdx) | [Task 15: Lighthouse Server](./task-15-configure-lighthouse) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, ndm, syslog, snmp, network-monitoring, linux
+- Keywords: NDM, syslog, SNMP, rsyslog, network monitoring, Ubuntu
+- Author: Azure Local Cloudnology Team

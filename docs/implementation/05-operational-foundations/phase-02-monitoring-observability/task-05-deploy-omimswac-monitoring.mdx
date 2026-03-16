@@ -1,0 +1,241 @@
+---
+title: "Task 05: Deploy OMIMSWAC Monitoring"
+sidebar_label: "Task 05: OMIMSWAC Monitoring"
+sidebar_position: 5
+description: "Deploy Dell OpenManage Integration for Windows Admin Center (OMIMSWAC) for hardware monitoring"
+---
+
+# Task 05: Deploy OMIMSWAC Monitoring
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Dell hardware monitoring via Windows Admin Center 
+> **PURPOSE**: Configure OMIMSWAC for hardware compliance, alerts, and Azure Policy integration 
+> **MASTER REFERENCE**: [Dell OMIMSWAC Documentation](https://www.dell.com/support/kbdoc/en-us/000197066/openmanage-integration-with-microsoft-windows-admin-center)
+
+**Status**: Active
+
+---
+
+Dell OpenManage Integration for Windows Admin Center (OMIMSWAC) provides hardware-level monitoring, compliance checking, and Azure Policy integration for Dell AX-series Azure Local clusters. This extension enables hardware alert streaming to Azure Log Analytics and automated compliance remediation.
+
+## Prerequisites
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Windows Admin Center | Version 2410 (GA) or later | Gateway mode recommended |
+| OMIMSWAC Extension | Installed and EULA accepted | WAC Settings → Extensions |
+| OMIWAC Premium License | Licensed on every node | Mixed licensing not supported |
+| Log Analytics Workspace | Created in Step 1 | Workspace ID available |
+| iDRAC Firmware | Version 7.xx.xx.xx+ | Redfish enabled |
+| iDRAC Service Module (iSM) | Installed and running on each node | Required for alert replication |
+| Network Connectivity | Ports 443 (HTTPS), 445 (SMB) | Outbound to Azure, Redfish to iDRAC |
+
+## Prerequisites Checklist
+
+| Category | Requirement | Notes |
+|----------|------------|-------|
+| **WAC** | Version 2410+ | Gateway mode recommended |
+| **Extension** | OMIMSWAC installed, EULA accepted | WAC Settings → Extensions |
+| **Licensing** | OMIWAC Premium on every node | Mixed licensing not supported |
+| **Accounts** | Deployment user with local admin + WAC gateway admin | Use "Manage as" on connect |
+| **Connectivity** | SMB In (445) on nodes, SMB Out on gateway, HTTPS (443) outbound | Redfish over 443 to iDRAC |
+| **iDRAC** | Firmware 7.xx+, Redfish enabled | Max 8 active sessions |
+| **iSM** | iDRAC Service Module installed and running | Hardware alert replication |
+| **TPM/BIOS** | TPM 2.0 (fw ≥ 7.2.2.0), BIOS meets Secured-core minimum | For Secured-core enablement |
+| **Azure** | Subscription, Resource Group, Log Analytics, Arc rights | Role includes Microsoft.Authorization/* |
+
+## Configuration Steps
+
+### Step 5.1: Connect Cluster in Windows Admin Center
+
+1. Open **Windows Admin Center** (WAC)
+2. Add cluster by **FQDN** (not individual nodes)
+3. Choose **Manage as** with deployment user credentials
+4. Check **Use these credentials for all connections**
+5. Launch **Dell OpenManage Integration** from Extensions
+
+### Step 5.2: Run Prerequisite Check
+
+1. Navigate to **View** → **Prerequisite Check**
+2. Select all operations
+3. Review results and resolve any **Critical** items:
+ - SMB port availability
+ - Redfish connectivity
+ - Execution Policy
+ - IPMI driver
+ - CredSSP (if required)
+
+### Step 5.3: Configure Cluster Settings
+
+1. Navigate to **View** → **Compliance** → **HCP Compliance**
+2. If prompted, configure:
+
+| Setting | Options |
+|---------|---------|
+| **Network Topology** | Fully-Converged / Non-Converged-Physical / Non-Converged-Set |
+| **Deployment Model** | Scalable / Switchless / Stretch |
+| **RDMA Protocol** (Intel E810 only) | iWARP or RoCEv2 |
+
+3. Click **Save** — These settings drive which Dell policies are applied
+
+### Step 5.4: Run HCP Compliance Check
+
+1. Click **Check Compliance** (HCP)
+2. Address any **Critical** issues:
+ - Dell Hardware Symmetry Policy (unsupported drive mix, missing BOSS, HBA mismatch)
+3. Use **Fix Compliance** only after symmetry passes:
+ - **Apply & Reboot Now** — Cluster-aware sequencing
+ - **Apply at Next Reboot** — Plan maintenance; disable Infrastructure Lock before reboot
+4. Re-run compliance to confirm **Compliant/Recommended** state
+
+:::tip RDMA Warning
+If RDMA network adapters show Warning under Dell OS Configuration Policy and you use Network ATC, you can safely ignore that specific check.
+:::
+
+### Step 5.5: Configure Azure Policy Integration
+
+1. Navigate to **View** → **Azure Integration** (or Azure tab in OMIMSWAC)
+2. Sign into Azure (ensure network egress on 443)
+3. Run **Onboarding Checklist** — Must pass Microsoft.Authorization permission check
+4. **Onboard Dell policies** (HCP/SCP sets) to Azure Arc scope
+5. Trigger compliance scan from Azure Portal (Policy blade) if immediate visibility needed
+
+### Step 5.6: Configure Hardware Alerts to Azure
+
+1. Verify on each node in iDRAC:
+ - Lifecycle Log replication enabled
+ - Alerts enabled
+
+2. In OMIMSWAC **Alerts/Diagnostics** section:
+ - Configure **Data Collection Rule (DCR)**
+ - Select Log Analytics Workspace
+ - Map all cluster nodes
+
+3. Complete the DCR wizard:
+
+| Setting | Value |
+|---------|-------|
+| **Subscription** | `{{AZURE_SUBSCRIPTION_NAME}}` |
+| **Resource Group** | `{{AZURE_RESOURCE_GROUP}}` |
+| **Log Analytics Workspace** | `{{LOG_ANALYTICS_WORKSPACE_NAME}}` |
+| **Data Collection Endpoint** | Create new or select existing in same region |
+
+4. Confirm ingestion in Azure Portal → Log Analytics → Logs
+
+### Step 5.7: Create Hardware Alert Rules
+
+1. Navigate to **Azure Portal** → **Monitor** → **Alerts** → **Alert rules**
+2. Create log-based alerts:
+
+```kusto
+// Dell hardware alert query (adjust table name based on OMIMSWAC)
+// Table name shown in OMIMSWAC Tables blade
+CustomTable_CL
+| where TimeGenerated > ago(1h)
+| where Severity_s in ("Critical", "Warning")
+| project TimeGenerated, Computer, Message_s, Severity_s, Category_s
+```
+
+3. Configure alert rule:
+ - Evaluation frequency: 5 minutes
+ - Attach Action Group from Step 4
+
+## Optional: Secured-Core Enablement
+
+For enhanced security hardening:
+
+1. Navigate to **View** → **Security** → **Secured Core**
+2. Disable Infrastructure Lock if enabled
+3. Review BIOS + OS feature statuses:
+ - Virtualization Technology
+ - Kernel DMA Protection
+ - Secure Boot
+ - TPM
+ - DRTM/TXT
+4. Click **Enable BIOS Configurations** and choose reboot method
+
+:::warning CredSSP
+CredSSP is temporarily enabled for cluster-aware operations. Disable it post-operation for security.
+:::
+
+5. Re-enable Infrastructure Lock once stable
+
+## Validation
+
+### Verify Compliance Status
+
+| Layer | How to Verify | Pass Criteria |
+|-------|---------------|--------------|
+| HCP Compliance | Re-run Check Compliance | No Critical; Warnings understood |
+| Secured-core | Security page & msinfo32 | All BIOS features Enabled |
+| Azure Policies | Azure Portal → Policy → Compliance | Dell definitions present |
+| Alerts | Log Analytics query returns rows | Recent hardware events visible |
+| Lock State | Overview page shows lock icon | Locked post-change |
+
+### Sample Validation Query
+
+```kusto
+// Verify hardware events are flowing
+Heartbeat
+| where TimeGenerated > ago(1h)
+| where Computer in ("{{CLUSTER_NODE_01_NAME}}", "{{CLUSTER_NODE_02_NAME}}")
+| summarize LastHeartbeat = max(TimeGenerated) by Computer
+```
+
+### iDRAC/iSM Verification
+
+On each cluster node:
+
+```powershell
+# Verify iDRAC Service Module is running
+Get-Service -Name "iDRAC Service Module" | 
+ Select-Object Name, Status, StartType
+
+# Check for recent hardware events
+Get-WinEvent -LogName "Dell" -MaxEvents 10 -ErrorAction SilentlyContinue |
+ Select-Object TimeCreated, Message
+```
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Resolution |
+|---------|--------------|-----|
+| Policy onboarding fails | Missing Microsoft.Authorization/* | Assign Owner or custom role; retry |
+| Symmetry Critical | Mixed drive sizes/model mismatch | Align hardware; re-run HCP |
+| Alerts absent in Azure | iSM missing or DCR deleted | Install iSM; recreate DCR |
+| Inventory hanging | SMB 445 blocked or USB NIC conflict | Open port; add proxy bypass |
+| Secured-core partial | TPM firmware below 7.2.2.0 | Update TPM/server firmware |
+
+## Ongoing Maintenance
+
+| Frequency | Task |
+|----------|------|
+| Daily | Review Azure alerts dashboard |
+| Weekly | Re-run HCP Compliance after changes |
+| Monthly | Confirm lock state; verify Secured-core |
+| Quarterly | Firmware/BIOS drift check (Azure portal if LCM-enabled) |
+
+## Limitations
+
+- **Hardware Updates (CAU)**: Not supported for freshly deployed Azure Local 23H2/24H2 clusters with LCM component. Use Azure portal lifecycle management instead.
+- **Infrastructure Lock**: Must be disabled for BIOS/iDRAC/NIC remediation and Secured-core enablement.
+- **Proxy**: Add USB NIC (169.254.*) IPs to proxy bypass or Redfish/iDRAC inventory may fail.
+
+## Variables Reference
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{CLUSTER_NODE_01_NAME}}` | First node hostname | `azl-dal-n01` |
+| `{{LOG_ANALYTICS_WORKSPACE_NAME}}` | Workspace name | `law-azl-dal-prod-01` |
+
+## Next Steps
+
+After deploying OMIMSWAC monitoring:
+
+1. ➡️ **[Task 6: Configure Network Device Logging](./task-06-configure-network-device-logging.mdx)** — Syslog from switches/firewalls
+2. Set up regular compliance check schedule
+3. Document firmware update procedures for maintenance windows
+4. Create operational runbooks for common hardware alerts

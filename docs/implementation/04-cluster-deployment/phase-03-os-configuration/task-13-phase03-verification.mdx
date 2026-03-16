@@ -1,0 +1,220 @@
+---
+title: "Task 13: Phase 03 Verification"
+sidebar_label: "Task 13: Verification"
+sidebar_position: 13
+description: "Read-only verification of all Phase 03 OS Configuration tasks (01–11) across all cluster nodes"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 13: Phase 03 Verification
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+**Status**: Active | **Estimated Time**: 3–5 minutes | **Last Updated**: 2026-03-07
+
+---
+
+## Overview
+
+Read-only verification script that confirms all Phase 03 OS Configuration tasks completed successfully across all cluster nodes. Run this after [Task 12](./task-12-complete-combined-script-all-steps.mdx) completes — or after running individual tasks — before proceeding to Phase 04 ARC Registration.
+
+:::info Read-only
+This script makes **no changes** to any node. It only reads and reports state.
+:::
+
+---
+
+## What Is Verified
+
+| Task | Check | Pass Condition |
+|------|-------|----------------|
+| **01** | WinRM | Service running, HTTP listener active |
+| **02** | RDP | Registry value = 0, firewall rule enabled |
+| **03/04** | Static IP + DHCP disabled | IP matches `infrastructure.yml`, DHCP = Disabled |
+| **05** | DNS servers | Primary and secondary match `infrastructure.yml` |
+| **06** | DNS resolution | Successful DNS lookup |
+| **07** | NTP | Stratum < 15, source is not `Local CMOS Clock` or `Free-running` |
+| **08** | ICMP | ICMPv4 Echo Request firewall rule enabled |
+| **09** | Unused adapters | No disconnected adapters still enabled |
+| **10** | Hostname | `COMPUTERNAME` matches `infrastructure.yml` hostname |
+| **11** | Storage | No non-primordial pools, no virtual disks, all non-boot disks online |
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Phase 03 Tasks 01–12 complete | All OS configuration tasks run |
+| `infrastructure.yml` populated | All node IPs, hostnames, network values set |
+| WinRM accessible from management server | Required for remote checks |
+
+---
+
+<Tabs groupId="deployment-method">
+<TabItem value="orchestrated" label="Orchestrated (Mgmt Server)" default>
+
+Run from the management server. Reads all expected values from `infrastructure.yml` and verifies each node remotely.
+
+```powershell
+# Task 13 - Phase 03 Verification (all nodes)
+.\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-13-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
+ -ConfigPath .\configs\infrastructure.yml
+```
+
+**Verify a single node:**
+
+```powershell
+.\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-13-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
+ -ConfigPath .\configs\infrastructure.yml `
+ -TargetNode azl-lab-01-n02
+```
+
+</TabItem>
+<TabItem value="direct" label="Direct (On Node)">
+
+Run locally on each node to verify its own configuration. Set all `REPLACE_` variables before running.
+
+```powershell
+# Task 13 - Phase 03 Verification (direct, run on each node)
+# Set all REPLACE_ variables before running
+
+$ExpectedIP = "REPLACE_WITH_STATIC_IP" # cluster_nodes[].management_ip
+$ExpectedHostname = "REPLACE_WITH_HOSTNAME" # cluster_nodes[].hostname
+$ExpectedDNS1 = "REPLACE_WITH_DNS_PRIMARY" # dns.primary
+$ExpectedDNS2 = "REPLACE_WITH_DNS_SECONDARY" # dns.secondary
+$ExpectedNTP = "REPLACE_WITH_NTP_SERVER" # ntp.server
+
+$results = [ordered]@{}
+
+# Task 01 - WinRM
+$svc = Get-Service -Name WinRM
+$listener = Get-Item WSMan:\localhost\Listener\*\Transport -ErrorAction SilentlyContinue | Where-Object { $_.Value -match 'HTTP' }
+$results['Task01_WinRM'] = if ($svc.Status -eq 'Running' -and $listener) { "PASS" } else { "FAIL: Service=$($svc.Status)" }
+
+# Task 02 - RDP
+$rdpReg = (Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server').fDenyTSConnections
+$rdpFW = (Get-NetFirewallRule -DisplayGroup "Remote Desktop" | Where-Object Enabled -eq 'True' | Measure-Object).Count
+$results['Task02_RDP'] = if ($rdpReg -eq 0 -and $rdpFW -gt 0) { "PASS" } else { "FAIL: Reg=$rdpReg FWRules=$rdpFW" }
+
+# Tasks 03/04 - Static IP + DHCP disabled
+$adapter = Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object -First 1
+$dhcp = (Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4).Dhcp
+$ip = (Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^169\.' }).IPAddress
+$results['Task0304_StaticIP'] = if ($dhcp -eq 'Disabled' -and $ip -eq $ExpectedIP) { "PASS" } else { "FAIL: DHCP=$dhcp IP=$ip" }
+
+# Task 05 - DNS
+$dns = (Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4).ServerAddresses
+$results['Task05_DNS'] = if ($dns -contains $ExpectedDNS1 -and $dns -contains $ExpectedDNS2) { "PASS" } else { "FAIL: DNS=$($dns -join ',')" }
+
+# Task 06 - DNS resolution
+try { Resolve-DnsName $ExpectedDNS1 -ErrorAction Stop | Out-Null; $results['Task06_DNSResolve'] = "PASS" }
+catch { $results['Task06_DNSResolve'] = "FAIL: $_" }
+
+# Task 07 - NTP
+$ntpOut = (w32tm /query /status) | Out-String
+$stratum = if ($ntpOut -match 'Stratum:\s*(\d+)') { [int]$Matches[1] } else { 99 }
+$source = if ($ntpOut -match 'Source:\s*(.+)') { $Matches[1].Trim() } else { 'Unknown' }
+$results['Task07_NTP'] = if ($stratum -lt 15 -and $source -notmatch 'Local CMOS|Free-running') { "PASS (Stratum=$stratum)" } else { "FAIL: Stratum=$stratum Source=$source" }
+
+# Task 08 - ICMP
+$icmpRules = (Get-NetFirewallRule | Where-Object { $_.DisplayName -match 'Echo Request.*ICMPv4' -and $_.Enabled -eq 'True' } | Measure-Object).Count
+$results['Task08_ICMP'] = if ($icmpRules -gt 0) { "PASS ($icmpRules rule(s))" } else { "FAIL" }
+
+# Task 09 - Unused adapters
+$stuck = (Get-NetAdapter | Where-Object { $_.Status -eq 'Disconnected' -and $_.AdminStatus -eq 'Up' } | Measure-Object).Count
+$results['Task09_Adapters'] = if ($stuck -eq 0) { "PASS" } else { "WARN: $stuck disconnected adapter(s) still enabled" }
+
+# Task 10 - Hostname
+$results['Task10_Hostname'] = if ($env:COMPUTERNAME -eq $ExpectedHostname.ToUpper()) { "PASS ($env:COMPUTERNAME)" } else { "FAIL: Got='$env:COMPUTERNAME' Expected='$($ExpectedHostname.ToUpper())'" }
+
+# Task 11 - Storage
+$pools = (Get-StoragePool | Where-Object IsPrimordial -eq $false | Measure-Object).Count
+$vDisks = (Get-VirtualDisk -ErrorAction SilentlyContinue | Measure-Object).Count
+$nonBoot = @(Get-Disk | Where-Object { $_.IsBoot -ne $true -and $_.Number -ne $null })
+$bad = ($nonBoot | Where-Object OperationalStatus -ne 'Online' | Measure-Object).Count
+$results['Task11_Storage'] = if ($pools -eq 0 -and $vDisks -eq 0 -and $bad -eq 0) { "PASS ($($nonBoot.Count) disk(s) clean)" } else { "WARN: Pools=$pools VDisks=$vDisks BadDisks=$bad" }
+
+# Output results
+$results.GetEnumerator() | ForEach-Object {
+ $color = if ($_.Value -match '^PASS') { 'Green' } elseif ($_.Value -match '^WARN') { 'Yellow' } else { 'Red' }
+ Write-Host " $($_.Key.PadRight(22)) $($_.Value)" -ForegroundColor $color
+}
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Expected Output
+
+A passing run produces a result like:
+
+```
+[2026-03-07 14:30:00] [----] ================================================================
+[2026-03-07 14:30:00] [----] Phase 03 OS Configuration — Verification (Tasks 01–11)
+[2026-03-07 14:30:00] [----] ================================================================
+...
+[2026-03-07 14:30:05] [----] NODE: azl-lab-01-n01 (192.168.211.11)
+[2026-03-07 14:30:05] [----] ================================================================
+ [PASS] Task01_WinRM PASS (Service=Running, Listener=Active)
+ [PASS] Task02_RDP PASS (Reg=0, FWRules=3)
+ [PASS] Task0304_StaticIP PASS (IP=192.168.211.11 DHCP=Disabled)
+ [PASS] Task05_DNS PASS (10.250.1.36, 10.250.1.37)
+ [PASS] Task06_DNSResolve PASS
+ [PASS] Task07_NTP PASS (Stratum=4 Source=10.250.1.36)
+ [PASS] Task08_ICMP PASS (2 rule(s) enabled)
+ [PASS] Task09_Adapters PASS (No disconnected adapters still enabled)
+ [PASS] Task10_Hostname PASS (azl-lab-01-N01)
+ [PASS] Task11_Storage PASS (4 non-boot disk(s) clean and online)
+...
+[2026-03-07 14:31:50] [PASS] All 4 node(s) passed Phase 03 verification.
+```
+
+---
+
+## Interpreting Results
+
+| Result | Meaning | Action |
+|--------|---------|--------|
+| `PASS` | Check succeeded | None |
+| `WARN` | Non-critical issue (e.g. storage pools present, adapter not fully cleaned up) | Review before proceeding |
+| `FAIL` | Check failed — configuration is incorrect | Re-run the relevant task |
+
+### Common Failures
+
+| Check | Failure Message | Resolution |
+|-------|----------------|------------|
+| `Task0304_StaticIP` | `FAIL: DHCP=Enabled` | Re-run Task 03/04 (static IP) |
+| `Task07_NTP` | `FAIL: Source=Local CMOS Clock` | Re-run Task 07 (NTP). Check NTP server reachability |
+| `Task10_Hostname` | `FAIL: Got='WIN-XXXX'` | Re-run Task 10 (hostname rename) and reboot node |
+| `Task11_Storage` | `WARN: Pools=1 VDisks=2` | Run Task 11 (Clear Storage) before proceeding to Phase 04 |
+| Connection fails | `Connection failed: ...` | Verify WinRM is enabled on the node (Task 01) |
+
+---
+
+## Script Reference
+
+| Parameter | Required | Description |
+|---|---|---|
+| `-ConfigPath` | Recommended | Path to `infrastructure.yml`. Auto-detects if omitted |
+| `-Credential` | No | PSCredential. Resolved from Key Vault if omitted |
+| `-TargetNode` | No | Filter to specific node(s) by hostname or IP |
+
+**Script location:**
+```
+scripts/deploy/04-cluster-deployment/phase-03-os-configuration/
+ task-13-phase03-verification/powershell/
+ Invoke-Phase03Verification-Orchestrated.ps1
+```
+
+---
+
+## Navigation
+
+[← Task 12: Combined Script](./task-12-complete-combined-script-all-steps.mdx) · [↑ Phase 03](./index.mdx) · [Phase 04: ARC Registration →](../phase-04-arc-registration/index.mdx)

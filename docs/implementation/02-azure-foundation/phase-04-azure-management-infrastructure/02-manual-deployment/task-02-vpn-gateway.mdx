@@ -1,0 +1,423 @@
+---
+title: "Task 02: VPN Gateway"
+sidebar_label: "Task 02: VPN Gateway"
+sidebar_position: 2
+description: "Deploy the Azure VPN Gateway for site-to-site connectivity between Azure and on-premises infrastructure."
+category: Runbook
+scope: VPN Gateway deployment
+purpose: Create VPN Gateway for hybrid connectivity
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, vpn-gateway, networking, hybrid-connectivity]
+keywords: [VPN gateway, site-to-site, BGP, VpnGw2AZ, hybrid connectivity]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: VPN Gateway
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: VPN Gateway deployment 
+> **PURPOSE**: Create VPN Gateway for hybrid connectivity 
+> **MASTER REFERENCE**: [Microsoft Learn - VPN Gateway](https://learn.microsoft.com/en-us/azure/vpn-gateway/vpn-gateway-about-vpngateways)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This task deploys an Azure VPN Gateway into the GatewaySubnet created in Task 01. The gateway provides site-to-site IPsec/IKEv2 connectivity between Azure and on-premises infrastructure with BGP routing support.
+
+:::warning Deployment Time
+The VPN Gateway takes **30–45 minutes** to deploy. Do not interrupt the deployment. Plan accordingly.
+:::
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::info Terraform Reference
+**Module:** `tf-module-azr-local` 
+**File:** `network.tf` 
+**Mode:** Management
+:::
+
+### Components Created
+
+| Resource | Name Pattern | Purpose |
+|----------|-------------|---------|
+| Public IP | `pip-azrlvpng-{env}-{region}-01` | VPN Gateway public IP |
+| VPN Gateway | `vpng-azrl-{env}-{region}-01` | Site-to-site VPN termination |
+
+### Gateway Configuration
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| SKU | `VpnGw2AZ` | `network.vpn.azure_gateway.sku` |
+| Generation | Generation2 | `network.vpn.azure_gateway.generation` |
+| Type | Route-based | Standard for Azure Local |
+| Active-Active | Per config | `network.vpn.azure_gateway.active_active` |
+| BGP Enabled | Per config | `network.vpn.azure_gateway.bgp.enabled` |
+| BGP ASN | Per config | `network.vpn.azure_gateway.bgp.asn` |
+
+## Prerequisites
+
+- [ ] [Task 01: Virtual Network](./task-01-virtual-network) completed — GatewaySubnet exists
+- [ ] Public IP address not already in use
+- [ ] BGP ASN confirmed by on-premises network team (must not conflict)
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `network.vpn.azure_gateway.resource_group` |
+| VPN Gateway Name | `vpng-azrl-{env}-{region}-01` | `network.vpn.azure_gateway.name` |
+| Public IP Name | `pip-azrlvpng-{env}-{region}-01` | `network.vpn.azure_gateway.public_ip` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Create Public IP**:
+ - Search for **Public IP addresses** → **+ Create**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | `pip-azrlvpng-{env}-{region}-01` | `network.vpn.azure_gateway.public_ip` |
+ | SKU | Standard | Required for AZ gateway |
+ | Assignment | Static | Required for VPN Gateway |
+ | Availability Zone | Zone-redundant | Best practice |
+
+2. **Create VPN Gateway**:
+ - Search for **Virtual network gateways** → **+ Create**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | `vpng-azrl-{env}-{region}-01` | `network.vpn.azure_gateway.name` |
+ | Region | Your region | `network.vpn.azure_gateway.resource_group` |
+ | Gateway type | VPN | — |
+ | SKU | VpnGw2AZ | `network.vpn.azure_gateway.sku` |
+ | Generation | Generation2 | `network.vpn.azure_gateway.generation` |
+ | Virtual network | VNet from Task 01 | `network.azure_vnets.management.name` |
+ | Public IP | Public IP created above | `network.vpn.azure_gateway.public_ip` |
+ | Enable active-active | Per config | `network.vpn.azure_gateway.active_active` |
+
+3. **Configure BGP** (if enabled):
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Configure BGP | Yes | `network.vpn.azure_gateway.bgp.enabled` |
+ | ASN | Per config | `network.vpn.azure_gateway.bgp.asn` |
+ | Custom Azure APIPA BGP address | Per config | `network.vpn.azure_gateway.bgp.custom_apipa_bgp_address` |
+
+4. **Review + create**: Verify → Click **Create** → Wait 30–45 minutes
+
+#### Validation
+
+- [ ] VPN Gateway provisioning state shows **Succeeded**
+- [ ] Public IP assigned and visible
+- [ ] BGP settings correct (if enabled)
+- [ ] Gateway associated with correct GatewaySubnet
+
+#### Links
+
+- [Microsoft Learn: Create VPN Gateway](https://learn.microsoft.com/en-us/azure/vpn-gateway/tutorial-create-gateway-portal)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-02-vpn-gateway/powershell/New-VpnGateway.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| PowerShell + Azure CLI | `task-02-vpn-gateway/azure-cli/New-VpnGateway.azcli.ps1` |
+| Bash + Azure CLI | `task-02-vpn-gateway/bash/invoke-vpn-gateway.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-VpnGateway.ps1
+# Execution: Run from management workstation — reads infrastructure.yml
+# Prerequisites: Az.Network module, authenticated to Azure
+# NOTE: Deployment takes 30-45 minutes
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "configs/infrastructure.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# Extract values
+$SubscriptionId = $config.azure.subscriptions.($config.network.azure_vnets.management.subscription).id
+$ResourceGroup = $config.network.vpn.azure_gateway.resource_group
+$GatewayName = $config.network.vpn.azure_gateway.name
+$PublicIpName = $config.network.vpn.azure_gateway.public_ip
+$Location = $config.network.azure_vnets.management.location
+$VNetName = $config.network.azure_vnets.management.name
+$Sku = $config.network.vpn.azure_gateway.sku
+$Generation = $config.network.vpn.azure_gateway.generation
+$ActiveActive = [bool]$config.network.vpn.azure_gateway.active_active
+$BgpEnabled = [bool]$config.network.vpn.azure_gateway.bgp.enabled
+$BgpAsn = $config.network.vpn.azure_gateway.bgp.asn
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Create Public IP
+Write-LogInfo "Creating Public IP: $PublicIpName"
+$pip = New-AzPublicIpAddress `
+ -Name $PublicIpName `
+ -ResourceGroupName $ResourceGroup `
+ -Location $Location `
+ -Sku Standard `
+ -AllocationMethod Static `
+ -Zone @("1","2","3")
+
+# Get GatewaySubnet
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+$gwSubnet = Get-AzVirtualNetworkSubnetConfig -Name "GatewaySubnet" -VirtualNetwork $vnet
+$gwIpConfig = New-AzVirtualNetworkGatewayIpConfig -Name "gwipconfig" -SubnetId $gwSubnet.Id -PublicIpAddressId $pip.Id
+
+# Create VPN Gateway
+Write-LogInfo "Creating VPN Gateway: $GatewayName (this will take 30-45 minutes)"
+$gwParams = @{
+ Name = $GatewayName
+ ResourceGroupName = $ResourceGroup
+ Location = $Location
+ IpConfigurations = $gwIpConfig
+ GatewayType = "Vpn"
+ VpnType = "RouteBased"
+ GatewaySku = $Sku
+ VpnGatewayGeneration = $Generation
+ EnableActiveActiveFeature = $ActiveActive
+ EnableBgp = $BgpEnabled
+ Asn = $BgpAsn
+}
+$gateway = New-AzVirtualNetworkGateway @gwParams
+
+Write-LogSuccess "VPN Gateway created: $($gateway.Id)"
+$gateway
+```
+
+#### Validation
+
+```powershell
+Get-AzVirtualNetworkGateway -Name $GatewayName -ResourceGroupName $ResourceGroup | Format-List Name, ProvisioningState, GatewaySku, BgpSettings
+```
+
+**Validation Script**: `scripts/validation/02-azure-foundation/phase-04/Test-VpnGateway.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers needed.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-VpnGateway-Standalone.ps1
+# Execution: Run anywhere — fully self-contained
+# Prerequisites: Az.Network module, authenticated to Azure
+# NOTE: Deployment takes 30-45 minutes
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Target subscription
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01" # Resource group
+$GatewayName = "vpng-azrl-azl-eus-01" # VPN Gateway name
+$PublicIpName = "pip-azrlvpng-azl-eus-01" # Public IP name
+$Location = "eastus" # Azure region
+$VNetName = "vnet-azrl-azl-eus-01" # VNet name from Task 01
+$Sku = "VpnGw2AZ" # Gateway SKU
+$Generation = "Generation2" # Gateway generation
+$ActiveActive = $false # Active-active mode
+$BgpEnabled = $true # Enable BGP
+$BgpAsn = 65422 # BGP ASN
+#endregion CONFIGURATION
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Create Public IP
+Write-Host "Creating Public IP: $PublicIpName" -ForegroundColor Cyan
+$pip = New-AzPublicIpAddress -Name $PublicIpName -ResourceGroupName $ResourceGroup `
+ -Location $Location -Sku Standard -AllocationMethod Static -Zone @("1","2","3")
+
+# Get GatewaySubnet
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+$gwSubnet = Get-AzVirtualNetworkSubnetConfig -Name "GatewaySubnet" -VirtualNetwork $vnet
+$gwIpConfig = New-AzVirtualNetworkGatewayIpConfig -Name "gwipconfig" -SubnetId $gwSubnet.Id -PublicIpAddressId $pip.Id
+
+# Create VPN Gateway (30-45 min)
+Write-Host "Creating VPN Gateway: $GatewayName (30-45 min)" -ForegroundColor Cyan
+$gateway = New-AzVirtualNetworkGateway -Name $GatewayName -ResourceGroupName $ResourceGroup `
+ -Location $Location -IpConfigurations $gwIpConfig -GatewayType Vpn -VpnType RouteBased `
+ -GatewaySku $Sku -VpnGatewayGeneration $Generation `
+ -EnableActiveActiveFeature:$ActiveActive -EnableBgp:$BgpEnabled -Asn $BgpAsn
+
+Write-Host "✅ VPN Gateway '$GatewayName' created successfully" -ForegroundColor Green
+$gateway | Format-List Name, ProvisioningState, BgpSettings
+```
+
+:::info No External Dependencies
+Self-contained. Edit the `#region CONFIGURATION` block and run.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] VPN Gateway provisioning state is **Succeeded**
+- [ ] Public IP assigned
+- [ ] Gateway SKU matches config
+- [ ] BGP ASN correct (if enabled)
+
+---
+
+## CAF/WAF Landing Zone Model
+
+In the CAF/WAF model, the VPN Gateway is deployed in the **Connectivity subscription** alongside the VNet.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Connectivity** subscription | `azure.subscriptions.connectivity.id` |
+| Resource Group | `rg-azrlconn-{env}-{region}-01` | `network.vpn.azure_gateway.resource_group` |
+| VPN Gateway Name | `vpng-azrl-{env}-{region}-01` | `network.vpn.azure_gateway.name` |
+| Public IP Name | `pip-azrlvpng-{env}-{region}-01` | `network.vpn.azure_gateway.public_ip` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+Follow the same procedure as [Single Subscription → Azure Portal](#azure-portal) above, but target the **Connectivity** subscription and resource group:
+
+| Field | Value |
+|-------|-------|
+| Subscription | **Connectivity** subscription |
+| Resource group | `rg-azrlconn-{env}-{region}-01` |
+
+All other settings (SKU, generation, BGP) remain identical.
+
+#### Validation
+
+- [ ] VPN Gateway in **Connectivity** subscription
+- [ ] Provisioning state: **Succeeded**
+- [ ] BGP settings correct
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+:::tip Same Script — Different Config
+The orchestrated script is identical. `infrastructure.yml` contains the correct Connectivity subscription values for CAF/WAF.
+:::
+
+See the [Single Subscription → Azure CLI / PowerShell](#azure-cli--powershell) tab for the full script.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+Use the same standalone script from Single Subscription, updating the `#region CONFIGURATION` block:
+
+```powershell
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Connectivity subscription ID
+$ResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
+# ... remaining values same as single-sub
+#endregion CONFIGURATION
+```
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] VPN Gateway in **Connectivity** subscription
+- [ ] Provisioning state: **Succeeded**
+- [ ] BGP ASN matches config
+- [ ] Public IP reachable from on-premises firewall
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| Deployment fails after 45 min | Transient Azure platform issue | Retry; check Azure Status page |
+| GatewaySubnet not found | Task 01 not completed | Complete Task 01 first |
+| BGP ASN conflict | ASN already in use by another gateway | Choose unique ASN in Planning & Discovery |
+| Public IP SKU mismatch | Basic SKU used with AZ gateway | Use Standard SKU with zone-redundant allocation |
+| Active-active requires 2 PIPs | Single PIP with active-active | Create second PIP or disable active-active |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01: Virtual Network](./task-01-virtual-network) | [Manual Deployment Index](./index.mdx) | [Task 03: S2S VPN Connection](./task-03-s2s-vpn-connection) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, vpn-gateway, networking, hybrid-connectivity
+- Keywords: VPN gateway, site-to-site, BGP, VpnGw2AZ, hybrid connectivity
+- Author: Azure Local Cloudnology Team

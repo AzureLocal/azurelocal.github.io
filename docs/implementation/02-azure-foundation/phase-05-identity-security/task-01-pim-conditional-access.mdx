@@ -1,0 +1,759 @@
+---
+title: "Task 01: PIM & Conditional Access"
+sidebar_label: "Task 01: PIM & Conditional Access"
+sidebar_position: 1
+description: "Configure Privileged Identity Management and Entra ID Conditional Access policies to protect administrative access to Azure Local."
+category: Runbook
+scope: Identity and privileged access management
+purpose: Configure just-in-time access controls and context-aware authentication policies for Azure Local administrators
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, pim, conditional-access, identity, entra-id, security]
+keywords: [PIM, Privileged Identity Management, Conditional Access, Entra ID, MFA, just-in-time, break-glass, JIT]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: PIM & Conditional Access
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Identity and privileged access management 
+> **PURPOSE**: Configure just-in-time access controls and context-aware authentication policies for Azure Local administrators 
+> **MASTER REFERENCE**: [Microsoft Learn — Privileged Identity Management](https://learn.microsoft.com/en-us/azure/active-directory/privileged-identity-management/pim-configure)
+
+**Status**: Active
+
+---
+
+This task configures Privileged Identity Management (PIM) for just-in-time privileged access and Entra ID Conditional Access policies for identity protection. Both controls reduce standing administrative privileges and enforce contextual access requirements across the Azure Local environment.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (Entra ID / Azure control-plane API operations) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::warning License Requirement
+**Entra ID P2** (or Microsoft 365 E5) is **required** for PIM and risk-based Conditional Access policies. 
+If these licenses are not available, this step is optional — document the decision and skip to [Phase 01: Active Directory](../../03-onprem-readiness/phase-01-active-directory/index.mdx).
+:::
+
+## Overview
+
+| Component | Purpose | Benefit |
+|-----------|---------|---------|
+| **PIM for Azure Resources** | Just-in-time privileged access to Azure subscriptions | Eliminates standing Contributor/Owner assignments |
+| **PIM for Entra ID Roles** | Just-in-time access to directory admin roles | Time-bound Global Administrator access |
+| **Conditional Access** | Context-aware access policies | MFA enforcement, legacy auth blocking |
+| **Break-Glass Accounts** | Emergency admin access | Ensures recoverability if CA locks out admins |
+
+## Prerequisites
+
+Before starting this task, ensure:
+
+- ✅ **Phase 04 Complete** — Azure management infrastructure deployed
+- ✅ **Entra ID P2 License** — Assigned to all administrators (required for PIM and risk-based CA)
+- ✅ **Global Administrator or Privileged Role Administrator** — To enable and configure PIM
+- ✅ **Security Administrator** — To create Conditional Access policies
+- ✅ **Break-glass accounts created** — Two cloud-only accounts excluded from all CA policies (see [Break-Glass Accounts](#break-glass-accounts))
+
+## Part 1: Privileged Identity Management
+
+### Roles to Protect
+
+| Role | Scope | Max Activation | Require Approval |
+|------|-------|---------------|-----------------|
+| **Owner** | Subscription | 2 hours | Yes |
+| **User Access Administrator** | Subscription | 2 hours | Yes |
+| **Contributor** | Resource Group | 4 hours | No |
+| **Key Vault Administrator** | Key Vault | 4 hours | No |
+| **Global Administrator** | Tenant | 2 hours | Yes |
+| **Security Administrator** | Tenant | 4 hours | No |
+| **Privileged Role Administrator** | Tenant | 2 hours | Yes |
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Initial PIM configuration — visual interface with full control over role settings and assignment details
+
+#### Procedure
+
+**A. Enable PIM for Azure Resources**
+
+1. **Navigate to PIM**:
+ - In Azure Portal, search for **Privileged Identity Management**
+ - Click **Azure resources** in the left menu
+ - Click **Discover resources**
+
+2. **Onboard Subscription**:
+ - Select your Azure Local subscription(s)
+ - Click **Manage resource**
+ - The subscription now appears managed under PIM
+
+3. **Configure Role Settings — Contributor**:
+ - Click your subscription → **Settings**
+ - Select the **Contributor** role → **Edit**
+ - Configure:
+
+ | Setting | Value |
+ |---------|-------|
+ | Maximum activation duration | 4 hours |
+ | Require justification on activation | Yes |
+ | Require MFA on activation | Yes |
+ | Require approval to activate | No |
+
+ - Click **Update**
+
+4. **Configure Role Settings — Owner**:
+ - Select the **Owner** role → **Edit**
+ - Configure:
+
+ | Setting | Value |
+ |---------|-------|
+ | Maximum activation duration | 2 hours |
+ | Require justification on activation | Yes |
+ | Require MFA on activation | Yes |
+ | Require approval to activate | Yes |
+
+ - Under **Require approval**, add approvers (security lead or manager)
+ - Click **Update**
+
+5. **Add Eligible Assignments**:
+ - Click **Assignments** → **+ Add assignments**
+ - **Role**: Contributor
+ - **Members**: Select your Azure Local administrators
+ - **Assignment type**: Eligible
+ - **Duration**: Permanent eligible (or time-bound as required)
+ - Click **Assign**
+
+---
+
+**B. Enable PIM for Entra ID Roles**
+
+1. **Navigate to PIM → Entra ID Roles**:
+ - In PIM, click **Entra ID roles** in the left menu
+
+2. **Configure Role Settings — Global Administrator**:
+ - Click **Settings** → Select **Global Administrator** → **Edit**
+ - Configure:
+
+ | Setting | Value |
+ |---------|-------|
+ | Maximum activation duration | 2 hours |
+ | Require justification on activation | Yes |
+ | Require MFA on activation | Yes |
+ | Require approval to activate | Yes |
+
+ - Add approvers → Click **Update**
+
+3. **Add Eligible Assignments for Entra ID Roles**:
+ - Click **Assignments** → **+ Add assignments**
+ - **Role**: Global Administrator (or Security Administrator)
+ - **Members**: Your Azure Local deployment engineers
+ - **Assignment type**: Eligible
+ - Click **Assign**
+
+---
+
+**C. Activate a Privileged Role (User Experience)**
+
+1. User navigates to **Privileged Identity Management → My roles**
+2. Click **Azure resources** (or **Entra ID roles**)
+3. Find the eligible role → click **Activate**
+4. Enter:
+ - **Reason**: e.g., "Deploy Azure Local cluster node configuration"
+ - **Duration**: Select time needed (up to configured maximum)
+5. Complete MFA challenge
+6. Wait for approval (if required)
+7. Role activates — automatically deactivates after duration
+
+#### Validation
+
+- [ ] PIM enabled on Azure subscription(s)
+- [ ] Owner role: max 2 hours, approval required, MFA required
+- [ ] Contributor role: max 4 hours, justification required, MFA required
+- [ ] Global Administrator: max 2 hours, approval required, MFA required
+- [ ] Eligible assignments created for deployment team
+- [ ] Test activation succeeds end-to-end
+
+#### Links
+
+- [Microsoft Learn — Enable PIM for Azure Resources](https://learn.microsoft.com/en-us/azure/active-directory/privileged-identity-management/pim-resource-roles-discover-resources)
+- [Microsoft Learn — Configure Azure AD role settings in PIM](https://learn.microsoft.com/en-us/azure/active-directory/privileged-identity-management/pim-how-to-change-default-settings)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted PIM configuration from management workstation — reads values from `infrastructure.yml`
+
+:::note No Toolkit Script
+There is no dedicated toolkit script for PIM configuration. Use the Microsoft Graph PowerShell commands below. The commands read subscription and user IDs from `infrastructure.yml`.
+:::
+
+#### Code
+
+```powershell
+# ============================================================================
+# PIM Configuration — Microsoft Graph PowerShell
+# Execution: Run from management workstation
+# Prerequisites: Microsoft.Graph module, Global Administrator or PRA role
+# ============================================================================
+
+#Requires -Modules Microsoft.Graph.Identity.Governance, Az.Accounts
+
+param(
+ [string]$ConfigPath = "./infrastructure.yml"
+)
+
+# Load configuration
+$config = Get-Content $ConfigPath | ConvertFrom-Yaml
+
+$SubscriptionId = $config.azure.subscriptions.lab.id
+$TenantId = $config.azure.tenant.id
+
+# Connect to Microsoft Graph
+Connect-MgGraph -TenantId $TenantId -Scopes @(
+ "RoleManagement.ReadWrite.Directory",
+ "PrivilegedAccess.ReadWrite.AzureResources"
+)
+
+# ── PIM: Configure Contributor role settings on subscription ─────────────────
+$scope = "/subscriptions/$SubscriptionId"
+
+# Get role definition: Contributor = b24988ac-6180-42a0-ab88-20f7382dd24c
+$contributorRoleId = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+
+# Find existing role management policy for Contributor
+$policies = Get-MgPolicyRoleManagementPolicy -Filter "scopeId eq '$SubscriptionId' and scopeType eq 'subscription'"
+Write-Host "Found $($policies.Count) role management policies for this subscription" -ForegroundColor Cyan
+
+# ── PIM: Add eligible assignment ──────────────────────────────────────────────
+# Get user to assign (replace with actual user principal name from config)
+$AdminUpn = $config.deployment.admin_upn # e.g., admin@customer.com
+$AdminUser = Get-MgUser -Filter "userPrincipalName eq '$AdminUpn'"
+
+$assignmentParams = @{
+ Action = "AdminAssign"
+ Justification = "Azure Local deployment administrator eligible assignment"
+ RoleDefinitionId = $contributorRoleId
+ DirectoryScopeId = $scope
+ PrincipalId = $AdminUser.Id
+ ScheduleInfo = @{
+ StartDateTime = (Get-Date).ToUniversalTime().ToString("o")
+ Expiration = @{ Type = "NoExpiration" }
+ }
+}
+
+New-MgRoleManagementDirectoryRoleEligibilityScheduleRequest -BodyParameter $assignmentParams
+Write-Host "Eligible Contributor assignment created for $($AdminUser.DisplayName)" -ForegroundColor Green
+```
+
+#### Validation
+
+```powershell
+# Verify eligible assignments
+$eligible = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All |
+ Where-Object { $_.RoleDefinitionId -eq $contributorRoleId }
+$eligible | Format-Table PrincipalId, RoleDefinitionId, Status, EndDateTime
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready — no `infrastructure.yml`, no helpers, no dependencies. Edit the `#region CONFIGURATION` block and run.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Set-PimConfiguration-Standalone.ps1
+# Execution: Run anywhere — fully self-contained, no external dependencies
+# Prerequisites: Microsoft.Graph module, Global Administrator or PRA role
+# ============================================================================
+
+#Requires -Modules Microsoft.Graph.Identity.Governance
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$TenantId = "00000000-0000-0000-0000-000000000000" # Your Entra ID tenant ID
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Azure subscription to protect
+$AdminUpn = "admin@yourdomain.com" # Admin to receive eligible assignment
+#endregion CONFIGURATION
+
+# Connect
+Connect-MgGraph -TenantId $TenantId -Scopes @(
+ "RoleManagement.ReadWrite.Directory",
+ "PrivilegedAccess.ReadWrite.AzureResources"
+)
+
+$scope = "/subscriptions/$SubscriptionId"
+$contributorRoleId = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+
+# Get user
+$user = Get-MgUser -Filter "userPrincipalName eq '$AdminUpn'"
+if (-not $user) {
+ Write-Error "User not found: $AdminUpn"; exit 1
+}
+Write-Host "Creating eligible Contributor assignment for: $($user.DisplayName)" -ForegroundColor Cyan
+
+# Create eligible assignment
+$params = @{
+ Action = "AdminAssign"
+ Justification = "Azure Local deployment administrator eligible assignment"
+ RoleDefinitionId = $contributorRoleId
+ DirectoryScopeId = $scope
+ PrincipalId = $user.Id
+ ScheduleInfo = @{
+ StartDateTime = (Get-Date).ToUniversalTime().ToString("o")
+ Expiration = @{ Type = "NoExpiration" }
+ }
+}
+
+New-MgRoleManagementDirectoryRoleEligibilityScheduleRequest -BodyParameter $params
+Write-Host "Eligible assignment created successfully" -ForegroundColor Green
+
+# Verify
+$assignments = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All |
+ Where-Object { $_.PrincipalId -eq $user.Id }
+$assignments | Format-Table RoleDefinitionId, Status, StartDateTime
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Part 2: Conditional Access Policies
+
+### Policies to Create
+
+| Policy Name | Target | Conditions | Control | Mode |
+|-------------|--------|------------|---------|------|
+| `CA001-Require-MFA-AzureManagement` | All users | Azure Management app | Require MFA | Report-Only → On |
+| `CA002-Block-LegacyAuth` | All users | Legacy auth protocols | Block | Report-Only → On |
+| `CA003-Require-MFA-PrivilegedRoles` | Admin roles | All apps | Require MFA | Report-Only → On |
+
+:::warning Deploy in Report-Only First
+All policies must be created in **Report-Only** mode initially. Monitor sign-in logs for at least 24 hours before switching to **On**. This prevents accidental lockout.
+:::
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Initial Conditional Access setup — visual interface with full policy review before enablement
+
+#### Procedure
+
+**CA001 — Require MFA for Azure Management**
+
+1. **Navigate to Conditional Access**:
+ - Go to **Microsoft Entra ID** → **Security** → **Conditional Access**
+ - Click **+ Create new policy**
+
+2. **Configure the policy**:
+
+ | Field | Value |
+ |-------|-------|
+ | Name | `CA001-Require-MFA-AzureManagement` |
+ | Users | All users — exclude break-glass accounts |
+ | Cloud apps | Microsoft Azure Management (app ID: `797f4846-ba00-4fd7-ba43-dac1f8f63013`) |
+ | Grant | Require multi-factor authentication |
+ | Enable policy | **Report-only** |
+
+3. Click **Create**
+
+---
+
+**CA002 — Block Legacy Authentication**
+
+1. Click **+ Create new policy**
+
+2. Set:
+
+ | Field | Value |
+ |-------|-------|
+ | Name | `CA002-Block-LegacyAuth` |
+ | Users | All users — exclude break-glass accounts |
+ | Cloud apps | All cloud apps |
+ | Conditions → Client apps | Exchange ActiveSync + Other clients |
+ | Grant | Block access |
+ | Enable policy | **Report-only** |
+
+3. Click **Create**
+
+---
+
+**CA003 — Require MFA for Privileged Roles**
+
+1. Click **+ Create new policy**
+
+2. Set:
+
+ | Field | Value |
+ |-------|-------|
+ | Name | `CA003-Require-MFA-PrivilegedRoles` |
+ | Users | Directory roles: Global Administrator, Security Administrator, Privileged Role Administrator, User Administrator |
+ | Cloud apps | All cloud apps |
+ | Grant | Require multi-factor authentication |
+ | Enable policy | **Report-only** |
+
+3. Click **Create**
+
+---
+
+**Promote to Enforced**
+
+After 24–48 hours in report-only, review the **Conditional Access Insights** workbook:
+- Confirm break-glass accounts are excluded
+- Confirm no legitimate users are unexpectedly blocked
+- For each policy: **Edit** → Change **Enable policy** to **On** → **Save**
+
+#### Validation
+
+- [ ] CA001 in Report-Only, targeting Azure Management app
+- [ ] CA002 in Report-Only, targeting legacy auth protocols
+- [ ] CA003 in Report-Only, targeting privileged directory roles
+- [ ] Break-glass accounts excluded from all three policies
+- [ ] No unintended blockages in sign-in log review
+
+#### Links
+
+- [Microsoft Learn — Conditional Access: Require MFA for Azure Management](https://learn.microsoft.com/en-us/azure/active-directory/conditional-access/howto-conditional-access-policy-azure-management)
+- [Microsoft Learn — Require MFA for Administrators](https://learn.microsoft.com/en-us/azure/active-directory/conditional-access/howto-conditional-access-policy-admin-mfa)
+- [Microsoft Learn — Block Legacy Authentication](https://learn.microsoft.com/en-us/azure/active-directory/conditional-access/howto-conditional-access-policy-block-legacy)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted CA policy creation from management workstation — reads break-glass account IDs from `infrastructure.yml`
+
+:::note No Toolkit Script
+There is no dedicated toolkit script for Conditional Access configuration. Use the Microsoft Graph PowerShell commands below.
+:::
+
+#### Code
+
+```powershell
+# ============================================================================
+# Conditional Access Policy Creation — Microsoft Graph PowerShell
+# Execution: Run from management workstation
+# Prerequisites: Microsoft.Graph module, Security Administrator or Global Administrator
+# ============================================================================
+
+#Requires -Modules Microsoft.Graph.Identity.SignIns
+
+param(
+ [string]$ConfigPath = "./infrastructure.yml"
+)
+
+$config = Get-Content $ConfigPath | ConvertFrom-Yaml
+$TenantId = $config.azure.tenant.id
+$BreakGlassIds = $config.identity.break_glass_account_ids # Array of object IDs
+
+Connect-MgGraph -TenantId $TenantId -Scopes "Policy.ReadWrite.ConditionalAccess", "Application.Read.All"
+
+# Azure Management app ID (constant across all tenants)
+$AzureManagementAppId = "797f4846-ba00-4fd7-ba43-dac1f8f63013"
+
+# ── CA001: Require MFA for Azure Management ───────────────────────────────────
+$ca001 = @{
+ DisplayName = "CA001-Require-MFA-AzureManagement"
+ State = "enabledForReportingButNotEnforced"
+ Conditions = @{
+ Users = @{
+ IncludeUsers = @("All")
+ ExcludeUsers = $BreakGlassIds
+ }
+ Applications = @{
+ IncludeApplications = @($AzureManagementAppId)
+ }
+ ClientAppTypes = @("all")
+ }
+ GrantControls = @{
+ Operator = "OR"
+ BuiltInControls = @("mfa")
+ }
+}
+New-MgIdentityConditionalAccessPolicy -BodyParameter $ca001
+Write-Host "Created: CA001-Require-MFA-AzureManagement" -ForegroundColor Green
+
+# ── CA002: Block Legacy Authentication ───────────────────────────────────────
+$ca002 = @{
+ DisplayName = "CA002-Block-LegacyAuth"
+ State = "enabledForReportingButNotEnforced"
+ Conditions = @{
+ Users = @{
+ IncludeUsers = @("All")
+ ExcludeUsers = $BreakGlassIds
+ }
+ Applications = @{ IncludeApplications = @("All") }
+ ClientAppTypes = @("exchangeActiveSync", "other")
+ }
+ GrantControls = @{
+ Operator = "OR"
+ BuiltInControls = @("block")
+ }
+}
+New-MgIdentityConditionalAccessPolicy -BodyParameter $ca002
+Write-Host "Created: CA002-Block-LegacyAuth" -ForegroundColor Green
+
+# ── CA003: Require MFA for Privileged Roles ──────────────────────────────────
+$privilegedRoles = @(
+ "62e90394-69f5-4237-9190-012177145e10", # Global Administrator
+ "194ae4cb-b126-40b2-bd5b-6091b380977d", # Security Administrator
+ "e8611ab8-c189-46e8-94e1-60213ab1f814", # Privileged Role Administrator
+ "fe930be7-5e62-47db-91af-98c3a49a38b1" # User Administrator
+)
+$ca003 = @{
+ DisplayName = "CA003-Require-MFA-PrivilegedRoles"
+ State = "enabledForReportingButNotEnforced"
+ Conditions = @{
+ Users = @{
+ IncludeRoles = $privilegedRoles
+ ExcludeUsers = $BreakGlassIds
+ }
+ Applications = @{ IncludeApplications = @("All") }
+ ClientAppTypes = @("all")
+ }
+ GrantControls = @{
+ Operator = "OR"
+ BuiltInControls = @("mfa")
+ }
+}
+New-MgIdentityConditionalAccessPolicy -BodyParameter $ca003
+Write-Host "Created: CA003-Require-MFA-PrivilegedRoles" -ForegroundColor Green
+
+Write-Host "`nAll policies created in Report-Only mode." -ForegroundColor Yellow
+Write-Host "Review sign-in logs for 24-48 hours before enabling enforcement." -ForegroundColor Yellow
+```
+
+#### Validation
+
+```powershell
+# List all CA policies and their states
+Get-MgIdentityConditionalAccessPolicy -All |
+ Where-Object { $_.DisplayName -match "^CA0" } |
+ Format-Table DisplayName, State
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready — no `infrastructure.yml`, no helpers, no dependencies. Edit the `#region CONFIGURATION` block with your break-glass account object IDs.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-ConditionalAccessPolicies-Standalone.ps1
+# Execution: Run anywhere — fully self-contained, no external dependencies
+# Prerequisites: Microsoft.Graph module, Security Administrator or Global Administrator
+# ============================================================================
+
+#Requires -Modules Microsoft.Graph.Identity.SignIns
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$TenantId = "00000000-0000-0000-0000-000000000000" # Your Entra ID tenant ID
+
+# Object IDs of your break-glass (emergency access) accounts — MUST be excluded from all policies
+$BreakGlassIds = @(
+ "00000000-0000-0000-0000-000000000001", # break-glass-01
+ "00000000-0000-0000-0000-000000000002" # break-glass-02
+)
+#endregion CONFIGURATION
+
+Connect-MgGraph -TenantId $TenantId -Scopes "Policy.ReadWrite.ConditionalAccess", "Application.Read.All"
+
+$AzureManagementAppId = "797f4846-ba00-4fd7-ba43-dac1f8f63013"
+
+# CA001
+New-MgIdentityConditionalAccessPolicy -BodyParameter @{
+ DisplayName = "CA001-Require-MFA-AzureManagement"
+ State = "enabledForReportingButNotEnforced"
+ Conditions = @{
+ Users = @{ IncludeUsers = @("All"); ExcludeUsers = $BreakGlassIds }
+ Applications = @{ IncludeApplications = @($AzureManagementAppId) }
+ ClientAppTypes = @("all")
+ }
+ GrantControls = @{ Operator = "OR"; BuiltInControls = @("mfa") }
+}
+Write-Host "Created: CA001" -ForegroundColor Green
+
+# CA002
+New-MgIdentityConditionalAccessPolicy -BodyParameter @{
+ DisplayName = "CA002-Block-LegacyAuth"
+ State = "enabledForReportingButNotEnforced"
+ Conditions = @{
+ Users = @{ IncludeUsers = @("All"); ExcludeUsers = $BreakGlassIds }
+ Applications = @{ IncludeApplications = @("All") }
+ ClientAppTypes = @("exchangeActiveSync", "other")
+ }
+ GrantControls = @{ Operator = "OR"; BuiltInControls = @("block") }
+}
+Write-Host "Created: CA002" -ForegroundColor Green
+
+# CA003
+New-MgIdentityConditionalAccessPolicy -BodyParameter @{
+ DisplayName = "CA003-Require-MFA-PrivilegedRoles"
+ State = "enabledForReportingButNotEnforced"
+ Conditions = @{
+ Users = @{
+ IncludeRoles = @(
+ "62e90394-69f5-4237-9190-012177145e10", # Global Administrator
+ "194ae4cb-b126-40b2-bd5b-6091b380977d", # Security Administrator
+ "e8611ab8-c189-46e8-94e1-60213ab1f814", # Privileged Role Administrator
+ "fe930be7-5e62-47db-91af-98c3a49a38b1" # User Administrator
+ )
+ ExcludeUsers = $BreakGlassIds
+ }
+ Applications = @{ IncludeApplications = @("All") }
+ ClientAppTypes = @("all")
+ }
+ GrantControls = @{ Operator = "OR"; BuiltInControls = @("mfa") }
+}
+Write-Host "Created: CA003" -ForegroundColor Green
+
+Write-Host "`nAll CA policies created in Report-Only mode." -ForegroundColor Yellow
+Write-Host "Review sign-in logs before switching to On." -ForegroundColor Yellow
+
+# Verify
+Write-Host "`nCreated policies:" -ForegroundColor Cyan
+Get-MgIdentityConditionalAccessPolicy -All |
+ Where-Object { $_.DisplayName -match "^CA0" } |
+ Format-Table DisplayName, State
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Break-Glass Accounts
+
+:::danger Critical — Configure Before Enabling CA Policies
+Two permanently-exempt emergency access accounts are **mandatory** before any Conditional Access policy is enabled for enforcement. Failure to configure these can result in a **complete tenant lockout**.
+:::
+
+### Required Configuration
+
+| Setting | Value |
+|---------|-------|
+| **Count** | Minimum 2 accounts |
+| **Account type** | Cloud-only (not federated, not synced from on-prem AD) |
+| **Username format** | `breakglass01@{tenant}.onmicrosoft.com` |
+| **MFA method** | Hardware FIDO2 key — stored in physical safe |
+| **Password** | 30+ character random, stored in physical safe |
+| **Conditional Access** | Excluded from **all** policies by object ID |
+| **PIM** | Not enrolled — permanent Global Administrator |
+| **Usage** | Emergency only, every use generates alert |
+
+### Break-Glass Account Checklist
+
+- [ ] Two cloud-only accounts created in `{tenant}.onmicrosoft.com`
+- [ ] Permanent Global Administrator role assigned (not eligible — PIM excluded)
+- [ ] Passwords stored offline (safe or sealed envelope)
+- [ ] FIDO2 key registered (stored separately from password)
+- [ ] Object IDs documented in `infrastructure.yml` under `identity.break_glass_account_ids`
+- [ ] Excluded from CA001, CA002, CA003 by object ID
+- [ ] Alert configured: trigger on any sign-in from either account
+- [ ] Access review procedure documented (test annually)
+
+---
+
+## Validation
+
+### Verify PIM
+
+```powershell
+Connect-MgGraph -Scopes "RoleManagement.Read.Directory", "PrivilegedAccess.Read.AzureResources"
+
+# List eligible assignments
+Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All |
+ Select-Object PrincipalId, RoleDefinitionId, Status, StartDateTime, EndDateTime |
+ Format-Table -AutoSize
+```
+
+**Expected**: Deployment team members appear as eligible for Contributor and/or Global Administrator with `Status = Provisioned`.
+
+### Verify Conditional Access
+
+```powershell
+Connect-MgGraph -Scopes "Policy.Read.ConditionalAccess"
+
+Get-MgIdentityConditionalAccessPolicy -All |
+ Where-Object { $_.DisplayName -match "^CA0" } |
+ Select-Object DisplayName, State |
+ Format-Table -AutoSize
+```
+
+**Expected**:
+
+| DisplayName | State |
+|-------------|-------|
+| CA001-Require-MFA-AzureManagement | enabledForReportingButNotEnforced |
+| CA002-Block-LegacyAuth | enabledForReportingButNotEnforced |
+| CA003-Require-MFA-PrivilegedRoles | enabledForReportingButNotEnforced |
+
+---
+
+## Troubleshooting
+
+| Issue | Probable Cause | Resolution |
+|-------|---------------|------------|
+| PIM activation fails — MFA prompt not appearing | User not MFA-registered | Register user for MFA via Entra ID → Security → MFA |
+| PIM activation fails — approval timeout | No approvers configured or approvers unavailable | Check approver list in PIM role settings; add secondary approvers |
+| CA policy blocks break-glass account | Account not excluded by object ID | Edit policy — exclude by object ID, not by group or UPN |
+| Legacy auth policy blocks service accounts | Service account using basic auth | Exclude specific service accounts or use modern auth alternative |
+| Graph API `403 Forbidden` when creating CA policies | Missing `Policy.ReadWrite.ConditionalAccess` scope | Re-connect with correct scopes |
+
+---
+
+## Phase Exit Criteria
+
+Complete this checklist before proceeding to on-premises readiness:
+
+- [ ] PIM enabled on Azure subscription(s) — Owner, Contributor, UAA configured
+- [ ] PIM enabled for Entra ID roles — Global Administrator, Security Administrator configured
+- [ ] Eligible assignments created for deployment team
+- [ ] Two break-glass accounts created, documented, and tested
+- [ ] CA001, CA002, CA003 created in Report-Only mode
+- [ ] Sign-in logs reviewed — no unexpected impact identified
+- [ ] CA policies promoted to **On** (after 24–48 hour review period)
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 04: Azure Management Infrastructure](../phase-04-azure-management-infrastructure/index.mdx) | [Phase 05 Index](./index.mdx) | [Phase 01: Active Directory](../../03-onprem-readiness/phase-01-active-directory/index.mdx) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, pim, conditional-access, identity, entra-id, security
+- Keywords: PIM, Privileged Identity Management, Conditional Access, Entra ID, MFA, just-in-time, break-glass, JIT
+- Author: Azure Local Cloudnology Team

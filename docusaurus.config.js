@@ -43,6 +43,7 @@ const config = {
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
+          numberPrefixParser: false,
           sidebarPath: './sidebars.js',
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
@@ -118,6 +119,10 @@ const config = {
                   {
                     label: 'VM Conversion Toolkit',
                     href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
+                  },
+                  {
+                    label: 'Toolkit',
+                    href: 'https://azurelocal.github.io/azurelocal-toolkit/',
                   },
                 ],
           },
@@ -195,6 +200,10 @@ const config = {
               {
                 label: 'VM Conversion Toolkit',
                 href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
+              },
+              {
+                label: 'Toolkit',
+                href: 'https://azurelocal.github.io/azurelocal-toolkit/',
               },
             ],
           },

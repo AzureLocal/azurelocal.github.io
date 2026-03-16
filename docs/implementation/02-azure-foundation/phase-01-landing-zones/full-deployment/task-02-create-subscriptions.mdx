@@ -1,0 +1,153 @@
+---
+title: "Task 02: Create Subscriptions"
+sidebar_label: "Task 02: Subscriptions"
+sidebar_position: 2
+description: "Create dedicated subscriptions for the full CAF/WAF deployment and associate them with management groups."
+category: "RUNBOOK"
+scope: "Full CAF/WAF subscription provisioning"
+purpose: "Create and associate dedicated subscriptions with management groups"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - phase-01
+ - subscriptions
+ - full-deployment
+keywords:
+ - subscriptions
+ - management group association
+ - billing isolation
+status: "approved"
+---
+
+# Task 02: Create Subscriptions
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Full CAF/WAF subscription provisioning 
+> **PURPOSE**: Create and associate dedicated subscriptions with management groups 
+> **MASTER REFERENCE**: [Microsoft Learn — Subscriptions](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/create-subscription)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Provision dedicated Azure subscriptions and associate each with its corresponding management group. The full CAF/WAF deployment uses separate subscriptions for platform services and landing zones, providing maximum billing isolation, RBAC boundaries, and governance flexibility.
+
+:::note Subscription Creation Limitation
+Azure subscriptions cannot be created programmatically via scripts. Subscriptions must be created through the EA Portal, Microsoft Customer Agreement portal, CSP Partner Portal, or by contacting Microsoft. This task is performed by the CSP — it is not an engineer-executed runbook step.
+:::
+
+### What This Accomplishes
+
+- **Billing isolation** — separate cost tracking per platform function and landing zone
+- **Access control** — subscription-level RBAC boundaries
+- **Resource organization** — dedicated containers aligned with management group hierarchy
+- **Governance scope** — policy and compliance boundaries per subscription
+
+## Prerequisites
+
+| Prerequisite | Detail |
+|---|---|
+| **Management Groups** | Full hierarchy deployed ([Task 01](./task-01-configure-management-groups)) |
+| **Subscription Quota** | Available subscription quota in the tenant |
+| **EA / MCA / CSP Access** | Enterprise Agreement, Microsoft Customer Agreement enrollment, or CSP partner access |
+
+## Subscription Architecture
+
+Each leaf-level management group hosts a dedicated subscription:
+
+### Subscription Mapping (IIC Example)
+
+| Management Group | Subscription Name | Config Path | Purpose |
+|---|---|---|---|
+| `cmp-platform-identity-iic` | `iic-platform-identity-001` | `azure.subscriptions.platform_identity.name` | Entra ID Connect, identity services |
+| `cmp-platform-management-iic` | `iic-platform-management-001` | `azure.subscriptions.platform_management.name` | Azure Monitor, Log Analytics, Automation |
+| `cmp-platform-connectivity-iic` | `iic-platform-connectivity-001` | `azure.subscriptions.platform_connectivity.name` | Hub VNet, VPN, ExpressRoute |
+| `cmp-lz-corp-iic` | `iic-lz-azurelocal-corp-001` | `azure.subscriptions.lz_corp.name` | Azure Local clusters (corporate) |
+| `cmp-lz-online-iic` | `iic-lz-azurelocal-online-001` | `azure.subscriptions.lz_online.name` | Internet-facing workloads |
+
+### Target Structure
+
+```
+cmp-iic-root ← root MG (already exists)
+├── cmp-platform-iic
+│ ├── cmp-platform-identity-iic
+│ │ └── iic-platform-identity-001 ← subscription
+│ ├── cmp-platform-management-iic
+│ │ └── iic-platform-management-001 ← subscription
+│ └── cmp-platform-connectivity-iic
+│ └── iic-platform-connectivity-001 ← subscription
+├── cmp-landing-zones-iic
+│ ├── cmp-lz-corp-iic
+│ │ └── iic-lz-azurelocal-corp-001 ← subscription
+│ └── cmp-lz-online-iic
+│ └── iic-lz-azurelocal-online-001 ← subscription
+├── cmp-sandbox-iic (no subscription yet)
+└── cmp-decommissioned-iic (no subscription yet)
+```
+
+## Association with Management Groups
+
+After subscriptions are created (by the CSP or customer), each must be placed under the correct management group.
+
+1. Navigate to **Azure Portal → Management groups**
+2. For each subscription in the mapping table above:
+ - Select the target management group
+ - Click **Add subscription**
+ - Select the subscription → **Save**
+3. Repeat until all subscriptions are associated
+
+:::tip Batch Association
+If multiple subscriptions are ready at once, work through the mapping table top-to-bottom. Verify each association before moving to the next.
+:::
+
+## Validation
+
+- [ ] All subscriptions exist with names from `infrastructure.yml`
+- [ ] Each subscription is associated with the correct management group per the mapping table
+- [ ] Subscriptions are visible under their respective MGs in the Azure Portal
+- [ ] Engineer has Owner or Contributor access to all subscriptions
+
+## Troubleshooting
+
+| Symptom | Error | Resolution |
+|---------|-------|------------|
+| Subscription not visible | Not listed in portal | Verify the subscription is in the correct tenant — check with CSP |
+| Cannot associate with MG | `AuthorizationFailed` | Verify Management Group Contributor role on the target MG |
+| Subscription under wrong MG | Shows under root or Tenant Root Group | Move the subscription: Management groups → select sub → **Move** → select correct MG |
+| Subscription quota exceeded | `SubscriptionLimitReached` | Request quota increase from Microsoft support |
+
+## Next Steps
+
+Proceed to [Task 03: Create Resource Groups](./task-03-create-resource-groups)
+
+## References
+
+- [Microsoft Learn — Create Subscriptions](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/create-subscription)
+- [Microsoft Learn — Move Subscriptions Between Management Groups](https://learn.microsoft.com/en-us/azure/governance/management-groups/manage)
+- [Microsoft Learn — EA Portal](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/ea-portal-get-started)
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01 — Management Groups](./task-01-configure-management-groups.mdx) | [Full Deployment Overview](./index.mdx) | [Task 03 — Create Resource Groups](./task-03-create-resource-groups.mdx) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, phase-01, subscriptions, full-deployment
+- Keywords: subscriptions, management group association, billing isolation
+- Author: Azure Local Cloudnology Team

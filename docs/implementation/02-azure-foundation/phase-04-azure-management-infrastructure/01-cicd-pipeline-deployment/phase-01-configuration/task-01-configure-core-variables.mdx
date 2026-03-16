@@ -1,0 +1,176 @@
+---
+title: "Task 01: Configure Core Variables"
+sidebar_position: 1
+description: "Define customer identification and CI/CD Infrastructure integration variables"
+---
+
+# Task 01: Configure Core Variables
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-green?style=flat-square)](../../index.mdx)
+[![Terraform](https://img.shields.io/badge/Tool-Terraform-purple?style=flat-square&logo=terraform)](https://terraform.io)
+
+> **DOCUMENT CATEGORY**: Task 
+> **SCOPE**: Core Terraform variable configuration 
+> **PURPOSE**: Define customer identification and CI/CD integration 
+> **MASTER REFERENCE**: [tf-module-azr-local Variables](https://github.com/AzureLocal/tf-module-azr-local/azurerm/-/blob/main/variables.tf)
+
+**Status**: Active 
+**Last Updated**: 2026-02-07
+
+---
+
+## Objective
+
+Configure the core Terraform variables required for all CI/CD deployments, including customer identification, environment details, and CI/CD Infrastructure integration.
+
+---
+
+## Prerequisites
+
+- [ ] Customer CRM ID (from ServiceNow)
+- [ ] Azure tenant ID
+- [ ] Azure subscription ID
+- [ ] CI/CD Infrastructure runner principal ID (from [Part 2: CI/CD Infrastructure](../../../../01-cicd-infra/))
+- [ ] Azure Local Cloud Entra ID group object ID (from [Part 2: CI/CD Infrastructure](../../../../01-cicd-infra/))
+
+---
+
+## Procedure
+
+### 1. Open Terraform Variables File
+
+Navigate to your source control project and open the Terraform variables file:
+
+```bash
+# Typically located at:
+terraform/environments/<environment>/terraform.tfvars
+# or
+terraform.tfvars
+```
+
+### 2. Configure Customer Identification
+
+Add the core customer variables:
+
+```hcl
+# Customer Identification
+customer_id = "cid1234" # CRM Customer ID from ServiceNow
+environment = "prd" # Environment: prd, dev, stg (max 3 chars)
+location = "eastus" # Azure region (eastus, westus, centralus, etc.)
+tenant_id = "12345678-1234-1234-1234-123456789012" # Customer Azure tenant ID
+```
+
+### 3. Configure CI/CD Infrastructure Integration
+
+Add the CI/CD Infrastructure variables from Part 2:
+
+```hcl
+# CI/CD Infrastructure (from Part 2)
+Azure Local Cloud_cicd = {
+ runner_principal_id = "87654321-4321-4321-4321-210987654321" # CI/CD runner service principal
+}
+
+# Azure Local Cloud Entra ID Group (from Part 2)
+Azure Local Cloud_group_object_id = "abcdef12-3456-7890-abcd-ef1234567890" # Azure Local Cloud management group
+```
+
+### 4. Add Optional Tags (Recommended)
+
+```hcl
+# Optional: Resource tags
+tags = {
+ Customer = "Customer Name"
+ Environment = "Production"
+ ManagedBy = "Azure Local Cloud CI/CD"
+ CostCenter = "IT Infrastructure"
+}
+```
+
+---
+
+## Variable Reference
+
+| Variable | Type | Description | Required | Example |
+|----------|------|-------------|----------|---------|
+| `customer_id` | string | CRM Customer ID from ServiceNow | ✅ | `"cid1234"` |
+| `environment` | string | Environment identifier (max 3 chars) | ✅ | `"prd"`, `"dev"`, `"stg"` |
+| `location` | string | Azure region for resource deployment | ✅ | `"eastus"`, `"westus"` |
+| `tenant_id` | string | Customer Azure tenant ID (GUID) | ✅ | `"12345678-1234-..."` |
+| `Azure Local Cloud_cicd.runner_principal_id` | string | CI/CD runner service principal ID | ✅ | `"87654321-4321-..."` |
+| `Azure Local Cloud_group_object_id` | string | Azure Local Cloud Entra ID group object ID | ✅ | `"abcdef12-3456-..."` |
+| `tags` | map(string) | Optional resource tags | ❌ | `{ Customer = "..." }` |
+
+---
+
+## Validation
+
+After configuration, verify:
+
+- [ ] Customer ID matches ServiceNow CRM record
+- [ ] Environment code is valid (3 characters maximum)
+- [ ] Azure region is correct and available
+- [ ] Tenant ID is correct customer tenant GUID
+- [ ] Runner principal ID matches CI/CD pipeline service principal from Part 2
+- [ ] Azure Local Cloud group object ID matches Entra ID group from Part 2
+- [ ] No syntax errors in HCL configuration
+
+---
+
+## Example Complete Configuration
+
+```hcl
+# terraform.tfvars
+
+# Customer Identification
+customer_id = "cid5678"
+environment = "prd"
+location = "eastus"
+tenant_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+# CI/CD Infrastructure
+Azure Local Cloud_cicd = {
+ runner_principal_id = "11223344-5566-7788-99aa-bbccddeeff00"
+}
+
+# Azure Local Cloud Entra ID Group
+Azure Local Cloud_group_object_id = "ffeeddcc-bbaa-9988-7766-554433221100"
+
+# Optional Tags
+tags = {
+ Customer = "Acme Corporation"
+ Environment = "Production"
+ ManagedBy = "Azure Local Cloud CI/CD"
+ CostCenter = "IT-Infrastructure"
+ Project = "Azure Local Deployment"
+}
+```
+
+---
+
+## Troubleshooting
+
+**Issue**: Invalid customer_id format 
+**Solution**: Verify customer ID format with ServiceNow CRM system
+
+**Issue**: Invalid environment value 
+**Solution**: Environment must be 3 characters or less: `prd`, `dev`, `stg`, `qa`, etc.
+
+**Issue**: Azure region not available 
+**Solution**: Verify region name with `az account list-locations -o table`
+
+**Issue**: Cannot find runner principal ID 
+**Solution**: Check Part 2 CI/CD Infrastructure deployment outputs or CI/CD pipeline variables
+
+---
+
+## Next Steps
+
+Proceed to [Task 02 - Configure Management Mode](./task-02-configure-management-mode.mdx) to define network configuration.
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 01 - Configuration](./index.mdx) | [Phase 01 - Configuration](./index.mdx) | [Task 02 - Management Mode](./task-02-configure-management-mode.mdx) |

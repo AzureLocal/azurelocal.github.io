@@ -1,0 +1,1672 @@
+---
+title: "Naming Standards"
+sidebar_label: "Naming Standards"
+sidebar_position: 3
+description: "Microsoft CAF-aligned naming conventions for Azure Local deployments"
+---
+
+# Naming Standards
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Azure resource naming conventions 
+> **PURPOSE**: Establish consistent naming patterns aligned with Microsoft CAF 
+> **MASTER REFERENCE**: [Microsoft CAF Naming](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming)
+
+**Status**: Active
+
+---
+
+Naming conventions are established during discovery workshops with customers to ensure consistency across all Azure Local Anywhere infrastructure components. Azure Local Cloud follows **Microsoft Cloud Adoption Framework (CAF)** naming standards aligned with Azure best practices and the Azure Local Cloud Master Variable Registry.
+
+## Overview
+
+During customer discovery sessions and environment design, these standards serve as **suggested best practices** based on:
+
+- **Microsoft Cloud Adoption Framework (CAF)** - Industry-proven Azure naming patterns
+- **Microsoft Well-Architected Framework (WAF)** - Operational excellence and reliability principles
+- **Azure Best Practices** - Microsoft-recommended resource naming conventions
+- **Azure Local Cloud Azure Local Cloudnology Standards** - Internal consistency and automation enablement
+
+:::warning Customer Standards Take Precedence
+**These naming standards are recommendations, not mandates.** If a customer has established naming conventions, identity standards, or organizational requirements, those must be followed. Use this document as a reference during discovery to understand customer standards, identify gaps or conflicts, and propose alternatives only when customer standards cause technical limitations (e.g., exceeding character limits).
+:::
+
+**When to apply Azure Local Cloud standards:**
+- Customer has no existing naming standards
+- Customer explicitly requests Azure Local Cloud recommendations
+- Internal Azure Local Cloud labs, demos, and POC environments
+
+**When to follow customer standards:**
+- Customer has documented naming conventions
+- Customer IT governance requires specific patterns
+- Integration with existing customer infrastructure
+
+### Discovery Workshop Objectives
+
+During discovery, deployment teams work with customers to establish naming standards that will be used throughout the implementation. These standards:
+
+- Follow Microsoft CAF/WAF best practices
+- Align with Azure Local Cloud Master Variable Registry
+- Cover on-premises infrastructure (cluster nodes, management servers)
+- Cover Azure resources (resource groups, virtual networks, storage accounts)
+- Support automation via variable substitution (`infrastructure.yml`)
+- Ensure technical compliance with platform limits (NetBIOS 15-char, Azure resource limits, etc.)
+
+:::tip Microsoft CAF Reference
+This document follows [Azure Cloud Adoption Framework - Resource Naming Best Practices](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming)
+:::
+
+## Microsoft CAF Naming Pattern
+
+Azure Local Cloud follows Microsoft-recommended naming patterns for Azure resources. **Note**: Different resource types follow different patterns based on their specific requirements and constraints.
+
+**General Pattern for Most Resources**:
+```
+<resource-type>-<workload>-<environment>-<region>-<instance>
+```
+
+**Special Patterns**:
+- **Storage Accounts**: `st<workload><environment><region><instance>` (no hyphens, lowercase only)
+- **Management Groups**: ID pattern `{prefix}-{purpose}-{tenant}` with separate Display Name
+- **Subnets**: `snet-<purpose>-<environment>` (no region for consistency)
+
+**Pattern Components**:
+- **resource-type**: Microsoft abbreviation (rg, vnet, kv, st, etc.)
+- **workload**: Application or service name (azurelocal, azlocal, or customer-specific)
+- **environment**: prod, dev, test, staging, dr
+- **region**: Azure region code (eastus, westus, etc.)
+- **instance**: Sequential number (001, 002, etc.) or purpose identifier
+
+**Variable Substitution** (for automation):
+```
+<resource-type>-<workload>-{{environment}}-{{azure_region}}-{{instance}}
+```
+
+**Note**: Always check the specific resource section below for exact patterns, as some resources deviate from the general pattern due to Azure constraints.
+
+---
+
+## 1. On-Premises Infrastructure
+
+This section covers all physical and on-premises resources deployed at customer sites.
+
+### 1.1 Azure Local Cluster
+
+#### Cluster Nodes
+
+**Pattern**: `<site>-<cluster#>-N<node#>` (⚠️ Strict 15-char NetBIOS limit for Active Directory)
+
+**Examples**:
+- Node 1: `ral-01-n01`
+- Node 2: `ral-01-n02`
+
+:::warning NetBIOS Limit
+Azure Local nodes must be domain-joined and follow the 15-character NetBIOS limit for Active Directory computer objects. The simplified N pattern provides maximum flexibility for site codes while maintaining clear identification as cluster nodes.
+:::
+
+#### Cluster Name
+
+**Pattern**: `<site>-clus<nn>` (⚠️ Strict 15-char NetBIOS limit for CNO)
+
+**Examples**:
+- Cluster 1: `ral-clus01`
+
+:::warning Cluster Name Object (CNO) Limit
+Windows Server Failover Cluster Name Object (CNO) is limited to 15 characters due to Active Directory NetBIOS requirements. The cluster name must be unique in the Active Directory domain.
+:::
+
+### 1.2 Management Infrastructure
+
+**Pattern**: `<site>-<type>-<nn>` (⚠️ 15-char limit for domain-joined servers)
+
+**Examples**:
+- Domain Controllers: `ral-dc-01`, `ral-dc-02` (9 chars)
+- Certificate Authority: `ral-ca-01` (9 chars)
+- WAC Gateway: `ral-wac-01` (10 chars)
+- Tools/Jumpbox Server: `ral-tools` (9 chars)
+
+**Variable Mapping**:
+```yaml
+azure_vms:
+ domain_controllers:
+ - hostname: "{{site_code}}-DC-01"
+ - hostname: "{{site_code}}-DC-02"
+ jumpbox:
+ hostname: "{{site_code}}-TOOLS"
+ wac:
+ hostname: "{{site_code}}-WAC-01"
+```
+
+:::warning Windows Server Naming
+All Windows servers that will be domain-joined must follow the 15-character NetBIOS limit. Keep site codes short (2-5 chars) to accommodate role identifiers.
+:::
+
+### 1.3 Storage
+
+#### Cluster Shared Volumes (CSV)
+
+**Pattern**: `csv-<cluster>-<mirror>-<purpose>-<env>-<##>`
+
+- **cluster**: Cluster name/number (e.g., clu01, clus01)
+- **mirror**: M2 (two-way), M3 (three-way)
+- **purpose**: vmstore, imgstore, backup, etc.
+- **env**: prd, dev, test, etc.
+- **##**: Sequence number
+
+**Examples:**
+- `csv-clu01-m3-vmstore-prd-01` (Three-way mirror, production VM storage)
+- `csv-clu01-m2-vmstore-prd-02` (Two-way mirror, production VM storage)
+- `csv-clus01-m2-imgstore-prd-05` (Two-way mirror, production image store)
+
+**Variable Mapping:**
+```yaml
+cluster_shared_volumes:
+ vmstore_1: "csv-clu01-m3-vmstore-prd-01"
+ vmstore_2: "csv-clu01-m2-vmstore-prd-02"
+ imgstore: "csv-clus01-m2-imgstore-prd-05"
+```
+
+:::warning CSV Naming Constraints
+- Must be unique within the cluster
+- Use clear, automation-friendly names
+- Created during Azure Local deployment or via `New-Volume` cmdlet
+- Must be accessible by all cluster nodes for high availability
+- Avoid reserved names like `Infrastructure_1`
+:::
+
+#### Azure Local Storage Paths
+
+**Pattern:** `sp-<cluster>-<mirror>-<purpose>-<env>-<##>`
+
+- Closely matches the associated CSV name for clarity and automation.
+- Example: For `csv-clu01-m3-vmstore-prd-01`, use `sp-clu01-m3-vmstore-prd-01` as the storage path name.
+
+**Examples:**
+- `sp-clu01-m3-vmstore-prd-01` (Storage path for three-way mirror, production VM storage)
+- `sp-clu01-m2-vmstore-prd-02` (Storage path for two-way mirror, production VM storage)
+- `sp-clus01-m2-imgstore-prd-05` (Storage path for two-way mirror, production image store)
+
+**Variable Mapping:**
+```yaml
+azure_local_storage_paths:
+ vmstore_1: "sp-clu01-m3-vmstore-prd-01"
+ vmstore_2: "sp-clu01-m2-vmstore-prd-02"
+ imgstore: "sp-clus01-m2-imgstore-prd-05"
+```
+
+**CSV to Storage Path Mapping Table:**
+
+| **CSV Name** | **Storage Path Name** | **Purpose** |
+|-----------------------------|-------------------------------|----------------------------|
+| csv-clu01-m3-vmstore-prd-01 | sp-clu01-m3-vmstore-prd-01 | Production VM storage |
+| csv-clu01-m2-vmstore-prd-02 | sp-clu01-m2-vmstore-prd-02 | Production VM storage |
+| csv-clus01-m2-imgstore-prd-05 | sp-clus01-m2-imgstore-prd-05 | Production image store |
+
+:::warning Azure Local Storage Path Requirements
+- **Resource Type**: `microsoft.azurestackhci/storagecontainers`
+- **Purpose**: Maps Azure resource to a specific CSV path (e.g., `C:\ClusterStorage\csv-clu01-m3-vmstore-prd-01`)
+- **High Availability**: Must use CSV volumes accessible by all cluster nodes
+- **Creation**: Use `az stack-hci-vm storagepath create` command
+- **Do NOT use**: `Infrastructure_1` volume (reserved for Azure Local components)
+:::
+
+### 1.4 Azure Local Resources
+
+These are Azure resources that are specific to Azure Local cluster management.
+
+#### Arc Custom Location
+
+**CAF Pattern**: `cl-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `cl-azlocal-prod-eus-001` (Production custom location)
+- `cl-azlocal-dev-eus-001` (Development custom location)
+
+**Variable Mapping**:
+```yaml
+azure_arc:
+ custom_location_name: "cl-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+:::info Arc Custom Location
+The Arc Custom Location is a key Azure resource that maps your Azure Local cluster to Azure Arc, enabling Azure management of on-premises resources. The Arc Resource Bridge (`arb-*`) is created during deployment, but the Custom Location name should follow your naming standards.
+:::
+
+#### Logical Networks
+
+**Pattern**: `lnet-<purpose>-<environment>-<region>`
+
+**Examples**:
+- `lnet-management-prod-eus` (Management logical network)
+- `lnet-compute-prod-eus` (Compute/VM logical network)
+- `lnet-storage-prod-eus` (Storage logical network)
+- `lnet-vmworkload-prod-eus` (VM workload logical network)
+
+**Variable Mapping**:
+```yaml
+logical_networks:
+ management: "lnet-management-{{environment}}-{{region}}"
+ compute: "lnet-compute-{{environment}}-{{region}}"
+ storage: "lnet-storage-{{environment}}-{{region}}"
+ vmworkload: "lnet-vmworkload-{{environment}}-{{region}}"
+```
+
+:::info Logical Networks
+Logical networks in Azure Local define the network configuration for VMs and services. They map to physical network infrastructure (VLANs, subnets) and are created during cluster deployment.
+:::
+
+#### VM Images (Gallery Images)
+
+**Pattern**: `img-<os>-<version>-<environment>`
+
+**Examples**:
+- `img-ws2022-dc-prod` (Windows Server 2022 Datacenter, Production)
+- `img-ws2025-dc-prod` (Windows Server 2025 Datacenter, Production)
+- `img-ubuntu2204-lts-prod` (Ubuntu 22.04 LTS, Production)
+- `img-ws2022-dc-dev` (Windows Server 2022 Datacenter, Development)
+
+**Variable Mapping**:
+```yaml
+vm_images:
+ windows_server_2022: "img-ws2022-dc-{{environment}}"
+ windows_server_2025: "img-ws2025-dc-{{environment}}"
+ ubuntu_2204: "img-ubuntu2204-lts-{{environment}}"
+```
+
+:::info Azure Local VM Images
+VM images are stored in the Azure Local cluster gallery and used for VM provisioning. Images can be downloaded from Azure Marketplace or uploaded from custom sources.
+:::
+
+### 1.5 Hardware & Physical Infrastructure
+
+#### iDRAC/BMC Hostnames
+
+**Pattern**: `<node>-i`
+
+**Examples**:
+- `ral-01-n01-i` (Node 1 iDRAC)
+- `ral-01-n02-i` (Node 2 iDRAC)
+- `ral-01-n03-i` (Node 3 iDRAC)
+- `ral-01-n04-i` (Node 4 iDRAC)
+
+**Variable Mapping**:
+```yaml
+hardware:
+ node_idrac: "{{node_hostname}}-i"
+```
+
+:::info BMC/iDRAC Naming
+The `-i` suffix indicates the iDRAC/BMC interface for out-of-band management. This allows easy correlation between the node hostname and its management interface.
+:::
+
+#### Top-of-Rack (ToR) Switches
+
+**Pattern**: `<site>-sw-<##>`
+
+**Examples**:
+- `ral-sw-01` (Rack switch 1)
+- `ral-sw-02` (Rack switch 2)
+- `ATL-sw-01` (Atlanta site switch 1)
+
+**Variable Mapping**:
+```yaml
+network_devices:
+ tor_switch: "{{site_code}}-sw-{{instance}}"
+```
+
+#### Firewalls
+
+**Pattern**: `<site>-fw-<##>`
+
+**Examples**:
+- `RAL-fw-01` (Primary firewall)
+- `RAL-fw-02` (Secondary firewall)
+- `ATL-fw-01` (Atlanta site firewall)
+
+**Variable Mapping**:
+```yaml
+network_devices:
+ firewall: "{{site_code}}-fw-{{instance}}"
+```
+
+#### Opengear Console Servers
+
+**Pattern**: `<site>-og-<##>`
+
+**Examples**:
+- `RAL-og-01` (Opengear console server 1)
+- `RAL-og-02` (Opengear console server 2)
+- `ATL-og-01` (Atlanta site Opengear)
+
+**Variable Mapping**:
+```yaml
+network_devices:
+ opengear: "{{site_code}}-og-{{instance}}"
+```
+
+#### PDUs (Power Distribution Units)
+
+**Pattern**: `<site>-pdu-<##>`
+
+**Examples**:
+- `RAL-pdu-01` (PDU 1)
+- `RAL-pdu-02` (PDU 2)
+- `RAL-pdu-03` (PDU 3)
+- `RAL-pdu-04` (PDU 4)
+
+**Variable Mapping**:
+```yaml
+hardware:
+ pdu: "{{site_code}}-pdu-{{instance}}"
+```
+
+:::info Hardware Naming
+All hardware devices follow a consistent pattern: `<site>-<type>-<##>`. This ensures easy identification and correlation across physical infrastructure.
+:::
+
+---
+
+## 2. Azure Cloud Resources
+
+This section covers all Azure cloud resources following CAF naming standards.
+
+### 2.1 Core Resources
+
+#### Management Groups
+
+Management groups have **two distinct identifiers** that serve different purposes:
+
+| **Identifier** | **Purpose** | **Constraints** | **Editable** |
+|----------------|-------------|-----------------|--------------|
+| **ID (Name)** | Unique identifier for API/automation | 1-90 chars, alphanumeric, hyphens, underscores, periods, parentheses | **No** (immutable after creation) |
+| **Display Name** | Human-readable label in Azure Portal | 1-90 chars, any characters | **Yes** |
+
+:::tip Microsoft CAF Guidance
+"Provide a globally unique identifier (GUID) for the management group ID. Display names are editable and should represent the platform function or workload types within them."
+:::
+
+---
+
+##### Management Group ID
+
+**Pattern**: `{prefix}-{purpose}-{tenant}`
+
+| **Component** | **Description** | **Examples** |
+|---------------|-----------------|--------------|
+| `prefix` | Organization short code (chosen by org) | `tp`, `cid001`, `contoso` |
+| `purpose` | Functional role in hierarchy | `root`, `platform`, `platform-identity`, `landing-zones` |
+| `tenant` | Tenant/environment short code | `prod`, `dev`, `staging` |
+
+:::info Prefix is Organization-Specific
+The `{prefix}` is whatever the organization chooses — there is no universal default. Azure Local Cloud uses `tp` internally. Customer deployments use the customer ID (e.g., `cid001`). The prefix must be consistent across all management groups in a tenant.
+:::
+
+---
+
+##### Management Group Display Name
+
+**Pattern**: `{Organization} {Purpose}` or `{Tenant} {Purpose}`
+
+**Display Name Examples**:
+- `Azure Local Cloud Root`
+- `Azure Local Cloud Platform`
+- `Azure Local Cloud Platform - Identity`
+- `Azure Local Cloud Platform - Security`
+- `Azure Local Cloud Platform - Connectivity`
+- `Azure Local Cloud Platform - Management`
+- `Azure Local Cloud Landing Zones`
+- `Azure Local Cloud Sandbox`
+- `Azure Local Cloud Decommissioned`
+
+---
+
+##### Deployment Models
+
+Azure Local deployments support two management group models depending on complexity and governance requirements.
+
+###### Model A — Single Subscription / Single Management Group
+
+For smaller or customer deployments that don't require full Azure Landing Zone governance. One root management group with a single subscription.
+
+```text
+Tenant Root Group
+└── {prefix}-{tenant}-root (e.g., cid001-prod-root)
+ └── sub-{org}-azurelocal-{site} (e.g., sub-cid001-azurelocal-ral)
+```
+
+**Customer Example** (Customer ID: `cid001`, Tenant: `prod`):
+
+| **Resource** | **ID / Name** | **Display Name** |
+|-------------|---------------|-------------------|
+| Management Group | `cid001-prod-root` | `CID001 Root` |
+| Subscription | `sub-cid001-azurelocal-ral` | — |
+
+:::tip When to Use Model A
+- Customer has a single Azure Local cluster
+- No requirement for separate platform subscriptions
+- Simplified governance and RBAC
+- Quick deployments and POC environments
+:::
+
+###### Model B — Full Azure Landing Zone
+
+For enterprise deployments requiring full CAF governance with separated platform services and workload landing zones.
+
+```text
+Tenant Root Group
+└── {prefix}-{tenant}-root
+ ├── {prefix}-platform-{tenant}
+ │ ├── {prefix}-platform-identity-{tenant}
+ │ ├── {prefix}-platform-security-{tenant}
+ │ ├── {prefix}-platform-connectivity-{tenant}
+ │ └── {prefix}-platform-management-{tenant}
+ ├── {prefix}-landing-zones-{tenant}
+ ├── {prefix}-sandbox-{tenant}
+ └── {prefix}-decommissioned-{tenant}
+```
+
+**Azure Local Cloud Internal Example** (Prefix: `tp`, Tenant: `prod`):
+
+```text
+Tenant Root Group
+└── azl-prod-root Azure Local Cloud Root
+ ├── azl-platform-prod Azure Local Cloud Platform
+ │ ├── azl-platform-identity-prod Azure Local Cloud Platform - Identity
+ │ ├── azl-platform-security-prod Azure Local Cloud Platform - Security
+ │ ├── azl-platform-connectivity-prod Azure Local Cloud Platform - Connectivity
+ │ └── azl-platform-management-prod Azure Local Cloud Platform - Management
+ ├── azl-landing-zones-prod Azure Local Cloud Landing Zones
+ ├── azl-sandbox-prod Azure Local Cloud Sandbox
+ └── azl-decommissioned-prod Azure Local Cloud Decommissioned
+```
+
+**Customer Example** (Prefix: `cid001`, Tenant: `prod`):
+
+```text
+Tenant Root Group
+└── cid001-prod-root CID001 Root
+ ├── cid001-platform-prod CID001 Platform
+ │ ├── cid001-platform-identity-prod CID001 Platform - Identity
+ │ ├── cid001-platform-security-prod CID001 Platform - Security
+ │ ├── cid001-platform-connectivity-prod CID001 Platform - Connectivity
+ │ └── cid001-platform-management-prod CID001 Platform - Management
+ ├── cid001-landing-zones-prod CID001 Landing Zones
+ ├── cid001-sandbox-prod CID001 Sandbox
+ └── cid001-decommissioned-prod CID001 Decommissioned
+```
+
+:::tip When to Use Model B
+- Enterprise customers with multiple workloads
+- Regulatory/compliance requirements for separated governance
+- Multiple subscriptions for identity, security, connectivity, management
+- Full CAF Enterprise-Scale alignment required
+:::
+
+---
+
+##### Variable Mapping
+
+```yaml
+management_groups:
+ # Management Group IDs (immutable - set at creation)
+ mgtgrp_root_id: "{{org_prefix}}-{{tenant}}-root"
+ mgtgrp_platform_id: "{{org_prefix}}-platform-{{tenant}}"
+ mgtgrp_platform_identity_id: "{{org_prefix}}-platform-identity-{{tenant}}"
+ mgtgrp_platform_security_id: "{{org_prefix}}-platform-security-{{tenant}}"
+ mgtgrp_platform_connectivity_id: "{{org_prefix}}-platform-connectivity-{{tenant}}"
+ mgtgrp_platform_management_id: "{{org_prefix}}-platform-management-{{tenant}}"
+ mgtgrp_landing_zones_id: "{{org_prefix}}-landing-zones-{{tenant}}"
+ mgtgrp_sandbox_id: "{{org_prefix}}-sandbox-{{tenant}}"
+ mgtgrp_decommissioned_id: "{{org_prefix}}-decommissioned-{{tenant}}"
+ 
+ # Display Names (human-readable, editable)
+ mgtgrp_root_display: "{{organization}} Root"
+ mgtgrp_platform_display: "{{organization}} Platform"
+ mgtgrp_platform_identity_display: "{{organization}} Platform - Identity"
+ mgtgrp_platform_security_display: "{{organization}} Platform - Security"
+ mgtgrp_platform_connectivity_display: "{{organization}} Platform - Connectivity"
+ mgtgrp_platform_management_display: "{{organization}} Platform - Management"
+ mgtgrp_landing_zones_display: "{{organization}} Landing Zones"
+ mgtgrp_sandbox_display: "{{organization}} Sandbox"
+ mgtgrp_decommissioned_display: "{{organization}} Decommissioned"
+```
+
+---
+
+##### Hierarchy Pattern
+
+| **Level** | **ID Pattern** | **Display Name** | **Purpose** |
+|-----------|----------------|------------------|-------------|
+| Root | `{prefix}-{tenant}-root` | `{Org} Root` | Top-level governance container |
+| Platform (Parent) | `{prefix}-platform-{tenant}` | `{Org} Platform` | Shared platform services |
+| Platform - Identity | `{prefix}-platform-identity-{tenant}` | `{Org} Platform - Identity` | Identity services (AD, Entra) |
+| Platform - Security | `{prefix}-platform-security-{tenant}` | `{Org} Platform - Security` | Security services |
+| Platform - Connectivity | `{prefix}-platform-connectivity-{tenant}` | `{Org} Platform - Connectivity` | Network connectivity |
+| Platform - Management | `{prefix}-platform-management-{tenant}` | `{Org} Platform - Management` | Management services |
+| Landing Zones | `{prefix}-landing-zones-{tenant}` | `{Org} Landing Zones` | Workload landing zones |
+| Sandbox | `{prefix}-sandbox-{tenant}` | `{Org} Sandbox` | Testing/experimentation |
+| Decommissioned | `{prefix}-decommissioned-{tenant}` | `{Org} Decommissioned` | Resources pending deletion |
+
+:::warning Management Group Constraints
+- **ID is Immutable**: Once created, the Management Group ID cannot be changed
+- **Tenant Uniqueness**: IDs must be unique within the Entra ID tenant
+- **Hierarchy Limits**: Maximum 6 levels deep (excluding root)
+- **Character Limits**: 1-90 characters for both ID and Display Name
+- **ID Characters**: Alphanumeric, underscore, hyphen, period, parentheses (cannot end with period)
+- **Display Name**: Any characters allowed
+:::
+
+#### Subscriptions
+
+**CAF Pattern**: `sub-<purpose>-<environment>`
+
+Subscriptions organize Azure resources for billing, governance, and access control. Azure Local deployments typically use dedicated subscriptions aligned with CAF Enterprise-Scale landing zone architecture.
+
+**Standard Subscription Types for Azure Local**:
+
+| **Purpose** | **Pattern** | **Example** | **Variable** |
+|-------------|-------------|-------------|--------------|
+| Bootstrap | `sub-<org>-bootstrap` | `sub-Azure Local Cloud-bootstrap` | `sub_bootstrap_name` |
+| Connectivity | `sub-<org>-connectivity` | `sub-Azure Local Cloud-connectivity` | `sub_connectivity_name` |
+| Management | `sub-<org>-management` | `sub-Azure Local Cloud-management` | `sub_management_name` |
+| Security | `sub-<org>-security` | `sub-Azure Local Cloud-security` | `sub_security_name` |
+| Identity | `sub-<org>-identity` | `sub-Azure Local Cloud-identity` | `sub_identity_name` |
+| Azure Local | `sub-<org>-azurelocal-<site>` | `sub-Azure Local Cloud-azurelocal-ral` | `sub_azure_local_name` |
+| Workloads | `sub-<org>-workloads-<env>` | `sub-Azure Local Cloud-workloads-prod` | `sub_workloads_name` |
+
+**Variable Mapping** (from Master Variable Registry):
+```yaml
+subscriptions:
+ sub_bootstrap_id: "00000000-1111-2222-3333-444444444444"
+ sub_bootstrap_name: "sub-Azure Local Cloud-bootstrap"
+ sub_connectivity_id: "12345678-1234-1234-1234-123456789015"
+ sub_connectivity_name: "sub-Azure Local Cloud-connectivity"
+ sub_management_id: "12345678-1234-1234-1234-123456789016"
+ sub_security_id: "12345678-1234-1234-1234-123456789017"
+ sub_security_name: "sub-Azure Local Cloud-security"
+ sub_identity_id: "12345678-1234-1234-1234-123456789018"
+ sub_identity_name: "sub-Azure Local Cloud-identity"
+ sub_azure_local_id: "00000000-1111-2222-3333-444444444444"
+ sub_azure_local_name: "sub-Azure Local Cloud-azurelocal-ral"
+ sub_workloads_id: "12345678-1234-1234-1234-123456789019"
+ sub_workloads_name: "sub-Azure Local Cloud-workloads-prod"
+```
+
+**CAF Enterprise-Scale Subscription Alignment**:
+
+| **Landing Zone** | **Subscription Purpose** | **Example Name** |
+|------------------|--------------------------|------------------|
+| Platform - Management | Monitoring, Log Analytics, Automation | `sub-Azure Local Cloud-management` |
+| Platform - Connectivity | Hub networking, VPN, ExpressRoute | `sub-Azure Local Cloud-connectivity` |
+| Platform - Identity | Domain Controllers, Entra ID Connect | `sub-Azure Local Cloud-identity` |
+| Platform - Security | Defender, Sentinel, Key Vaults | `sub-Azure Local Cloud-security` |
+| Landing Zones - Corp | Azure Local clusters, internal workloads | `sub-Azure Local Cloud-azurelocal-ral` |
+| Landing Zones - Online | Internet-facing workloads | `sub-Azure Local Cloud-workloads-prod` |
+
+:::tip Subscription Strategy
+- **Dedicated Azure Local Subscription**: Each Azure Local cluster site should have its own subscription for clear billing, governance, and RBAC boundaries
+- **Site Code in Name**: Include site code (e.g., `ral`, `atl`) for multi-site deployments
+- **Environment Separation**: Production and non-production workloads in separate subscriptions
+:::
+
+:::warning Subscription Limits
+- **Maximum Display Name Length**: 64 characters
+- **Resources per Subscription**: 800+ resource types with varying limits
+- **RBAC Scope**: Subscription is the highest scope for most RBAC assignments
+:::
+
+#### Resource Groups
+
+**CAF Pattern**: `rg-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `rg-azlocal-prod-eus-001` (Primary cluster resources)
+- `rg-azlocal-prod-eus-arc` (Arc-connected resources)
+- `rg-azlocal-prod-eus-network` (Networking resources)
+- `rg-azlocal-prod-eus-security` (Security resources)
+
+**Variable Mapping**:
+```yaml
+azure_resources:
+ resource_group_name: "rg-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+:::note Workload Naming
+- Use `azurelocal` for full product name compliance
+- Use `azlocal` for abbreviated version (when length is constrained)
+- Never use legacy `azs` or `hci` abbreviations
+:::
+
+### 2.2 Networking
+
+#### Virtual Networks and Subnets
+
+**VNet CAF Pattern**: `vnet-<workload>-<environment>-<region>-<purpose>` 
+**Subnet CAF Pattern**: `snet-<purpose>-<environment>`
+
+**Examples**:
+- `vnet-azlocal-prod-eus-hub` (Hub virtual network)
+- `snet-management-prod` (Management subnet)
+- `snet-gateway-prod` (Gateway subnet)
+- `AzureBastionSubnet` (Azure Bastion subnet - must use exact name)
+
+**Variable Mapping**:
+```yaml
+networking:
+ vnet_name: "vnet-{{workload}}-{{environment}}-{{region}}-{{purpose}}"
+ subnet_name: "snet-{{purpose}}-{{environment}}"
+```
+
+:::warning Bastion Subnet Name
+Azure Bastion subnet **must** be named exactly `AzureBastionSubnet` - no flexibility allowed.
+:::
+
+#### ExpressRoute Circuit
+
+**CAF Pattern**: `erc-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `erc-azlocal-prod-eus-001` (Production ExpressRoute circuit)
+- `erc-azlocal-dr-wus-001` (DR site ExpressRoute circuit)
+
+**Variable Mapping**:
+```yaml
+expressroute:
+ circuit_name: "erc-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+#### VPN Gateway
+
+**CAF Pattern**: `vgw-<workload>-<environment>-<region>-<instance>`
+
+VPN Gateways provide site-to-site (S2S) VPN connectivity between Azure and on-premises networks for Azure Local deployments.
+
+**Examples**:
+- `vgw-azlocal-prod-eus-001` (Primary VPN gateway)
+- `vgw-azlocal-dr-wus-001` (DR site VPN gateway)
+
+**Related Resources**:
+
+| **Resource Type** | **CAF Pattern** | **Example** |
+|-------------------|-----------------|-------------|
+| Virtual Network Gateway | `vgw-<workload>-<environment>-<region>-<instance>` | `vgw-azlocal-prod-eus-001` |
+| Local Network Gateway | `lgw-<site>-<environment>-<region>` | `lgw-ral-prod-eus` |
+| VPN Connection | `vcn-<source>-to-<destination>-<environment>` | `vcn-azure-to-ral-prod` |
+| Public IP (VPN) | `pip-vgw-<environment>-<instance>` | `pip-vgw-prod-001` |
+
+**Variable Mapping**:
+```yaml
+vpn:
+ vgw_name: "vgw-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+ lgw_name: "lgw-{{site_code}}-{{environment}}-{{region}}"
+ connection_name: "vcn-azure-to-{{site_code}}-{{environment}}"
+ pip_name: "pip-vgw-{{environment}}-{{instance}}"
+```
+
+:::tip VPN vs ExpressRoute
+- **VPN Gateway**: Site-to-site VPN over public internet (backup connectivity)
+- **ExpressRoute**: Private dedicated connection (primary connectivity for production)
+- Azure Local deployments typically use ExpressRoute with VPN as failover
+:::
+
+#### Azure Bastion
+
+**CAF Pattern**: `bas-<workload>-<environment>-<region>-<instance>`
+
+Azure Bastion provides secure RDP/SSH access to Azure VMs without public IP addresses.
+
+**Examples**:
+- `bas-azlocal-prod-eus-001` (Production Bastion host)
+- `bas-azlocal-dev-eus-001` (Development Bastion host)
+
+**Related Resources**:
+
+| **Resource Type** | **CAF Pattern** | **Example** |
+|-------------------|-----------------|-------------|
+| Azure Bastion | `bas-<workload>-<environment>-<region>-<instance>` | `bas-azlocal-prod-eus-001` |
+| Bastion Subnet | `AzureBastionSubnet` | `AzureBastionSubnet` (exact name required) |
+| Public IP (Bastion) | `pip-bas-<environment>-<instance>` | `pip-bas-prod-001` |
+
+**Variable Mapping**:
+```yaml
+bastion:
+ bastion_name: "bas-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+ subnet_name: "AzureBastionSubnet"
+ pip_name: "pip-bas-{{environment}}-{{instance}}"
+```
+
+:::warning Bastion Subnet Requirement
+Azure Bastion subnet **must** be named exactly `AzureBastionSubnet`. This is a Microsoft requirement with no flexibility. Minimum subnet size is /26.
+:::
+
+#### Azure Firewall
+
+**CAF Pattern**: `afw-<workload>-<environment>-<region>-<instance>`
+
+Azure Firewall provides centralized network security and traffic filtering for hub-spoke architectures.
+
+**Examples**:
+- `afw-azlocal-prod-eus-001` (Production Azure Firewall)
+- `afw-azlocal-dr-wus-001` (DR site Azure Firewall)
+
+**Related Resources**:
+
+| **Resource Type** | **CAF Pattern** | **Example** |
+|-------------------|-----------------|-------------|
+| Azure Firewall | `afw-<workload>-<environment>-<region>-<instance>` | `afw-azlocal-prod-eus-001` |
+| Firewall Policy | `afwp-<workload>-<environment>-<region>` | `afwp-azlocal-prod-eus` |
+| Firewall Subnet | `AzureFirewallSubnet` | `AzureFirewallSubnet` (exact name required) |
+| Public IP (Firewall) | `pip-afw-<environment>-<instance>` | `pip-afw-prod-001` |
+
+**Variable Mapping**:
+```yaml
+azure_firewall:
+ firewall_name: "afw-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+ policy_name: "afwp-{{workload}}-{{environment}}-{{region}}"
+ subnet_name: "AzureFirewallSubnet"
+ pip_name: "pip-afw-{{environment}}-{{instance}}"
+```
+
+:::warning Azure Firewall Subnet Requirement
+Azure Firewall subnet **must** be named exactly `AzureFirewallSubnet`. Minimum subnet size is /26.
+:::
+
+#### Network Security Groups (NSG)
+
+**CAF Pattern**: `nsg-<purpose>-<environment>`
+
+NSGs control inbound and outbound network traffic for subnets and network interfaces.
+
+**Examples**:
+- `nsg-management-prod` (Management subnet NSG)
+- `nsg-gateway-prod` (Gateway subnet NSG)
+- `nsg-workloads-prod` (Workloads subnet NSG)
+- `nsg-azlocal-prod` (Azure Local subnet NSG)
+
+**Variable Mapping**:
+```yaml
+network_security_groups:
+ management: "nsg-management-{{environment}}"
+ gateway: "nsg-gateway-{{environment}}"
+ workloads: "nsg-workloads-{{environment}}"
+ azlocal: "nsg-azlocal-{{environment}}"
+```
+
+:::tip NSG Best Practices
+- Apply NSGs to subnets (not individual NICs) for easier management
+- Use Application Security Groups (ASGs) for grouping VMs
+- Document all custom rules with clear descriptions
+- Use tags for governance and compliance tracking
+:::
+
+#### Route Tables
+
+**CAF Pattern**: `rt-<purpose>-<environment>-<region>`
+
+**Examples**:
+- `rt-hub-prod-eus` (Hub network route table)
+- `rt-spoke-prod-eus` (Spoke network route table)
+- `rt-azlocal-prod-eus` (Azure Local network route table)
+
+**Variable Mapping**:
+```yaml
+route_tables:
+ hub: "rt-hub-{{environment}}-{{region}}"
+ spoke: "rt-spoke-{{environment}}-{{region}}"
+ azlocal: "rt-azlocal-{{environment}}-{{region}}"
+```
+
+#### User Defined Routes (UDR)
+
+**Pattern**: `udr-<purpose>-<environment>`
+
+**Examples**:
+- `udr-internet-prod` (Internet egress route)
+- `udr-onprem-prod` (On-premises route)
+- `udr-azlocal-prod` (Azure Local route)
+
+**Variable Mapping**:
+```yaml
+user_defined_routes:
+ internet: "udr-internet-{{environment}}"
+ onprem: "udr-onprem-{{environment}}"
+```
+
+#### Private Endpoints
+
+**CAF Pattern**: `pe-<service>-<environment>-<region>`
+
+**Examples**:
+- `pe-keyvault-prod-eus` (Key Vault private endpoint)
+- `pe-storage-prod-eus` (Storage account private endpoint)
+- `pe-sqldb-prod-eus` (SQL Database private endpoint)
+
+**Variable Mapping**:
+```yaml
+private_endpoints:
+ keyvault: "pe-keyvault-{{environment}}-{{region}}"
+ storage: "pe-storage-{{environment}}-{{region}}"
+```
+
+#### Private DNS Zones
+
+**Pattern**: `privatelink.<service>.core.windows.net`
+
+**Examples**:
+- `privatelink.blob.core.windows.net` (Blob storage)
+- `privatelink.vaultcore.azure.net` (Key Vault)
+- `privatelink.database.windows.net` (SQL Database)
+- `privatelink.file.core.windows.net` (File storage)
+
+**Variable Mapping**:
+```yaml
+private_dns_zones:
+ blob: "privatelink.blob.core.windows.net"
+ keyvault: "privatelink.vaultcore.azure.net"
+ sql: "privatelink.database.windows.net"
+ file: "privatelink.file.core.windows.net"
+```
+
+:::info Private DNS Zones
+Private DNS zones enable name resolution for Azure Private Endpoints. These zones follow Microsoft's standard naming convention and cannot be customized.
+:::
+
+#### VLANs
+
+**Standard VLAN Allocation** (Master Variable Registry):
+
+| **VLAN ID** | **Purpose** | **Variable Name** | **Notes** |
+| ----------- | --------------- | ------------------------ | ------------------------- |
+| 100-199 | Management | `vlan_management` | Customer preference |
+| 711 | Storage 1 | `vlan_storage_1` | RDMA network 1 |
+| 712 | Storage 2 | `vlan_storage_2` | RDMA network 2 |
+| 200-299 | VM Networks | `vlan_vm_*` | Application workloads |
+| 300-399 | Backup | `vlan_backup` | Optional, if segregated |
+
+**Variable Mapping**:
+```yaml
+vlans:
+ management: 100
+ storage_1: 711
+ storage_2: 712
+ vm_production: 200
+ vm_development: 201
+ backup: 300
+```
+
+#### IP Address Allocation
+
+**Management Network Example** (10.x.x.x/24):
+
+| **Device/Service** | **Hostname** | **IP Pattern** | **Variable** |
+| ------------------ | ------------- | --------------------- | ---------------------- |
+| Cluster IP | ral-clus01 | mgmt_network.10 | cluster_ip |
+| Node 1 | ral-01-n01 | mgmt_network.11 | node_01_ip |
+| Node 2 | ral-01-n02 | mgmt_network.12 | node_02_ip |
+| Node 3 | ral-01-n03 | mgmt_network.13 | node_03_ip |
+| Node 4 | ral-01-n04 | mgmt_network.14 | node_04_ip |
+| Reserved | - | mgmt_network.15-20 | (Future expansion) |
+| iDRAC Node 1 | ral-01-n01-i | oob_network.11 | node_01_idrac_ip |
+| iDRAC Node 2 | ral-01-n02-i | oob_network.12 | node_02_idrac_ip |
+| iDRAC Node 3 | ral-01-n03-i | oob_network.13 | node_03_idrac_ip |
+| iDRAC Node 4 | ral-01-n04-i | oob_network.14 | node_04_idrac_ip |
+
+### 2.3 Compute
+
+#### Virtual Machines (Azure VMs)
+
+Azure VMs have **two separate names** that serve different purposes:
+
+| **Name Type** | **Purpose** | **Max Length** | **Where It Appears** |
+|---------------|-------------|----------------|----------------------|
+| **Azure Resource Name** | Identifies the VM in Azure Portal, ARM, CLI | 64 chars (Linux), 15 chars (Windows resource name) | Azure Portal, billing, RBAC |
+| **Computer Name (Hostname)** | The OS-level hostname visible in Windows/Linux | **15 chars** (Windows NetBIOS), 64 chars (Linux) | Active Directory, DNS, OS |
+
+:::danger Two Names — Always Configure Both
+Every VM deployment must set **both** the Azure resource name and the OS hostname. They are independent values. Failing to set the hostname explicitly results in Azure auto-generating one.
+:::
+
+##### Azure Resource Name
+
+**CAF Pattern**: `vm-<workload>-<environment>-<region>-<role>-<instance>`
+
+**Examples**:
+- `vm-azlocal-prod-eus-dc-01` (Domain Controller 1)
+- `vm-azlocal-prod-eus-dc-02` (Domain Controller 2)
+- `vm-azlocal-prod-eus-jmp-01` (Jumpbox server)
+- `vm-azlocal-prod-eus-wac-01` (Windows Admin Center)
+
+##### Computer Name (Hostname)
+
+**Pattern**: `<site>-<role>-<nn>` (⚠️ **15-character NetBIOS limit** for domain-joined Windows machines)
+
+**Examples**:
+- `ral-dc-01` (9 chars)
+- `ral-wac-01` (10 chars)
+- `ral-jmp-01` (10 chars)
+- `ral-tools` (9 chars)
+
+##### VM Name Mapping Table
+
+The following table shows how Azure resource names map to Windows hostnames for common VM roles:
+
+| **Role** | **Azure Resource Name** | **Hostname (≤15 chars)** | **Chars** |
+|----------|------------------------|--------------------------|-----------|
+| Domain Controller 1 | `vm-azlocal-prod-eus-dc-01` | `ral-dc-01` | 9 |
+| Domain Controller 2 | `vm-azlocal-prod-eus-dc-02` | `ral-dc-02` | 9 |
+| Certificate Authority | `vm-azlocal-prod-eus-ca-01` | `ral-ca-01` | 9 |
+| Windows Admin Center | `vm-azlocal-prod-eus-wac-01` | `ral-wac-01` | 10 |
+| Jumpbox / Tools | `vm-azlocal-prod-eus-jmp-01` | `ral-jmp-01` | 10 |
+| backup server | `vm-azlocal-prod-eus-Azure Backup-01` | `ral-Azure Backup-01` | 11 |
+| Utility Server | `vm-azlocal-prod-eus-util-01` | `ral-util-01` | 11 |
+| NDM Server | `vm-azlocal-prod-eus-ndm-01` | `ral-ndm-01` | 10 |
+
+##### VM Scale Sets (VMSS)
+
+**CAF Pattern**: `vmss-<workload>-<environment>-<region>-<role>-<instance>`
+
+VMSS instances use a `computer_name_prefix` instead of a full hostname. Azure appends a unique suffix automatically.
+
+| **Role** | **Azure Resource Name** | **Computer Name Prefix** | **Instance Hostname** |
+|----------|------------------------|--------------------------|----------------------|
+| CI/CD Runners | `vmss-azlocal-prod-eus-cicd-01` | `cicd` | `cicd000000`, `cicd000001`, ... |
+| Web Tier | `vmss-azlocal-prod-eus-web-01` | `web` | `web000000`, `web000001`, ... |
+
+##### Deployment Configuration
+
+Always configure both names during VM deployment:
+
+**PowerShell**:
+```powershell
+New-AzVM -ResourceGroupName "rg-azlocal-prod-eus-001" `
+ -Name "vm-azlocal-prod-eus-dc-01" `
+ -ComputerName "ral-dc-01"
+```
+
+**Terraform**:
+```hcl
+resource "azurerm_windows_virtual_machine" "dc_01" {
+ name = "vm-azlocal-prod-eus-dc-01" # Azure resource name
+ computer_name = "ral-dc-01" # Windows hostname (≤15 chars)
+ # ...
+}
+
+resource "azurerm_linux_virtual_machine_scale_set" "cicd" {
+ name = "vmss-azlocal-prod-eus-cicd-01" # Azure resource name
+ computer_name_prefix = "cicd" # Hostname prefix for instances
+ # ...
+}
+```
+
+**ARM Template / Bicep**:
+```json
+"osProfile": {
+ "computerName": "ral-dc-01",
+ "adminUsername": "..."
+}
+```
+
+**Variable Mapping**:
+```yaml
+azure_vms:
+ domain_controllers:
+ - vm_name: "vm-{{workload}}-{{environment}}-{{region}}-dc-{{instance}}"
+ computer_name: "{{site_code}}-dc-{{instance}}" # Windows hostname (15 chars max)
+ jumpbox:
+ - vm_name: "vm-{{workload}}-{{environment}}-{{region}}-jmp-{{instance}}"
+ computer_name: "{{site_code}}-jmp-{{instance}}"
+ wac:
+ - vm_name: "vm-{{workload}}-{{environment}}-{{region}}-wac-{{instance}}"
+ computer_name: "{{site_code}}-wac-{{instance}}"
+```
+
+:::warning NetBIOS 15-Character Limit
+Windows computer names (hostnames) are limited to **15 characters** due to the NetBIOS protocol used by Active Directory. This applies to all domain-joined Windows VMs. Keep site codes short (2-5 chars) and role codes short (2-4 chars) to stay within the limit.
+
+**Character budget**: `{site}` (2-5) + `-` (1) + `{role}` (2-4) + `-` (1) + `{nn}` (2) = 8-13 characters
+:::
+
+### 2.4 Storage
+
+#### Storage Accounts
+
+**CAF Pattern**: `st<workload><environment><region><instance>` 
+**Constraints**: 3-24 characters, lowercase alphanumeric only, globally unique
+
+**Examples**:
+- `stazlprdeus001` (Azure Local production storage - 15 chars)
+- `stazldevwus001` (Azure Local dev storage - 15 chars)
+- `stazltestcus001` (Azure Local test storage - 16 chars)
+
+**Variable Mapping**:
+```yaml
+storage:
+ storage_account_name: "st{{workload_abbr}}{{environment_abbr}}{{region}}{{instance}}"
+```
+
+**Abbreviations**:
+- Workload: `azl` (Azure Local)
+- Environment: `prd` (prod), `dev` (dev), `tst` (test)
+- Region: `eus`, `wus`, `cus` (abbreviated codes)
+
+:::warning Storage Account Naming
+- Must be globally unique across all of Azure
+- Lowercase alphanumeric only (no hyphens, no uppercase)
+- Use shortened patterns from the start to stay within 24-character limit
+- 15-16 characters recommended to allow for longer instance numbers
+:::
+
+### 2.5 Security & Identity
+
+#### Key Vault
+
+**CAF Pattern**: `kv-<workload>-<environment>-<region>-<instance>` 
+**Constraints**: 3-24 characters, alphanumeric and hyphens only, globally unique, no consecutive hyphens
+
+**Examples**:
+- `kv-azl-prod-eus-001` (Production Key Vault - 19 chars)
+- `kv-azl-mgmt-eus-001` (Management Key Vault - 19 chars)
+- `kv-azl-dev-eus-001` (Development Key Vault - 18 chars)
+
+**Variable Mapping**:
+```yaml
+keyvault:
+ platform_keyvault_name: "kv-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+:::warning Key Vault Naming
+- Must be globally unique across all of Azure
+- 3-24 characters maximum
+- No consecutive hyphens allowed (e.g., `kv-azl--prod` is invalid)
+- Use shortened workload names if needed
+:::
+
+#### Entra ID Groups
+
+**Pattern**: `grp-<scope>-<role>-<environment>`
+
+Entra ID security groups follow a consistent naming pattern aligned with Azure CAF/WAF best practices.
+
+| **Component** | **Description** | **Examples** |
+|---------------|-----------------|--------------|
+| `grp` | Resource type prefix | Always `grp` |
+| `scope` | Functional area or workload | `platform`, `azlocal`, `keyvault`, `network` |
+| `role` | RBAC role or access level | `admins`, `operators`, `readers`, `contributors` |
+| `environment` | Environment identifier | `prod`, `dev`, `test` |
+
+##### Standard Security Groups
+
+| **Purpose** | **Group Name** | **Description** |
+|-------------|----------------|------------------|
+| Platform Admins | `grp-platform-admins-prod` | Full platform administrative access |
+| Azure Local Admins | `grp-azlocal-admins-prod` | Azure Local cluster administration |
+| Azure Local Operators | `grp-azlocal-operators-prod` | Day-to-day operations access |
+| Azure Local Readers | `grp-azlocal-readers-prod` | Read-only monitoring access |
+| Key Vault Admins | `grp-keyvault-admins-prod` | Key Vault management access |
+| Network Admins | `grp-network-admins-prod` | Network resource management |
+| Security Admins | `grp-security-admins-prod` | Security and compliance management |
+| AVD Users | `grp-avd-users-prod` | Azure Virtual Desktop access |
+| Backup Operators | `grp-backup-operators-prod` | Backup and recovery operations |
+
+##### PIM-Eligible Groups
+
+**Pattern**: `grp-pim-<role>-<environment>`
+
+Privileged Identity Management (PIM) eligible groups enable just-in-time (JIT) access elevation. These groups **must** be created with `isAssignableToRole = true` in Entra ID.
+
+| **Purpose** | **Group Name** | **Activation Use Case** |
+|-------------|----------------|-------------------------|
+| PIM Owner | `grp-pim-owner-prod` | Emergency full-access activation |
+| PIM Contributor | `grp-pim-contributor-prod` | Elevated write access for deployments |
+| PIM Security Admin | `grp-pim-security-admin-prod` | Security incident response |
+| PIM Key Vault Admin | `grp-pim-keyvault-admin-prod` | Key Vault secret rotation / emergency access |
+| PIM Network Admin | `grp-pim-network-admin-prod` | Network change management windows |
+| PIM User Admin | `grp-pim-user-admin-prod` | Identity management tasks |
+
+:::tip PIM Group Requirements
+- PIM-eligible groups **must** have `isAssignableToRole = true` set at creation (cannot be changed later)
+- Use PIM for all privileged operations — avoid permanent standing access
+- Configure activation policies: maximum duration (e.g., 8 hours), require justification, require approval for Owner roles
+- All PIM activations are logged in Entra ID audit logs
+:::
+
+**Variable Mapping**:
+```yaml
+entra_groups:
+ # Standard groups
+ platform_admins: "grp-platform-admins-{{environment}}"
+ azlocal_admins: "grp-azlocal-admins-{{environment}}"
+ azlocal_operators: "grp-azlocal-operators-{{environment}}"
+ azlocal_readers: "grp-azlocal-readers-{{environment}}"
+ keyvault_admins: "grp-keyvault-admins-{{environment}}"
+ security_admins: "grp-security-admins-{{environment}}"
+ 
+ # PIM-eligible groups
+ pim_owner: "grp-pim-owner-{{environment}}"
+ pim_contributor: "grp-pim-contributor-{{environment}}"
+ pim_security_admin: "grp-pim-security-admin-{{environment}}"
+ pim_keyvault_admin: "grp-pim-keyvault-admin-{{environment}}"
+```
+
+#### Service Principals
+
+**Pattern**: `sp-<workload>-<environment>-<purpose>`
+
+**Examples**:
+- `sp-azlocal-prod-deployment` (Azure Local deployment automation)
+- `sp-azlocal-prod-monitoring` (Monitoring integration)
+- `sp-cicd-customer-prod` (CI/CD pipeline service principal)
+- `sp-backup-prod-recovery` (Backup and recovery automation)
+
+**Variable Mapping**:
+```yaml
+service_principals:
+ deployment: "sp-{{workload}}-{{environment}}-deployment"
+ monitoring: "sp-{{workload}}-{{environment}}-monitoring"
+ cicd: "sp-cicd-{{customer}}-{{environment}}"
+```
+
+#### Managed Identities
+
+**CAF Pattern**: `id-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `id-azlocal-prod-eus-001` (Primary managed identity)
+- `id-azlocal-prod-eus-backup` (Backup service identity)
+- `id-azlocal-prod-eus-monitoring` (Monitoring identity)
+
+**Variable Mapping**:
+```yaml
+managed_identities:
+ primary: "id-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+ backup: "id-{{workload}}-{{environment}}-{{region}}-backup"
+```
+
+#### Azure Policy
+
+**CAF Pattern**: Policy definitions and assignments follow specific naming patterns for governance.
+
+**Policy Definition Pattern**: `policy-<purpose>-<scope>`
+**Policy Assignment Pattern**: `assign-<policy>-<scope>-<environment>`
+**Initiative (Policy Set) Pattern**: `initiative-<purpose>-<scope>`
+
+**Examples**:
+- `policy-require-tags-rg` (Require tags on resource groups)
+- `policy-deny-public-ip` (Deny public IP creation)
+- `assign-require-tags-sub-prod` (Policy assignment at subscription level)
+- `initiative-azlocal-security` (Security initiative for Azure Local)
+
+**Standard Azure Local Policy Assignments**:
+
+| **Policy Purpose** | **Assignment Name** | **Scope** |
+|--------------------|---------------------|-----------|
+| Require resource tags | `assign-require-tags-sub-azlocal` | Subscription |
+| Allowed VM SKUs | `assign-allowed-vmsizes-rg-azlocal` | Resource Group |
+| Allowed regions | `assign-allowed-regions-mg-corp` | Management Group |
+| Deny public IP | `assign-deny-publicip-sub-azlocal` | Subscription |
+| Enable Defender | `assign-enable-defender-sub-azlocal` | Subscription |
+
+**Variable Mapping**:
+```yaml
+azure_policy:
+ require_tags_assignment: "assign-require-tags-sub-{{workload}}"
+ allowed_regions_assignment: "assign-allowed-regions-mg-{{management_group}}"
+ security_initiative: "initiative-{{workload}}-security"
+```
+
+:::tip Policy Governance
+- Use initiatives (policy sets) to group related policies
+- Apply policies at the highest appropriate scope (management group preferred)
+- Use exclusions sparingly and document reasoning
+- Tag all custom policies for tracking
+:::
+
+### 2.6 Monitoring & Operations
+
+#### Log Analytics Workspace
+
+**CAF Pattern**: `law-<workload>-<environment>-<region>-<instance>`
+
+Log Analytics Workspaces are the central repository for all Azure monitoring data, including logs from Azure Local clusters, Arc-enabled servers, and Azure resources.
+
+**Examples**:
+- `law-azlocal-prod-eus-001` (Production Log Analytics workspace)
+- `law-azlocal-dev-eus-001` (Development Log Analytics workspace)
+- `law-security-prod-eus-001` (Security-focused workspace)
+
+**Variable Mapping**:
+```yaml
+monitoring:
+ law_name: "law-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+ law_id: "/subscriptions/{{subscription_id}}/resourceGroups/{{rg_name}}/providers/Microsoft.OperationalInsights/workspaces/{{law_name}}"
+```
+
+:::tip Workspace Strategy
+- Use a centralized workspace for Azure Local infrastructure monitoring
+- Consider separate workspaces for security (SIEM integration) and compliance requirements
+- Configure data retention based on compliance needs (default 30 days, up to 730 days)
+:::
+
+#### Application Insights
+
+**CAF Pattern**: `appi-<workload>-<environment>-<region>-<instance>`
+
+Application Insights provides application performance monitoring (APM) for workloads running on Azure Local.
+
+**Examples**:
+- `appi-azlocal-prod-eus-001` (Production Application Insights)
+- `appi-azlocal-dev-eus-001` (Development Application Insights)
+- `appi-webapp-prod-eus-001` (Web application monitoring)
+
+**Variable Mapping**:
+```yaml
+monitoring:
+ appi_name: "appi-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+#### Azure Monitor Action Groups
+
+**CAF Pattern**: `ag-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `ag-azlocal-prod-eus-001` (Production alerts)
+- `ag-azlocal-dev-eus-001` (Development alerts)
+
+**Variable Mapping**:
+```yaml
+azure_monitor:
+ action_group_name: "ag-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+#### Data Collection Rules
+
+**CAF Pattern**: `dcr-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `dcr-azlocal-prod-eus-001` (Production data collection rule)
+- `dcr-azlocal-prod-eus-security` (Security-focused collection)
+- `dcr-azlocal-prod-eus-performance` (Performance metrics collection)
+
+**Variable Mapping**:
+```yaml
+data_collection:
+ rule_name: "dcr-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+ security_rule: "dcr-{{workload}}-{{environment}}-{{region}}-security"
+```
+
+#### Data Collection Endpoints
+
+**CAF Pattern**: `dce-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `dce-azlocal-prod-eus-001` (Production data collection endpoint)
+- `dce-azlocal-dev-eus-001` (Development data collection endpoint)
+
+**Variable Mapping**:
+```yaml
+data_collection:
+ endpoint_name: "dce-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+#### Alerts
+
+**Pattern**: `alert-<purpose>-<environment>-<region>`
+
+**Examples**:
+- `alert-cpu-high-prod-eus` (High CPU alert)
+- `alert-disk-low-prod-eus` (Low disk space alert)
+- `alert-cluster-health-prod-eus` (Cluster health alert)
+
+**Variable Mapping**:
+```yaml
+alerts:
+ cpu_high: "alert-cpu-high-{{environment}}-{{region}}"
+ disk_low: "alert-disk-low-{{environment}}-{{region}}"
+ cluster_health: "alert-cluster-health-{{environment}}-{{region}}"
+```
+
+#### Azure Update Manager
+
+**CAF Pattern**: `aum-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `aum-azlocal-prod-eus-001` (Production update management)
+- `aum-azlocal-dev-eus-001` (Development update management)
+
+**Variable Mapping**:
+```yaml
+azure_update_manager:
+ maintenance_config_name: "aum-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+#### Microsoft Defender for Cloud
+
+**CAF Pattern**: `mdc-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `mdc-azlocal-prod-eus-001` (Production security center)
+- `mdc-azlocal-dev-eus-001` (Development security center)
+
+**Variable Mapping**:
+```yaml
+defender_for_cloud:
+ security_center_name: "mdc-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+### 2.7 Automation
+
+#### Automation Account
+
+**CAF Pattern**: `aa-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `aa-azlocal-prod-eus-001` (Production automation account)
+- `aa-azlocal-dev-eus-001` (Development automation account)
+
+**Variable Mapping**:
+```yaml
+automation:
+ account_name: "aa-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+#### Runbooks
+
+**Pattern**: `rb-<purpose>-<environment>`
+
+**Examples**:
+- `rb-patching-prod` (Patching automation runbook)
+- `rb-backup-prod` (Backup automation runbook)
+- `rb-scaling-prod` (Auto-scaling runbook)
+
+**Variable Mapping**:
+```yaml
+runbooks:
+ patching: "rb-patching-{{environment}}"
+ backup: "rb-backup-{{environment}}"
+```
+
+### 2.8 Arc Resources
+
+#### Azure Arc Gateway
+
+**CAF Pattern**: `arcgw-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `arcgw-azlocal-prod-eus-001` (Production Arc gateway)
+- `arcgw-azlocal-dev-eus-001` (Development Arc gateway)
+
+**Variable Mapping**:
+```yaml
+azure_arc:
+ gateway_name: "arcgw-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+### 2.9 Backup & Disaster Recovery
+
+#### Witness Resources
+
+##### Cloud Witness Storage Account
+
+**Pattern**: `stwitness<cluster><region><##>` 
+**Constraints**: 3-24 characters, lowercase alphanumeric only, globally unique
+
+**Examples**:
+- `stwitnessclus01eus01` (Cluster 01 cloud witness - 20 chars)
+- `stwitnessraleus01` (RAL site cloud witness - 17 chars)
+
+**Variable Mapping**:
+```yaml
+witness:
+ cloud_witness_storage: "stwitness{{cluster}}{{region}}{{instance}}"
+```
+
+:::warning Cloud Witness Naming
+- Must be globally unique across all of Azure
+- Lowercase alphanumeric only (no hyphens)
+- Keep names short to stay within 24-character limit
+:::
+
+##### File Share Witness
+
+**Pattern**: `fswit-<cluster>-<##>`
+
+**Examples**:
+- `fswit-clus01-01` (Cluster 01 file share witness)
+- `fswit-ral-01` (RAL site file share witness)
+
+**Variable Mapping**:
+```yaml
+witness:
+ file_share_witness: "fswit-{{cluster}}-{{instance}}"
+```
+
+#### Azure Site Recovery
+
+**CAF Pattern**: `asr-<workload>-<environment>-<region>-<instance>`
+
+**Examples**:
+- `asr-azlocal-prod-eus-001` (Production site recovery vault)
+- `asr-azlocal-dr-wus-001` (DR region site recovery vault)
+
+**Variable Mapping**:
+```yaml
+site_recovery:
+ vault_name: "asr-{{workload}}-{{environment}}-{{region}}-{{instance}}"
+```
+
+#### Backup Policies
+
+**Pattern**: `bkpol-<purpose>-<environment>`
+
+**Examples**:
+- `bkpol-daily-prod` (Daily backup policy)
+- `bkpol-weekly-prod` (Weekly backup policy)
+- `bkpol-monthly-prod` (Monthly backup policy)
+- `bkpol-vm-prod` (VM backup policy)
+
+**Variable Mapping**:
+```yaml
+backup_policies:
+ daily: "bkpol-daily-{{environment}}"
+ weekly: "bkpol-weekly-{{environment}}"
+ vm: "bkpol-vm-{{environment}}"
+```
+
+---
+
+## 3. Operations & CI/CD
+
+This section covers operational resources for deployment automation and GitLab integration.
+
+### 3.1 source control projects
+
+**Pattern**: `cid###-<customer_name>`
+
+**Examples**:
+- `cid001-acme-corp` (Customer ID 001 - ACME Corp)
+- `cid042-globaltech` (Customer ID 042 - GlobalTech)
+- `cid100-enterprise-solutions` (Customer ID 100 - Enterprise Solutions)
+
+**Variable Mapping**:
+```yaml
+gitlab:
+ project_name: "cid{{customer_id}}-{{customer_name}}"
+```
+
+### 3.2 GitLab Environments
+
+**Pattern**: `azr-<stage>-<region>`
+
+**Examples**:
+- `azr-deploy-eus` (Deployment stage - East US)
+- `azr-validate-eus` (Validation stage - East US)
+- `azr-production-eus` (Production stage - East US)
+
+**Variable Mapping**:
+```yaml
+gitlab:
+ environment_deploy: "azr-deploy-{{region}}"
+ environment_validate: "azr-validate-{{region}}"
+ environment_production: "azr-production-{{region}}"
+```
+
+### 3.3 CI/CD Service Principal
+
+**Pattern**: `sp-cicd-<customer>-<environment>`
+
+**Examples**:
+- `sp-cicd-acme-prod` (ACME Corp production CI/CD)
+- `sp-cicd-globaltech-prod` (GlobalTech production CI/CD)
+- `sp-cicd-internal-dev` (Internal development CI/CD)
+
+**Variable Mapping**:
+```yaml
+cicd:
+ service_principal: "sp-cicd-{{customer}}-{{environment}}"
+```
+
+---
+
+## 4. Reference Tables
+
+### 4.1 CAF Resource Type Abbreviations
+
+Azure Local Cloud follows Microsoft's recommended abbreviations for Azure resources:
+
+| **Resource Type** | **CAF Abbreviation** | **Example** |
+| ---------------------------- | -------------------- | -------------------------------- |
+| Management Group | (ID pattern) | azl-platform-prod |
+| Resource Group | `rg` | rg-azlocal-prod-eus-001 |
+| Virtual Network | `vnet` | vnet-azlocal-prod-eus-hub |
+| Subnet | `snet` | snet-management-prod |
+| Network Security Group | `nsg` | nsg-management-prod |
+| Virtual Network Gateway | `vgw` | vgw-azlocal-prod-eus-001 |
+| Local Network Gateway | `lgw` | lgw-onprem-prod-001 |
+| VPN Connection | `cn` | cn-azlocal-to-onprem |
+| Network Interface | `nic` | nic-vm-dc-001 |
+| Public IP Address | `pip` | pip-vgw-prod-001 |
+| Load Balancer | `lb` | lb-azlocal-prod-001 |
+| Storage Account | `st` | stazlprdeus001 |
+| Storage Container | (no prefix) | vhds |
+| Key Vault | `kv` | kv-azl-prod-eus-001 |
+| Virtual Machine | `vm` | vm-azlocal-prod-eus-dc-001 |
+| Availability Set | `avset` | avset-dc-prod-eus |
+| Managed Disk | `disk` | disk-vm-dc-001-os |
+| Log Analytics Workspace | `law` | law-azlocal-prod-eus-001 |
+| Application Insights | `appi` | appi-azlocal-prod-eus-001 |
+| Azure Bastion | `bas` | bas-azlocal-prod-eus-001 |
+| Azure Firewall | `afw` | afw-azlocal-prod-eus-001 |
+| Recovery Services Vault | `rsv` | rsv-azlocal-prod-eus-001 |
+| Azure Monitor Action Group | `ag` | ag-azlocal-prod-eus-001 |
+| Azure Update Manager | `aum` | aum-azlocal-prod-eus-001 |
+| Microsoft Defender for Cloud | `mdc` | mdc-azlocal-prod-eus-001 |
+| Azure Arc Gateway | `arcgw` | arcgw-azlocal-prod-eus-001 |
+| Azure Local Storage Path | `stpath` | stpath-azlocal-prod-eus-001 |
+| Arc Custom Location | `cl` | cl-azlocal-prod-eus-001 |
+| Logical Network | `lnet` | lnet-management-prod-eus |
+| VM Image | `img` | img-ws2022-dc-prod |
+| ExpressRoute Circuit | `erc` | erc-azlocal-prod-eus-001 |
+| Route Table | `rt` | rt-hub-prod-eus |
+| User Defined Route | `udr` | udr-internet-prod |
+| Private Endpoint | `pe` | pe-keyvault-prod-eus |
+| Entra ID Group | `grp` | grp-azlocal-admins-prod |
+| Service Principal | `sp` | sp-azlocal-prod-deployment |
+| Managed Identity | `id` | id-azlocal-prod-eus-001 |
+| Automation Account | `aa` | aa-azlocal-prod-eus-001 |
+| Runbook | `rb` | rb-patching-prod |
+| Data Collection Rule | `dcr` | dcr-azlocal-prod-eus-001 |
+| Data Collection Endpoint | `dce` | dce-azlocal-prod-eus-001 |
+| Alert | `alert` | alert-cpu-high-prod-eus |
+| Cloud Witness Storage | `stwitness` | stwitnessclus01eus01 |
+| File Share Witness | `fswit` | fswit-clus01-01 |
+| Azure Site Recovery | `asr` | asr-azlocal-prod-eus-001 |
+| Backup Policy | `bkpol` | bkpol-daily-prod |
+
+:::tip Full CAF Abbreviation List
+See [Microsoft CAF: Abbreviation Examples for Azure Resources](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-abbreviations)
+:::
+
+### 4.2 Azure Naming Requirements
+
+| **Resource Type** | **Length** | **Valid Characters** | **Case** | **Global Unique** |
+| ------------------------- | ---------- | --------------------------------- | -------- | ----------------- |
+| Resource Group | 1-90 | Alphanumeric, underscore, hyphen, period, parentheses | No | No |
+| Virtual Network | 2-64 | Alphanumeric, underscore, hyphen, period | No | No |
+| Subnet | 1-80 | Alphanumeric, underscore, hyphen, period | No | No |
+| Network Security Group | 1-80 | Alphanumeric, underscore, hyphen, period | No | No |
+| Storage Account | 3-24 | Lowercase alphanumeric only | No | **Yes** |
+| Key Vault | 3-24 | Alphanumeric and hyphens | No | **Yes** |
+| Virtual Machine (Windows) | 1-15 | Alphanumeric and hyphens | No | No |
+| Virtual Machine (Linux) | 1-64 | Alphanumeric and hyphens | No | No |
+| Public IP Address | 1-80 | Alphanumeric, underscore, hyphen, period | No | No |
+| Load Balancer | 1-80 | Alphanumeric, underscore, hyphen, period | No | No |
+| Azure Bastion | 1-80 | Alphanumeric, underscore, hyphen, period | No | No |
+
+:::warning Critical Constraints
+- **Storage Accounts**: Must be globally unique, lowercase alphanumeric only, no hyphens
+- **Key Vaults**: Must be globally unique, 3-24 characters
+- **Windows VMs**: Limited to 15 characters (NetBIOS compatibility)
+- **Bastion Subnet**: Must be named exactly `AzureBastionSubnet` (no flexibility)
+- **Gateway Subnet**: Should be named `GatewaySubnet` (recommended)
+:::
+
+### 4.3 Variable Substitution Reference
+
+For automation via `infrastructure.yml`, use these variable patterns:
+
+#### Common Variables
+
+| **Variable** | **Description** | **Example Value** |
+| --------------------- | --------------------------------- | ----------------- |
+| `site_code` | Site code identifier (2-5 chars) | `RAL`, `ATL`, `iic` |
+| `environment` | Environment name | `prod`, `dev` |
+| `azure_region` | Azure region code | `eastus`, `westus`|
+| `workload` | Workload/product name | `azlocal`, `azurelocal` |
+| `instance` | Sequential instance number | `001`, `002` |
+| `purpose` | Resource purpose | `hub`, `arc`, `network` |
+
+#### Region Abbreviations (CAF-Compliant)
+
+| **Region** | **CAF Code** | **Alt Code** |
+| ----------------- | ------------ | ------------ |
+| East US | `eastus` | `eus` |
+| East US 2 | `eastus2` | `eus2` |
+| West US | `westus` | `wus` |
+| West US 2 | `westus2` | `wus2` |
+| Central US | `centralus` | `cus` |
+| South Central US | `southcentralus` | `scus` |
+
+:::tip Automation Integration
+All variables shown in `{{curly braces}}` are defined in the **Master Variable Registry** and can be populated from `infrastructure.yml` using automation scripts. See [Key Inputs and Variables](../implementation/03-key-inputs-and-variables.mdx) for complete variable reference.
+:::
+
+---
+
+## 5. Validation & Related Documentation
+
+### 5.1 Naming Standards Validation Checklist
+
+Before finalizing naming standards, validate alignment with both CAF and Azure Local Cloud standards:
+
+- [ ] **CAF Compliance**: All Azure resource names follow CAF patterns
+- [ ] **Variable Registry Alignment**: Names map to Master Variable Registry variables
+- [ ] **Uniqueness**: No conflicts with existing customer infrastructure
+- [ ] **Azure Compliance**: All names meet Azure-specific requirements and constraints
+- [ ] **DNS Compatibility**: Names are valid for DNS records (lowercase recommended)
+- [ ] **Length Constraints**: Names fit within service-specific character limits
+- [ ] **Consistency**: Patterns are applied uniformly across all resources
+- [ ] **Documentation**: All naming conventions documented in `infrastructure.yml`
+- [ ] **Automation Ready**: Naming patterns support `{{variable}}` substitution
+- [ ] **Customer Approval**: Naming standards reviewed and approved by customer
+
+### 5.2 Related Documentation
+
+- [Discovery Sessions](./discovery-sessions/) - Where naming standards are established
+- [Discovery Checklist](./02-discovery-checklist.mdx) - Includes naming standards validation
+- [Key Inputs and Variables](../implementation/03-key-inputs-and-variables.mdx) - Master variable reference
+- [Microsoft CAF Resource Naming](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming)
+- [Microsoft CAF Resource Abbreviations](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-abbreviations)
+- [Azure Naming Rules and Restrictions](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules)

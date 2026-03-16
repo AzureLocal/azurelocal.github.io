@@ -1,0 +1,489 @@
+---
+title: "Task 05: Configure Azure Update Manager"
+sidebar_label: "Task 05: Azure Update Manager"
+sidebar_position: 5
+description: "Configure Azure Update Manager for patch management and update orchestration for Azure Local and Arc-enabled servers"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 05: Configure Azure Update Manager
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Patch management and update orchestration 
+> **PURPOSE**: Configure Azure Update Manager for Azure Local clusters and Arc-enabled servers 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Update Manager](https://learn.microsoft.com/en-us/azure/update-manager/overview)
+
+**Status**: Active
+
+---
+
+Azure Update Manager provides centralized patch management for Azure Local clusters, Arc-enabled servers, and Azure VMs. It enables update assessment, scheduling, and compliance reporting without requiring additional agents or Log Analytics workspace dependencies.
+
+## Overview
+
+Azure Update Manager is a **native capability** that works directly with:
+- Azure Local cluster nodes (Arc-enabled)
+- Arc-enabled Windows and Linux servers
+- Azure VMs
+- Arc-enabled VMware vSphere and SCVMM machines
+
+:::info No Additional Dependencies
+Unlike legacy Azure Automation Update Management, Azure Update Manager does not require Log Analytics workspace or Automation account. All data is stored in Azure Resource Graph.
+:::
+
+## Prerequisites
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Azure Arc connectivity | Cluster nodes and servers Arc-enabled | Arc agents reporting connected |
+| VM agent (Azure VMs) | Azure VM agent running | Agent status healthy |
+| Outbound connectivity | Access to Windows Update or WSUS | Port 443, 80 outbound |
+| RBAC permissions | Contributor or Update Manager role | On resource scope |
+| Maintenance windows | Defined change windows | Documented in ITSM |
+
+## Architecture
+
+Azure Update Manager uses extensions managed by the Azure VM agent or Arc agent:
+
+| Platform | Extensions Installed |
+|----------|---------------------|
+| **Azure VMs (Windows)** | `Microsoft.CPlat.Core.WindowsPatchExtension` |
+| **Azure VMs (Linux)** | `Microsoft.CPlat.Core.LinuxPatchExtension` |
+| **Arc-enabled (Windows)** | `WindowsPatchExtension` (assessment) + `WindowsOsUpdateExtension` (patching) |
+| **Arc-enabled (Linux)** | `LinuxPatchExtension` (assessment) + `LinuxOsUpdateExtension` (patching) |
+
+Extensions are automatically installed when Update Manager operations are triggered.
+
+## Configuration Steps
+
+### Step 5.1: Enable Periodic Assessment
+
+Enable automatic update assessment to continuously check for available updates:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+**For individual machines:**
+
+1. Navigate to **Azure Arc** → **Machines** (or **Virtual machines** for Azure VMs)
+2. Select the machine
+3. Go to **Updates** → **Settings**
+4. Enable **Periodic assessment**: Set to **On**
+5. Click **Save**
+
+**For multiple machines at scale:**
+
+1. Navigate to **Azure Update Manager** → **Overview**
+2. Click **Settings** → **Update settings**
+3. Select subscription and resource groups
+4. Filter to machines of interest
+5. Select machines and click **Configure**
+6. Set **Periodic assessment** to **On**
+7. Click **Save**
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+```bash
+# Enable periodic assessment for Arc-enabled server
+az connectedmachine machine-extension update \
+ --resource-group "{{AZURE_RESOURCE_GROUP}}" \
+ --machine-name "{{MACHINE_NAME}}" \
+ --name "WindowsPatchExtension" \
+ --settings '{"patchMode": "AutomaticByPlatform", "assessmentMode": "AutomaticByPlatform"}'
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Enable periodic assessment via Azure Policy (recommended for scale)
+$policyDefinition = Get-AzPolicyDefinition | 
+ Where-Object { $_.Properties.DisplayName -like "*periodic assessment*" }
+
+# Assign policy to resource group
+New-AzPolicyAssignment `
+ -Name "EnablePeriodicAssessment" `
+ -PolicyDefinition $policyDefinition `
+ -Scope "/subscriptions/{{AZURE_SUBSCRIPTION_ID}}/resourceGroups/{{AZURE_RESOURCE_GROUP}}"
+```
+
+</TabItem>
+</Tabs>
+
+:::tip Azure Policy Recommendation
+Use Azure Policy to enable periodic assessment at scale. Built-in policies:
+- `Configure periodic checking for missing system updates on Azure Arc-enabled servers`
+- `Configure periodic checking for missing system updates on Azure virtual machines`
+:::
+
+### Step 5.2: Check for Updates (On-Demand)
+
+Perform immediate update assessment:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Azure Update Manager** → **Overview**
+2. Click **Check for updates**
+3. Select machines to assess
+4. Click **Check for updates**
+5. Monitor progress in **History** tab
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+```bash
+# Trigger update assessment for Arc-enabled server
+az rest --method post \
+ --uri "https://management.azure.com/subscriptions/{{AZURE_SUBSCRIPTION_ID}}/resourceGroups/{{AZURE_RESOURCE_GROUP}}/providers/Microsoft.HybridCompute/machines/{{MACHINE_NAME}}/assessPatches?api-version=2024-03-01-preview"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Check for updates on Arc-enabled server
+Invoke-AzRestMethod -Method POST `
+ -Path "/subscriptions/{{AZURE_SUBSCRIPTION_ID}}/resourceGroups/{{AZURE_RESOURCE_GROUP}}/providers/Microsoft.HybridCompute/machines/{{MACHINE_NAME}}/assessPatches?api-version=2024-03-01-preview"
+```
+
+</TabItem>
+</Tabs>
+
+### Step 5.3: Create Maintenance Configuration
+
+Define scheduled maintenance windows for automated patching:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Azure Update Manager** → **Machines**
+2. Click **Scheduled updates** → **Create a maintenance configuration**
+3. Configure basics:
+ - Name: `{{MAINTENANCE_CONFIG_NAME}}`
+ - Resource group: `{{AZURE_RESOURCE_GROUP}}`
+ - Region: `{{AZURE_REGION}}`
+ - Maintenance scope: **Guest (Azure VM, Azure Arc-enabled VMs/servers)**
+
+4. Configure schedule:
+ - Start date and time: `{{MAINTENANCE_START_TIME}}`
+ - Duration: `{{MAINTENANCE_DURATION}}` hours
+ - Time zone: `{{TIME_ZONE}}`
+ - Recurrence: Weekly/Monthly
+
+5. Configure updates:
+ - **Windows**:
+ - Classifications: Critical, Security, Update Rollup, Definition
+ - KB numbers to include/exclude (optional)
+ - **Linux**:
+ - Classifications: Critical, Security
+ - Packages to include/exclude (optional)
+
+6. Configure reboot option:
+ - **IfRequired**: Reboot only if updates require it
+ - **AlwaysReboot**: Always reboot after updates
+ - **NeverReboot**: Never reboot (may leave updates pending)
+
+7. Click **Review + create**
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+```bash
+# Create maintenance configuration
+az maintenance configuration create \
+ --resource-group "{{AZURE_RESOURCE_GROUP}}" \
+ --name "{{MAINTENANCE_CONFIG_NAME}}" \
+ --location "{{AZURE_REGION}}" \
+ --maintenance-scope "InGuestPatch" \
+ --install-patches-linux-classifications "Critical" "Security" \
+ --install-patches-windows-classifications "Critical" "Security" "UpdateRollup" \
+ --reboot-setting "IfRequired" \
+ --start-date-time "{{MAINTENANCE_START_DATETIME}}" \
+ --duration "02:00" \
+ --time-zone "{{TIME_ZONE}}" \
+ --recurrence "Week" \
+ --day-of-week "Saturday"
+```
+
+</TabItem>
+</Tabs>
+
+### Step 5.4: Assign Machines to Maintenance Configuration
+
+Associate machines with maintenance schedules:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to maintenance configuration
+2. Go to **Resources** → **Add**
+3. Select machines to include
+4. Click **Add**
+
+**Or use Dynamic Scopes:**
+
+1. Go to **Dynamic scopes** → **Add a dynamic scope**
+2. Configure filters:
+ - Subscriptions
+ - Resource groups
+ - Resource types
+ - Tags (e.g., `Environment=Production`)
+3. Click **Save**
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+```bash
+# Assign Arc-enabled server to maintenance configuration
+az maintenance assignment create \
+ --resource-group "{{AZURE_RESOURCE_GROUP}}" \
+ --name "assignment-{{MACHINE_NAME}}" \
+ --maintenance-configuration-id "/subscriptions/{{AZURE_SUBSCRIPTION_ID}}/resourceGroups/{{AZURE_RESOURCE_GROUP}}/providers/Microsoft.Maintenance/maintenanceConfigurations/{{MAINTENANCE_CONFIG_NAME}}" \
+ --provider-name "Microsoft.HybridCompute" \
+ --resource-type "machines" \
+ --resource-name "{{MACHINE_NAME}}"
+```
+
+</TabItem>
+</Tabs>
+
+:::tip Dynamic Scopes
+Use **dynamic scopes** with tag-based filtering for automatic inclusion of new machines matching criteria.
+:::
+
+### Step 5.5: Install Updates (On-Demand)
+
+For immediate patching outside maintenance windows:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Azure Update Manager** → **Machines**
+2. Select machines to update
+3. Click **One-time update**
+4. Configure:
+ - Machines: Selected or add more
+ - Updates: All or specific classifications/KBs
+ - Reboot option: IfRequired, AlwaysReboot, or NeverReboot
+5. Click **Install**
+6. Monitor progress in **History**
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Install updates on Arc-enabled server via REST API
+$body = @{
+ maximumDuration = "PT2H"
+ rebootSetting = "IfRequired"
+ windowsParameters = @{
+ classificationsToInclude = @("Critical", "Security")
+ kbNumbersToExclude = @()
+ }
+} | ConvertTo-Json -Depth 4
+
+Invoke-AzRestMethod -Method POST `
+ -Path "/subscriptions/{{AZURE_SUBSCRIPTION_ID}}/resourceGroups/{{AZURE_RESOURCE_GROUP}}/providers/Microsoft.HybridCompute/machines/{{MACHINE_NAME}}/installPatches?api-version=2024-03-01-preview" `
+ -Payload $body
+```
+
+</TabItem>
+</Tabs>
+
+### Step 5.6: Configure Azure Local Cluster Updates
+
+For Azure Local clusters specifically:
+
+:::info Azure Local Lifecycle Manager
+Azure Local 23H2 and later uses **Lifecycle Manager (LCM)** for cluster-aware updates. Azure Update Manager integrates with LCM for orchestrated updates.
+:::
+
+1. Navigate to **Azure Local** → Select cluster → **Updates**
+2. Review available updates (Platform, Solution Extension, OS)
+3. Click **Check for updates** to refresh
+4. Review update readiness checks
+5. Click **Install** to begin update orchestration
+
+LCM handles:
+- Pre-update health checks
+- Cluster-aware rolling updates
+- Node drain and resume
+- Post-update validation
+
+### Step 5.7: Configure Alerts
+
+Set up alerts for update compliance:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Azure Update Manager** → **Settings** → **Alerts**
+2. Click **Create alert rule**
+3. Configure conditions:
+ - Update assessment: Machines with pending critical updates
+ - Compliance: Machines not compliant with maintenance configuration
+4. Configure action group for notifications
+5. Click **Create**
+
+</TabItem>
+</Tabs>
+
+## Validation
+
+### Check Update Compliance
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Azure Update Manager** → **Overview**
+2. Review compliance dashboard:
+ - Machines with pending updates
+ - Critical/Security updates pending
+ - Machines needing attention
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Query update compliance via Azure Resource Graph
+$query = @"
+patchassessmentresources
+| where type == 'microsoft.hybridcompute/machines/patchassessmentresults'
+| extend machineId = tostring(split(id, '/patchAssessmentResults')[0])
+| extend criticalUpdates = properties.availablePatchCountByClassification.critical
+| extend securityUpdates = properties.availablePatchCountByClassification.security
+| project machineId, criticalUpdates, securityUpdates, lastModified = properties.lastModifiedDateTime
+"@
+
+Search-AzGraph -Query $query
+```
+
+</TabItem>
+</Tabs>
+
+### Verify Extension Installation
+
+```powershell
+# On Arc-enabled server, check extensions
+az connectedmachine machine-extension list \
+ --resource-group "{{AZURE_RESOURCE_GROUP}}" \
+ --machine-name "{{MACHINE_NAME}}" \
+ --output table
+```
+
+Expected extensions:
+- `WindowsPatchExtension` or `LinuxPatchExtension` (assessment)
+- `WindowsOsUpdateExtension` or `LinuxOsUpdateExtension` (patching)
+
+### Validation Checklist
+
+| Component | Verification | Expected Result |
+|-----------|--------------|-----------------|
+| Periodic assessment | Machine settings | Enabled |
+| Extension installed | Extension list | Provisioning succeeded |
+| Update visibility | Update Manager → Machine | Updates listed |
+| Maintenance config | Configuration status | Active, machines assigned |
+| Schedule execution | History tab | Successful runs |
+
+## Monitoring
+
+### Azure Workbooks
+
+Use built-in workbooks for update reporting:
+
+1. Navigate to **Azure Update Manager** → **Workbooks**
+2. Available workbooks:
+ - **Update compliance** - Compliance across all machines
+ - **Update deployment status** - Scheduled deployment results
+ - **Machine updates** - Per-machine update history
+
+### Azure Resource Graph Queries
+
+```kusto
+// Machines with critical updates pending
+patchassessmentresources
+| where type == 'microsoft.hybridcompute/machines/patchassessmentresults'
+| extend critical = toint(properties.availablePatchCountByClassification.critical)
+| where critical > 0
+| project 
+ Machine = tostring(split(id, '/patchAssessmentResults')[0]),
+ CriticalUpdates = critical,
+ LastAssessment = todatetime(properties.lastModifiedDateTime)
+| order by CriticalUpdates desc
+```
+
+```kusto
+// Update installation history
+patchinstallationresources
+| where type == 'microsoft.hybridcompute/machines/patchinstallationresults'
+| extend status = tostring(properties.status)
+| extend installedCount = toint(properties.installedPatchCount)
+| summarize 
+ TotalInstalled = sum(installedCount),
+ SuccessCount = countif(status == 'Succeeded'),
+ FailedCount = countif(status == 'Failed')
+ by bin(todatetime(properties.lastModifiedDateTime), 1d)
+```
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Resolution |
+|---------|--------------|------------|
+| Updates not showing | Assessment not run | Trigger manual assessment |
+| Extension not installing | Agent connectivity | Check Arc agent status |
+| Scheduled patch fails | Maintenance window too short | Increase duration |
+| Reboot not occurring | Reboot setting misconfigured | Verify IfRequired/AlwaysReboot |
+| WSUS updates not detected | WSUS connectivity | Verify WSUS server reachable |
+| Group Policy conflict | GPO overriding settings | Review Windows Update GPOs |
+
+### Extension Troubleshooting
+
+```powershell
+# Check extension logs (Windows)
+Get-Content "C:\WindowsAzure\Logs\Plugins\Microsoft.CPlat.Core.WindowsPatchExtension\*\CommandExecution.log" -Tail 50
+
+# Reinstall extension if needed
+az connectedmachine machine-extension delete \
+ --resource-group "{{AZURE_RESOURCE_GROUP}}" \
+ --machine-name "{{MACHINE_NAME}}" \
+ --name "WindowsPatchExtension"
+
+# Extension will auto-reinstall on next operation
+```
+
+## Best Practices
+
+| Practice | Recommendation |
+|----------|----------------|
+| **Classification selection** | Always include Critical and Security |
+| **Maintenance duration** | Minimum 2 hours for thorough patching |
+| **Reboot handling** | Use IfRequired for most scenarios |
+| **Pre/post scripts** | Use for application-specific actions |
+| **Dynamic scopes** | Tag-based for automatic inclusion |
+| **Testing** | Patch dev/test before production |
+
+## Variables Reference
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{MAINTENANCE_CONFIG_NAME}}` | Maintenance configuration name | `mc-prod-saturday-patch` |
+| `{{MAINTENANCE_START_TIME}}` | Scheduled start time | `23:00` |
+| `{{MAINTENANCE_DURATION}}` | Duration in hours | `3` |
+| `{{TIME_ZONE}}` | Time zone for schedule | `Central Standard Time` |
+
+## Next Steps
+
+After configuring Azure Update Manager:
+
+1. ➡️ **[Phase 21: Licensing and Telemetry](../phase-05-licensing-telemetry/index.mdx)** — Configure Azure Benefits and Windows licensing
+2. Create update rings (dev → test → prod)
+3. Document exception procedures for emergency patches
+4. Configure compliance alerts and notifications
+5. Schedule monthly patch review meetings

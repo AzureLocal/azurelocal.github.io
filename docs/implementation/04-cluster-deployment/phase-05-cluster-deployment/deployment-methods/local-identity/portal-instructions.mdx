@@ -1,0 +1,1242 @@
+---
+title: "Local Identity - Via Portal"
+sidebar_label: "Local Identity - Portal"
+sidebar_position: 1
+description: "Deploy Azure Local cluster with local identity authentication using the Azure Portal and Key Vault"
+category: "RUNBOOK"
+scope: "Portal-based cluster deployment with local identity authentication"
+purpose: "Deploy Azure Local cluster without Active Directory using local Windows accounts and Azure Key Vault"
+author: "Azure Local Cloud Azure Local Cloud"
+created: 2026-01-31
+updated: 2026-03-08
+version: "1.1.0"
+tags:
+ - azure-local
+ - local-identity
+ - portal
+ - runbook
+ - key-vault
+keywords:
+ - local identity
+ - key vault
+ - portal deployment
+ - no active directory
+ - azure local cluster
+status: "approved"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Local Identity Authentication - Portal Deployment
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Portal-based cluster deployment with local identity 
+> **PURPOSE**: Deploy cluster without Active Directory using Azure Key Vault 
+> **MASTER REFERENCE**: [Microsoft Learn - Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+**Status**: Active 
+**Estimated Time**: 2-3 hours 
+**Last Updated**: 2026-03-08
+
+---
+
+## Overview
+
+Local Identity deployment enables Azure Local clusters without Active Directory dependency. Authentication is managed through local Windows accounts on each node, with credentials stored securely in Azure Key Vault.
+
+:::info Use Cases for Local Identity
+- Edge locations without AD connectivity
+- Proof-of-concept deployments
+- Simplified lab environments
+- Scenarios requiring AD independence
+- Remote/disconnected site deployments
+:::
+
+:::warning Preview Feature — Not for Production
+Local Identity with Azure Key Vault is in **public preview**. Microsoft does not recommend this for production workloads. Windows Admin Center (WAC) deployment is **not supported** with Local Identity.
+
+**Source**: [MS Learn — Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
+:::
+
+---
+
+## Prerequisites
+
+### Azure Requirements
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Azure Subscription | Active subscription | `Get-AzSubscription` |
+| Resource Group | Dedicated resource group | Created in Azure Portal |
+| RBAC Permissions | Contributor + User Access Administrator | Verify in IAM |
+| Azure Arc | All nodes registered (Stage 13) | Verify in Arc > Servers |
+| Key Vault | For credential storage | Created or existing |
+
+### Node Requirements
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Local Admin | **Identical credentials on ALL nodes** | Verify login works |
+| Windows Server | Azure Stack HCI OS installed | `winver` |
+| Network | All nodes can communicate | `Test-NetConnection` |
+| WinRM | Remote management enabled | `Test-WSMan` |
+
+:::warning Critical Requirement
+The local administrator password **MUST be identical** across all cluster nodes. Different passwords will cause deployment failure.
+:::
+
+---
+
+## Key Differences from AD Deployment
+
+| Aspect | Active Directory | Local Identity |
+|--------|-----------------|----------------|
+| Authentication | Domain accounts | Local Windows accounts |
+| Credential storage | AD + Key Vault | Azure Key Vault only |
+| Service accounts | AD service accounts | Local accounts |
+| Group policies | GPO managed | Local security policy |
+| SSO | Domain SSO | Per-node authentication |
+| AD dependency | Required | Not required |
+
+---
+
+## Pre-Deployment: Create Local Accounts
+
+Microsoft requires a **non-built-in** local administrator account with identical credentials on every cluster node before portal deployment begins.
+
+:::danger Do NOT use the built-in Administrator account
+Microsoft explicitly states: do not use the built-in `Administrator` account for Local Identity deployments. Create a separate, non-default local account. The account name is configured at `identity.accounts.account_local_admin_username` in `infrastructure.yml`.
+
+**Source**: [MS Learn — Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
+:::
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="On Each Node (GUI)" default>
+
+On each cluster node (via RDP or console), use **Computer Management** (`compmgmt.msc`) to create the local account:
+
+1. Open **Computer Management** → **Local Users and Groups** → **Users**
+2. Right-click **Users** → **New User**
+3. Set **User name** to the value from `identity.accounts.account_local_admin_username`
+4. Set **Password** — minimum 14 characters, **identical on ALL nodes**
+5. Uncheck **User must change password at next logon**
+6. Check **Password never expires** and **Account never expires**
+7. Click **Create**, then **Close**
+8. Right-click the new user → **Properties** → **Member Of** tab → **Add** → type `Administrators` → **OK**
+
+Repeat on every cluster node. Verify by signing in locally with the new account credentials on each node before proceeding.
+
+:::warning
+Do NOT set the same password as the built-in `Administrator` account, and do NOT use `Administrator` as the username. Use a unique, non-default account name.
+:::
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+Run this script directly on each node via RDP or console session. All variables are defined inline — no `infrastructure.yml` or toolkit access required on the node.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Deploy-CreateLocalAdmin.ps1`
+
+```powershell title="Deploy-CreateLocalAdmin.ps1 — run on each node directly"
+#region CONFIGURATION
+$Username = "REPLACE_LOCAL_ADMIN_USERNAME" # identity.accounts.account_local_admin_username — must be identical on all nodes
+$Password = "REPLACE_LOCAL_ADMIN_PASSWORD" # identity.accounts.account_local_admin_password — minimum 14 characters
+#endregion CONFIGURATION
+
+if ($Username -match '^REPLACE_') { throw 'Edit the REPLACE_ variables in #region CONFIGURATION before running.' }
+if ($Username -ieq 'Administrator') { throw 'Do not use the built-in Administrator account. Use a custom non-default account name.' }
+if ($Password.Length -lt 14) { throw "Password must be at least 14 characters. Current length: $($Password.Length)" }
+
+$secPwd = ConvertTo-SecureString $Password -AsPlainText -Force
+$existing = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
+
+if (-not $existing) {
+ New-LocalUser -Name $Username -Password $secPwd -PasswordNeverExpires -AccountNeverExpires
+ Write-Host "[PASS] Account '$Username' created on $env:COMPUTERNAME" -ForegroundColor Green
+} else {
+ Set-LocalUser -Name $Username -Password $secPwd
+ Write-Host "[PASS] Account '$Username' password updated on $env:COMPUTERNAME" -ForegroundColor Green
+}
+
+$inAdmins = [bool](Get-LocalGroupMember -Group 'Administrators' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*$Username" })
+if (-not $inAdmins) {
+ Add-LocalGroupMember -Group 'Administrators' -Member $Username
+ Write-Host "[PASS] '$Username' added to Administrators group on $env:COMPUTERNAME" -ForegroundColor Green
+}
+
+Write-Host "`nVerification:" -ForegroundColor Cyan
+Get-LocalUser -Name $Username | Format-Table Name, Enabled, PasswordNeverExpires, AccountNeverExpires -AutoSize
+```
+
+Repeat on every cluster node. Verify the account exists with identical credentials before proceeding.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+Run from the **repo root** on the management/jump box. Reads account credentials and node IPs from `infrastructure.yml` and creates the local account on all cluster nodes via PSRemoting.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1`
+
+```powershell title="Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1"
+<#
+.SYNOPSIS
+ Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1
+ Creates the required non-built-in local administrator account on all Azure Local
+ nodes via PSRemoting. Mandatory pre-deployment step for Local Identity authentication.
+
+.DESCRIPTION
+ Runs from the management/jump box. Reads the target account name and password from
+ infrastructure.yml, connects to each node over PSRemoting using an existing local
+ administrator credential, and creates the deployment account if it does not already
+ exist. Adds the account to the Administrators group and verifies the result.
+
+ Microsoft requires this account to:
+ - NOT be the built-in Administrator account
+ - Have an identical username and password on every cluster node
+ - Have a password of at least 14 characters
+ Ref: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault
+
+ infrastructure.yml paths used:
+ identity.accounts.account_local_admin_username - New account username to create
+ identity.accounts.account_local_admin_password - Key Vault ref for new account password
+ compute.cluster_nodes[].management_ip - PSRemoting connection target per node
+
+.PARAMETER ConfigPath
+ Path to infrastructure.yml. Auto-discovers infrastructure*.yml if not provided.
+
+.PARAMETER Credential
+ EXISTING local administrator credentials used to connect to cluster nodes via
+ PSRemoting. If not provided, prompts interactively.
+
+.PARAMETER TargetNode
+ Limit execution to one or more specific nodes by hostname. Empty = run all nodes.
+
+.PARAMETER WhatIf
+ Dry-run mode — logs what would happen without making any changes.
+
+.PARAMETER LogPath
+ Override the log file path.
+
+.PARAMETER LocalAdminUsername
+ Override the local admin username. Takes precedence over infrastructure.yml.
+
+.EXAMPLE
+ .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
+ .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode iic-01-n01
+ .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
+
+.NOTES
+ Author: Azure Local Cloud Azure Local Cloud
+ Version: 1.0.0
+ Phase: 05-cluster-deployment
+ Task: task-01-initiate-deployment-via-azure-portal
+ Execution: Run from management/jump box
+#>
+
+[CmdletBinding()]
+param(
+ [string]$ConfigPath = "",
+ [Parameter(Mandatory = $false)][PSCredential]$Credential,
+ [Parameter(Mandatory = $false)][string[]]$TargetNode = @(),
+ [Parameter(Mandatory = $false)][switch]$WhatIf,
+ [Parameter(Mandatory = $false)][string]$LogPath = "",
+ [Parameter(Mandatory = $false)][string]$LocalAdminUsername = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region HELPERS
+function Write-Log {
+ param([string]$Message, [string]$Level = "INFO")
+ $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+ switch ($Level) {
+ "SUCCESS" { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
+ "ERROR" { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
+ "WARN" { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
+ "HEADER" { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
+ default { Write-Host "[$ts] [INFO] $Message" }
+ }
+ if ($script:LogFile) { "[$ts] [$Level] $Message" | Add-Content -Path $script:LogFile -ErrorAction SilentlyContinue }
+}
+
+function Resolve-ConfigPath {
+ param([string]$Provided)
+ if ($Provided -ne "" -and (Test-Path $Provided)) { return (Resolve-Path $Provided).Path }
+ $searchPaths = @(
+ (Join-Path $PSScriptRoot "..\..\..\..\..\..\configs"),
+ (Join-Path $PSScriptRoot "..\..\..\..\..\..\..\configs"),
+ "C:\configs", "C:\AzureLocal\configs"
+ )
+ $found = @()
+ foreach ($dir in $searchPaths) {
+ if (Test-Path $dir) {
+ $found += Get-ChildItem -Path $dir -Filter "infrastructure*.yml" -File -ErrorAction SilentlyContinue
+ }
+ }
+ $found = @($found | Sort-Object FullName -Unique)
+ if ($found.Count -eq 0) { throw "No infrastructure*.yml found. Pass -ConfigPath or place it in a standard location." }
+ if ($found.Count -eq 1) { Write-Log "Config: $($found[0].FullName)"; return $found[0].FullName }
+ Write-Log "Multiple config files found:" "WARN"
+ for ($i = 0; $i -lt $found.Count; $i++) { Write-Host " [$($i+1)] $($found[$i].FullName)" -ForegroundColor Yellow }
+ $choice = Read-Host "Select config [1-$($found.Count)]"
+ $idx = [int]$choice - 1
+ if ($idx -lt 0 -or $idx -ge $found.Count) { throw "Invalid selection." }
+ return $found[$idx].FullName
+}
+
+function Get-ClusterConfig {
+ param([string]$ConfigPath)
+ if (-not (Get-Module -Name powershell-yaml -ListAvailable -ErrorAction SilentlyContinue)) {
+ Write-Log "Installing powershell-yaml module..." "WARN"
+ Install-Module -Name powershell-yaml -Scope CurrentUser -Force -AllowClobber
+ }
+ Import-Module powershell-yaml -ErrorAction Stop
+ $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+ $adminUser = $cfg.identity.accounts.account_local_admin_username # identity.accounts.account_local_admin_username
+ $adminPassUri = $cfg.identity.accounts.account_local_admin_password # identity.accounts.account_local_admin_password
+ if (-not $adminUser) { throw "identity.accounts.account_local_admin_username not found in $ConfigPath." }
+ if (-not $adminPassUri) { throw "identity.accounts.account_local_admin_password not found in $ConfigPath." }
+ $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
+ Write-Log " Node: $($_.Key) IP: $($_.Value.management_ip)"
+ [PSCustomObject]@{ hostname = $_.Key; management_ip = $_.Value.management_ip }
+ }
+ if (-not $nodes) { throw "No nodes found under compute.cluster_nodes in $ConfigPath." }
+ return [PSCustomObject]@{ AdminUser = $adminUser; AdminPassUri = $adminPassUri; Nodes = @($nodes) }
+}
+
+function Resolve-KeyVaultRef {
+ param([Parameter(Mandatory)][string]$KvUri)
+ if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { return $null }
+ $vaultName = $Matches[1]; $secretName = $Matches[2]
+ Write-Log " Fetching '$secretName' from Key Vault '$vaultName'..."
+ if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
+ try {
+ $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
+ if ($secret) { return $secret }
+ } catch { Write-Log " Az.KeyVault failed: $($_.Exception.Message)" "WARN" }
+ }
+ try {
+ $azOut = & az keyvault secret show --vault-name $vaultName --name $secretName --query value -o tsv 2>&1
+ if ($LASTEXITCODE -eq 0 -and $azOut) { return ($azOut | Out-String).Trim() }
+ return $null
+ } catch { return $null }
+}
+#endregion HELPERS
+
+#region MAIN
+Write-Log "=== Phase 05 / Task 01 — Create Local Identity Accounts (Pre-Deployment) ===" "HEADER"
+if ($WhatIf) { Write-Log "*** DRY-RUN MODE — no changes will be made ***" "WARN" }
+
+$taskFolderName = "task-01-initiate-deployment-via-azure-portal"
+$logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
+if ($LogPath -ne "") {
+ $script:LogFile = $LogPath
+} else {
+ if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+ $stamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+ $script:LogFile = Join-Path $logDir "${stamp}_CreateLocalIdentityAccounts.log"
+}
+Write-Log "Log file: $script:LogFile"
+
+$configFile = Resolve-ConfigPath -Provided $ConfigPath
+Write-Log "Config: $configFile"
+$clusterCfg = Get-ClusterConfig -ConfigPath $configFile
+
+$targetUser = if ($LocalAdminUsername -ne "") {
+ Write-Log "Using -LocalAdminUsername override: '$LocalAdminUsername'"
+ $LocalAdminUsername
+} else { $clusterCfg.AdminUser }
+
+Write-Log "Target account : $targetUser"
+Write-Log "Password source : $($clusterCfg.AdminPassUri)"
+
+$newAccountPass = Resolve-KeyVaultRef -KvUri $clusterCfg.AdminPassUri
+if (-not $newAccountPass) {
+ Write-Log "Key Vault unavailable — prompting for new account password." "WARN"
+ $newAccountPassSecure = Read-Host -AsSecureString "Enter password for '$targetUser' (min 14 chars, identical on all nodes)"
+ $newAccountPass = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+ [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($newAccountPassSecure)
+ )
+}
+
+if (-not $Credential) {
+ Write-Log "No -Credential provided — prompting for EXISTING node admin credentials." "WARN"
+ $Credential = Get-Credential -Message "Enter EXISTING local administrator credentials to connect to cluster nodes"
+}
+
+$nodes = $clusterCfg.Nodes
+if ($TargetNode.Count -gt 0) {
+ $nodes = $nodes | Where-Object { $TargetNode -contains $_.hostname }
+ Write-Log "Filtered to $($nodes.Count) node(s): $($TargetNode -join ', ')"
+}
+
+Write-Log "Processing $($nodes.Count) node(s)..."
+$results = @()
+
+foreach ($node in $nodes) {
+ $ip = $node.management_ip; $hostname = $node.hostname
+ if (-not $ip) { Write-Log "[$hostname] management_ip missing — skipping" "WARN"; continue }
+ Write-Log "[$hostname] Target: $ip"
+
+ if ($WhatIf) {
+ Write-Log "[$hostname] [WHATIF] Would create local account '$targetUser' and add to Administrators" "WARN"
+ $results += [PSCustomObject]@{ Node = $hostname; IP = $ip; Status = "WHATIF"; Detail = "Skipped (WhatIf)" }
+ continue
+ }
+
+ try {
+ $r = Invoke-Command -ComputerName $ip -Credential $Credential -ArgumentList $targetUser, $newAccountPass -ScriptBlock {
+ param($username, $password)
+ if ($username -ieq "Administrator") {
+ throw "Account name 'Administrator' is not permitted. Use a custom non-default account name."
+ }
+ $secPwd = ConvertTo-SecureString $password -AsPlainText -Force
+ $existing = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
+ $inAdmins = $false
+ if ($existing) {
+ $inAdmins = [bool](Get-LocalGroupMember -Group "Administrators" -ErrorAction SilentlyContinue |
+ Where-Object { $_.Name -like "*\$username" -or $_.Name -eq $username })
+ }
+ if ($existing -and $inAdmins) {
+ Set-LocalUser -Name $username -Password $secPwd -ErrorAction Stop
+ return [PSCustomObject]@{ Hostname = $env:COMPUTERNAME; Status = "PASS"; Detail = "Account existed — password updated" }
+ }
+ if (-not $existing) {
+ New-LocalUser -Name $username -Password $secPwd -PasswordNeverExpires -AccountNeverExpires -ErrorAction Stop
+ }
+ if (-not $inAdmins) {
+ Add-LocalGroupMember -Group "Administrators" -Member $username -ErrorAction Stop
+ }
+ $verify = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
+ if (-not $verify) { throw "Account '$username' not found after creation." }
+ return [PSCustomObject]@{ Hostname = $env:COMPUTERNAME; Status = "PASS"; Detail = "Account created and added to Administrators" }
+ }
+ Write-Log "[$hostname] $($r.Status) $($r.Detail)" "SUCCESS"
+ $results += [PSCustomObject]@{ Node = $hostname; IP = $ip; Status = $r.Status; Detail = $r.Detail }
+ } catch {
+ Write-Log "[$hostname] FAILED: $($_.Exception.Message)" "ERROR"
+ $results += [PSCustomObject]@{ Node = $hostname; IP = $ip; Status = "ERROR"; Detail = $_.Exception.Message }
+ }
+}
+
+Write-Log ""
+Write-Log "=== Local Identity Account Creation Summary ===" "HEADER"
+$results | Format-Table Node, IP, Status, Detail -AutoSize -Wrap
+
+$failCount = @($results | Where-Object { $_.Status -eq "ERROR" }).Count
+if ($failCount -eq 0) {
+ Write-Log "All $($results.Count) node(s) completed successfully." "SUCCESS"
+} else {
+ Write-Log "$failCount node(s) failed. Resolve errors before starting portal deployment." "ERROR"
+ exit 1
+}
+#endregion MAIN
+```
+
+</TabItem>
+</Tabs>
+
+:::warning Password requirement
+The password must be **identical** across all cluster nodes and **at least 14 characters** in length. Any mismatch will cause deployment failure.
+:::
+
+---
+
+## Step-by-Step Portal Deployment
+
+### Task 1: Navigate to Azure Local
+
+1. Open [Azure Portal](https://portal.azure.com)
+2. Search for **"Azure Local"**
+3. Click **+ Create**
+
+---
+
+### Task 2: Basics Configuration
+
+| Field | Value | Notes |
+|-------|-------|-------|
+| **Subscription** | Select subscription | Must have Contributor + UAA |
+| **Resource group** | Select or create | Dedicated RG for cluster |
+| **Cluster name** | `<CLUSTER_NAME>` | From `infrastructure.yml: compute.arm_deployment.cluster_name` |
+| **Region** | `<AZURE_REGION>` | From `infrastructure.yml: azure_platform.azure_tenants.aztenant_location` |
+
+**Add Arc-registered machines:**
+1. Click **Add machines**
+2. Select all Arc-registered nodes from Stage 13
+3. Click **Add**
+4. Wait for Arc extension installation
+
+**Step 6 — Configure Authentication:**
+- Under the **Identity** section of the Basics tab, select **Local identity with Azure Key Vault** as the authentication type
+- Enter credentials in [Task 4](#task-4-basics--identity-credentials) below
+
+---
+
+### Task 3: Configuration
+
+- Select **New configuration** (manual configuration)
+- Template specs available for future deployments
+
+---
+
+### Task 4: Basics — Identity Credentials
+
+The following credential fields are part of the **Basics tab** — there is no separate Identity tab in the portal wizard.
+
+| Field | Value | Description |
+|-------|-------|-------------|
+| **Authentication type** | **Local identity** | Uses local Windows accounts |
+| **Local admin username** | `<LOCAL_ADMIN_USERNAME>` | Account created in pre-deployment step — from `identity.accounts.account_local_admin_username` |
+| **Local admin password** | [Enter password] | **Must match all nodes exactly** |
+| **Deployment username** | `<LOCAL_ADMIN_USERNAME>` | Same account used for LCM deployment |
+| **Deployment password** | [Enter password] | Stored in Key Vault |
+
+:::danger Do NOT use the built-in Administrator account
+Microsoft explicitly prohibits using the built-in `Administrator` account for Local Identity deployments. Enter the custom non-built-in account created in the pre-deployment step above. Using `Administrator` will either fail validation or break the deployment.
+
+**Source**: [MS Learn — Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
+:::
+
+---
+
+### Task 5: Networking Configuration
+
+**Storage connectivity:**
+
+| Option | When to use |
+|--------|-------------|
+| **Network switch for storage traffic** | 3+ node clusters (recommended) |
+| **No switch for storage** | 1–2 node clusters only (switchless) |
+
+**Network intents:**
+
+:::info Network intents are defined by your planning design
+The number of intents, traffic type assignments, and adapter bindings configured here must match the design from your planning and discovery sessions, as captured in `infrastructure.yml` under `compute.arm_deployment.network_intents`. Do not assume a specific number of intents or a fixed layout.
+
+Typical layouts:
+
+| Layout | Intent | Traffic types |
+|--------|--------|---------------|
+| 2-intent | Management + Compute | Management, Compute |
+| 2-intent | Storage | Storage |
+| 3-intent | Management | Management |
+| 3-intent | Compute | Compute |
+| 3-intent | Storage | Storage |
+
+For adapter assignments for each intent, refer to `compute.arm_deployment.network_intents[*].intent_adapters` in your `infrastructure.yml`.
+:::
+
+**IP Allocation:**
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| Starting IP | First available IP | `infrastructure.yml: compute.arm_deployment.ip_allocation.starting_ip` |
+| Ending IP | Last available IP | `infrastructure.yml: compute.arm_deployment.ip_allocation.ending_ip` |
+| Subnet mask | e.g., `255.255.255.0` | `infrastructure.yml: compute.arm_deployment.subnet_mask` |
+| Default gateway | Gateway IP | `infrastructure.yml: compute.arm_deployment.default_gateway` |
+| DNS servers | Primary, Secondary | `infrastructure.yml: compute.arm_deployment.dns_servers` |
+| **Zone name (domain)** | `<DNS_ZONE_NAME>` | `infrastructure.yml: compute.arm_deployment.domain_fqdn` — **Local Identity only** |
+
+:::info Zone name — Local Identity only
+This field only appears for Local Identity deployments. Enter the DNS zone where Host A records for each node have been pre-created (e.g., `iic.local`). Must match the zone used when configuring node DNS entries in the pre-deployment DNS requirements step.
+:::
+
+:::warning IP Pool Requirement
+Minimum **6 consecutive IPs** required for cluster + Arc Resource Bridge. Do NOT include node management IPs in this pool.
+:::
+
+---
+
+### Task 6: Management Configuration
+
+**Step 1 — Select Identity Provider:**
+Under the **Identity** section of the Management tab:
+1. From the **Identity** dropdown, select **Local identity with Azure Key Vault**
+2. In the **Key Vault** field, enter or select the Key Vault name (`infrastructure.yml: security.keyvault.kv_azl.kv_azl_name`)
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| **Custom location name** | `<CLUSTER_NAME>-location` | For Arc VM management |
+| **Cloud witness storage** | Create or select | For cluster quorum |
+
+:::info No Domain Configuration
+With Local Identity, there is **no Active Directory configuration** in the Management tab. Skip domain, OU path, and deployment account fields — they do not appear for Local Identity deployments.
+:::
+
+---
+
+### Task 7: Security Configuration
+
+| Setting | Recommendation | Notes |
+|---------|---------------|-------|
+| **BitLocker** | Enabled | Encrypt all volumes |
+| **Credential Guard** | Enabled | Protect credentials |
+| **WDAC** | Enabled | Application control |
+| **SMB signing** | Required | Secure SMB |
+| **SMB encryption** | Enabled | Encrypt cluster traffic |
+| **Drift control** | Enabled | Monitor security baseline |
+
+Select **Recommended security settings** for highest security.
+
+---
+
+### Task 8: Advanced Configuration
+
+**Volume creation strategy:**
+- **Create workload volumes and required infrastructure volumes** ✓ (Recommended)
+- Creates infrastructure + workload volumes automatically
+
+**Tags:**
+Apply Azure tags for governance:
+
+| Tag | Value |
+|-----|-------|
+| `Environment` | Production / Development |
+| `DeploymentType` | LocalIdentity |
+| `DeploymentDate` | YYYY-MM-DD |
+
+---
+
+### Task 9: Validation
+
+1. Click **Start validation**
+2. Wait for validation (~15 minutes)
+3. **DO NOT click "Try again"** while validation is running
+
+:::tip Run the validation monitor
+While validation runs, start [Monitor-Validation.ps1](../../deployment-monitoring/monitor-validation.mdx) to see live step status and `EnvironmentValidatorFull` log output. It auto-exits when validation completes.
+:::
+
+**Validation checks:**
+- Network connectivity
+- Arc registration
+- Storage availability
+- Endpoint accessibility
+
+Resolve any errors before proceeding.
+
+---
+
+### Task 10: Review + Create
+
+1. Review all configuration settings
+2. Verify:
+ - All Arc-registered nodes selected
+ - Local identity authentication selected
+ - Management IP pool has 6+ IPs
+ - Storage adapters configured
+3. Click **Create**
+
+---
+
+## Deployment Progress
+
+**Deployment Time:**
+- Single machine: 1.5-2 hours
+- Two-node cluster: ~2.5 hours
+
+**Deployment Stages:**
+1. Begin cloud deployment (45-60 min)
+2. Install Arc extensions
+3. Configure network intents
+4. Create storage pools and volumes
+5. Deploy Arc Resource Bridge
+6. Provision custom location
+
+Monitor progress in **Resource Groups** > Your RG > **Deployments**
+
+:::tip Run the deployment monitor
+After clicking Create, start [Monitor-Deployment.ps1](../../deployment-monitoring/monitor-deployment.mdx) to track hierarchical step progress and stream `OrchestratorFull` logs in real time. Press Ctrl+C to exit at any time.
+:::
+
+---
+
+## Post-Deployment Validation
+
+### Verify Azure Resources
+
+| Resource Type | Count | Description |
+|---------------|-------|-------------|
+| Machine - Azure Arc | 1 per node | Arc-connected machines |
+| Azure Local instance | 1 | Cluster resource |
+| Arc Resource Bridge | 1 | VM management bridge |
+| Key Vault | 1 | Credential storage (auto-created by deployment) |
+| Custom location | 1 | Arc VM location |
+| Storage accounts | 2 | Witness + audit logs |
+| Infrastructure logical network | 1 | `<clustername>-InfraLNET` — created automatically |
+| Azure Local storage path - Azure Arc | 1 per node | Storage path resource |
+
+### Verify Cluster Health
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run directly on a cluster node via RDP or console session.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Test-ClusterHealth.ps1`
+
+```powershell title="Test-ClusterHealth.ps1 — run directly on node"
+Write-Host "`n=== Cluster Health Verification — $env:COMPUTERNAME ===" -ForegroundColor Cyan
+
+Write-Host "`n--- Cluster Status ---" -ForegroundColor Cyan
+$cluster = Get-Cluster -ErrorAction Stop
+$cluster | Format-List Name, SharedVolumesRoot
+
+Write-Host "`n--- Node Status ---" -ForegroundColor Cyan
+Get-ClusterNode | Format-Table Name, State -AutoSize
+
+$downNodes = @(Get-ClusterNode | Where-Object { $_.State -ne 'Up' })
+if ($downNodes.Count -gt 0) {
+ Write-Host "[WARN] $($downNodes.Count) node(s) not in 'Up' state:" -ForegroundColor Yellow
+ $downNodes | ForEach-Object { Write-Host " - $($_.Name): $($_.State)" -ForegroundColor Yellow }
+} else {
+ Write-Host "[PASS] All nodes are Up" -ForegroundColor Green
+}
+
+Write-Host "`n--- Storage Pool ---" -ForegroundColor Cyan
+$pools = @(Get-StoragePool | Where-Object { -not $_.IsPrimordial })
+if ($pools.Count -eq 0) {
+ Write-Host "[WARN] No S2D storage pool found" -ForegroundColor Yellow
+} else {
+ $pools | Format-Table FriendlyName, HealthStatus, OperationalStatus, Size -AutoSize
+ $unhealthy = @($pools | Where-Object { $_.HealthStatus -ne 'Healthy' })
+ if ($unhealthy.Count -gt 0) {
+ Write-Host "[WARN] $($unhealthy.Count) pool(s) not Healthy" -ForegroundColor Yellow
+ } else {
+ Write-Host "[PASS] Storage pool healthy" -ForegroundColor Green
+ }
+}
+
+Write-Host "`n[DONE] Cluster health check complete on $env:COMPUTERNAME" -ForegroundColor Cyan
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
+
+Run from the **repo root** on the management/jump box. Reads node IPs and credentials from `infrastructure.yml` and checks cluster health on all nodes via PSRemoting.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1`
+
+```powershell title="Invoke-VerifyClusterHealth-Orchestrated.ps1"
+<#
+.SYNOPSIS
+ Invoke-VerifyClusterHealth-Orchestrated.ps1
+ Orchestrated cluster health verification for Azure Local deployments.
+
+.PARAMETER ConfigPath
+ Path to infrastructure.yml.
+.PARAMETER Credential
+ Override credential for PSRemoting.
+.PARAMETER TargetNode
+ Limit verification to specific node(s). Empty = all cluster nodes.
+.PARAMETER WhatIf
+ Dry-run mode.
+.PARAMETER LogPath
+ Override log file path.
+
+.EXAMPLE
+ .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml
+ .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -TargetNode iic-01-n01
+ .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -WhatIf
+
+.NOTES
+ Author: Azure Local Cloud Azure Local Cloud
+ Version: 1.0.0
+ Phase: 05-cluster-deployment
+ Task: task-03-verify-deployment-completion
+ Execution: Run from management server with access to infrastructure.yml
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+ [string]$ConfigPath = "",
+ [PSCredential]$Credential,
+ [string[]]$TargetNode = @(),
+ [switch]$WhatIf,
+ [string]$LogPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region LOGGING
+$TaskFolderName = "task-03-verify-deployment-completion"
+$ShortName = "VerifyClusterHealth"
+
+if (-not $LogPath) {
+ $LogDir = Join-Path (Get-Location).Path "logs\$TaskFolderName"
+ $LogPath = Join-Path $LogDir ("{0}_{1}_{2}.log" -f (Get-Date -f 'yyyy-MM-dd'), (Get-Date -f 'HHmmss'), $ShortName)
+}
+if (-not (Test-Path (Split-Path $LogPath -Parent))) {
+ New-Item -ItemType Directory -Path (Split-Path $LogPath -Parent) -Force | Out-Null
+}
+
+function Write-Log {
+ param([string]$Message, [ValidateSet('INFO','WARN','ERROR','DEBUG')][string]$Level = 'INFO')
+ $entry = "{0} [{1}] {2}" -f (Get-Date -f 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
+ Add-Content -Path $LogPath -Value $entry
+ switch ($Level) {
+ 'WARN' { Write-Host $entry -ForegroundColor Yellow }
+ 'ERROR' { Write-Host $entry -ForegroundColor Red }
+ default { Write-Host $entry }
+ }
+}
+#endregion LOGGING
+
+#region CONFIG LOADING
+. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\config-loader.ps1")
+. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\keyvault-helper.ps1")
+
+if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml" }
+Write-Log "Loading configuration from: $ConfigPath"
+$cfg = Get-ClusterConfig -ConfigPath $ConfigPath
+#endregion CONFIG LOADING
+
+#region RESOLVE NODES
+$allNodes = $cfg.compute.cluster_nodes # compute.cluster_nodes[*]
+if ($TargetNode.Count -gt 0) {
+ $nodes = @($allNodes | Where-Object { $_.name -in $TargetNode })
+ if ($nodes.Count -eq 0) { Write-Log "No matching nodes for: $($TargetNode -join ', ')" -Level ERROR; exit 1 }
+} else {
+ $nodes = @($allNodes)
+}
+Write-Log "Nodes to verify: $($nodes.name -join ', ')"
+#endregion RESOLVE NODES
+
+#region RESOLVE CREDENTIAL
+if (-not $Credential) {
+ $kvPassword = $cfg.identity.accounts.account_local_admin_password # identity.accounts.account_local_admin_password
+ $username = $cfg.identity.accounts.account_local_admin_username # identity.accounts.account_local_admin_username
+ if ($kvPassword -match '^keyvault://') {
+ Write-Log "Resolving local admin password from Key Vault..."
+ $kvName = $cfg.security.keyvault.kv_azl.kv_azl_name # security.keyvault.kv_azl.kv_azl_name
+ $secret = Resolve-KeyVaultRef -Uri $kvPassword -VaultName $kvName
+ $Credential = New-Object PSCredential($username, (ConvertTo-SecureString $secret -AsPlainText -Force))
+ } else {
+ Write-Log "No KV reference; prompting for credentials..." -Level WARN
+ $Credential = Get-Credential -Message "Enter local admin credentials for cluster nodes"
+ }
+}
+#endregion RESOLVE CREDENTIAL
+
+if ($WhatIf) {
+ Write-Log "[WhatIf] Would verify cluster health on: $($nodes | ForEach-Object { $_.management_ip } | Join-String ', ')"
+ exit 0
+}
+
+#region MAIN
+Write-Log "=== Cluster Health Verification ==="
+$results = [System.Collections.Generic.List[PSCustomObject]]::new()
+$failCount = 0
+
+foreach ($node in $nodes) {
+ $ip = $node.management_ip # compute.cluster_nodes[*].management_ip
+ Write-Log "Connecting to $($node.name) ($ip)..."
+ try {
+ $nodeResult = Invoke-Command -ComputerName $ip -Credential $Credential -ScriptBlock {
+ $r = [PSCustomObject]@{
+ NodeName = $env:COMPUTERNAME
+ ClusterName = $null
+ AllNodesUp = $false
+ PoolHealthy = $false
+ Errors = @()
+ }
+ try { $r.ClusterName = (Get-Cluster).Name } catch { $r.Errors += "Get-Cluster: $_" }
+ try {
+ $cn = @(Get-ClusterNode)
+ $r.AllNodesUp = ($cn | Where-Object { $_.State -ne 'Up' }).Count -eq 0
+ } catch { $r.Errors += "Get-ClusterNode: $_" }
+ try {
+ $pools = @(Get-StoragePool | Where-Object { -not $_.IsPrimordial })
+ $r.PoolHealthy = ($pools.Count -eq 0) -or ($pools | Where-Object { $_.HealthStatus -ne 'Healthy' }).Count -eq 0
+ } catch { $r.Errors += "Get-StoragePool: $_" }
+ $r
+ }
+ Write-Log " Cluster: $($nodeResult.ClusterName) NodesUp: $($nodeResult.AllNodesUp) Pool: $($nodeResult.PoolHealthy)"
+ foreach ($err in $nodeResult.Errors) { Write-Log " $err" -Level WARN }
+ if (-not $nodeResult.AllNodesUp -or -not $nodeResult.PoolHealthy) { $failCount++ }
+ $results.Add($nodeResult)
+ } catch {
+ Write-Log "Failed to connect to $ip : $_" -Level ERROR
+ $failCount++
+ }
+}
+
+Write-Log "=== Summary: $($nodes.Count) node(s) checked, $failCount warning(s) ==="
+if ($failCount -gt 0) {
+ Write-Log "Cluster health check completed with warnings — review log: $LogPath" -Level WARN
+ exit 1
+} else {
+ Write-Log "Cluster health check passed on all nodes."
+}
+#endregion MAIN
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+Self-contained. No `infrastructure.yml` required. Define all variables in `#region CONFIGURATION` before running.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Test-ClusterHealth-Standalone.ps1`
+
+```powershell title="Test-ClusterHealth-Standalone.ps1"
+#region CONFIGURATION
+$NodeIP = "REPLACE_NODE_01_IP" # compute.cluster_nodes[*].management_ip — IP of any cluster node
+#endregion CONFIGURATION
+
+if ($NodeIP -match '^REPLACE_') {
+ throw "Edit the REPLACE_ variables in #region CONFIGURATION before running."
+}
+
+$cred = Get-Credential -Message "Enter local admin credentials for $NodeIP"
+
+Write-Host "`n=== Cluster Health Verification — $NodeIP ===" -ForegroundColor Cyan
+
+Invoke-Command -ComputerName $NodeIP -Credential $cred -ScriptBlock {
+ Write-Host "`n--- Cluster Status ---" -ForegroundColor Cyan
+ Get-Cluster | Format-List Name, SharedVolumesRoot
+
+ Write-Host "`n--- Node Status ---" -ForegroundColor Cyan
+ Get-ClusterNode | Format-Table Name, State -AutoSize
+
+ $downNodes = @(Get-ClusterNode | Where-Object { $_.State -ne 'Up' })
+ if ($downNodes.Count -gt 0) {
+ Write-Host "[WARN] $($downNodes.Count) node(s) not in 'Up' state:" -ForegroundColor Yellow
+ } else {
+ Write-Host "[PASS] All nodes are Up" -ForegroundColor Green
+ }
+
+ Write-Host "`n--- Storage Pool ---" -ForegroundColor Cyan
+ $pools = @(Get-StoragePool | Where-Object { -not $_.IsPrimordial })
+ if ($pools.Count -eq 0) {
+ Write-Host "[WARN] No S2D storage pool found" -ForegroundColor Yellow
+ } else {
+ $pools | Format-Table FriendlyName, HealthStatus, OperationalStatus, Size -AutoSize
+ if (($pools | Where-Object { $_.HealthStatus -ne 'Healthy' }).Count -eq 0) {
+ Write-Host "[PASS] Storage pool healthy" -ForegroundColor Green
+ }
+ }
+}
+
+Write-Host "`n[DONE] Cluster health check complete" -ForegroundColor Cyan
+```
+
+</TabItem>
+</Tabs>
+
+### Verify Local Identity Configuration
+
+Run these MS-required checks to confirm the cluster deployed in AD-less mode.
+
+**Expected values:**
+- `Domain` → `WORKGROUP` — nodes must NOT be domain-joined
+- `ADAware` → `2` — cluster is in AD-less (Local Identity) mode
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run directly on a cluster node via RDP or console session.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Test-LocalIdentityConfig.ps1`
+
+```powershell title="Test-LocalIdentityConfig.ps1 — run directly on node"
+# Check 1: Node must NOT be domain-joined — expected result: WORKGROUP
+$domain = (Get-WmiObject Win32_ComputerSystem).Domain
+Write-Host "Domain membership: $domain" -ForegroundColor $(if ($domain -eq 'WORKGROUP') { 'Green' } else { 'Red' })
+if ($domain -ne 'WORKGROUP') {
+ Write-Warning "Node is domain-joined ('$domain'). Expected WORKGROUP for Local Identity."
+}
+
+# Check 2: Cluster must be in AD-less mode — expected result: 2
+$adAware = Get-ClusterResource "Cluster Name" | Get-ClusterParameter ADAware
+Write-Host "ADAware value: $($adAware.Value)" -ForegroundColor $(if ($adAware.Value -eq 2) { 'Green' } else { 'Red' })
+if ($adAware.Value -ne 2) {
+ Write-Warning "ADAware is $($adAware.Value). Expected 2 for Local Identity (AD-less) mode."
+}
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
+
+Run from the **repo root** on the management/jump box. Reads node IPs and credentials from `infrastructure.yml` and verifies Local Identity configuration on all nodes via PSRemoting.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1`
+
+```powershell title="Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1"
+<#
+.SYNOPSIS
+ Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1
+ Orchestrated Local Identity configuration verification for Azure Local deployments.
+
+.DESCRIPTION
+ Reads cluster configuration from infrastructure.yml and verifies Local Identity
+ state on all cluster nodes via PSRemoting. Checks per node:
+ 1. Domain = WORKGROUP (not domain-joined)
+ 2. ADAware cluster parameter = 2 (AD-less / Local Identity mode)
+
+.PARAMETER ConfigPath
+ Path to infrastructure.yml.
+.PARAMETER Credential
+ Override credential for PSRemoting.
+.PARAMETER TargetNode
+ Limit to specific node(s). Empty = all cluster nodes.
+.PARAMETER WhatIf
+ Dry-run mode.
+.PARAMETER LogPath
+ Override log file path.
+
+.EXAMPLE
+ .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml
+ .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -TargetNode iic-01-n01,iic-01-n02
+ .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -WhatIf
+
+.NOTES
+ Author: Azure Local Cloud Azure Local Cloud
+ Version: 1.0.0
+ Phase: 05-cluster-deployment
+ Task: task-03-verify-deployment-completion
+ Execution: Run from management server with access to infrastructure.yml
+ Source: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+ [string]$ConfigPath = "",
+ [PSCredential]$Credential,
+ [string[]]$TargetNode = @(),
+ [switch]$WhatIf,
+ [string]$LogPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region LOGGING
+$TaskFolderName = "task-03-verify-deployment-completion"
+$ShortName = "VerifyLocalIdentityConfig"
+
+if (-not $LogPath) {
+ $LogDir = Join-Path (Get-Location).Path "logs\$TaskFolderName"
+ $LogPath = Join-Path $LogDir ("{0}_{1}_{2}.log" -f (Get-Date -f 'yyyy-MM-dd'), (Get-Date -f 'HHmmss'), $ShortName)
+}
+if (-not (Test-Path (Split-Path $LogPath -Parent))) {
+ New-Item -ItemType Directory -Path (Split-Path $LogPath -Parent) -Force | Out-Null
+}
+
+function Write-Log {
+ param([string]$Message, [ValidateSet('INFO','WARN','ERROR','DEBUG')][string]$Level = 'INFO')
+ $entry = "{0} [{1}] {2}" -f (Get-Date -f 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
+ Add-Content -Path $LogPath -Value $entry
+ switch ($Level) {
+ 'WARN' { Write-Host $entry -ForegroundColor Yellow }
+ 'ERROR' { Write-Host $entry -ForegroundColor Red }
+ default { Write-Host $entry }
+ }
+}
+#endregion LOGGING
+
+#region CONFIG LOADING
+. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\config-loader.ps1")
+. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\keyvault-helper.ps1")
+
+if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml" }
+Write-Log "Loading configuration from: $ConfigPath"
+$cfg = Get-ClusterConfig -ConfigPath $ConfigPath
+#endregion CONFIG LOADING
+
+#region RESOLVE NODES
+$allNodes = $cfg.compute.cluster_nodes # compute.cluster_nodes[*]
+if ($TargetNode.Count -gt 0) {
+ $nodes = @($allNodes | Where-Object { $_.name -in $TargetNode })
+ if ($nodes.Count -eq 0) { Write-Log "No matching nodes for: $($TargetNode -join ', ')" -Level ERROR; exit 1 }
+} else {
+ $nodes = @($allNodes)
+}
+Write-Log "Nodes to verify: $($nodes.name -join ', ')"
+#endregion RESOLVE NODES
+
+#region RESOLVE CREDENTIAL
+if (-not $Credential) {
+ $kvPassword = $cfg.identity.accounts.account_local_admin_password # identity.accounts.account_local_admin_password
+ $username = $cfg.identity.accounts.account_local_admin_username # identity.accounts.account_local_admin_username
+ if ($kvPassword -match '^keyvault://') {
+ Write-Log "Resolving local admin password from Key Vault..."
+ $kvName = $cfg.security.keyvault.kv_azl.kv_azl_name # security.keyvault.kv_azl.kv_azl_name
+ $secret = Resolve-KeyVaultRef -Uri $kvPassword -VaultName $kvName
+ $Credential = New-Object PSCredential($username, (ConvertTo-SecureString $secret -AsPlainText -Force))
+ } else {
+ Write-Log "No KV reference; prompting for credentials..." -Level WARN
+ $Credential = Get-Credential -Message "Enter local admin credentials for cluster nodes"
+ }
+}
+#endregion RESOLVE CREDENTIAL
+
+if ($WhatIf) {
+ Write-Log "[WhatIf] Would verify Local Identity config on: $($nodes | ForEach-Object { $_.management_ip } | Join-String ', ')"
+ exit 0
+}
+
+#region MAIN
+Write-Log "=== Local Identity Configuration Verification ==="
+$failCount = 0
+$results = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+foreach ($node in $nodes) {
+ $ip = $node.management_ip # compute.cluster_nodes[*].management_ip
+ Write-Log "Connecting to $($node.name) ($ip)..."
+ try {
+ $nodeResult = Invoke-Command -ComputerName $ip -Credential $Credential -ScriptBlock {
+ $r = [PSCustomObject]@{
+ NodeName = $env:COMPUTERNAME
+ Domain = (Get-WmiObject Win32_ComputerSystem).Domain
+ ADAware = $null
+ Errors = @()
+ }
+ try {
+ $adAware = Get-ClusterResource "Cluster Name" | Get-ClusterParameter ADAware
+ $r.ADAware = $adAware.Value
+ } catch { $r.Errors += "ADAware check failed: $_" }
+ $r
+ }
+
+ $domainPass = $nodeResult.Domain -eq 'WORKGROUP'
+ $adAwarePass = $nodeResult.ADAware -eq 2
+
+ Write-Log " Domain : $($nodeResult.Domain) — $(if ($domainPass) { 'PASS' } else { 'FAIL' })"
+ Write-Log " ADAware : $($nodeResult.ADAware) — $(if ($adAwarePass) { 'PASS' } else { 'FAIL' })"
+ foreach ($err in $nodeResult.Errors) { Write-Log " $err" -Level WARN }
+
+ if (-not $domainPass -or -not $adAwarePass) { $failCount++ }
+ $results.Add($nodeResult)
+ } catch {
+ Write-Log "Failed to connect to $ip : $_" -Level ERROR
+ $failCount++
+ }
+}
+
+Write-Log "=== Summary: $($nodes.Count) node(s) checked, $failCount failure(s) ==="
+
+if ($failCount -gt 0) {
+ Write-Log "Local Identity verification completed with failures — review log: $LogPath" -Level ERROR
+ exit 1
+} else {
+ Write-Log "Local Identity configuration verified on all nodes."
+}
+#endregion MAIN
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+Self-contained. No `infrastructure.yml` required. Define all variables in `#region CONFIGURATION` before running.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Test-LocalIdentityConfig-Standalone.ps1`
+
+```powershell title="Test-LocalIdentityConfig-Standalone.ps1"
+#region CONFIGURATION
+$NodeIPs = @(
+ "REPLACE_NODE_01_IP" # compute.cluster_nodes[0].management_ip
+ # "REPLACE_NODE_02_IP" # compute.cluster_nodes[1].management_ip— add additional nodes as needed
+)
+#endregion CONFIGURATION
+
+$invalid = @($NodeIPs | Where-Object { $_ -match '^REPLACE_' })
+if ($invalid.Count -gt 0) {
+ throw "Edit the REPLACE_ variables in #region CONFIGURATION before running."
+}
+
+$cred = Get-Credential -Message "Enter local admin credentials for the cluster nodes"
+
+foreach ($nodeIP in $NodeIPs) {
+ Write-Host "`n=== Local Identity Verification — $nodeIP ===" -ForegroundColor Cyan
+ $result = Invoke-Command -ComputerName $nodeIP -Credential $cred -ScriptBlock {
+ $domain = (Get-WmiObject Win32_ComputerSystem).Domain
+ $adAware = (Get-ClusterResource "Cluster Name" | Get-ClusterParameter ADAware).Value
+ Write-Host " Domain : $domain" -ForegroundColor $(if ($domain -eq 'WORKGROUP') { 'Green' } else { 'Red' })
+ Write-Host " ADAware : $adAware" -ForegroundColor $(if ($adAware -eq 2) { 'Green' } else { 'Red' })
+ if ($domain -ne 'WORKGROUP') { Write-Warning "Expected WORKGROUP. Got: $domain" }
+ if ($adAware -ne 2) { Write-Warning "Expected ADAware=2. Got: $adAware" }
+ }
+}
+
+Write-Host "`n[DONE] Local Identity configuration check complete" -ForegroundColor Cyan
+```
+
+</TabItem>
+</Tabs>
+
+:::info Recovery Admin Account
+During Local Identity deployment, Azure automatically stores a `RecoveryAdmin` account in the deployment Key Vault. This is a break-glass account. Retrieve it if needed:
+
+```powershell
+Get-AzKeyVaultSecret -VaultName "<VAULT_NAME>" -Name "RecoveryAdmin" -AsPlainText
+```
+
+`VAULT_NAME` = `infrastructure.yml: security.keyvault.kv_azl.kv_azl_name`
+:::
+
+:::warning RDP is disabled after deployment
+RDP is disabled on all cluster nodes by default after deployment completes. To re-enable on a node:
+
+```powershell
+Enable-ASRemoteDesktop
+```
+
+Run this on each node, or via PSRemoting from the management box. This applies to all Azure Local deployments regardless of identity type.
+
+**Source**: [MS Learn — Deploy via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
+:::
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Authentication fails | Password mismatch | Ensure IDENTICAL password on all nodes |
+| Deployment fails | Key Vault access | Verify Key Vault permissions |
+| Remote access denied | WinRM not configured | Run `Enable-PSRemoting -Force` |
+| Validation timeout | Network issues | Check Azure endpoint connectivity |
+| Arc extension fails | Agent issue | Reinstall Azure Connected Machine agent |
+
+### Check Deployment Logs
+
+```powershell title="Get most recent deployment log files — run on cluster node"
+Get-ChildItem "C:\CloudDeployment\Logs" -Recurse |
+ Sort-Object LastWriteTime -Descending |
+ Select-Object -First 10
+```
+
+---
+
+## Next Steps
+
+| Deployment Status | Next Action |
+|-------------------|-------------|
+| Successful | Proceed to [Phase 16: Post-Deployment](../../../phase-06-post-deployment/index.mdx) |
+| Failed | Review troubleshooting and deployment logs |
+
+---
+
+**References**:
+- [Microsoft Learn - Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
+- [Microsoft Learn - Deploy via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
+
+---
+
+**Version Control**
+- Created: 2026-01-31 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-08 by Azure Local Cloudnology Team
+- Version: 1.1.0
+- Tags: azure-local, local-identity, portal, runbook, key-vault
+- Keywords: local identity, key vault, portal deployment, no active directory, azure local cluster
+- Author: Azure Local Cloudnology Team
+

@@ -1,0 +1,477 @@
+---
+title: "Task 02: Configure Dell PowerSwitch"
+sidebar_label: "Task 02: Dell PowerSwitch"
+sidebar_position: 2
+description: "Configure Dell PowerSwitch TOR switches with QoS/DCB, VLT, and VLANs for Azure Local"
+category: Runbook
+scope: Top-of-Rack switch configuration
+purpose: Configure Dell switches for RDMA, VLANs, and high availability
+author: Azure Local Cloud CI/CD Engineering
+created: 2026-01-31
+updated: 2026-03-03
+version: 1.1
+tags: ["azure-local", "dell-powerswitch", "vlt", "dcb", "qos", "rdma", "vlan"]
+keywords: ["Dell PowerSwitch", "VLT", "DCB", "PFC", "ETS", "QoS", "RoCE"]
+status: Active
+---
+
+# Task 02: Configure Dell PowerSwitch
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Dell_PowerSwitch-blue?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Top-of-Rack switch configuration 
+> **PURPOSE**: Configure Dell switches for RDMA, VLANs, and high availability 
+> **MASTER REFERENCE**: [Dell PowerSwitch OS10 Documentation](https://www.dell.com/support/home/en-us/product-support/product/networking) 
+
+**Status**: Active 
+**Estimated Time**: 90 minutes 
+**Last Updated**: 2026-01-31
+
+---
+
+## Overview
+
+Configure Dell PowerSwitch TOR switches with Data Center Bridging (DCB) for RDMA (RoCE), Virtual Link Trunking (VLT) for redundancy, and VLANs for network segmentation.
+
+---
+
+## Prerequisites
+
+| Requirement | Description |
+|-------------|-------------|
+| OpenGear Access | Step 1 completed - console access available |
+| Switch Console | Access via OpenGear serial ports or SSH |
+| Network Design | VLAN assignments documented |
+| Storage VLANs | VLANs 711-714 available (non-routable) |
+| Firmware | Dell-validated firmware version installed |
+
+---
+
+## Configuration Areas Overview
+
+| Configuration Area | Purpose | Key Settings |
+|-------------------|---------|--------------|
+| **System Settings** | Basic switch identity and management | Hostname, management IP, NTP, SSH |
+| **QoS/DCB for RDMA** | Enable lossless storage traffic | DCBX, PFC on priority 3, ETS bandwidth allocation |
+| **VLT (Virtual Link Trunking)** | Switch redundancy and high availability | VLT domain, discovery interfaces, backup destination |
+| **VLANs** | Network segmentation | Management, storage (711-714), tenant VLANs |
+| **Trunk Ports** | Node connectivity | Jumbo frames, QoS policies, allowed VLANs |
+| **Uplinks** | Core/distribution connectivity | Port-channels, trunk mode |
+| **Monitoring** | Operational visibility | SNMP, syslog forwarding |
+
+---
+
+## Section A: QoS/DCB Configuration for RoCE
+
+Azure Local requires Data Center Bridging (DCB) with Priority Flow Control (PFC) and Enhanced Transmission Selection (ETS) for reliable RDMA over Converged Ethernet (RoCE).
+
+### Key Configuration Elements
+
+| Element | Purpose | Configuration |
+|---------|---------|---------------|
+| **DCBX** | DCB exchange protocol | Enable globally |
+| **Trust Map** | Map 802.1p priorities to queues | Priority 3 → Queue 3 (SMB Storage) |
+| **PFC Policy** | Lossless traffic for SMB | Enable pause on priority 3 |
+| **ETS Policy** | Bandwidth allocation | ~50% storage, ~48% management/compute, ~2% heartbeat |
+| **Jumbo Frames** | Large frame support for storage | MTU 9216 on all storage paths |
+
+### QoS Class Map Configuration (OS10)
+
+```cisco
+! Create queuing class maps
+class-map type queuing Q0
+ match queue 0
+class-map type queuing Q3
+ match queue 3
+class-map type queuing Q5
+ match queue 5
+
+! Create network-qos class maps
+class-map type network-qos SmbStorage
+ match qos-group 3
+class-map type network-qos NodeHeartBeat
+ match qos-group 5
+```
+
+### Trust Map Configuration (OS10)
+
+```cisco
+trust dot1p-map trust_map
+ qos-group 0 dot1p 0-2,4,6-7
+ qos-group 3 dot1p 3
+ qos-group 5 dot1p 5
+
+qos-map traffic-class queue-map
+ queue 0 qos-group 0-2,4,6-7
+ queue 3 qos-group 3
+ queue 5 qos-group 5
+```
+
+### ETS Policy Configuration (OS10)
+
+```cisco
+policy-map type queuing ets-policy
+ ! class Q0 - Management and compute traffic
+ class Q0
+ bandwidth percent 48
+ ! class Q3 - SMB Storage traffic (lossless)
+ class Q3
+ bandwidth percent 50
+ ! class Q5 - Cluster heartbeat
+ class Q5
+ bandwidth percent 2
+```
+
+### PFC Policy Configuration (OS10)
+
+```cisco
+policy-map type network-qos pfc-policy
+ ! Enable pause on SMB Storage traffic
+ class SmbStorage
+ pause
+ pfc-cos 3
+```
+
+### Apply QoS System-Wide
+
+```cisco
+system qos
+ trust-map dot1p trust_map
+```
+
+---
+
+## Section B: VLT Configuration for High Availability
+
+VLT (Virtual Link Trunking) provides switch redundancy with active-active uplinks.
+
+### VLT Components
+
+| Component | Description |
+|-----------|-------------|
+| **VLT Domain** | Logical grouping of two VLT peer switches |
+| **VLT Peer Link (VLTi)** | Inter-switch link for control and data sync |
+| **Backup Destination** | Out-of-band heartbeat via management interface |
+| **VLT MAC** | Virtual MAC address for the VLT domain |
+
+### VLT Peer Link Configuration (TOR1)
+
+```cisco
+! Configure VLT peer link interfaces
+interface range ethernet1/1/11-1/1/12
+ description VLTi-PeerLink
+ mtu 9216
+ flowcontrol receive off
+ flowcontrol transmit off
+ priority-flow-control mode on
+ service-policy input type network-qos pfc-policy
+ service-policy output type queuing ets-policy
+ ets mode on
+ qos-map traffic-class queue-map
+ no shutdown
+ no switchport
+
+! Configure VLT domain
+vlt-domain 1
+ backup destination 192.168.255.2
+ discovery-interface ethernet1/1/11
+ discovery-interface ethernet1/1/12
+ vlt-mac 00:00:00:00:00:01
+```
+
+### VLT Peer Link Configuration (TOR2)
+
+```cisco
+! Configure VLT peer link interfaces
+interface range ethernet1/1/11-1/1/12
+ description VLTi-PeerLink
+ mtu 9216
+ flowcontrol receive off
+ flowcontrol transmit off
+ priority-flow-control mode on
+ service-policy input type network-qos pfc-policy
+ service-policy output type queuing ets-policy
+ ets mode on
+ qos-map traffic-class queue-map
+ no shutdown
+ no switchport
+
+! Configure VLT domain (note different backup destination)
+vlt-domain 1
+ backup destination 192.168.255.1
+ discovery-interface ethernet1/1/11
+ discovery-interface ethernet1/1/12
+ vlt-mac 00:00:00:00:00:01
+```
+
+### Management Interface Configuration
+
+```cisco
+! TOR1
+interface mgmt1/1/1
+ no shutdown
+ no ip address dhcp
+ ip address 192.168.255.1/30
+ ipv6 address autoconfig
+
+! TOR2
+interface mgmt1/1/1
+ no shutdown
+ no ip address dhcp
+ ip address 192.168.255.2/30
+ ipv6 address autoconfig
+```
+
+---
+
+## Section C: VLAN Configuration
+
+### VLAN Types
+
+| VLAN Type | Purpose | Layer 3 Routing |
+|-----------|---------|-----------------|
+| **Management VLAN** | Node management, Windows Admin Center | Yes (routable) |
+| **Storage VLANs 711-714** | SMB storage traffic between nodes | **No** (east/west only) |
+| **Tenant VLANs** | VM workload networks | Yes (typically routable) |
+| **iDRAC/BMC VLAN** | Out-of-band management | Yes (routable, isolated) |
+
+:::warning Storage VLAN Discovery Requirement
+**Storage VLANs 711-714** are non-routable and used exclusively for east/west traffic between Azure Local cluster nodes. These VLANs:
+- Are configured on **ToR switch trunk ports** connecting to cluster nodes
+- Are **NOT configured on firewalls or any Layer 3 interfaces**
+- Are managed automatically by **Microsoft Network ATC** during cluster deployment
+- **MUST be verified as available** in the customer's environment during discovery
+:::
+
+### VLAN Configuration (OS10)
+
+```cisco
+! Management VLAN
+interface vlan 200
+ description MANAGEMENT
+ mtu 9216
+ no shutdown
+
+! Storage VLANs (non-routable - NO IP address assigned)
+interface vlan 711
+ description STORAGE-1
+ no ip address
+ mtu 9216
+ no shutdown
+
+interface vlan 712
+ description STORAGE-2
+ no ip address
+ mtu 9216
+ no shutdown
+
+interface vlan 713
+ description STORAGE-3
+ no ip address
+ mtu 9216
+ no shutdown
+
+interface vlan 714
+ description STORAGE-4
+ no ip address
+ mtu 9216
+ no shutdown
+```
+
+---
+
+## Section D: Trunk Port Configuration for Cluster Nodes
+
+### Node-Facing Port Configuration
+
+```cisco
+interface ethernet1/1/1
+ description AzureLocal-Node1-Port1
+ no shutdown
+ switchport mode trunk
+ switchport access vlan 1
+ switchport trunk allowed vlan 200,711-714
+ mtu 9216
+ flowcontrol receive off
+ flowcontrol transmit off
+ priority-flow-control mode on
+ service-policy input type network-qos pfc-policy
+ service-policy output type queuing ets-policy
+ ets mode on
+ qos-map traffic-class queue-map
+ spanning-tree bpduguard enable
+ spanning-tree port type edge
+```
+
+### All Node Ports (Range Configuration)
+
+```cisco
+! TOR1 - Converged topology
+interface range ethernet1/1/1-1/1/8
+ description NodeDCB
+ no shutdown
+ switchport mode trunk
+ switchport access vlan 1
+ switchport trunk allowed vlan 200,711
+ mtu 9216
+ flowcontrol receive off
+ flowcontrol transmit off
+ priority-flow-control mode on
+ service-policy input type network-qos pfc-policy
+ service-policy output type queuing ets-policy
+ ets mode on
+ qos-map traffic-class queue-map
+ spanning-tree bpduguard enable
+ spanning-tree port type edge
+
+! TOR2 - Converged topology (different storage VLAN)
+interface range ethernet1/1/1-1/1/8
+ description NodeDCB
+ no shutdown
+ switchport mode trunk
+ switchport access vlan 1
+ switchport trunk allowed vlan 200,712
+ mtu 9216
+ flowcontrol receive off
+ flowcontrol transmit off
+ priority-flow-control mode on
+ service-policy input type network-qos pfc-policy
+ service-policy output type queuing ets-policy
+ ets mode on
+ qos-map traffic-class queue-map
+ spanning-tree bpduguard enable
+ spanning-tree port type edge
+```
+
+---
+
+## Section E: Uplink Configuration
+
+### Datacenter Uplink Port-Channel
+
+```cisco
+! Configure uplink port-channel
+interface port-channel10
+ description DataCenterUplink
+ no shutdown
+ switchport mode trunk
+ switchport access vlan 1
+ switchport trunk allowed vlan 200
+ vlt-port-channel 10
+
+! Configure physical uplink ports
+interface range ethernet1/1/9-1/1/10
+ description CUSTOMER.UPLINK
+ no shutdown
+ channel-group 10 mode active
+ no switchport
+ flowcontrol receive on
+ flowcontrol transmit off
+```
+
+---
+
+## Section F: Enable Services
+
+```cisco
+! Enable LLDP
+lldp enable
+
+! Enable SSH
+ip ssh server enable
+
+! Set clock
+clock set <HH:MM:SS> <YYYY-MM-DD>
+
+! Clear logs and save
+clear logging log-file
+write memory
+```
+
+---
+
+## Post-Configuration Verification
+
+### 1. Verify VLT Status
+
+```cisco
+show vlt 1
+```
+
+Expected output:
+- Both switches show VLT domain as "Up"
+- Peer link status: "Up"
+- Backup link status: "Up"
+
+### 2. Verify QoS Configuration
+
+```cisco
+show running-configuration class-map
+show running-configuration policy-map
+show qos interface ethernet1/1/1
+```
+
+- Confirm PFC enabled on priority 3
+- Confirm ETS bandwidth allocation correct
+- Confirm trust map applied
+
+### 3. Verify VLANs
+
+```cisco
+show vlan
+```
+
+- All required VLANs present and active (200, 711-714)
+
+### 4. Verify Port Status
+
+```cisco
+show interface status
+```
+
+- All node-facing ports up with correct speed
+
+---
+
+## Validation Checklist
+
+- [ ] VLT domain operational (both switches)
+- [ ] VLT peer link and backup link up
+- [ ] QoS/DCB configured (DCBX, PFC on priority 3, ETS)
+- [ ] Trust map applied system-wide
+- [ ] All VLANs active (management, storage 711-714)
+- [ ] Trunk ports configured with jumbo frames (MTU 9216)
+- [ ] All node-facing ports up with correct speed
+- [ ] Uplinks operational
+- [ ] LLDP enabled
+- [ ] SSH enabled
+- [ ] Configuration saved to startup
+
+---
+
+## Next Steps
+
+Proceed to [Task 3 - Verify Firewall Endpoints](./task-03-firewall-endpoint-verification.mdx) to verify firewall rules for required Azure and Dell endpoints.
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 01: OpenGear Configuration](./task-01-opengear-console-server.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Task 03: Firewall Endpoint Verification →](./task-03-firewall-endpoint-verification.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud CI/CD Engineering | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud CI/CD Engineering | Standardized runbook format |
+
+---
+
+*End of Task*

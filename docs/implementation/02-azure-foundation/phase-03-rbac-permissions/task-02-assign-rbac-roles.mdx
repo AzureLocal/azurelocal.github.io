@@ -1,0 +1,417 @@
+---
+title: "Task 02: Assign RBAC Roles"
+sidebar_label: "Task 02: Assign RBAC Roles"
+sidebar_position: 2
+description: "Assign required RBAC roles to the deployment service principal and deployment user for Azure Local"
+category: "RUNBOOK"
+scope: "RBAC role assignment for Azure Local deployment identities"
+purpose: "Assign required roles to the deployment SPN and deployment user at subscription and resource group scope"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - phase-03
+ - rbac
+ - role-assignment
+keywords:
+ - RBAC
+ - role assignment
+ - sp-azurelocal-deploy
+ - Contributor
+ - Azure Stack HCI Administrator
+status: "approved"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Assign RBAC Roles
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: RBAC role assignment for Azure Local deployment identities 
+> **PURPOSE**: Assign required roles to the deployment SPN and deployment user at subscription and resource group scope 
+> **MASTER REFERENCE**: [Microsoft Learn - Assign Azure Roles](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal)
+
+**Status**: Active 
+**Applies To**: Phase 03 — RBAC Permissions 
+**Last Updated**: 2026-03-02
+
+---
+
+## Overview
+
+Assign the required RBAC roles to the Azure Local deployment service principal and deployment user. This is the **Permission Transition Point** — after completion, the deployment SPN has sufficient permissions for all subsequent phases.
+
+:::warning Last Step Requiring Elevated Admin
+After assigning these roles, the deployment SPN will have sufficient permissions for all subsequent deployment phases. No further elevated admin access is required.
+:::
+
+---
+
+## Prerequisites
+
+- [ ] Active Azure session with Owner or User Access Administrator role at subscription level
+- [ ] [Task 01: Create Deployment SPN](./task-01-create-azure-local-deployment-spn.mdx) completed — `sp-azurelocal-deploy` exists in Entra ID
+- [ ] Subscription ID confirmed in `infrastructure.yml` → `azure.subscriptions.lab.id`
+- [ ] Cluster resource group confirmed in `infrastructure.yml` → `azure_resources.resource_group_name`
+
+---
+
+## Section 1: Assign RBAC Roles to Service Principal
+
+Assign the required RBAC roles to the deployment service principal created in Task 01. This enables automated deployments using the SPN credentials.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### 1. Navigate to Subscription IAM
+
+1. Go to **Subscriptions** → Select your Azure Local subscription
+2. Click **Access control (IAM)**
+
+### 2. Add Role Assignments
+
+For each role, repeat the following:
+
+1. Click **+ Add** → **Add role assignment**
+2. In the **Role** tab — search for and select the role, then click **Next**
+3. In the **Members** tab:
+ - Select **User, group, or service principal**
+ - Click **+ Select members**
+ - Search for `sp-azurelocal-deploy`
+ - Select the service principal → Click **Select**
+4. Click **Review + assign**
+
+### 3. Required Role Assignments
+
+Assign all of the following roles to `sp-azurelocal-deploy`:
+
+**Subscription-level roles:**
+
+| Role | Purpose |
+|------|---------|
+| `Contributor` | Create and manage resources |
+| `User Access Administrator` | Assign RBAC to other identities |
+| `Azure Stack HCI Administrator` | Azure Local cluster management |
+| `Reader` | View resources |
+
+**Resource group-level roles** (at the Azure Local cluster resource group, e.g., `rg-c01-azl-eus-01`):
+
+| Role | Purpose |
+|------|---------|
+| `Key Vault Data Access Administrator` | Manage data plane permissions to deployment Key Vault |
+| `Key Vault Secrets Officer` | Read and write secrets in deployment Key Vault |
+| `Key Vault Contributor` | Create and manage Key Vault resources for deployment |
+| `Storage Account Contributor` | Create storage accounts for deployment |
+| `Azure Connected Machine Onboarding` | Register machines with Azure Arc |
+| `Azure Connected Machine Resource Administrator` | Manage Arc-enabled machine resources |
+
+:::warning Scope Is the Azure Local Cluster Resource Group
+All resource group-level roles **MUST** be assigned at the cluster resource group:
+
+```
+/subscriptions/<subscription-id>/resourceGroups/<cluster-resource-group>
+```
+
+Example: `/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-c01-azl-eus-01`
+
+Do **NOT** assign these to the platform Key Vault resource group.
+:::
+
+### Validation
+
+1. Go to **Access control (IAM)** → **Role assignments**
+2. Filter by the service principal name
+3. Verify all 10 roles are listed
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Script
+
+```
+scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/Set-RbacRoleAssignments.ps1
+```
+
+### Code
+
+```powershell
+# Run from the configs directory
+Set-Location C:\git\Azure Local Cloud-docs-azl-toolkit\configs
+
+# Dry run first to preview changes
+& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-02-assign-rbac-roles\powershell\Set-RbacRoleAssignments.ps1" `
+ -ConfigFile ".\infrastructure.yml" `
+ -WhatIf
+
+# Execute role assignments
+& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-02-assign-rbac-roles\powershell\Set-RbacRoleAssignments.ps1" `
+ -ConfigFile ".\infrastructure.yml"
+```
+
+### Validation
+
+```powershell
+& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\powershell\Test-RbacRoleAssignments.ps1" `
+ -ConfigPath ".\infrastructure.yml" `
+ -ServicePrincipalDisplayName "sp-azurelocal-deploy"
+```
+
+**Success Criteria**: All 10 role assignments show `Assigned` or `AlreadyAssigned`, script exits with code 0.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Script
+
+Copy and run this self-contained script. Update the `#region CONFIGURATION` block with your environment values.
+
+```powershell
+#region CONFIGURATION
+# ── Update these values for your environment ──────────────────────────
+$SubscriptionId = "00000000-1111-2222-3333-444444444444" # IIC default
+$ResourceGroupName = "rg-c01-azl-eus-01" # IIC default — cluster RG
+$SpnDisplayName = "sp-azurelocal-deploy" # IIC default
+#endregion CONFIGURATION
+
+#region EXECUTION
+Write-Host "`n=== Task 02: Assign RBAC Roles to Service Principal ===" -ForegroundColor Cyan
+
+# ── Resolve the SPN ──────────────────────────────────────────────────
+$spn = Get-AzADServicePrincipal -DisplayName $SpnDisplayName -ErrorAction SilentlyContinue
+if (-not $spn) {
+ Write-Host "[ERROR] Service principal '$SpnDisplayName' not found. Run Task 01 first." -ForegroundColor Red
+ exit 1
+}
+Write-Host "[OK] Found SPN: $($spn.DisplayName) (ObjectId: $($spn.Id))" -ForegroundColor Green
+
+# ── Define role assignments ──────────────────────────────────────────
+$subscriptionScope = "/subscriptions/$SubscriptionId"
+$resourceGroupScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName"
+
+$roleAssignments = @(
+ # Subscription-level roles
+ @{ Role = "Contributor"; Scope = $subscriptionScope }
+ @{ Role = "User Access Administrator"; Scope = $subscriptionScope }
+ @{ Role = "Azure Stack HCI Administrator"; Scope = $subscriptionScope }
+ @{ Role = "Reader"; Scope = $subscriptionScope }
+ # Resource group-level roles
+ @{ Role = "Key Vault Data Access Administrator"; Scope = $resourceGroupScope }
+ @{ Role = "Key Vault Secrets Officer"; Scope = $resourceGroupScope }
+ @{ Role = "Key Vault Contributor"; Scope = $resourceGroupScope }
+ @{ Role = "Storage Account Contributor"; Scope = $resourceGroupScope }
+ @{ Role = "Azure Connected Machine Onboarding"; Scope = $resourceGroupScope }
+ @{ Role = "Azure Connected Machine Resource Administrator"; Scope = $resourceGroupScope }
+)
+
+# ── Assign roles ─────────────────────────────────────────────────────
+$assigned = 0; $skipped = 0; $failed = 0
+
+foreach ($ra in $roleAssignments) {
+ $roleName = $ra.Role
+ $scope = $ra.Scope
+
+ # Check if already assigned
+ $existing = Get-AzRoleAssignment -ObjectId $spn.Id -RoleDefinitionName $roleName -Scope $scope -ErrorAction SilentlyContinue
+ if ($existing) {
+ Write-Host " [SKIP] $roleName — already assigned" -ForegroundColor Yellow
+ $skipped++
+ continue
+ }
+
+ try {
+ New-AzRoleAssignment -ObjectId $spn.Id -RoleDefinitionName $roleName -Scope $scope -ErrorAction Stop | Out-Null
+ Write-Host " [OK] $roleName" -ForegroundColor Green
+ $assigned++
+ } catch {
+ Write-Host " [FAIL] $roleName — $($_.Exception.Message)" -ForegroundColor Red
+ $failed++
+ }
+}
+
+# ── Summary ──────────────────────────────────────────────────────────
+Write-Host "`n=== Summary ===" -ForegroundColor Cyan
+Write-Host " Assigned : $assigned"
+Write-Host " Skipped : $skipped (already existed)"
+Write-Host " Failed : $failed"
+
+if ($failed -gt 0) {
+ Write-Host "`n[WARNING] $failed role(s) failed. Review errors above." -ForegroundColor Red
+ exit 1
+} else {
+ Write-Host "`n[DONE] All $($roleAssignments.Count) roles verified." -ForegroundColor Green
+}
+#endregion EXECUTION
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Section 2: Assign RBAC Roles to Deployment User
+
+If a human user will perform portal-based deployments (in addition to or instead of the SPN), assign the same roles to their user account.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### 1. Navigate to Subscription IAM
+
+1. Go to **Subscriptions** → Select your Azure Local subscription
+2. Click **Access control (IAM)**
+
+### 2. Add Role Assignments
+
+For each role, repeat the same process as Section 1, but search for the **deployment user's name or email** instead of the service principal.
+
+### 3. Required Role Assignments
+
+Assign the same 10 roles listed in Section 1 (4 subscription-level + 6 resource group-level) to the deployment user.
+
+### Validation
+
+1. Go to **Access control (IAM)** → **Role assignments**
+2. Filter by the user's name
+3. Verify all 10 roles are listed
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Code
+
+```powershell
+# Run from the configs directory
+Set-Location C:\git\Azure Local Cloud-docs-azl-toolkit\configs
+
+& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-02-assign-rbac-roles\powershell\Set-RbacRoleAssignments.ps1" `
+ -ConfigFile ".\infrastructure.yml" `
+ -UserPrincipalName "user@azurelocal.cloud"
+```
+
+### Validation
+
+```powershell
+& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\powershell\Test-RbacRoleAssignments.ps1" `
+ -ConfigPath ".\infrastructure.yml" `
+ -UserPrincipalName "user@azurelocal.cloud"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Script
+
+Modify the Section 1 standalone script: replace the SPN lookup with a user lookup.
+
+```powershell
+#region CONFIGURATION
+# ── Update these values for your environment ──────────────────────────
+$SubscriptionId = "00000000-1111-2222-3333-444444444444" # IIC default
+$ResourceGroupName = "rg-c01-azl-eus-01" # IIC default — cluster RG
+$UserPrincipalName = "user@azurelocal.cloud" # IIC default
+#endregion CONFIGURATION
+
+#region EXECUTION
+Write-Host "`n=== Task 02: Assign RBAC Roles to Deployment User ===" -ForegroundColor Cyan
+
+# ── Resolve the user ─────────────────────────────────────────────────
+$user = Get-AzADUser -UserPrincipalName $UserPrincipalName -ErrorAction SilentlyContinue
+if (-not $user) {
+ Write-Host "[ERROR] User '$UserPrincipalName' not found in Entra ID." -ForegroundColor Red
+ exit 1
+}
+Write-Host "[OK] Found user: $($user.DisplayName) (ObjectId: $($user.Id))" -ForegroundColor Green
+
+# ── Define role assignments (same as SPN) ────────────────────────────
+$subscriptionScope = "/subscriptions/$SubscriptionId"
+$resourceGroupScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName"
+
+$roleAssignments = @(
+ @{ Role = "Contributor"; Scope = $subscriptionScope }
+ @{ Role = "User Access Administrator"; Scope = $subscriptionScope }
+ @{ Role = "Azure Stack HCI Administrator"; Scope = $subscriptionScope }
+ @{ Role = "Reader"; Scope = $subscriptionScope }
+ @{ Role = "Key Vault Data Access Administrator"; Scope = $resourceGroupScope }
+ @{ Role = "Key Vault Secrets Officer"; Scope = $resourceGroupScope }
+ @{ Role = "Key Vault Contributor"; Scope = $resourceGroupScope }
+ @{ Role = "Storage Account Contributor"; Scope = $resourceGroupScope }
+ @{ Role = "Azure Connected Machine Onboarding"; Scope = $resourceGroupScope }
+ @{ Role = "Azure Connected Machine Resource Administrator"; Scope = $resourceGroupScope }
+)
+
+# ── Assign roles ─────────────────────────────────────────────────────
+$assigned = 0; $skipped = 0; $failed = 0
+
+foreach ($ra in $roleAssignments) {
+ $roleName = $ra.Role
+ $scope = $ra.Scope
+
+ $existing = Get-AzRoleAssignment -ObjectId $user.Id -RoleDefinitionName $roleName -Scope $scope -ErrorAction SilentlyContinue
+ if ($existing) {
+ Write-Host " [SKIP] $roleName — already assigned" -ForegroundColor Yellow
+ $skipped++
+ continue
+ }
+
+ try {
+ New-AzRoleAssignment -ObjectId $user.Id -RoleDefinitionName $roleName -Scope $scope -ErrorAction Stop | Out-Null
+ Write-Host " [OK] $roleName" -ForegroundColor Green
+ $assigned++
+ } catch {
+ Write-Host " [FAIL] $roleName — $($_.Exception.Message)" -ForegroundColor Red
+ $failed++
+ }
+}
+
+# ── Summary ──────────────────────────────────────────────────────────
+Write-Host "`n=== Summary ===" -ForegroundColor Cyan
+Write-Host " Assigned : $assigned"
+Write-Host " Skipped : $skipped (already existed)"
+Write-Host " Failed : $failed"
+
+if ($failed -gt 0) {
+ Write-Host "`n[WARNING] $failed role(s) failed." -ForegroundColor Red
+ exit 1
+} else {
+ Write-Host "`n[DONE] All $($roleAssignments.Count) roles verified for $UserPrincipalName." -ForegroundColor Green
+}
+#endregion EXECUTION
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `Authorization failed` | Insufficient permissions to assign roles | Requires Owner or User Access Administrator |
+| `Role definition not found` | Role name typo | Verify role name with `Get-AzRoleDefinition` |
+| `Principal does not exist` | SPN or user not found | Verify SPN was created in Task 01 |
+| `Role assignment already exists` | Role previously assigned | Safe to ignore — script handles idempotently |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01 — Create Deployment SPN](./task-01-create-azure-local-deployment-spn.mdx) | [Phase 03 — RBAC Permissions](./index.mdx) | [Phase 04 — Azure Management Infrastructure](../phase-04-azure-management-infrastructure/index.mdx) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, phase-03, rbac, role-assignment
+- Keywords: RBAC, role assignment, sp-azurelocal-deploy, Contributor, Azure Stack HCI Administrator
+- Author: Azure Local Cloudnology Team

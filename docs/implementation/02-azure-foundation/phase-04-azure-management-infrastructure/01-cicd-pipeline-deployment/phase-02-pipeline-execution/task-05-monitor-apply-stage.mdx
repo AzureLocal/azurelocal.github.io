@@ -1,0 +1,152 @@
+---
+title: "Task 05: Monitor Apply Stage"
+sidebar_position: 5
+description: "Monitor infrastructure deployment during apply stage"
+---
+
+# Task 05: Monitor Apply Stage
+
+> **Objective**: Monitor Terraform apply stage as Azure resources are deployed 
+> **Duration**: 45-90 minutes (management mode), 10-15 minutes (cluster mode)
+
+---
+
+## What Happens
+
+The apply stage:
+1. Executes Terraform plan
+2. Creates Azure resources in dependency order
+3. Waits for long-running resources (VPN Gateway: 30-45 min)
+4. Configures all resources
+5. Outputs deployment information
+
+---
+
+## Monitoring Procedure
+
+### 1. Watch Apply Job
+
+Click the **apply** job in the pipeline to see real-time logs.
+
+### 2. Track Resource Creation
+
+Resources deploy in this order:
+
+**Phase 1: Foundation (5-10 min)**
+```
+azurerm_resource_group.management: Creating...
+azurerm_virtual_network.hub: Creating...
+azurerm_subnet.gateway: Creating...
+azurerm_subnet.bastion: Creating...
+azurerm_log_analytics_workspace: Creating...
+```
+
+**Phase 2: VPN Gateway (30-45 min)** ⏰
+```
+azurerm_public_ip.vpn_gateway: Creating...
+azurerm_virtual_network_gateway.vpn: Creating...
+ (This will take 30-45 minutes - DO NOT INTERRUPT)
+azurerm_virtual_network_gateway.vpn: Still creating... [5m0s elapsed]
+azurerm_virtual_network_gateway.vpn: Still creating... [10m0s elapsed]
+...
+azurerm_virtual_network_gateway.vpn: Still creating... [40m0s elapsed]
+azurerm_virtual_network_gateway.vpn: Creation complete after 42m15s
+```
+
+**Phase 3: Remaining Resources (10-15 min)**
+```
+azurerm_bastion_host: Creating...
+azurerm_key_vault: Creating...
+azurerm_storage_account: Creating...
+azurerm_private_dns_zone: Creating...
+```
+
+### 3. Expected Timing
+
+| Component | Time |
+|-----------|------|
+| Resource groups, VNet, subnets | 5-10 min |
+| **VPN Gateway** | **30-45 min** |
+| Bastion, Key Vault, Log Analytics | 10-15 min |
+| DNS, storage, remaining resources | 5-10 min |
+| **Total (Management Mode)** | **45-90 min** |
+| **Total (Cluster Mode)** | **10-15 min** |
+
+---
+
+## Progress Indicators
+
+### Healthy Deployment
+```
+Apply complete! Resources: 45 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+vpn_gateway_id = "/subscriptions/.../virtualNetworkGateways/..."
+key_vault_id = "/subscriptions/.../vaults/..."
+bastion_id = "/subscriptions/.../bastionHosts/..."
+```
+
+### Warning Signs
+
+**Stuck resources:**
+```
+azurerm_resource.name: Still creating... [60m0s elapsed]
+```
+If any resource (except VPN Gateway) is stuck beyond expected time, investigate in Azure Portal.
+
+**Errors:**
+```
+Error: creating Resource: authorization failed
+Error: Code="QuotaExceeded"
+```
+Pipeline will fail with error details. See Troubleshooting section.
+
+---
+
+## During Deployment
+
+✅ **DO:**
+- Monitor pipeline logs
+- Check Azure Portal for resource creation
+- Keep stakeholders updated on progress
+- Prepare for validation steps
+
+❌ **DON'T:**
+- Cancel the pipeline
+- Modify resources in Azure Portal
+- Push new commits (starts new pipeline)
+- Make configuration changes
+
+---
+
+## Common Issues
+
+**Issue**: Quota exceeded errors 
+**Solution**: Request quota increase for the subscription
+
+**Issue**: VPN Gateway taking longer than 45 minutes 
+**Solution**: Check Azure Portal for actual status; may take up to 60 minutes in some regions
+
+**Issue**: Bastion creation fails 
+**Solution**: Verify `/26` subnet size and `AzureBastionSubnet` name
+
+**Issue**: Key Vault name conflict 
+**Solution**: Key Vault names must be globally unique; module generates unique names
+
+---
+
+## Validation
+
+- [ ] Apply stage completed successfully
+- [ ] All resources created without errors
+- [ ] Output values displayed
+- [ ] No warning or error messages in final summary
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 04 - Approve](./task-04-approve-deployment.mdx) | [Phase 02 - Execution](./index.mdx) | [Task 06 - Test Stage](./task-06-verify-test-stage.mdx) |

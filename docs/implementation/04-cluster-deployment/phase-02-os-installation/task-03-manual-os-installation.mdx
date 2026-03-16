@@ -1,0 +1,217 @@
+---
+title: "Task 03: Manual OS Installation"
+sidebar_label: "Task 03: OS Installation"
+sidebar_position: 3
+description: "Manually install Azure Stack HCI OS on each cluster node using iDRAC Virtual Console. The ISO was mounted in Task 02 — nodes boot directly into Windows Setup after the BOSS recreation reboot."
+category: Runbook
+scope: Operating system installation
+purpose: Complete Azure Stack HCI OS installation on all cluster nodes via Windows Setup, targeting the BOSS RAID-1 volume prepared in Task 01
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: 1.1
+tags: ["azure-local", "os-installation", "azure-stack-hci", "idrac", "virtual-console", "windows-setup", "boss"]
+keywords: ["Azure Stack HCI OS", "Windows Setup", "iDRAC Virtual Console", "BOSS card", "manual OS installation", "Server Core"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Manual OS Installation
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Operating system installation 
+> **PURPOSE**: Complete Azure Stack HCI OS installation on all cluster nodes via Windows Setup, targeting the BOSS RAID-1 volume prepared in Task 01 
+> **MASTER REFERENCE**: [Phase 02: OS Installation](./index.mdx)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Manually install Azure Stack HCI OS on each cluster node through iDRAC Virtual Console. This is a standard Windows Server Core installation using Windows Setup.
+
+:::info ISO Is Already Mounted from Task 02
+The Dell gold image ISO was mounted (or USB inserted) in **Task 02**. After the BOSS virtual disk recreation reboot from **Task 01**, nodes automatically attempt to boot from the next available device — which is the ISO or USB from Task 02. If the node is already at the "Press any key to boot from CD/DVD..." prompt or Windows Setup splash screen, **skip directly to Step 2** below.
+:::
+
+:::info Why Manual Installation
+Full automation for Windows Setup OS deployment is not yet implemented. Manual installation through iDRAC Virtual Console provides reliable deployment and allows direct verification of BOSS card detection and disk partition layout.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Task 01 Complete | BOSS virtual disk deleted and recreated | [Task 01](./task-01-delete-and-recreate-virtual-disk-on-dell-boss-card.mdx) |
+| Task 02 Complete | Dell gold image ISO mounted or USB inserted on all nodes | [Task 02](./task-02-mount-and-verify-dell-gold-image-iso.mdx) |
+| iDRAC access | Virtual Console access to each node | `infrastructure.yml: nodes.<name>.idrac_ip` |
+| Administrator password | Strong password prepared per Azure Local Cloud password policy | Store in Key Vault after installation |
+
+---
+
+## BOSS Card Installation Reference
+
+| Item | Description |
+|------|-------------|
+| Installation target | Dell BOSS M.2 RAID-1 volume (appears as a single drive in Windows Setup) |
+| Typical capacity | 480 GB mirrored (±240 GB usable) |
+| Drive label | Windows Setup shows BOSS as **Drive 0** with unallocated space |
+| Partition layout | EFI System (100 MB), MSR (16 MB), Primary OS (remaining) |
+
+---
+
+## Installation Procedure
+
+:::tip Parallel Installation
+To shorten total deployment time, run Windows Setup on multiple nodes simultaneously by opening separate iDRAC Virtual Console windows — one per node. Start all nodes before monitoring progress.
+:::
+
+### Step 1 — Open iDRAC Virtual Console
+
+1. Open `https://<idrac-ip>` for the target node
+2. Navigate to **Dashboard** → **Virtual Console** → **Launch**
+3. Accept any certificate warnings; the Virtual Console window opens
+
+If the node is still rebooting from the Task 01 BOSS recreation job, wait for the POST screen to complete. The node will boot from the ISO automatically.
+
+### Step 2 — Boot from ISO
+
+At the **"Press any key to boot from CD or DVD..."** prompt, press any key within 5 seconds.
+
+:::warning Missed the Boot Prompt?
+If the prompt is missed and the node attempts to boot from a non-existent OS, let it fail to a boot error, then reboot from iDRAC: **Power** → **Power Cycle System**. The prompt will appear again.
+:::
+
+Windows Setup loads the boot environment — this takes 1–3 minutes.
+
+### Step 3 — Windows Setup Language Selection
+
+1. Select **Language to install**, **Time and currency format**, and **Keyboard or input method** per site requirements
+2. Click **Next**
+3. Click **Install now**
+
+### Step 4 — Accept License Terms
+
+1. Read and accept the **Microsoft Software License Terms**
+2. Check **I accept the license terms**
+3. Click **Next**
+
+### Step 5 — Select Installation Type
+
+1. Select **Custom: Install Windows only (advanced)**
+
+Do **not** select "Upgrade" — this is a clean installation.
+
+### Step 6 — Disk Selection
+
+:::danger Critical — Select the BOSS Card Only
+**Select Drive 0 — the Dell BOSS card M.2 RAID-1 volume (~238 GB).**
+
+If multiple drives are visible:
+
+| Drive | Capacity | Description |
+|-------|----------|-------------|
+| **Drive 0** | ~238 GB | **Dell BOSS card** ← **Install OS here** |
+| Drive 1–N | Larger | Data / NVMe drives ← **Do NOT install OS here** |
+
+Installing the OS on a data drive will corrupt the storage pool intended for Azure Local workloads.
+:::
+
+Click **Drive 0 Unallocated Space** → **Next**.
+
+Windows Setup automatically creates the required partitions:
+
+| Partition | Size | Purpose |
+|-----------|------|---------|
+| Partition 1 | 100 MB | EFI System Partition |
+| Partition 2 | 16 MB | Microsoft Reserved (MSR) |
+| Partition 3 | Remaining | Primary OS partition |
+
+### Step 7 — Monitor Installation
+
+Installation takes 15–30 minutes and consists of five phases:
+
+1. Copying Windows files
+2. Getting files ready for installation
+3. Installing features
+4. Installing updates
+5. Finishing up
+
+The node reboots automatically when complete. **Do not interrupt the process.**
+
+### Step 8 — Set Administrator Password
+
+After the first reboot, Windows Server Core displays:
+
+> "The user's password must be changed before signing in."
+
+1. Click **OK**
+2. Enter a strong Administrator password meeting Azure Local Cloud password policy (8+ characters, mixed case, numbers, special characters)
+3. Confirm the password
+4. Press **Enter** or click the arrow
+5. **"Your password has been changed"** — click **OK**
+
+:::tip Store Password in Key Vault
+Record the Administrator password and store it in the Key Vault referenced in `infrastructure.yml` under the `key_vault.name` value (secret name: `node-<hostname>-local-admin`). Do not save it in any file or document.
+:::
+
+### Step 9 — Verify Server Core Prompt
+
+The Server Core command prompt (`C:\Users\Administrator>`) and `SConfig` menu appear. The node is now ready for Phase 03: OS Configuration.
+
+### Step 10 — Repeat for All Nodes
+
+Perform Steps 1–9 for each remaining cluster node. Use parallel Virtual Console sessions where possible to reduce total installation time.
+
+---
+
+## Validation Checklist
+
+- [ ] Windows Setup completed without errors on all nodes
+- [ ] OS installed to Drive 0 (BOSS card) — not to data drives
+- [ ] Correct partition layout: EFI + MSR + Primary
+- [ ] Administrator password set and stored in Key Vault
+- [ ] Server Core command prompt and SConfig accessible on all nodes
+- [ ] No installation errors or BSODs on first boot
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| No boot prompt / boot device not found | ISO not mounted or USB missing | Return to [Task 02](./task-02-mount-and-verify-dell-gold-image-iso.mdx) and remount |
+| Missed "Press any key" prompt | Timed out | Power cycle node via iDRAC — prompt reappears on next boot |
+| BOSS card not visible in drive list | BOSS controller disabled | Verify BIOS: **Device Settings** → **BOSS Controller** |
+| Multiple drives shown, unsure which is BOSS | All drives visible | Select the smallest drive (~238 GB) — that is the BOSS RAID-1 volume |
+| "Windows cannot be installed to this disk" | Leftover partitions from prior install | Delete all existing partitions on Drive 0 before proceeding |
+| Installation hangs at "Getting ready" | ISO corruption or hardware fault | Reboot, re-mount ISO, retry |
+| Password complexity error | Password does not meet policy | Use 8+ characters with uppercase, lowercase, numbers, and symbols |
+| BSOD on first boot | Driver issue | Verify correct Dell gold image version is being used |
+| No drives found at all | Missing storage drivers | Use the Dell gold image ISO — it includes required drivers |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 02: Mount Gold Image](./task-02-mount-and-verify-dell-gold-image-iso.mdx) | [↑ Phase 02: OS Installation](./index.mdx) | [Task 04: Verify OS Deployment →](./task-04-verify-os-deployment.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Full frontmatter, Azure badge, ISO pre-mounted callout referencing Task 02, Step 3.x → sequential steps, Stage 12 → Phase 03 reference, Key Vault password guidance, Navigation table, Version Control footer |

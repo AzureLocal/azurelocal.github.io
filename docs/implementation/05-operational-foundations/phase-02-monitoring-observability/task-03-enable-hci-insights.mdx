@@ -1,0 +1,295 @@
+---
+title: "Task 03: Enable HCI Insights"
+sidebar_label: "Task 03: HCI Insights"
+sidebar_position: 3
+description: "Enable Azure Local (HCI) Insights for cluster health monitoring and performance analytics"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Enable HCI Insights
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: HCI Insights monitoring integration 
+> **PURPOSE**: Enable Azure Local Insights workbook for cluster health and performance monitoring 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Local Insights](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-single-23h2)
+
+**Status**: Active
+
+---
+
+Azure Local Insights provides a rich, pre-built Azure Monitor Workbook that visualizes cluster health, node status, storage performance, and VM state. Enabling Insights automatically installs the Azure Monitor Agent (if not already present) and configures the required Data Collection Rules for HCI-specific telemetry.
+
+## Prerequisites
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Log Analytics Workspace | Created in Step 1 | Workspace accessible |
+| Azure Monitor Agent | Installed on cluster nodes (Step 2) | Extension status: Succeeded |
+| Arc-Enabled Cluster | Azure Local cluster registered | Portal shows cluster resource |
+| RBAC Permissions | Monitoring Contributor | Role assignment verified |
+
+## Overview
+
+HCI Insights collects data from specific Windows Event Log channels and performance counters:
+
+| Data Type | Source | Purpose |
+|-----------|--------|---------|
+| Health Events | `Microsoft-Windows-Health/Operational` | Node and component health status |
+| SDDC Events | `Microsoft-Windows-SDDC-Management/Operational` | Cluster management events |
+| Memory | `Memory\Available Bytes` | Memory utilization |
+| Network | `Network Interface(*)\Bytes Total/sec` | Network throughput |
+| CPU | `Processor(_Total)\% Processor Time` | CPU utilization |
+| RDMA | `RDMA Activity(*)\RDMA Inbound/Outbound Bytes/sec` | Storage network performance |
+
+## Configuration Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+#### Step 3.1: Enable Insights from Cluster Resource
+
+1. Navigate to **Azure Portal** → **Azure Local** → Select your cluster
+2. Under **Capabilities** tab, locate the **Insights** tile
+3. Click **Insights** to open the configuration page
+4. Click **Get Started**
+
+#### Step 3.2: Configure Data Collection Rule
+
+1. On the **Insights configuration** page:
+ - Select an existing DCR from the dropdown, OR
+ - Click **Create New** to create a dedicated Insights DCR
+
+2. For **New DCR**:
+
+| Setting | Value |
+|---------|-------|
+| **Subscription** | `{{AZURE_SUBSCRIPTION_NAME}}` |
+| **DCR Name** | `AzureStackHCI-{{CLUSTER_NAME}}-dcr` |
+| **Data Collection Endpoint** | `dce-{{SITE_CODE}}-azl-01` |
+
+3. Click **Review + create**
+
+:::info Automatic AMA Installation
+When you configure Insights, Azure Monitor Agent is automatically installed on all cluster nodes if not already present. The DCRs created by Insights have the prefix `AzureStackHCI-`.
+:::
+
+#### Step 3.3: Verify Insights Configuration
+
+1. Return to your cluster's **Capabilities** tab
+2. The **Insights** tile should now show **Configured**
+3. Click **Insights** to view the workbook
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Azure Policy)">
+
+For organizations with multiple Azure Local clusters, use Azure Policy to enable Insights at scale:
+
+#### Step 3.1: Assign Built-in Policy
+
+1. Navigate to **Azure Policy** → **Definitions**
+2. Search for "Azure Local" or "HCI Insights"
+3. Select **Configure Azure Local machines to be associated with a Data Collection Rule**
+4. Click **Assign**
+
+#### Step 3.2: Configure Policy Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| **Scope** | Management group or subscription containing clusters |
+| **Data Collection Rule Resource ID** | Resource ID of your DCR |
+| **Data Collection Endpoint Resource ID** | Resource ID of your DCE |
+
+5. Click **Review + create** → **Create**
+
+#### Step 3.3: Trigger Remediation
+
+1. Navigate to **Policy** → **Compliance**
+2. Find the assigned policy
+3. Click **Create Remediation Task** to apply to existing clusters
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+#Requires -Modules Az.Monitor, Az.StackHCI
+
+# Variables
+$SubscriptionId = "{{AZURE_SUBSCRIPTION_ID}}"
+$ResourceGroup = "{{AZURE_RESOURCE_GROUP}}"
+$ClusterName = "{{CLUSTER_NAME}}"
+$WorkspaceName = "{{LOG_ANALYTICS_WORKSPACE_NAME}}"
+$SiteCode = "{{SITE_CODE}}"
+
+# Connect to Azure
+Connect-AzAccount -Subscription $SubscriptionId
+
+# Get cluster resource
+$cluster = Get-AzStackHciCluster `
+ -ResourceGroupName $ResourceGroup `
+ -ClusterName $ClusterName
+
+# Get workspace
+$workspace = Get-AzOperationalInsightsWorkspace `
+ -ResourceGroupName $ResourceGroup `
+ -Name $WorkspaceName
+
+# Enable Insights by creating the required DCR
+# Note: For Azure Local 23H2+, Insights is enabled through the portal
+# This script prepares the DCR that Insights will use
+
+$dcrName = "AzureStackHCI-$ClusterName-dcr"
+
+Write-Host "To enable Insights:" -ForegroundColor Cyan
+Write-Host "1. Navigate to Azure Portal → Azure Local → $ClusterName"
+Write-Host "2. Click on Insights tile under Capabilities"
+Write-Host "3. Select or create DCR: $dcrName"
+Write-Host "4. Workspace: $WorkspaceName"
+
+# Verify cluster is ready for Insights
+$arcServers = Get-AzConnectedMachine -ResourceGroupName $ResourceGroup | 
+ Where-Object { $_.Name -like "*$ClusterName*" -or $_.Name -like "{{CLUSTER_NODE_01_NAME}}*" }
+
+Write-Host "`nCluster nodes registered with Arc:" -ForegroundColor Yellow
+$arcServers | ForEach-Object { Write-Host " - $($_.Name): $($_.Status)" }
+```
+
+</TabItem>
+</Tabs>
+
+## Using the Insights Workbook
+
+Once enabled, the Insights workbook provides several views:
+
+### Cluster Health Overview
+
+| Metric | Description | Alert Threshold |
+|--------|-------------|-----------------|
+| **Cluster Health** | Overall cluster status | Warning/Critical |
+| **Node Health** | Individual node status | Any node unhealthy |
+| **Storage Health** | Storage pool and volume status | Degraded/Unhealthy |
+| **VM Health** | Virtual machine states | Failed VMs |
+
+### Performance Monitoring
+
+The workbook displays:
+- **CPU utilization** across all nodes
+- **Memory availability** trends
+- **Network throughput** (total bytes/sec)
+- **RDMA performance** for storage traffic
+- **Storage latency** for CSV volumes
+
+### Navigation Tabs
+
+| Tab | Content |
+|-----|---------|
+| **Overview** | Cluster summary, health status, quick stats |
+| **Nodes** | Per-node CPU, memory, network metrics |
+| **Storage** | Volume health, capacity, latency |
+| **VMs** | VM count, state distribution |
+
+## Validation
+
+### Verify Insights Status
+
+```powershell
+# Check cluster Insights configuration
+$cluster = Get-AzStackHciCluster `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -ClusterName "{{CLUSTER_NAME}}"
+
+# Check for AMA extensions on nodes
+$nodes = @("{{CLUSTER_NODE_01_NAME}}", "{{CLUSTER_NODE_02_NAME}}")
+foreach ($node in $nodes) {
+ $ext = Get-AzConnectedMachineExtension `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -MachineName $node `
+ -Name "AzureMonitorWindowsAgent"
+ 
+ Write-Host "$node AMA Status: $($ext.ProvisioningState)"
+}
+```
+
+### Verify Data Collection
+
+Run these queries in Log Analytics to confirm data is flowing:
+
+```kusto
+// Check Health events
+Event
+| where Source == "Microsoft-Windows-Health"
+| where TimeGenerated > ago(1h)
+| summarize count() by Computer
+| order by Computer asc
+
+// Check SDDC Management events
+Event
+| where Source == "Microsoft-Windows-SDDC-Management"
+| where TimeGenerated > ago(1h)
+| summarize count() by Computer
+```
+
+### Sample Health Query
+
+```kusto
+// Cluster health summary
+Event
+| where Source == "Microsoft-Windows-SDDC-Management"
+| where EventID == 3000 // Server health event
+| where TimeGenerated > ago(24h)
+| extend ParsedData = parse_json(RenderedDescription)
+| project TimeGenerated, Computer, HealthState = ParsedData.HealthState
+| summarize LatestHealth = arg_max(TimeGenerated, *) by Computer
+```
+
+## Troubleshooting
+
+| Issue | Possible Cause | Resolution |
+|-------|---------------|------------|
+| Insights shows "Not configured" | AMA not installed | Check Extensions on cluster nodes |
+| No data in workbook | DCR not associated | Verify DCR associations in Monitor → DCRs |
+| Stale data (>15 min old) | Agent connectivity issue | Check `azcmagent show` on nodes |
+| Missing health events | Event log channel not enabled | Verify Windows Event Log settings |
+| Cluster shows "Other" status | Recent Arc reconnection | Wait for next health check cycle |
+
+### Event Log Verification
+
+On each cluster node, verify the required event logs are enabled:
+
+```powershell
+# Run on each cluster node
+$logs = @(
+ "Microsoft-Windows-Health/Operational",
+ "Microsoft-Windows-SDDC-Management/Operational"
+)
+
+foreach ($log in $logs) {
+ $logInfo = Get-WinEvent -ListLog $log -ErrorAction SilentlyContinue
+ if ($logInfo) {
+ Write-Host "✅ $log - Enabled: $($logInfo.IsEnabled)" -ForegroundColor Green
+ } else {
+ Write-Host "❌ $log - Not found" -ForegroundColor Red
+ }
+}
+```
+
+## Variables Reference
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{CLUSTER_NAME}}` | Azure Local cluster name | `azl-dal-cluster-01` |
+| `{{CLUSTER_NODE_01_NAME}}` | First node hostname | `azl-dal-n01` |
+| `{{LOG_ANALYTICS_WORKSPACE_NAME}}` | Workspace name | `law-azl-dal-prod-01` |
+
+## Next Steps
+
+After enabling HCI Insights:
+
+1. ➡️ **[Task 4: Setup Alerting](./task-04-setup-alerting.mdx)** — Configure alert rules based on Insights data
+2. Review the Insights workbook for baseline understanding
+3. Bookmark key workbook views for operational monitoring
+4. Consider enabling at scale using Azure Policy for multiple clusters

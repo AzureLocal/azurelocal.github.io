@@ -1,0 +1,394 @@
+---
+title: "Hardware Requirements"
+sidebar_label: "Hardware Requirements"
+sidebar_position: 7
+description: "Hardware specifications and requirements for Azure Local clusters"
+---
+
+# Hardware Requirements
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Hardware specifications for Azure Local 
+> **PURPOSE**: Define hardware requirements for cluster deployment 
+> **MASTER REFERENCE**: [Microsoft Learn - Hardware Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This document defines hardware requirements and specifications for Azure Local cluster deployments. It covers:
+
+- **Supported Hardware Platforms** - Dell integrated systems and validated nodes
+- **Minimum Requirements** - CPU, memory, storage, and network specifications
+- **Firmware Baselines** - Required BIOS, iDRAC, NIC, and controller versions
+- **Hardware Discovery** - Automated inventory collection via iDRAC Redfish API
+- **Node Inventory Worksheets** - Per-site hardware documentation
+
+:::tip Azure Local Cloud Standard
+Azure Local Cloud deploys Dell AX-series integrated systems for Azure Local. All hardware must meet Microsoft Azure Local certification requirements.
+:::
+
+---
+
+## Supported Hardware Platforms
+
+### Dell Integrated Systems (AX-Series)
+
+Dell AX-series nodes are purpose-built for Azure Local with pre-validated configurations:
+
+| Model | CPU | Max RAM | Storage | Network | Use Case |
+|-------|-----|---------|---------|---------|----------|
+| **Dell AX-760** | Intel Xeon Scalable 5th Gen | 4TB | NVMe + SSD | 4x 100GbE | General purpose |
+| **Dell AX-770** | Intel Xeon Scalable 5th Gen | 4TB | NVMe + SSD | 4x 100GbE | High-performance |
+
+---
+
+## Minimum Hardware Requirements
+
+### Azure Local System Requirements
+
+| Component | Minimum | Recommended | Notes |
+|-----------|---------|-------------|-------|
+| **Nodes per Cluster** | 1 | 2-16 | Single-node supported for dev/test |
+| **CPU Cores (per node)** | 16 cores | 32+ cores | Second-generation 64-bit or later |
+| **RAM (per node)** | 128 GB | 256+ GB | Additional for Arc VM management |
+| **Boot Drive** | 200 GB | 480+ GB SSD | BOSS card or M.2 recommended |
+| **Storage Drives** | 2 drives | 4+ NVMe | For Storage Spaces Direct |
+| **Network Adapters** | 2 NICs | 4+ NICs | RDMA-capable for storage |
+
+### Storage Requirements
+
+| Storage Tier | Drive Type | Minimum Count | Purpose |
+|--------------|------------|---------------|---------|
+| **Cache Tier** | NVMe SSD | 2 per node | High-speed caching |
+| **Capacity Tier** | SSD or HDD | 4 per node | Data storage |
+| **Boot Drive** | SSD (BOSS/M.2) | 1 per node | OS installation |
+
+:::warning Storage Configuration
+- **Minimum 2 capacity drives** required for Storage Spaces Direct resiliency
+- **Cache-to-capacity ratio**: 1:4 to 1:8 recommended
+- **Total raw capacity**: Plan for 2-3x usable capacity (mirroring overhead)
+:::
+
+### Network Requirements
+
+| Interface | Speed | RDMA | Purpose |
+|-----------|-------|------|---------|
+| **Management** | 1 GbE or 10 GbE | No | Cluster management, iDRAC |
+| **Storage** | 25 GbE or 100 GbE | **Required** | Storage Spaces Direct (S2D) |
+| **Compute/VM** | 25 GbE or 100 GbE | Optional | VM traffic, SDN |
+
+**RDMA Technologies Supported:**
+- **RoCEv2** (RDMA over Converged Ethernet v2) - Preferred
+- **iWARP** - Alternative for environments without DCB
+
+---
+
+## Firmware Baseline Requirements
+
+### Azure Local Cloud Standard Firmware Versions
+
+| Component | Minimum Version | Target Version | Notes |
+|-----------|-----------------|----------------|-------|
+| **Dell BIOS** | 2.0.0 | Latest stable | Check Dell support matrix |
+| **iDRAC Firmware** | 7.0.0 | Latest stable | iDRAC 9 required |
+| **NIC Firmware** | Varies by model | Latest validated | Check Azure Local catalog |
+| **RAID Controller** | Varies by model | Latest stable | PERC/HBA firmware |
+| **Dell SBE Package** | 4.2.2512 | 4.2.2512.1616+ | Solution Builder Extension |
+
+### Dell Gold Image
+
+Azure Local Cloud standard Dell Gold Image specifications:
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| **Windows Server Build** | 2510 | Azure Local OS |
+| **SBE Version** | 4.2.2512.1616 | Dell Solution Builder Extension |
+| **Dell Solution Version** | 12.2510.0.3165 | Integrated solution package |
+| **Azure Local Build** | 2601 | Running version after Arc registration |
+
+### Firmware Validation
+
+Validate firmware versions match across all cluster nodes:
+
+```powershell
+# Check BIOS version consistency
+$discovery = Get-Content discovery/idrac-inventory.json | ConvertFrom-Json
+
+foreach ($server in $discovery.servers.PSObject.Properties.Value) {
+ Write-Host "Server: $($server.service_tag)"
+ Write-Host " BIOS: $($server.firmware.bios_version)"
+ Write-Host " iDRAC: $($server.firmware.idrac_version)"
+}
+```
+
+---
+
+## Hardware Discovery Process
+
+### Overview
+
+Hardware discovery automates collection of Dell server specifications via iDRAC Redfish API, enabling:
+
+- **Accurate hardware inventory** for deployment planning
+- **Validation** that hardware meets Azure Local requirements
+- **Documentation** of firmware versions and configurations
+- **Change tracking** for hardware lifecycle management
+
+**Primary Script:** `Get-DellServerInventory-FromiDRAC.ps1` 
+**Output:** `discovery/idrac-inventory.json`
+
+### Prerequisites
+
+**iDRAC Access Requirements:**
+- iDRAC 9 or later with Redfish API enabled
+- Network connectivity to iDRAC management interface (HTTPS/443)
+- iDRAC administrator credentials
+
+**Verify iDRAC Accessibility:**
+```powershell
+# Test network connectivity
+Test-NetConnection -ComputerName "10.10.10.11" -Port 443
+
+# Verify Redfish API endpoint
+Invoke-RestMethod -Uri "https://10.10.10.11/redfish/v1/" -SkipCertificateCheck
+```
+
+### What Gets Discovered
+
+| Category | Details Captured |
+|----------|------------------|
+| **System** | Model, service tag, asset tag, BIOS version |
+| **CPU** | Model, core count, thread count, max speed |
+| **Memory** | Total capacity, DIMM count, speed, type |
+| **Storage** | NVMe/SSD/HDD count, capacity, controller firmware |
+| **Network** | Adapter model, MAC addresses, firmware version |
+| **Firmware** | BIOS, iDRAC, NIC, controller versions |
+
+### Running Discovery
+
+**Single Server:**
+```powershell
+cd C:\git\azurelocal-toolkit
+
+.\scripts\discovery\Get-DellServerInventory-FromiDRAC.ps1 `
+ -iDRACIP "10.10.10.11"
+```
+
+**Multiple Servers:**
+```powershell
+# Prompt for iDRAC credentials once
+$cred = Get-Credential -Message "Enter iDRAC Administrator credentials"
+
+# Discover multiple servers
+.\scripts\discovery\Get-DellServerInventory-FromiDRAC.ps1 `
+ -iDRACIP @("10.10.10.11", "10.10.10.12", "10.10.10.13", "10.10.10.14") `
+ -Credential $cred `
+ -Verbose
+```
+
+**With Historical Tracking:**
+```powershell
+# Keep timestamped files for firmware change tracking
+.\scripts\discovery\Get-DellServerInventory-FromiDRAC.ps1 `
+ -iDRACIP @("10.10.10.11", "10.10.10.12") `
+ -Credential $cred `
+ -KeepTimestampedFiles
+```
+
+### Validate Hardware Requirements
+
+After discovery, validate hardware meets Azure Local requirements:
+
+```powershell
+$discovery = Get-Content discovery/idrac-inventory.json | ConvertFrom-Json
+
+foreach ($server in $discovery.servers.PSObject.Properties.Value) {
+ Write-Host "`nValidating: $($server.service_tag)" -ForegroundColor Cyan
+ 
+ # CPU validation (minimum 16 cores)
+ if ($server.cpu.cores -lt 16) {
+ Write-Host " ⚠️ CPU: $($server.cpu.cores) cores (minimum 16 required)" -ForegroundColor Yellow
+ } else {
+ Write-Host " ✅ CPU: $($server.cpu.cores) cores" -ForegroundColor Green
+ }
+ 
+ # RAM validation (minimum 128 GB)
+ if ($server.memory.total_capacity_gb -lt 128) {
+ Write-Host " ⚠️ RAM: $($server.memory.total_capacity_gb) GB (minimum 128 GB required)" -ForegroundColor Yellow
+ } else {
+ Write-Host " ✅ RAM: $($server.memory.total_capacity_gb) GB" -ForegroundColor Green
+ }
+ 
+ # Storage validation (minimum 2 NVMe for S2D cache)
+ if ($server.storage.nvme_count -lt 2) {
+ Write-Host " ⚠️ NVMe: $($server.storage.nvme_count) drives (minimum 2 required)" -ForegroundColor Yellow
+ } else {
+ Write-Host " ✅ NVMe: $($server.storage.nvme_count) drives ($($server.storage.nvme_total_gb) GB)" -ForegroundColor Green
+ }
+ 
+ # NIC validation (minimum 2 adapters)
+ if ($server.network.adapters.Count -lt 2) {
+ Write-Host " ⚠️ NICs: $($server.network.adapters.Count) adapters (minimum 2 required)" -ForegroundColor Yellow
+ } else {
+ Write-Host " ✅ NICs: $($server.network.adapters.Count) adapters" -ForegroundColor Green
+ }
+}
+```
+
+---
+
+## Node Inventory Worksheet (Per-Site)
+
+### Site Hardware Summary
+
+| Field | Value |
+|-------|-------|
+| **Site Name/ID** | `________________________` |
+| **Number of Nodes** | ☐ 2 ☐ 3 ☐ 4 ☐ 8 ☐ 16 |
+| **Node Model** | `________________________` (e.g., Dell AX-7525) |
+| **Cluster Configuration** | ☐ 2-node ☐ 3-node ☐ 4+ node |
+
+### Node Details
+
+Complete for each node in the cluster:
+
+#### Node 1
+
+| Field | Value |
+|-------|-------|
+| **Hostname** | `________________________` (e.g., CONAX01) |
+| **Service Tag** | `________________________` |
+| **Asset Tag** | `________________________` |
+
+**Compute:**
+
+| Component | Specification |
+|-----------|---------------|
+| **CPU Model** | `________________________` |
+| **CPU Cores** | `______` |
+| **CPU Speed** | `______` GHz |
+| **RAM Total** | `______` GB |
+| **DIMM Configuration** | `________________________` |
+
+**Storage:**
+
+| Drive Type | Model | Capacity | Count | Purpose |
+|------------|-------|----------|-------|---------|
+| Boot (BOSS/M.2) | `____________` | `____` GB | `__` | OS |
+| NVMe (Cache) | `____________` | `____` GB | `__` | S2D Cache |
+| SSD (Capacity) | `____________` | `____` GB | `__` | S2D Capacity |
+| HDD (Capacity) | `____________` | `____` GB | `__` | S2D Capacity |
+
+**Network:**
+
+| Adapter | Model | Ports | Speed | RDMA | Purpose |
+|---------|-------|-------|-------|------|---------|
+| NIC 1 | `____________` | `__` | `____` GbE | ☐ Yes ☐ No | `________` |
+| NIC 2 | `____________` | `__` | `____` GbE | ☐ Yes ☐ No | `________` |
+| NIC 3 | `____________` | `__` | `____` GbE | ☐ Yes ☐ No | `________` |
+| NIC 4 | `____________` | `__` | `____` GbE | ☐ Yes ☐ No | `________` |
+
+**Firmware:**
+
+| Component | Current Version | Target Version | Status |
+|-----------|-----------------|----------------|--------|
+| BIOS | `____________` | `____________` | ☐ Current ☐ Update needed |
+| iDRAC | `____________` | `____________` | ☐ Current ☐ Update needed |
+| NIC Firmware | `____________` | `____________` | ☐ Current ☐ Update needed |
+| RAID Controller | `____________` | `____________` | ☐ Current ☐ Update needed |
+
+#### Node 2
+
+*(Repeat the Node 1 table structure)*
+
+| Field | Value |
+|-------|-------|
+| **Hostname** | `________________________` |
+| **Service Tag** | `________________________` |
+| **Asset Tag** | `________________________` |
+
+*(Continue for additional nodes)*
+
+---
+
+### iDRAC Access and Credentials
+
+| Node | iDRAC IP | Username | Password Location | Access Verified |
+|------|----------|----------|-------------------|-----------------|
+| Node 1 | `____________` | `________` | Key Vault: `________` | ☐ Yes ☐ No |
+| Node 2 | `____________` | `________` | Key Vault: `________` | ☐ Yes ☐ No |
+| Node 3 | `____________` | `________` | Key Vault: `________` | ☐ Yes ☐ No |
+| Node 4 | `____________` | `________` | Key Vault: `________` | ☐ Yes ☐ No |
+
+**iDRAC Verification:**
+- [ ] iDRAC firmware version matches baseline: ☐ Yes ☐ No
+- [ ] iDRAC web interface accessible: ☐ Yes ☐ No
+- [ ] Redfish API enabled and accessible: ☐ Yes ☐ No
+- [ ] Virtual console (KVM) functional: ☐ Yes ☐ No
+- [ ] Virtual media mount tested: ☐ Yes ☐ No
+
+---
+
+### NIC Mapping and Labeling
+
+Document the physical NIC identification for each node:
+
+| Slot | Port | MAC Address | PCI Address | Purpose | VLAN(s) |
+|------|------|-------------|-------------|---------|---------|
+| Embedded | 1 | `__:__:__:__:__:__` | `____` | Management | `____` |
+| Embedded | 2 | `__:__:__:__:__:__` | `____` | Management | `____` |
+| Slot 1 | 1 | `__:__:__:__:__:__` | `____` | Storage 1 | `____` |
+| Slot 1 | 2 | `__:__:__:__:__:__` | `____` | Storage 2 | `____` |
+| Slot 2 | 1 | `__:__:__:__:__:__` | `____` | Compute | Trunk |
+| Slot 2 | 2 | `__:__:__:__:__:__` | `____` | Compute | Trunk |
+
+**RDMA Configuration:**
+
+| Setting | Value |
+|---------|-------|
+| **RDMA Technology** | ☐ RoCEv2 ☐ iWARP ☐ N/A |
+| **RDMA NICs per Node** | ☐ 2 ☐ 4 ☐ Other: `____` |
+| **RDMA Network Isolation** | ☐ Dedicated VLANs ☐ Separate physical NICs |
+| **DCB/PFC Configured** | ☐ Yes ☐ No |
+
+---
+
+## Hardware Assessment Checklist
+
+### Pre-Deployment Validation
+
+- [ ] All nodes are same model or validated compatible
+- [ ] All nodes have identical hardware configuration
+- [ ] Firmware versions match across all nodes
+- [ ] Firmware meets minimum baseline requirements
+- [ ] CPU cores meet minimum requirements (16+)
+- [ ] RAM meets minimum requirements (128 GB+)
+- [ ] Storage drives meet minimum requirements (2+ NVMe)
+- [ ] Network adapters are RDMA-capable (for storage)
+- [ ] iDRAC accessible from deployment workstation
+- [ ] Service tags documented
+- [ ] Hardware warranty verified and documented
+
+### Discovery Outputs
+
+- [ ] `discovery/idrac-inventory.json` generated
+- [ ] Hardware validation script run with all checks passing
+- [ ] Firmware update plan created (if updates needed)
+- [ ] NIC mapping documented for all nodes
+- [ ] RDMA configuration plan documented
+
+---
+
+## Next Steps
+
+After completing hardware requirements documentation:
+
+1. **For multi-site deployments**, see [Multi-Site Planning](./04-multi-site-planning.mdx)
+2. **Proceed to Stage 11** - [Hardware Provisioning](../implementation/04-cluster-deployment/phase-01-hardware-provisioning/index.mdx)
+3. **Review Site Assessment** - Ensure [Site Assessment](./03-site-assessment.mdx) is complete

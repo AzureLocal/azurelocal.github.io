@@ -1,0 +1,416 @@
+---
+title: "Task 11: Deploy Management VMs"
+sidebar_label: "Task 11: Deploy Mgmt VMs"
+sidebar_position: 11
+description: "Deploy all management virtual machines — Domain Controllers, Utility Server, NDM Server, and Lighthouse Server."
+category: Runbook
+scope: Management VM provisioning
+purpose: Deploy all management VMs from Azure Marketplace images
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, virtual-machines, management, deployment]
+keywords: [VM deployment, domain controller, utility server, NDM, Lighthouse, Azure VM]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 11: Deploy Management VMs
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Management VM provisioning 
+> **PURPOSE**: Deploy all management VMs from Azure Marketplace images 
+> **MASTER REFERENCE**: [Microsoft Learn - Create VM](https://learn.microsoft.com/en-us/azure/virtual-machines/windows/quick-create-portal)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This task deploys all five management VMs needed for the Azure Local environment. Each VM is deployed from Azure Marketplace images into the management subnet. OS-level configuration (AD DS, utilities, etc.) is handled in Tasks 12–16.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::warning Admin Credentials
+VM admin passwords are stored in Key Vault. **Never** hardcode passwords. Retrieve the admin password from `keyvault://kv-{name}/azlocal-admin-password` at deploy time.
+:::
+
+:::info Terraform Reference
+**Module:** `tf-module-azr-local` 
+**Files:** `nic.tf`, VM resources 
+**Mode:** Management
+:::
+
+### VMs to Deploy
+
+| VM Key | Name | Role | OS | Size | IP | Config Path |
+|--------|------|------|----|------|----|-------------|
+| dc01 | `vm-azrldc-{env}-{region}-01` | Primary Domain Controller | Windows Server 2025 | Standard_D2s_v4 | Per config | `azure_vms.dc01` |
+| dc02 | `vm-azrldc-{env}-{region}-02` | Secondary Domain Controller | Windows Server 2025 | Standard_D2s_v4 | Per config | `azure_vms.dc02` |
+| utility | `vm-util-{env}-{region}-01` | Utility/Management Server | Windows Server 2025 | Standard_D2as_v6 | Per config | `azure_vms.utility` |
+| ndm | `vm-ndm-{env}-{region}-01` | NDM (SYSLOG/SNMP) | Ubuntu 24.04 LTS | Standard_D2s_v4 | Per config | `azure_vms.ndm` |
+| lighthouse | `vm-lh-{env}-{region}-01` | Lighthouse Central Mgmt | OpenGear Lighthouse | Standard_D2s_v4 | Per config | `azure_vms.lighthouse` |
+
+## Prerequisites
+
+- [ ] [Task 01: Virtual Network](./task-01-virtual-network) completed — Management subnet exists
+- [ ] [Task 10: Key Vault](./task-10-key-vault) completed — Admin password stored in Key Vault
+- [ ] VM sizes available in target region (check quotas)
+- [ ] Marketplace terms accepted for OpenGear Lighthouse image (if deploying)
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `azure_vms.dc01.resource_group` |
+| Subnet | Management subnet | `azure_vms.dc01.subnet` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure (repeat for each VM)
+
+1. **Create Virtual Machine**:
+ - Search for **Virtual machines** → **+ Create** → **Azure virtual machine**
+
+2. **Basics**:
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | Per VM table above | `azure_vms.<key>.name` |
+ | Region | Your region | `azure_vms.<key>.location` |
+ | Image | Per VM table | `azure_vms.<key>.image.*` |
+ | Size | Per VM table | `azure_vms.<key>.vm_size` |
+ | Username | `azureadmin` | Standard |
+ | Password | From Key Vault | `keyvault://<vault>/azlocal-admin-password` |
+
+3. **Disks**:
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | OS disk type | Premium SSD | `azure_vms.<key>.os_disk.type` |
+ | OS disk size | Per config | `azure_vms.<key>.os_disk.size_gb` |
+
+4. **Networking**:
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Virtual network | Management VNet | `network.azure_vnets.management.name` |
+ | Subnet | Management subnet | `azure_vms.<key>.subnet` |
+ | Public IP | None | No public IPs on mgmt VMs |
+ | NIC name | Per config | `azure_vms.<key>.nic_name` |
+
+5. **Advanced → IP Configuration**: Set static private IP:
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Private IP | Static | `azure_vms.<key>.private_ip` |
+
+6. **Review + create**: Verify → Click **Create**
+
+7. **Repeat** for all 5 VMs
+
+#### Validation
+
+- [ ] All 5 VMs provisioning state: **Succeeded**
+- [ ] Each VM has correct static private IP
+- [ ] No public IPs assigned
+- [ ] All VMs accessible via Bastion (Task 05)
+
+#### Links
+
+- [Microsoft Learn: Create Windows VM](https://learn.microsoft.com/en-us/azure/virtual-machines/windows/quick-create-portal)
+- [Microsoft Learn: Create Linux VM](https://learn.microsoft.com/en-us/azure/virtual-machines/linux/quick-create-portal)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-11-deploy-management-vms/powershell/Deploy-ManagementVMs.ps1`
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Deploy-ManagementVMs.ps1
+# Execution: Run from management workstation — reads infrastructure.yml
+# Prerequisites: Az.Compute, Az.Network, Az.KeyVault modules
+# Deploys: All 5 management VMs from infrastructure.yml config
+# ============================================================================
+
+#Requires -Modules Az.Compute, Az.Network, Az.KeyVault, Az.Resources
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "configs/infrastructure.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/keyvault-helper.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+$SubscriptionId = $config.azure.subscriptions.($config.network.azure_vnets.management.subscription).id
+$VNetName = $config.network.azure_vnets.management.name
+$VNetRg = $config.network.azure_vnets.management.resource_group
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Retrieve admin password from Key Vault
+$AdminUser = "azureadmin"
+$AdminPassword = Get-KeyVaultSecret -SecretUri "keyvault://$($config.azure_infrastructure.key_vaults.management.name)/azlocal-admin-password"
+$SecurePassword = ConvertTo-SecureString $AdminPassword -AsPlainText -Force
+$Credential = New-Object PSCredential($AdminUser, $SecurePassword)
+
+# Get VNet and Subnet
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $VNetRg
+
+foreach ($vmKey in @("dc01","dc02","utility","ndm","lighthouse")) {
+ $vm = $config.azure_vms.$vmKey
+ Write-LogInfo "Deploying VM: $($vm.name) ($($vm.role))"
+
+ # Create NIC with static IP
+ $subnetObj = Get-AzVirtualNetworkSubnetConfig -Name $vm.subnet -VirtualNetwork $vnet
+ $ipConfig = New-AzNetworkInterfaceIpConfig -Name "ipconfig1" -SubnetId $subnetObj.Id `
+ -PrivateIpAddress $vm.private_ip -PrivateIpAddressVersion IPv4
+
+ $nic = New-AzNetworkInterface -Name $vm.nic_name -ResourceGroupName $vm.resource_group `
+ -Location $vm.location -IpConfiguration $ipConfig
+
+ # VM Config
+ $vmConfig = New-AzVMConfig -VMName $vm.name -VMSize $vm.vm_size
+
+ if ($vm.os_type -eq "Windows") {
+ $vmConfig = Set-AzVMOperatingSystem -VM $vmConfig -Windows -ComputerName $vm.hostname `
+ -Credential $Credential -ProvisionVMAgent -EnableAutoUpdate
+ } else {
+ $vmConfig = Set-AzVMOperatingSystem -VM $vmConfig -Linux -ComputerName $vm.hostname `
+ -Credential $Credential -DisablePasswordAuthentication:$false
+ }
+
+ $vmConfig = Set-AzVMSourceImage -VM $vmConfig -PublisherName $vm.image.publisher `
+ -Offer $vm.image.offer -Skus $vm.image.sku -Version "latest"
+
+ $vmConfig = Set-AzVMOSDisk -VM $vmConfig -Name $vm.os_disk.name `
+ -DiskSizeInGB $vm.os_disk.size_gb -StorageAccountType $vm.os_disk.type `
+ -CreateOption FromImage
+
+ $vmConfig = Add-AzVMNetworkInterface -VM $vmConfig -Id $nic.Id
+
+ $vmConfig = Set-AzVMBootDiagnostic -VM $vmConfig -Disable
+
+ # Deploy VM
+ New-AzVM -ResourceGroupName $vm.resource_group -Location $vm.location -VM $vmConfig -Tag $vm.tags
+
+ Write-LogSuccess "VM deployed: $($vm.name)"
+}
+
+Write-LogSuccess "All management VMs deployed"
+```
+
+#### Validation
+
+```powershell
+$config.azure_vms.PSObject.Properties | ForEach-Object {
+ $vm = $_.Value
+ Get-AzVM -Name $vm.name -ResourceGroupName $vm.resource_group -Status | Format-Table Name, @{N="Power";E={($_.Statuses | Where-Object Code -like "PowerState*").DisplayStatus}}, @{N="Provisioning";E={($_.Statuses | Where-Object Code -like "ProvisioningState*").DisplayStatus}}
+}
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — deploys a single VM. Repeat for each VM.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-ManagementVM-Standalone.ps1
+# Execution: Run anywhere — fully self-contained (one VM at a time)
+# Prerequisites: Az.Compute, Az.Network modules, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Compute, Az.Network, Az.KeyVault
+
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000"
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
+$Location = "eastus"
+$VNetName = "vnet-azrl-azl-eus-01"
+$SubnetName = "snet-azrl-azl-eus-01"
+
+# VM-specific (change per VM)
+$VmName = "vm-azrldc-azl-eus-01"
+$Hostname = "azrsdc-eus-01"
+$VmSize = "Standard_D2s_v4"
+$PrivateIp = "10.250.1.36"
+$NicName = "nic-vm-azrldc-azl-eus-01"
+$OsType = "Windows" # Windows or Linux
+$Publisher = "MicrosoftWindowsServer"
+$Offer = "WindowsServer"
+$ImageSku = "2025-datacenter-azure-edition"
+$OsDiskName = "vm-azrldc-azl-eus-01-osdisk"
+$OsDiskSizeGb = 127
+$OsDiskType = "Premium_LRS"
+$AdminUser = "azureadmin"
+$KeyVaultName = "kv-demos-platform"
+$PasswordSecret = "azlocal-admin-password"
+#endregion CONFIGURATION
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+$password = (Get-AzKeyVaultSecret -VaultName $KeyVaultName -Name $PasswordSecret).SecretValue
+$cred = New-Object PSCredential($AdminUser, $password)
+
+# NIC
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+$subnet = Get-AzVirtualNetworkSubnetConfig -Name $SubnetName -VirtualNetwork $vnet
+$ipCfg = New-AzNetworkInterfaceIpConfig -Name "ipconfig1" -SubnetId $subnet.Id -PrivateIpAddress $PrivateIp
+$nic = New-AzNetworkInterface -Name $NicName -ResourceGroupName $ResourceGroup -Location $Location -IpConfiguration $ipCfg
+
+# VM
+$vmCfg = New-AzVMConfig -VMName $VmName -VMSize $VmSize
+if ($OsType -eq "Windows") {
+ $vmCfg = Set-AzVMOperatingSystem -VM $vmCfg -Windows -ComputerName $Hostname -Credential $cred -ProvisionVMAgent
+} else {
+ $vmCfg = Set-AzVMOperatingSystem -VM $vmCfg -Linux -ComputerName $Hostname -Credential $cred
+}
+$vmCfg = Set-AzVMSourceImage -VM $vmCfg -PublisherName $Publisher -Offer $Offer -Skus $ImageSku -Version "latest"
+$vmCfg = Set-AzVMOSDisk -VM $vmCfg -Name $OsDiskName -DiskSizeInGB $OsDiskSizeGb -StorageAccountType $OsDiskType -CreateOption FromImage
+$vmCfg = Add-AzVMNetworkInterface -VM $vmCfg -Id $nic.Id
+$vmCfg = Set-AzVMBootDiagnostic -VM $vmCfg -Disable
+
+Write-Host "Deploying VM: $VmName" -ForegroundColor Cyan
+New-AzVM -ResourceGroupName $ResourceGroup -Location $Location -VM $vmCfg
+Write-Host "VM '$VmName' deployed" -ForegroundColor Green
+```
+
+:::info No External Dependencies
+Self-contained. Change the `#region CONFIGURATION` block for each VM. Refer to the VMs table above for per-VM values.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] All 5 VMs running
+- [ ] Correct static IPs assigned
+- [ ] No public IPs
+- [ ] Bastion connectivity works to each VM
+
+---
+
+## CAF/WAF Landing Zone Model
+
+In the CAF/WAF model, management VMs are deployed in the **Management subscription** in a spoke VNet peered to the Hub.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Management** subscription | `azure.subscriptions.management.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `azure_vms.dc01.resource_group` |
+| VNet/Subnet | Management spoke | May differ from single-sub |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+Follow the same procedure, targeting the **Management** subscription and spoke VNet.
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+:::tip Same Script — Different Config
+`infrastructure.yml` contains the correct Management subscription values for CAF/WAF.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+Update `#region CONFIGURATION` for Management subscription:
+
+```powershell
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Management subscription
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
+# ...
+#endregion CONFIGURATION
+```
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] VMs in **Management** subscription
+- [ ] Reachable via Bastion from Connectivity Hub
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| VM size not available | Quota or region limitation | Request quota increase or change region |
+| Marketplace terms not accepted | OpenGear Lighthouse requires acceptance | `Set-AzMarketplaceTerms -Publisher opengear -Product lighthouse -Name lighthouse -Accept` |
+| Static IP conflict | IP already in use | Verify IP availability in subnet |
+| Password too weak | Azure policy enforced | Use 12+ chars with upper, lower, number, special |
+| NIC creation fails | Subnet NSG blocking | Check NSG rules on management subnet |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 10: Key Vault](./task-10-key-vault) | [Manual Deployment Index](./index.mdx) | [Task 12: Configure AD DS](./task-12-configure-adds) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, virtual-machines, management, deployment
+- Keywords: VM deployment, domain controller, utility server, NDM, Lighthouse, Azure VM
+- Author: Azure Local Cloudnology Team

@@ -1,0 +1,194 @@
+---
+title: "Task 03: Configure Cluster Mode"
+sidebar_position: 3
+description: "Define cluster-specific resources including VPN connection and node DNS"
+---
+
+# Task 03: Configure Cluster Mode
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-green?style=flat-square)](../../index.mdx)
+[![Terraform](https://img.shields.io/badge/Tool-Terraform-purple?style=flat-square&logo=terraform)](https://terraform.io)
+
+> **DOCUMENT CATEGORY**: Task 
+> **SCOPE**: Cluster mode configuration 
+> **PURPOSE**: Define cluster VPN, Key Vault, storage, and DNS records 
+
+**Status**: Active 
+**Last Updated**: 2026-02-07
+
+---
+
+## Objective
+
+Configure cluster-specific resources including VPN connection to on-premises cluster network, cluster Key Vault, storage account, and DNS A records for cluster nodes.
+
+---
+
+## Prerequisites
+
+- [ ] Task 01 completed (core variables)
+- [ ] Task 02 completed (management mode, VPN Gateway deployed)
+- [ ] Cluster network details from on-premises team
+- [ ] Cluster node hostnames and IP addresses
+- [ ] Physical cluster location code (3 chars max)
+
+---
+
+## Configuration
+
+### Cluster Identification
+
+```hcl
+cluster_instance = "c01" # Cluster instance number (c01, c02, etc.)
+cluster_location = "ral" # Physical location code (3 chars: ral, phx, dal)
+```
+
+### Cluster Network Configuration
+
+```hcl
+cluster_network_config = {
+ on_prem = {
+ asn = 64512 # On-premises cluster BGP ASN
+ cluster_ip = "10.100.3.120" # First cluster node IP
+ gateway_public_ip = "203.0.113.100" # On-prem gateway public IP or FQDN
+ gateway_bgp_ip = "169.254.21.1" # On-prem gateway BGP IP
+ }
+ 
+ azure = {
+ vpn_gateway_id = module.management.vpn_gateway.id # Reference to management VPN Gateway
+ deploy_arc_gateway = false # Deploy Azure Arc Gateway (optional)
+ }
+}
+```
+
+### Cluster Nodes
+
+```hcl
+nodes = {
+ "c01-n01-prd-ral" = "10.100.3.101" # Node 1 hostname and IP
+ "c01-n02-prd-ral" = "10.100.3.102" # Node 2 hostname and IP
+ "c01-n03-prd-ral" = "10.100.3.103" # Node 3 hostname and IP
+ "c01-n04-prd-ral" = "10.100.3.104" # Node 4 hostname and IP (optional)
+}
+```
+
+---
+
+## Variable Reference
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `cluster_instance` | string | Cluster instance identifier | `"c01"` |
+| `cluster_location` | string | Physical location (3 chars) | `"ral"`, `"phx"` |
+| `on_prem.asn` | number | On-prem cluster BGP ASN | `64512` |
+| `on_prem.cluster_ip` | string | First cluster node IP | `"10.100.3.120"` |
+| `on_prem.gateway_public_ip` | string | Gateway public IP/FQDN | `"203.0.113.100"` |
+| `on_prem.gateway_bgp_ip` | string | Gateway BGP IP | `"169.254.21.1"` |
+| `azure.vpn_gateway_id` | string | VPN Gateway resource ID | `module.management...` |
+| `azure.deploy_arc_gateway` | bool | Deploy Arc Gateway | `false` |
+| `nodes` | map(string) | Node hostname to IP mapping | `{ "c01-n01..." = "10..." }` |
+
+---
+
+## Node Naming Convention
+
+Cluster node hostnames should follow this pattern:
+
+```
+{cluster}-{node}-{env}-{location}
+
+Examples:
+ c01-n01-prd-ral # Cluster 01, Node 01, Production, Raleigh
+ c01-n02-prd-ral # Cluster 01, Node 02, Production, Raleigh
+ c02-n01-dev-phx # Cluster 02, Node 01, Development, Phoenix
+```
+
+---
+
+## Azure Arc Gateway
+
+Set `deploy_arc_gateway = true` if you need:
+- Azure Arc-enabled services integration
+- Hybrid cloud management capabilities
+- Azure Policy enforcement on-premises
+
+:::info Default
+Most deployments use `deploy_arc_gateway = false`. Enable only if specifically required.
+:::
+
+---
+
+## Complete Example
+
+```hcl
+# terraform.tfvars (cluster mode section)
+
+# Cluster Identification
+cluster_instance = "c01"
+cluster_location = "ral"
+
+# Cluster Network
+cluster_network_config = {
+ on_prem = {
+ asn = 64512
+ cluster_ip = "10.100.3.120"
+ gateway_public_ip = "203.0.113.100"
+ gateway_bgp_ip = "169.254.21.1"
+ }
+ 
+ azure = {
+ vpn_gateway_id = module.management.vpn_gateway.id
+ deploy_arc_gateway = false
+ }
+}
+
+# Cluster Nodes (4-node cluster)
+nodes = {
+ "c01-n01-prd-ral" = "10.100.3.101"
+ "c01-n02-prd-ral" = "10.100.3.102"
+ "c01-n03-prd-ral" = "10.100.3.103"
+ "c01-n04-prd-ral" = "10.100.3.104"
+}
+```
+
+---
+
+## Validation
+
+- [ ] Cluster instance and location codes correct
+- [ ] On-premises cluster BGP ASN matches network team documentation
+- [ ] Cluster IP and gateway public IP verified
+- [ ] Gateway BGP IP confirmed with network team
+- [ ] VPN Gateway ID references management deployment
+- [ ] All cluster nodes listed with correct hostnames and IPs
+- [ ] Node naming convention follows standard pattern
+- [ ] Arc Gateway setting matches requirements
+
+---
+
+## Resources Deployed
+
+When cluster mode is configured, these resources are created:
+
+| Resource | Purpose |
+|----------|---------|
+| VPN Connection | Site-to-site connectivity to cluster network |
+| Key Vault | Cluster-specific secrets storage |
+| Log Analytics Workspace | Cluster monitoring and logs |
+| Storage Account | Cloud witness for cluster quorum |
+| DNS A Records | Name resolution for all cluster nodes |
+| Arc Gateway (optional) | Hybrid cloud management |
+
+---
+
+## Next Steps
+
+Configuration complete. Proceed to [Phase 02 - Pipeline Execution](../phase-02-pipeline-execution/) to deploy infrastructure.
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 02 - Management Mode](./task-02-configure-management-mode.mdx) | [Phase 01 - Configuration](./index.mdx) | [Phase 02 - Pipeline Execution](../phase-02-pipeline-execution/) |

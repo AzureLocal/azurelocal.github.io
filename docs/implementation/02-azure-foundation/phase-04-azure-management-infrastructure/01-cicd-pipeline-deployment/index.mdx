@@ -1,0 +1,222 @@
+---
+title: "Part 1: CI/CD Pipeline Deployment"
+sidebar_label: "01 - CI/CD Pipeline"
+sidebar_position: 1
+description: "Deploy Azure management infrastructure using automated CI/CD Pipeline with Terraform"
+---
+
+# Part 1: CI/CD Pipeline Deployment
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-green?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![GitLab](https://img.shields.io/badge/Platform-GitLab_CI/CD-FC6D26?style=flat-square&logo=gitlab)](https://gitlab.com)
+
+> **DOCUMENT CATEGORY**: Part Overview 
+> **SCOPE**: Phase 04 - Azure Management Infrastructure (CI/CD Method) 
+> **PURPOSE**: Automated deployment using CI/CD pipeline and Terraform 
+> **MASTER REFERENCE**: [tf-module-azr-local](https://github.com/AzureLocal/tf-module-azr-local/azurerm)
+
+**Status**: Active 
+**Execution**: Recommended deployment method 
+**Last Updated**: 2026-02-07
+
+---
+
+## Part Purpose
+
+This part documents the automated deployment of Azure management infrastructure using Product & Cloud Services (CI/CD) CI/CD pipeline pipelines. This is the **recommended approach** for most deployments.
+
+The pipeline uses the **[tf-module-azr-local](https://github.com/AzureLocal/tf-module-azr-local)** Terraform module (version ~3.0) to deploy all management infrastructure in a standardized, repeatable way.
+
+:::tip Module Documentation
+For detailed configuration options, variable reference, and advanced features, see the [tf-module-azr-local README](https://github.com/AzureLocal/tf-module-azr-local/azurerm/-/blob/main/README.md).
+:::
+
+---
+
+## Phases in This Part
+
+| Phase | Title | Description | Tasks |
+|-------|-------|-------------|-------|
+| **[Phase 01](./phase-01-configuration/)** | Configuration | Configure Terraform variables for management and cluster modes | 3 |
+| **[Phase 02](./phase-02-pipeline-execution/)** | Pipeline Execution | Execute CI/CD pipeline pipeline and monitor deployment | 6 |
+| **[Phase 03](./phase-03-validation/)** | Validation | Verify deployed resources and connectivity | 3 |
+
+---
+
+## Execution Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Part 1: CI/CD Pipeline Deployment │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ │
+│ ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────────────┐ │
+│ │ Phase 01 │ │ Phase 02 │ │ Phase 03 │ │
+│ │Configuration│───▶│ Pipeline │───▶│ Validation │ │
+│ │ │ │ Execution │ │ │ │
+│ └─────────────┘ └─────────────┘ └─────────────────────────────────┘ │
+│ │ │ │ │
+│ ▼ ▼ ▼ │
+│ ┌───────────┐ ┌─────────────┐ ┌───────────────────────────────────┐ │
+│ │ Variables │ │ GitLab │ │ ┌─────────┐ ┌─────────────────┐ │ │
+│ │Configured │ │ Pipeline │ │ │Resources│ │ Connectivity │ │ │
+│ └───────────┘ │ Runs │ │ │Verified │ │ Tested │ │ │
+│ └─────────────┘ └───────────────────────────────────┘ │
+│ │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Key Deliverables
+
+| Deliverable | Phase | Description |
+|-------------|-------|-------------|
+| **Terraform Variables** | 01 | Management and cluster configuration defined |
+| **Pipeline Execution** | 02 | Successful deployment via CI/CD pipeline |
+| **Management Resources** | 02 | VNet, VPN Gateway, Bastion, Key Vault, Log Analytics |
+| **Cluster Resources** | 02 | VPN Connection, cluster Key Vault, storage, DNS records |
+| **Validated Deployment** | 03 | All resources verified and connectivity tested |
+
+---
+
+## Deployment Modes
+
+## Deployment Modes
+
+The CI/CD method provides two deployment modes:
+
+### Management Mode (Once per Environment)
+Deploys shared infrastructure for an entire environment:
+- Virtual Network with subnets (Gateway, Azure Local, Bastion, Private Endpoints, DNS)
+- VPN Gateway for site-to-site connectivity
+- Azure Bastion for secure VM access
+- NAT Gateway for outbound internet
+- Log Analytics Workspace for monitoring
+- Key Vault for secrets management
+- Private DNS Zone and DNS Resolver
+- Network Security Groups
+- NDM Server for monitoring (optional)
+- Utility Server (optional)
+
+### Cluster Mode (Once per Azure Local Cluster)
+Deploys cluster-specific resources:
+- VPN Connection to on-premises cluster network
+- Cluster Key Vault
+- Cluster Log Analytics Workspace
+- Cloud Witness Storage Account
+- Arc Gateway (optional)
+- DNS A records for cluster nodes
+
+---
+
+## Benefits
+
+✅ **Automated & Consistent**: Standardized infrastructure across all deployments 
+✅ **Version Controlled**: All configuration tracked in GitLab with change history 
+✅ **Tested & Validated**: Built-in validation, security scanning, and compliance checks 
+✅ **Secure State Management**: Terraform state stored in Azure Storage with encryption 
+✅ **Audit Trail**: Complete deployment history and approval records 
+✅ **Modular**: Reusable Terraform module with proven patterns 
+
+---
+
+## Prerequisites
+
+Before starting automated deployment:
+
+- [ ] [Phase 01: Landing Zones](../../phase-01-landing-zones/) completed
+- [ ] [Phase 02: Resource Providers](../../phase-02-resource-providers/) completed
+- [ ] [Phase 03: RBAC Permissions](../../phase-03-rbac-permissions/) completed
+- [ ] [Part 2: CI/CD Infrastructure](../../../01-cicd-infra/) completed
+- [ ] Network IP ranges planned (avoid conflicts with on-premises)
+- [ ] VPN details from on-prem team (ASN, BGP IPs, public IP/FQDN)
+
+---
+
+## Resources Deployed
+
+### Management Mode Resources
+
+| Resource | Purpose | Quantity |
+|----------|---------|----------|
+| Resource Group | Container for management resources | 1 |
+| Virtual Network | Hub network for management | 1 |
+| Subnets | Network segmentation | 5 |
+| VPN Gateway | Site-to-site connectivity | 1 |
+| Azure Bastion | Secure VM access | 1 |
+| NAT Gateway | Outbound internet | 1 |
+| Log Analytics Workspace | Monitoring and logging | 1 |
+| Key Vault | Secrets management | 1 |
+| Private DNS Zone | Internal DNS | 1 |
+| DNS Resolver | DNS forwarding | 1 |
+| Network Security Groups | Traffic filtering | 2+ |
+| NDM Server (optional) | SNMP/syslog monitoring | 1 |
+| Utility Server (optional) | Management jumpbox | 1 |
+
+### Cluster Mode Resources
+
+| Resource | Purpose | Quantity |
+|----------|---------|----------|
+| Resource Group | Container for cluster resources | 1 |
+| VPN Connection | On-prem cluster connectivity | 1 |
+| Key Vault | Cluster secrets | 1 |
+| Log Analytics Workspace | Cluster monitoring | 1 |
+| Storage Account | Cloud witness | 1 |
+| Arc Gateway (optional) | Hybrid connectivity | 1 |
+| DNS A Records | Node name resolution | 1 per node |
+
+---
+
+## Deployment Timeline
+
+| Component | Deployment Time |
+|-----------|-----------------|
+| **Management Mode** | **45-60 minutes** |
+| VPN Gateway | 30-45 minutes |
+| Other resources | 15-20 minutes |
+| **Cluster Mode** | **10-15 minutes** |
+| VPN Connection | 5 minutes |
+| Other resources | 5-10 minutes |
+
+:::warning VPN Gateway Deployment
+The VPN Gateway is the longest-running resource. Plan accordingly and do not interrupt the deployment.
+:::
+
+---
+
+## Module Resources
+
+- **Module Repository**: [github.com/AzureLocal/tf-module-azr-local](https://github.com/AzureLocal/tf-module-azr-local/azurerm)
+- **Module README**: Full documentation with all variables, examples, and outputs
+- **Module Version**: ~3.0 (uses Terraform >= 1.0, AzureRM >= 4.0)
+
+---
+
+## Next Steps
+
+After successful deployment:
+
+1. **Verify VPN connectivity** with on-premises network team
+2. **Test Bastion access** to deployed VMs (if applicable)
+3. **Store credentials** in Key Vault
+4. **Configure monitoring** in Log Analytics
+5. Proceed to [Phase 05: Identity & Security](../../phase-05-identity-security/)
+
+---
+
+## Alternative Methods
+
+If automated CI/CD deployment is not suitable for your environment:
+
+- [Method 2: Manual Deployment](../02-manual-deployment/) - Step-by-step Azure portal and CLI instructions
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 03 - RBAC Permissions](../../phase-03-rbac-permissions/) | [Phase 04 - Management Infrastructure](../index.mdx) | [Phase 01 - Configuration](./phase-01-configuration/) |
+

@@ -1,0 +1,160 @@
+---
+title: "Part 2: CI/CD Infrastructure"
+sidebar_label: "02 - CI/CD Infrastructure"
+sidebar_position: 2
+description: "Establish B2B access, source control project, CI/CD runners, and automation infrastructure"
+---
+
+# Part 2: CI/CD Infrastructure
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![GitLab](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://gitlab.com)
+
+> **DOCUMENT CATEGORY**: Part Overview 
+> **SCOPE**: Azure Local Cloud management infrastructure (Stages 00-02) 
+> **PURPOSE**: Establish B2B access, source control project, CI/CD runners, and automation 
+> **MASTER REFERENCE**: [CI/CD pipeline Documentation](https://docs.gitlab.com/ee/ci/)
+
+**Status**: Active 
+**Execution**: Once per deployment program 
+**Last Updated**: 2026-01-31
+
+---
+
+## Part Purpose
+
+This part establishes the Azure Local Cloud management infrastructure required for Azure Local deployments. It covers B2B tenant access, source control project setup, CI/CD runners, and automation user access.
+
+---
+
+## Stages in This Part
+
+| Stage | Title | Description | Steps |
+|-------|-------|-------------|-------|
+| **[Phase 00](./phase-01-cicd-setup/)** | B2B Configuration | Configure Microsoft Entra ID B2B Cross-Tenant Synchronization | 2 |
+| **[Phase 01](./phase-01-cicd-setup/)** | CI/CD Setup | Create source control project, configure settings, environments, and variables | 5 |
+| **Phase 02** | Infrastructure Deployment | Deploy CI/CD runners, Entra ID groups, and verify user access | 3 |
+
+---
+
+## Execution Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Part 2: CI/CD Infrastructure │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ │
+│ ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────────────┐ │
+│ │ Stage 00 │ │ Stage 01 │ │ Stage 02 │ │
+│ │ B2B │───▶│ CI/CD │───▶│ Infrastructure Deployment │ │
+│ │ Config │ │ Setup │ │ │ │
+│ └─────────────┘ └─────────────┘ └─────────────────────────────────┘ │
+│ │ │ │ │
+│ ▼ ▼ ▼ │
+│ ┌───────────┐ ┌─────────────┐ ┌───────────────────────────────────┐ │
+│ │ Azure Local Cloud│ │ GitLab │ │ ┌─────────┐ ┌─────────────────┐ │ │
+│ │ Users │ │ Project │ │ │ Runners │ │ Entra Groups │ │ │
+│ │ Synced │ │ Created │ │ └─────────┘ └─────────────────┘ │ │
+│ └───────────┘ └─────────────┘ └───────────────────────────────────┘ │
+│ │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Key Deliverables
+
+| Deliverable | Stage | Description |
+|-------------|-------|-------------|
+| **B2B Tenant Access** | 00 | Azure Local Cloud users synced to customer tenant (Member or Guest type) |
+| **source control project** | 01 | Customer project created from Azure Local Cloud template |
+| **Project Settings** | 01 | Branch protection, merge approvals, security settings configured |
+| **Environments** | 01 | GitLab environments created for each deployment target |
+| **CI/CD runners** | 02 | Self-hosted runners deployed in customer Azure subscription |
+| **Entra ID Groups** | 02 | Azure Local Cloud management groups deployed with RBAC |
+| **User Access** | 02 | Verified deployment team access to Azure resources |
+
+---
+
+## Prerequisites
+
+Before starting Part 2:
+
+- [ ] [Part 1: Planning & Discovery](../../planning/) completed
+- [ ] Customer information collected (CID, name, tenant ID, service tier)
+- [ ] Azure Local Cloud MGMT tenant access (Security Administrator or higher)
+- [ ] Customer tenant Global Administrator consent obtained
+- [ ] GitLab access with project creation permissions
+- [ ] Azure subscription access for runner deployment
+
+---
+
+## Configuration Templates
+
+JSON and Terraform templates are located in the AZL Toolkit repository:
+
+```
+azurelocal-toolkit/
+├── configs/
+│ └── azure/
+│ └── b2b/ # Stage 00 - B2B config templates
+│ ├── customer-inbound-policy.json
+│ ├── Azure Local Cloud-outbound-policy.json
+│ ├── cts-application.json
+│ ├── cts-credentials.json
+│ ├── cts-provisioning-job.json
+│ ├── cts-group-assignment.json
+│ └── README.md
+└── scripts/
+ └── deploy/
+ └── stage-0-b2b-config/ # Stage 00 deployment scripts
+```
+
+---
+
+## Terraform Modules Used
+
+| Module | Stage | Purpose |
+|--------|-------|---------|
+| `tf-module-azr-gitlab-runner` | 02 | Deploy CI/CD runner VMs in customer subscription |
+| `tf-module-azr-entra-groups` | 02 | Deploy Entra ID groups for Azure Local Cloud access |
+
+---
+
+## Validation Checklist
+
+### Phase 00: B2B Configuration
+- [ ] Azure Local Cloud users synced to customer tenant
+- [ ] User type is correct (Member for Azure Local Cloud, Guest for CI/CD)
+- [ ] Users can authenticate to customer tenant
+- [ ] CTS provisioning job is running
+
+### Phase 01: CI/CD Setup
+- [ ] source control project created with correct naming
+- [ ] Branch protection and merge approvals configured
+- [ ] Environments created
+- [ ] Environment variables configured
+
+### Phase 02: Infrastructure Deployment
+- [ ] CI/CD runners deployed and registered
+- [ ] Runners appear online in GitLab
+- [ ] Entra ID groups created
+- [ ] RBAC assignments applied
+- [ ] Azure Local Cloud users can access Azure resources
+
+---
+
+## Next Steps
+
+After completing Part 2, proceed to [Part 3: Azure Foundation](../02-azure-foundation/) to establish the Azure cloud infrastructure including landing zones, networking, and security resources.
+
+---
+
+## References
+
+- [Cross-Tenant Synchronization Overview](https://learn.microsoft.com/en-us/entra/identity/multi-tenant-organizations/cross-tenant-synchronization-overview)
+- [CI/CD pipeline Documentation](https://docs.gitlab.com/ee/ci/)
+- [CI/CD runner Documentation](https://docs.gitlab.com/runner/)
+- [Azure RBAC Documentation](https://learn.microsoft.com/en-us/azure/role-based-access-control/overview)
+

@@ -1,0 +1,266 @@
+---
+title: "Task 02: Apply Azure Policy Initiatives"
+sidebar_label: "Task 02: Azure Policy"
+sidebar_position: 2
+description: "Apply Azure Policy initiatives including Azure Local security baseline and compliance policies"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Apply Azure Policy Initiatives
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Azure Policy configuration 
+> **PURPOSE**: Apply governance and compliance policies 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Policy](https://learn.microsoft.com/en-us/azure/governance/policy/overview)
+
+**Status**: Active
+
+---
+
+Azure Policy enforces organizational standards and assesses compliance at scale. This step applies policy initiatives specifically designed for Azure Local deployments, including security baselines and governance policies.
+
+:::info Policy Initiatives vs Individual Policies
+**Policy Initiatives** (also called policy sets) group related policies together. For Azure Local, Microsoft provides built-in initiatives that bundle recommended security configurations.
+:::
+
+## Overview
+
+| Initiative | Scope | Purpose |
+|------------|-------|---------|
+| **Azure Security Benchmark** | Management Group | Comprehensive security controls aligned to industry standards |
+| **Azure Local Security Baseline** | Subscription | Microsoft-recommended configurations for Azure Local |
+| **Guest Configuration** | Resource Group | In-guest policy enforcement for Windows/Linux |
+| **Tagging Governance** | Subscription | Enforce required tags for cost management |
+
+## Prerequisites
+
+- Azure subscription with Owner or Policy Contributor role
+- Management groups configured (if applying at MG scope)
+- Log Analytics workspace for compliance data
+
+## Procedure
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Assign Azure Security Benchmark
+
+1. **Navigate to Azure Policy**
+ - In Azure Portal, search for **Policy**
+ - Click **Definitions** in the left menu
+
+2. **Find Security Benchmark Initiative**
+ - Set **Definition type** to **Initiative**
+ - Search for **Azure Security Benchmark**
+ - Click on the initiative to view details
+
+3. **Assign the Initiative**
+ - Click **Assign**
+ - **Scope**: Select your subscription or management group
+ - **Exclusions**: Add any resources to exclude (optional)
+ - **Assignment name**: `Azure Security Benchmark - Azure Local`
+
+4. **Configure Parameters**
+ - Review default parameters
+ - Adjust as needed for your environment
+ - Click **Review + create**
+ - Click **Create**
+
+### Assign Azure Local-Specific Policies
+
+1. **Search for Azure Local Policies**
+ - In Policy Definitions, search for **Azure Stack HCI** or **Azure Local**
+ - Review available built-in policies
+
+2. **Assign Key Policies**
+ - **Audit Azure Stack HCI clusters for compliance**
+ - **Configure Azure Stack HCI to use Azure Monitor Agent**
+ - **Configure periodic checking for missing security updates**
+
+3. **Create Policy Initiative (Optional)**
+ - Click **Definitions** → **+ Initiative definition**
+ - Name: `Azure Local Security Baseline`
+ - Add relevant policies
+ - Save and assign to subscription
+
+### Enable Guest Configuration
+
+1. **Assign Guest Configuration Initiative**
+ - Search for **Guest Configuration**
+ - Find: **Audit Windows machines that do not have the specified Windows PowerShell execution policy**
+ - Assign to your resource group containing Arc-enabled servers
+
+2. **Deploy Prerequisites**
+ - Assign: **Deploy prerequisites to enable Guest Configuration policies on virtual machines**
+ - This installs the Guest Configuration extension on VMs
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+```powershell
+# Variables
+$subscriptionId = "<your-subscription-id>"
+$resourceGroup = "rg-azurelocal-prod-eastus2"
+$location = "eastus2"
+
+# Set subscription context
+az account set --subscription $subscriptionId
+
+# Get Azure Security Benchmark initiative definition
+$securityBenchmarkId = az policy set-definition show `
+ --name "1f3afdf9-d0c9-4c3d-847f-89da613e70a8" `
+ --query id -o tsv
+
+# Assign Azure Security Benchmark at subscription level
+az policy assignment create `
+ --name "AzureSecurityBenchmark-AzureLocal" `
+ --display-name "Azure Security Benchmark - Azure Local" `
+ --policy-set-definition $securityBenchmarkId `
+ --scope "/subscriptions/$subscriptionId" `
+ --enforcement-mode Default
+
+Write-Host "✅ Azure Security Benchmark assigned" -ForegroundColor Green
+
+# Assign tagging policy - Require tag on resources
+az policy assignment create `
+ --name "RequireEnvironmentTag" `
+ --display-name "Require Environment Tag on Resources" `
+ --policy "/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99" `
+ --scope "/subscriptions/$subscriptionId" `
+ --params '{"tagName": {"value": "Environment"}}' `
+ --enforcement-mode Default
+
+Write-Host "✅ Tagging policy assigned" -ForegroundColor Green
+
+# Assign Guest Configuration prerequisites
+az policy assignment create `
+ --name "DeployGuestConfigPrereqs" `
+ --display-name "Deploy Guest Configuration Prerequisites" `
+ --policy "/providers/Microsoft.Authorization/policyDefinitions/12794019-7a00-42cf-95c2-882ebb9fa717" `
+ --scope "/subscriptions/$subscriptionId" `
+ --mi-system-assigned `
+ --location $location
+
+Write-Host "✅ Guest Configuration prerequisites assigned" -ForegroundColor Green
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Variables
+$subscriptionId = "<your-subscription-id>"
+$location = "eastus2"
+
+# Connect and set context
+Connect-AzAccount
+Set-AzContext -SubscriptionId $subscriptionId
+
+# Get Azure Security Benchmark initiative
+$securityBenchmark = Get-AzPolicySetDefinition | Where-Object {
+ $_.Properties.DisplayName -like "*Azure Security Benchmark*"
+} | Select-Object -First 1
+
+if ($securityBenchmark) {
+ # Assign Azure Security Benchmark
+ $assignmentParams = @{
+ Name = "AzureSecurityBenchmark"
+ DisplayName = "Azure Security Benchmark - Azure Local"
+ PolicySetDefinition = $securityBenchmark
+ Scope = "/subscriptions/$subscriptionId"
+ EnforcementMode = "Default"
+ }
+ 
+ New-AzPolicyAssignment @assignmentParams
+ Write-Host "✅ Azure Security Benchmark assigned" -ForegroundColor Green
+} else {
+ Write-Host "⚠️ Azure Security Benchmark initiative not found" -ForegroundColor Yellow
+}
+
+# Assign tag enforcement policy
+$tagPolicy = Get-AzPolicyDefinition -Id "/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99"
+
+$tagParams = @{
+ Name = "RequireEnvironmentTag"
+ DisplayName = "Require Environment Tag"
+ PolicyDefinition = $tagPolicy
+ Scope = "/subscriptions/$subscriptionId"
+ PolicyParameterObject = @{
+ tagName = "Environment"
+ }
+}
+
+New-AzPolicyAssignment @tagParams
+Write-Host "✅ Tag enforcement policy assigned" -ForegroundColor Green
+
+# Assign Guest Configuration prerequisites (with managed identity)
+$guestConfigPolicy = Get-AzPolicyDefinition -Id "/providers/Microsoft.Authorization/policyDefinitions/12794019-7a00-42cf-95c2-882ebb9fa717"
+
+$guestConfigParams = @{
+ Name = "DeployGuestConfigPrereqs"
+ DisplayName = "Deploy Guest Configuration Prerequisites"
+ PolicyDefinition = $guestConfigPolicy
+ Scope = "/subscriptions/$subscriptionId"
+ Location = $location
+ IdentityType = "SystemAssigned"
+}
+
+New-AzPolicyAssignment @guestConfigParams
+Write-Host "✅ Guest Configuration prerequisites assigned" -ForegroundColor Green
+
+Write-Host "`n✅ Policy initiatives assigned successfully" -ForegroundColor Green
+```
+
+</TabItem>
+</Tabs>
+
+## Validation
+
+```powershell
+# Check policy assignments
+$assignments = Get-AzPolicyAssignment -Scope "/subscriptions/$subscriptionId"
+Write-Host "Policy Assignments:" -ForegroundColor Cyan
+$assignments | Format-Table DisplayName, EnforcementMode -AutoSize
+
+# Check compliance state (may take up to 24 hours for initial scan)
+$complianceStates = Get-AzPolicyState -SubscriptionId $subscriptionId -Top 10
+Write-Host "`nRecent Compliance States:" -ForegroundColor Cyan
+$complianceStates | Group-Object ComplianceState | Format-Table Name, Count
+```
+
+## Expected Output
+
+```
+Policy Assignments:
+DisplayName EnforcementMode
+----------- ---------------
+Azure Security Benchmark - Azure Local Default
+Require Environment Tag Default
+Deploy Guest Configuration Prerequisites Default
+
+Recent Compliance States:
+Name Count
+---- -----
+Compliant 45
+NonCompliant 3
+Unknown 2
+```
+
+## Common Policies for Azure Local
+
+| Policy Name | ID | Purpose |
+|-------------|-----|---------|
+| Audit VMs without disaster recovery | 0015ea4d-51ff-4ce3-8d8c-f3f8f0179a56 | Ensure DR is configured |
+| Configure periodic checking for updates | 59efceea-0c96-497e-a4a1-4eb2290dac15 | Security update compliance |
+| Deploy Log Analytics agent | 053d3325-282c-4e5c-b944-24faffd30d77 | Monitoring agent deployment |
+| Require tag on resources | 871b6d14-10aa-478d-b590-94f262ecfa99 | Cost management tags |
+
+## Next Steps
+
+Proceed to [Task 4: Configure Security Baselines](./task-03-configure-security-baselines.mdx) to review and remediate Defender recommendations.
+

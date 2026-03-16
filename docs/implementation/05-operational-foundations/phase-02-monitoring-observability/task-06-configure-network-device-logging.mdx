@@ -1,0 +1,383 @@
+---
+title: "Task 06: Configure Network Device Logging"
+sidebar_label: "Task 06: Network Device Logging"
+sidebar_position: 6
+description: "Configure syslog and SNMP forwarding from network devices to the NDM Linux server"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 06: Configure Network Device Logging
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Network device logging infrastructure 
+> **PURPOSE**: Configure syslog and SNMP from switches/firewalls to NDM server 
+> **MASTER REFERENCE**: [FortiGate Logging](https://docs.fortinet.com/document/fortigate/7.4.0/administration-guide/707995/logging-to-syslog)
+
+**Status**: Draft
+
+---
+
+This step configures network devices (switches, firewalls) to forward syslog messages and SNMP traps to the NDM Linux server deployed in Stage 06. This provides centralized logging for network infrastructure monitoring and troubleshooting.
+
+## Overview
+
+| Component | Protocol | Port | Purpose |
+|-----------|----------|------|---------|
+| **Syslog** | UDP/TCP | 514 | System logs, security events, configuration changes |
+| **SNMP Traps** | UDP | 162 | Critical alerts, interface status, hardware failures |
+| **SNMP Polling** | UDP | 161 | Performance metrics, device discovery |
+
+## Architecture
+
+```
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ FortiGate │────▶│ NDM Server │────▶│ Log Analytics │
+│ Firewall │ │ (rsyslog) │ │ (via AMA) │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+ ▲
+┌─────────────────┐ │
+│ Dell/Cisco │────────────┘
+│ Switches │
+└─────────────────┘
+```
+
+## Prerequisites
+
+- NDM Linux server deployed (Stage 06, Step 11)
+- Network connectivity between devices and NDM server
+- Firewall rules allowing syslog (UDP 514) and SNMP (UDP 161/162)
+- Administrative access to network devices
+
+## Part 1: NDM Server Syslog Configuration
+
+### Configure rsyslog to Receive Remote Logs
+
+Connect to the NDM server and configure rsyslog:
+
+```bash
+# SSH to NDM server
+ssh adminuser@ndm-server-ip
+
+# Enable UDP syslog reception in rsyslog
+sudo vi /etc/rsyslog.conf
+
+# Uncomment or add these lines:
+# module(load="imudp")
+# input(type="imudp" port="514")
+
+# For TCP syslog (more reliable):
+# module(load="imtcp")
+# input(type="imtcp" port="514")
+```
+
+### Create Separate Log Files by Source
+
+```bash
+# Create rsyslog configuration for network devices
+sudo vi /etc/rsyslog.d/10-network-devices.conf
+```
+
+Add the following configuration:
+
+```bash
+# Template for network device logs
+template(name="NetworkDeviceLogs" type="string"
+ string="/var/log/network/%HOSTNAME%/%$YEAR%-%$MONTH%-%$DAY%.log")
+
+# FortiGate logs
+if $fromhost-ip startswith '10.x.x.' then {
+ action(type="omfile" dynaFile="NetworkDeviceLogs")
+ stop
+}
+
+# Dell/Cisco switch logs 
+if $programname == 'switch' or $syslogtag contains 'SWITCH' then {
+ action(type="omfile" dynaFile="NetworkDeviceLogs")
+ stop
+}
+```
+
+### Create Log Directory and Restart rsyslog
+
+```bash
+# Create log directory
+sudo mkdir -p /var/log/network
+sudo chmod 755 /var/log/network
+
+# Restart rsyslog
+sudo systemctl restart rsyslog
+
+# Verify rsyslog is listening
+sudo ss -ulnp | grep 514
+```
+
+## Part 2: Configure FortiGate Syslog
+
+<Tabs groupId="device-type">
+<TabItem value="fortigate-gui" label="FortiGate GUI">
+
+1. **Navigate to Log Settings**
+ - Log in to FortiGate GUI
+ - Go to **Log & Report** → **Log Settings**
+
+2. **Configure Remote Syslog**
+ - Click **Create New** under Remote Logging
+ - **Name**: `ndm-syslog`
+ - **Server IP/FQDN**: `<NDM-Server-IP>`
+ - **Port**: `514`
+ - **Level**: `Information` (or Warning for reduced volume)
+ - **Facility**: `local7`
+ - **Source IP**: Interface IP facing NDM server
+
+3. **Select Log Types**
+ - Enable: Traffic, Event, Security
+ - Configure severity levels as needed
+
+4. **Apply and Test**
+ - Click **OK** to save
+ - Generate test traffic and verify logs appear on NDM server
+
+</TabItem>
+<TabItem value="fortigate-cli" label="FortiGate CLI">
+
+```bash
+# Configure syslog server
+config log syslogd setting
+ set status enable
+ set server "<NDM-Server-IP>"
+ set port 514
+ set facility local7
+ set source-ip "<FortiGate-Interface-IP>"
+ set format default
+end
+
+# Configure log filters
+config log syslogd filter
+ set severity information
+ set forward-traffic enable
+ set local-traffic enable
+ set multicast-traffic enable
+ set sniffer-traffic disable
+ set anomaly enable
+ set voip enable
+end
+
+# Verify configuration
+get log syslogd setting
+```
+
+</TabItem>
+</Tabs>
+
+## Part 3: Configure Dell Switch Syslog
+
+<Tabs groupId="device-type">
+<TabItem value="dell-os10" label="Dell OS10">
+
+```bash
+# Configure syslog server
+logging server <NDM-Server-IP>
+
+# Set logging severity (0=emergency to 7=debug)
+logging server <NDM-Server-IP> severity info
+
+# Set source interface
+logging source-interface vlan 100
+
+# Enable logging
+logging enable
+
+# Verify configuration
+show logging
+```
+
+</TabItem>
+<TabItem value="dell-os9" label="Dell OS9">
+
+```bash
+# Configure syslog host
+logging <NDM-Server-IP>
+
+# Set severity level
+logging trap informational
+
+# Set facility
+logging facility local7
+
+# Verify
+show logging
+```
+
+</TabItem>
+</Tabs>
+
+## Part 4: Configure SNMP Traps
+
+### NDM Server - SNMP Trap Receiver
+
+```bash
+# Install snmptrapd
+sudo apt install snmptrapd -y # Ubuntu/Debian
+sudo yum install net-snmp -y # RHEL/CentOS
+
+# Configure trap receiver
+sudo vi /etc/snmp/snmptrapd.conf
+
+# Add:
+disableAuthorization yes
+traphandle default /usr/bin/logger -t snmptrap
+```
+
+### FortiGate SNMP Configuration
+
+```bash
+# Enable SNMP
+config system snmp sysinfo
+ set status enable
+ set description "FortiGate Firewall"
+ set contact-info "{{noc_email}}"
+ set location "<Site-Location>"
+end
+
+# Configure SNMP community for traps
+config system snmp community
+ edit 1
+ set name "Azure Local Cloud-snmp"
+ config hosts
+ edit 1
+ set ip <NDM-Server-IP> 255.255.255.255
+ next
+ end
+ set trap-v2c-status enable
+ set trap-v2c-rport 162
+ next
+end
+```
+
+### Dell Switch SNMP Configuration
+
+```bash
+# Configure SNMP community
+snmp-server community Azure Local Cloud-snmp ro
+
+# Configure trap receiver
+snmp-server host <NDM-Server-IP> traps Azure Local Cloud-snmp
+
+# Enable specific traps
+snmp-server enable traps snmp linkdown linkup
+snmp-server enable traps entity
+snmp-server enable traps envmon
+```
+
+## Validation
+
+### Verify Syslog Reception
+
+```bash
+# On NDM server, watch for incoming logs
+sudo tail -f /var/log/syslog | grep -E "FortiGate|switch"
+
+# Check network device log directory
+ls -la /var/log/network/
+
+# Test with logger from NDM server (local test)
+logger -p local7.info "Test syslog message"
+```
+
+### Verify SNMP Traps
+
+```bash
+# Watch for SNMP traps
+sudo tail -f /var/log/syslog | grep snmptrap
+
+# Test by triggering a trap (e.g., interface down/up on switch)
+```
+
+### Expected Results
+
+| Check | Expected Result |
+|-------|-----------------|
+| rsyslog listening | UDP 514 bound |
+| FortiGate logs appearing | Messages in `/var/log/network/<hostname>/` |
+| Switch logs appearing | Messages in `/var/log/network/<hostname>/` |
+| SNMP traps received | Entries in `/var/log/syslog` with snmptrap tag |
+
+## Log Retention
+
+Configure logrotate for network device logs:
+
+```bash
+sudo vi /etc/logrotate.d/network-devices
+```
+
+```bash
+/var/log/network/*/*.log {
+ daily
+ rotate 30
+ compress
+ delaycompress
+ missingok
+ notifempty
+ create 644 syslog adm
+}
+```
+
+## Integration with Azure Monitor (Optional)
+
+To forward network device logs to Azure Log Analytics:
+
+1. Ensure Azure Monitor Agent (AMA) is installed on NDM server
+2. Create a DCR that collects from `/var/log/network/`
+3. Configure custom log table in Log Analytics
+
+```json
+{
+ "dataSources": {
+ "logFiles": [
+ {
+ "name": "NetworkDeviceLogs",
+ "streams": ["Custom-NetworkDevices_CL"],
+ "filePatterns": ["/var/log/network/*/*.log"],
+ "format": "text"
+ }
+ ]
+ }
+}
+```
+
+## Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| No logs received | Firewall blocking | Verify NSG/firewall rules for UDP 514 |
+| Logs not separated | rsyslog config | Check rsyslog template and filters |
+| SNMP traps missing | Community mismatch | Verify community string matches |
+| High log volume | Severity too low | Increase severity to warning/error |
+
+## Next Steps
+
+This completes the network device logging configuration. Proceed to the next stage or return to the [Phase 17 Overview](./index.mdx).
+
+---
+
+## Stage Complete
+
+You have completed **Phase 17: Monitoring & Observability**.
+
+### Summary of Configured Components
+
+| Step | Component | Status |
+|------|-----------|--------|
+| 1 | Azure Monitor | ✅ Configured |
+| 2 | HCI Insights | ✅ Enabled |
+| 3 | OMIMSWAC Monitoring | ✅ Deployed |
+| 4 | Log Analytics | ✅ Configured |
+| 5 | Alerting | ✅ Setup |
+| 6 | Network Device Logging | ✅ Configured |
+
+**Next Stage**: [Phase 19: Backup & DR](../phase-03-backup-dr/index.mdx)

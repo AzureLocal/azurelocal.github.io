@@ -1,0 +1,121 @@
+---
+title: "Task 03: Configure Project Settings"
+sidebar_position: 3
+description: "Configure source control project settings"
+---
+
+# Task 03: Configure Project Settings
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![GitLab](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://github.com/AzureLocal)
+
+> **DOCUMENT CATEGORY**: Runbook Step 
+> **SCOPE**: source control project configuration 
+> **PURPOSE**: Configure repository settings, push rules, and merge request approvals 
+> **MASTER REFERENCE**: [source control project Settings](https://docs.gitlab.com/ee/user/project/working_with_projects.html)
+
+**Status**: Active 
+**Applies To**: All Azure Local deployments 
+**Last Updated**: 2026-01-30
+
+---
+
+> **Source:** internal-docs/project-settings.md
+
+---
+
+## Objective
+
+Configure required settings for the source control project. Most settings are replicated from the template, but must be verified.
+
+---
+
+## Prerequisites
+
+- [ ] source control project created (Step 02)
+- [ ] Maintainer role in the source control project
+
+---
+
+## Procedure
+
+### Configure General Settings
+
+1. **Naming, description, topics:**
+ - **Project avatar:** Add company logo if available
+ - **Project description:** Add customer services (e.g., `Public Cloud Professional - Megaport`)
+
+2. **Visibility, project features, permissions:**
+ - ✅ Enable **CI/CD**
+
+### Configure Repository Settings
+
+#### Push Rules
+
+Enable only:
+- ✅ Reject unverified users
+- ✅ Reject inconsistent user name
+- ✅ Reject unsigned commits
+- ✅ Do not allow users to remove Git tags with git push
+- ✅ Check whether the commit author is a GitLab user
+- ✅ Prevent pushing secret files
+- **Maximum file size (MB):** `1`
+
+#### Protected Branches
+
+Configure `main`:
+
+| Setting | Value |
+|---------|-------|
+| Allowed to merge | `Developers + Maintainers` |
+| Allowed to push and merge | `No one` |
+| Allowed to force push | ❌ Disabled |
+| Code owner approval | ❌ Disabled |
+
+### Configure Merge Request Settings
+
+| Setting | Value |
+|---------|-------|
+| **Merge method** | `Merge commit with semi-linear history` |
+| **Squash commits** | `Require` |
+
+**Merge options** - Enable only:
+- ✅ Show link to create or view a merge request when pushing
+- ✅ Enable "Delete source branch" option by default
+
+**Merge checks** - Enable only:
+- ✅ Pipelines must succeed
+- ✅ All threads must be resolved
+
+### Configure Merge Request Approvals
+
+| Project Type | Required Approvals | Group |
+|--------------|-------------------|-------|
+| Sandbox/Lab | `0` | - |
+| Azure Local Cloud/_core | `3` | `CI/CD` |
+| Megaport customers | `2` | `pcie` |
+| All others | `2` | `CI/CD` |
+
+**To add approval rule:**
+1. Select **Add approval rule**
+2. **Rule name:** `CI/CD` or `pcie`
+3. **Target branch:** `All protected branches`
+4. **Required approvals:** (per table above)
+5. **Groups:** Search and select `Azure Local Cloud / CI/CD @CI/CD` or `Azure Local Cloud / pcie @pcie`
+6. **Save changes**
+
+---
+
+## Verification
+
+- [ ] General settings configured
+- [ ] Push rules enabled
+- [ ] `main` branch protected
+- [ ] Merge request settings configured
+- [ ] Approval rules added
+
+---
+
+## References
+
+- [GitLab | Manage projects](https://docs.gitlab.com/ee/user/project/working_with_projects.html)

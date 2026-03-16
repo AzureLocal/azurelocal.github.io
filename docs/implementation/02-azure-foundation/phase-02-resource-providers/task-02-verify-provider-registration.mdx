@@ -1,0 +1,297 @@
+---
+title: "Task 02: Verify Provider Registration"
+sidebar_label: "Task 02: Verify Providers"
+sidebar_position: 2
+description: "Verify all 12 required Azure resource providers are registered before proceeding to RBAC configuration."
+category: "RUNBOOK"
+scope: "Azure resource provider registration verification"
+purpose: "Confirm all required resource providers are fully registered"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - phase-02
+ - resource-providers
+ - verification
+keywords:
+ - verify providers
+ - registration verification
+ - provider status
+status: "approved"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Verify Provider Registration
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Azure resource provider registration verification 
+> **PURPOSE**: Confirm all required resource providers are fully registered 
+> **MASTER REFERENCE**: [Microsoft Learn — Resource Providers](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types)
+
+**Status**: Active
+
+---
+
+## Overview
+
+After registering resource providers in Task 01, this task verifies all providers have completed registration and are ready for use. Run this verification before proceeding to RBAC configuration.
+
+:::tip Provider Registration Time
+Some providers may still be in "Registering" state after Task 01. Wait 2–5 minutes and re-run verification if needed.
+:::
+
+## Prerequisites
+
+| Prerequisite | Detail |
+|---|---|
+| **Task 01** | [Register Resource Providers](./task-01-register-resource-providers) completed |
+| **Permissions** | Contributor or Owner role at subscription level |
+| **Authenticated Azure session** | See [Authentication](../../05-authentication.mdx) |
+| **`infrastructure.yml`** | Configured with target subscription ID |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Visual verification through Azure Portal
+
+#### Procedure
+
+1. **Navigate to Resource Providers**:
+ - In Azure Portal, search for **Subscriptions**
+ - Select your target subscription (`infrastructure.yml → azure.subscriptions.lab.id`)
+ - In the left menu under **Settings**, click **Resource providers**
+
+2. **Verify each provider**:
+
+ Search for each provider and confirm "Registered" status:
+
+ | Provider | Status |
+ |----------|--------|
+ | Microsoft.HybridCompute | ☐ Registered |
+ | Microsoft.GuestConfiguration | ☐ Registered |
+ | Microsoft.HybridConnectivity | ☐ Registered |
+ | Microsoft.AzureStackHCI | ☐ Registered |
+ | Microsoft.Kubernetes | ☐ Registered |
+ | Microsoft.KubernetesConfiguration | ☐ Registered |
+ | Microsoft.ExtendedLocation | ☐ Registered |
+ | Microsoft.ResourceConnector | ☐ Registered |
+ | Microsoft.HybridContainerService | ☐ Registered |
+ | Microsoft.Attestation | ☐ Registered |
+ | Microsoft.Storage | ☐ Registered |
+ | Microsoft.Insights | ☐ Registered |
+
+3. **Document results**:
+ - Screenshot the Resource providers page with all providers visible
+ - Save for deployment documentation / handover
+
+#### Links
+
+- [Microsoft Learn — Manage Resource Providers (Portal)](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted verification reading values from `infrastructure.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-02-resource-providers/task-02-verify-provider-registration/powershell/Test-ResourceProviders.ps1`
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Test-ResourceProviders.ps1
+# Prerequisites: Az.Resources module, authenticated with Contributor on subscription
+# ============================================================================
+
+#Requires -Modules Az.Resources
+
+# Load configuration
+$config = Get-Content "./infrastructure.yml" | ConvertFrom-Yaml
+
+# Extract subscription
+$SubscriptionId = $config.azure.subscriptions.lab.id
+
+# Set subscription context
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Define required providers
+$providers = @(
+ 'Microsoft.HybridCompute',
+ 'Microsoft.GuestConfiguration',
+ 'Microsoft.HybridConnectivity',
+ 'Microsoft.AzureStackHCI',
+ 'Microsoft.Kubernetes',
+ 'Microsoft.KubernetesConfiguration',
+ 'Microsoft.ExtendedLocation',
+ 'Microsoft.ResourceConnector',
+ 'Microsoft.HybridContainerService',
+ 'Microsoft.Attestation',
+ 'Microsoft.Storage',
+ 'Microsoft.Insights'
+)
+
+# Check registration status
+$results = foreach ($provider in $providers) {
+ $state = (Get-AzResourceProvider -ProviderNamespace $provider).RegistrationState
+ [PSCustomObject]@{
+ Provider = $provider
+ RegistrationState = $state
+ IsRegistered = ($state -eq 'Registered')
+ }
+}
+
+# Display results
+$results | Format-Table -AutoSize
+
+# Summary
+$notRegistered = $results | Where-Object { -not $_.IsRegistered }
+if ($notRegistered) {
+ Write-Warning "FAILED: $($notRegistered.Count) provider(s) not registered:"
+ $notRegistered | ForEach-Object { Write-Warning " - $($_.Provider): $($_.RegistrationState)" }
+ exit 1
+} else {
+ Write-Host "`nPASSED: All 12 providers registered successfully" -ForegroundColor Green
+ exit 0
+}
+```
+
+#### Validation
+
+**Success criteria**:
+- Script exits with code `0`
+- All 12 providers show `IsRegistered = True`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers, no dependencies.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Test-ResourceProviders-Standalone.ps1
+# Execution: Run anywhere — fully self-contained, no external dependencies
+# Prerequisites: Az.Resources module, authenticated with Contributor on subscription
+# ============================================================================
+
+#Requires -Modules Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Your subscription ID
+#endregion CONFIGURATION
+
+# Set subscription context
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Define required providers
+$providers = @(
+ 'Microsoft.HybridCompute',
+ 'Microsoft.GuestConfiguration',
+ 'Microsoft.HybridConnectivity',
+ 'Microsoft.AzureStackHCI',
+ 'Microsoft.Kubernetes',
+ 'Microsoft.KubernetesConfiguration',
+ 'Microsoft.ExtendedLocation',
+ 'Microsoft.ResourceConnector',
+ 'Microsoft.HybridContainerService',
+ 'Microsoft.Attestation',
+ 'Microsoft.Storage',
+ 'Microsoft.Insights'
+)
+
+# Check registration status
+$results = foreach ($provider in $providers) {
+ $state = (Get-AzResourceProvider -ProviderNamespace $provider).RegistrationState
+ [PSCustomObject]@{
+ Provider = $provider
+ RegistrationState = $state
+ IsRegistered = ($state -eq 'Registered')
+ }
+}
+
+# Display results
+$results | Format-Table -AutoSize
+
+# Summary
+$notRegistered = $results | Where-Object { -not $_.IsRegistered }
+if ($notRegistered) {
+ Write-Warning "FAILED: $($notRegistered.Count) provider(s) not registered:"
+ $notRegistered | ForEach-Object { Write-Warning " - $($_.Provider): $($_.RegistrationState)" }
+} else {
+ Write-Host "`nPASSED: All 12 providers registered successfully" -ForegroundColor Green
+}
+```
+
+:::info No External Dependencies
+This script is completely self-contained. Edit the `$SubscriptionId` in the `#region CONFIGURATION` block and run — no `infrastructure.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Phase 02 Exit Criteria
+
+Complete this checklist before proceeding to Phase 03:
+
+- [ ] All 12 resource providers show "Registered" status
+- [ ] Verification script passes with exit code 0
+- [ ] Screenshot / documentation captured for handover
+- [ ] Ready to proceed to Phase 03: RBAC & Permissions
+
+## Troubleshooting
+
+| Symptom | Cause | Resolution |
+|---------|-------|------------|
+| Providers still "Registering" | Registration not yet complete | Wait 5 minutes and re-run verification |
+| Cannot check provider status | Insufficient permissions | Verify Contributor or Owner role at subscription level |
+| Registration failed | Check Activity Log | Azure Portal → Subscriptions → Activity log → filter by "Register resource provider" |
+
+## Next Steps
+
+Phase 02 is complete. Proceed to [Phase 03: RBAC & Permissions](../phase-03-rbac-permissions/) to configure role-based access control.
+
+## References
+
+- [Microsoft Learn — Resource Providers and Types](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types)
+- [Microsoft Learn — Register Resource Provider](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types#register-resource-provider)
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01 — Register Resource Providers](./task-01-register-resource-providers.mdx) | [Phase 02 — Resource Providers](./index.mdx) | [Phase 03 — RBAC Permissions](../phase-03-rbac-permissions/) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, phase-02, resource-providers, verification
+- Keywords: verify providers, registration verification, provider status
+- Author: Azure Local Cloudnology Team

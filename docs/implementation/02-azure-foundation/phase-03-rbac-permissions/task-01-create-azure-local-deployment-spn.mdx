@@ -1,0 +1,285 @@
+---
+title: "Task 01: Create Azure Local Deployment SPN"
+sidebar_label: "Task 01: Create Deployment SPN"
+sidebar_position: 1
+description: "Create the Azure Local deployment service principal for Azure Local automation"
+category: "RUNBOOK"
+scope: "Service principal creation for Azure Local deployment automation"
+purpose: "Create a dedicated service principal for Azure Local cluster deployment"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - phase-03
+ - service-principal
+ - entra-id
+keywords:
+ - service principal
+ - sp-azurelocal-deploy
+ - app registration
+ - deployment SPN
+status: "approved"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Create Azure Local Deployment SPN
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Service principal creation for Azure Local deployment automation 
+> **PURPOSE**: Create a dedicated service principal for Azure Local cluster deployment 
+> **MASTER REFERENCE**: [Microsoft Learn - Service Principals](https://learn.microsoft.com/en-us/entra/identity-platform/app-objects-and-service-principals)
+
+**Status**: Active 
+**Applies To**: Phase 03 — RBAC Permissions 
+**Last Updated**: 2026-03-02
+
+---
+
+## Overview
+
+Create a dedicated service principal (SPN) for Azure Local deployment automation. This SPN is used specifically for Azure Local cluster deployment operations and is separate from any CI/CD service principals.
+
+:::warning Elevated Admin Required
+This task requires **Owner** or **User Access Administrator** permissions at the subscription or tenant level. The deployment SPN cannot be used until RBAC is assigned in Task 02.
+:::
+
+### Service Principal Details
+
+| Attribute | Value |
+|-----------|-------|
+| **Display Name** | `sp-azurelocal-deploy` |
+| **Account Type** | Single tenant |
+| **Purpose** | Azure Local deployment automation |
+| **Secret Expiry** | 12 months (recommended) |
+
+---
+
+## Prerequisites
+
+- [ ] Active Azure session with Owner or User Access Administrator role
+- [ ] [Phase 02: Verify Provider Registration](../phase-02-resource-providers/task-02-verify-provider-registration.mdx) completed
+
+:::info SPN May Already Exist
+If the deployment SPN already exists in the target environment, the script detects existing SPNs and prompts before creating a new secret. Enter **n** if the existing secret in the platform Key Vault is still valid.
+:::
+
+---
+
+## Create Deployment Service Principal
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### 1. Create App Registration
+
+1. Navigate to **Microsoft Entra ID** → **App registrations**
+2. Click **+ New registration**
+3. Configure:
+ - **Name**: `sp-azurelocal-deploy`
+ - **Supported account types**: Accounts in this organizational directory only (Single tenant)
+ - **Redirect URI**: Leave blank
+4. Click **Register**
+
+### 2. Record Application Details
+
+After registration, note the following values from the **Overview** page:
+
+| Value | Store In Key Vault As |
+|-------|-----------------------|
+| Application (client) ID | `sp-azurelocal-deploy-appid` |
+| Directory (tenant) ID | `sp-azurelocal-deploy-tenantid` |
+
+### 3. Create Client Secret
+
+1. In the app registration, go to **Certificates & secrets**
+2. Click **+ New client secret**
+3. Configure:
+ - **Description**: `Azure Local Deployment Automation`
+ - **Expires**: 12 months (recommended)
+4. Click **Add**
+5. **Copy the secret value immediately** — it is only shown once
+
+:::danger Copy Secret Now
+The client secret value is only displayed once. Copy it immediately and store it securely. If you lose it, you must create a new secret.
+:::
+
+### 4. Store Credentials in Key Vault
+
+1. Navigate to your platform Key Vault
+2. Go to **Secrets** → **+ Generate/Import**
+3. Create the following secrets:
+
+| Secret Name | Value |
+|-------------|-------|
+| `sp-azurelocal-deploy-appid` | Application (client) ID |
+| `sp-azurelocal-deploy-secret` | Client secret value |
+| `sp-azurelocal-deploy-tenantid` | Directory (tenant) ID |
+
+### Validation
+
+- [ ] App registration created with name `sp-azurelocal-deploy`
+- [ ] Application ID and Tenant ID recorded
+- [ ] Client secret created and copied
+- [ ] All credentials stored in Key Vault
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Script
+
+```
+scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/powershell/New-DeploymentServicePrincipal.ps1
+```
+
+### Code
+
+```powershell
+# Run from the configs directory
+Set-Location C:\git\Azure Local Cloud-docs-azl-toolkit\configs
+
+# Dry run to preview
+& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-01-create-azure-local-deployment-spn\powershell\New-DeploymentServicePrincipal.ps1" `
+ -ConfigFile ".\infrastructure.yml" `
+ -WhatIf
+
+# Execute
+& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-01-create-azure-local-deployment-spn\powershell\New-DeploymentServicePrincipal.ps1" `
+ -ConfigFile ".\infrastructure.yml"
+```
+
+:::tip Existing SPN Handling
+If `sp-azurelocal-deploy` already exists, the script prompts: `Do you want to create a new secret for the existing SPN? (y/n)` — enter **n** to skip if the existing secret is still valid.
+:::
+
+### Validation
+
+```powershell
+# Verify service principal exists
+$spn = Get-AzADServicePrincipal -DisplayName "sp-azurelocal-deploy"
+if ($spn) {
+ Write-Host "Service principal found: $($spn.DisplayName)" -ForegroundColor Green
+ Write-Host " App ID: $($spn.AppId)"
+ Write-Host " Object ID: $($spn.Id)"
+} else {
+ Write-Host "Service principal not found" -ForegroundColor Red
+}
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Script
+
+Copy and run this self-contained script. Update the `#region CONFIGURATION` block with your environment values.
+
+```powershell
+#region CONFIGURATION
+# ── Update these values for your environment ──────────────────────────
+$SpnDisplayName = "sp-azurelocal-deploy" # IIC default
+$SecretDescription = "Azure Local Deployment Automation"
+$SecretMonths = 12 # Secret validity in months
+$KeyVaultName = "kv-iic-platform-eus-001" # IIC default — platform Key Vault
+#endregion CONFIGURATION
+
+#region EXECUTION
+Write-Host "`n=== Task 01: Create Azure Local Deployment SPN ===" -ForegroundColor Cyan
+
+# ── Check for existing SPN ────────────────────────────────────────────
+$existingSpn = Get-AzADServicePrincipal -DisplayName $SpnDisplayName -ErrorAction SilentlyContinue
+
+if ($existingSpn) {
+ Write-Host "[EXISTS] SPN '$SpnDisplayName' already exists (AppId: $($existingSpn.AppId))" -ForegroundColor Yellow
+ $createSecret = Read-Host "Create a new secret for the existing SPN? (y/n)"
+ if ($createSecret -ne 'y') {
+ Write-Host "[SKIP] Using existing SPN and secret." -ForegroundColor Green
+ return
+ }
+ $appId = $existingSpn.AppId
+} else {
+ # ── Create App Registration ───────────────────────────────────────
+ Write-Host "[CREATE] Creating app registration '$SpnDisplayName'..." -ForegroundColor White
+ $app = New-AzADApplication -DisplayName $SpnDisplayName -SignInAudience AzureADMyOrg
+ $sp = New-AzADServicePrincipal -ApplicationId $app.AppId
+ $appId = $app.AppId
+ Write-Host "[OK] App Registration created (AppId: $appId)" -ForegroundColor Green
+ Write-Host "[OK] Service Principal created (ObjectId: $($sp.Id))" -ForegroundColor Green
+}
+
+# ── Create Client Secret ─────────────────────────────────────────────
+Write-Host "[CREATE] Generating client secret..." -ForegroundColor White
+$endDate = (Get-Date).AddMonths($SecretMonths)
+$secret = New-AzADAppCredential -ApplicationId $appId -EndDate $endDate
+$secretValue = $secret.SecretText
+
+if (-not $secretValue) {
+ Write-Host "[ERROR] Failed to retrieve secret value." -ForegroundColor Red
+ exit 1
+}
+Write-Host "[OK] Client secret created (expires: $endDate)" -ForegroundColor Green
+
+# ── Store Credentials in Key Vault ────────────────────────────────────
+Write-Host "[STORE] Saving credentials to Key Vault '$KeyVaultName'..." -ForegroundColor White
+$tenantId = (Get-AzContext).Tenant.Id
+
+$secrets = @{
+ "sp-azurelocal-deploy-appid" = $appId
+ "sp-azurelocal-deploy-secret" = $secretValue
+ "sp-azurelocal-deploy-tenantid" = $tenantId
+}
+
+foreach ($name in $secrets.Keys) {
+ $secureValue = ConvertTo-SecureString $secrets[$name] -AsPlainText -Force
+ Set-AzKeyVaultSecret -VaultName $KeyVaultName -Name $name -SecretValue $secureValue | Out-Null
+ Write-Host " [OK] $name" -ForegroundColor Green
+}
+
+# ── Summary ───────────────────────────────────────────────────────────
+Write-Host "`n=== Summary ===" -ForegroundColor Cyan
+Write-Host " SPN Display Name : $SpnDisplayName"
+Write-Host " Application ID : $appId"
+Write-Host " Tenant ID : $tenantId"
+Write-Host " Secret Expires : $endDate"
+Write-Host " Key Vault : $KeyVaultName"
+Write-Host " Secrets Stored : $($secrets.Count)"
+Write-Host "`n[DONE] Task 01 complete." -ForegroundColor Green
+#endregion EXECUTION
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `Insufficient privileges` | Missing Application Administrator role | Request Entra ID Application Administrator role |
+| `Key Vault access denied` | Missing Key Vault permissions | Assign Key Vault Secrets Officer role |
+| SPN already exists prompt | SPN was previously created | Enter `n` to skip — use existing SPN |
+| Secret not in Key Vault | Storage step was skipped | Re-run script or manually store secrets |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 02 — Verify Provider Registration](../phase-02-resource-providers/task-02-verify-provider-registration.mdx) | [Phase 03 — RBAC Permissions](./index.mdx) | [Task 02 — Assign RBAC Roles](./task-02-assign-rbac-roles.mdx) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, phase-03, service-principal, entra-id
+- Keywords: service principal, sp-azurelocal-deploy, app registration, deployment SPN
+- Author: Azure Local Cloudnology Team

@@ -1,0 +1,308 @@
+---
+title: "Task 2: Activate Windows Server Subscription"
+sidebar_label: "Task 02: Windows Server Subscription"
+sidebar_position: 2
+description: "Activate Windows Server Subscription for Azure Local to enable automatic VM licensing"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Activate Windows Server Subscription
+
+:::danger[⚠️ LICENSING REQUIREMENT - PAID ADD-ON SERVICE]
+
+**Windows Server Subscription is NOT included by default.** This is a **paid add-on service** that requires:
+
+1. **Active Azure subscription** with billing enabled and valid payment method
+
+2. **Per-physical-core monthly billing** - You will be charged per physical core, per month for the Windows Server subscription. See [Azure Local Pricing](https://azure.microsoft.com/pricing/details/azure-local/) for current rates.
+
+3. **One of the following licensing paths**:
+ - **Purchase directly through Azure** - Billed monthly to your Azure subscription
+ - **Azure Hybrid Benefit** - If you have Windows Server Datacenter licenses with active Software Assurance, you can activate Windows Server Subscription **at no additional cost** through Azure Hybrid Benefit
+ - **OEM License** - Pre-installed license from OEM hardware vendor (Dell, HPE, Lenovo, etc.) that includes Windows Server guest licensing
+
+**⚠️ 60-Day Free Trial**: If you enable Windows Server subscription within the first 60 days of registering your Azure Local cluster, you automatically receive a free trial during that period.
+
+**⚠️ Billing starts immediately** upon activation and continues until you explicitly disable the subscription. You will be billed even if VMs are powered off.
+
+> **Reference**: [Activate Windows Server VMs on Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/vm-activate) | [Azure Local Pricing](https://azure.microsoft.com/pricing/details/azure-local/)
+
+:::
+
+Windows Server Subscription provides automatic licensing for Windows Server VMs running on Azure Local, eliminating the need for individual VM licenses.
+
+## Overview
+
+Windows Server Subscription offers:
+- Per-physical-core licensing model
+- Automatic activation of Windows Server VMs
+- Support for unlimited Windows Server VMs per host
+- Simplified license management through Azure
+
+## Prerequisites
+
+- [ ] Azure Local cluster registered with Azure Arc
+- [ ] Owner or Contributor role on the cluster resource
+- [ ] Valid Azure subscription with billing enabled
+- [ ] Understanding of per-core pricing model
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Steps
+
+1. Navigate to the **Azure portal** → **Azure Arc** → **Azure Local**
+2. Select your cluster resource
+3. Go to **Settings** → **Configuration**
+4. Locate **Windows Server Subscription** section
+5. Toggle **Enable Windows Server Subscription** to **On**
+6. Review the pricing information
+7. Click **Save**
+
+### Verification
+
+1. Return to the cluster **Overview** page
+2. Confirm **Windows Server Subscription** shows as **Active**
+3. Check **Cost Management** for subscription charges
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+Run this script directly on any Azure Local cluster node.
+
+```powershell title="Enable-WindowsServerSubscription.ps1 (Run ON Node)"
+#Requires -RunAsAdministrator
+#Requires -Modules Az.StackHCI
+
+<#
+.SYNOPSIS
+ Enables Windows Server Subscription on the local Azure Local cluster.
+.DESCRIPTION
+ This script enables Windows Server Subscription to provide automatic
+ licensing for Windows Server VMs running on the cluster.
+#>
+
+[CmdletBinding()]
+param()
+
+$ErrorActionPreference = 'Stop'
+
+# Get cluster information
+$clusterName = (Get-Cluster).Name
+Write-Host "Enabling Windows Server Subscription for cluster: $clusterName" -ForegroundColor Cyan
+
+# Get the Azure Local registration
+$registration = Get-AzStackHCI
+
+if ($registration.ConnectionStatus -ne 'Connected') {
+ throw "Cluster is not connected to Azure. Current status: $($registration.ConnectionStatus)"
+}
+
+# Enable Windows Server Subscription
+# This enables AVMA (Automatic Virtual Machine Activation) for VMs
+Set-AzStackHCI -EnableWindowsServerSubscription $true
+
+Write-Host "Windows Server Subscription enabled successfully" -ForegroundColor Green
+
+# Verify the setting
+$updatedRegistration = Get-AzStackHCI
+Write-Host "Windows Server Subscription Status: $($updatedRegistration.WindowsServerSubscription)" -ForegroundColor Cyan
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+Run this script from the management server to configure Windows Server Subscription remotely.
+
+```powershell title="Enable-WindowsServerSubscription-Orchestrated.ps1 (Run FROM Management Server)"
+#Requires -Modules Az.Accounts, Az.Resources, Az.StackHCI
+
+<#
+.SYNOPSIS
+ Enables Windows Server Subscription on an Azure Local cluster from a management server.
+.DESCRIPTION
+ This script connects to Azure and enables Windows Server Subscription on the specified
+ Azure Local cluster resource.
+.PARAMETER ClusterResourceId
+ The Azure Resource ID of the Azure Local cluster.
+.PARAMETER SubscriptionId
+ The Azure subscription ID containing the cluster.
+.PARAMETER ResourceGroupName
+ The resource group containing the cluster.
+.PARAMETER ClusterName
+ The name of the Azure Local cluster resource.
+#>
+
+[CmdletBinding()]
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ClusterResourceId,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$SubscriptionId,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$ResourceGroupName,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$ClusterName
+)
+
+$ErrorActionPreference = 'Stop'
+
+# Connect to Azure if not already connected
+$context = Get-AzContext
+if (-not $context) {
+ Write-Host "Connecting to Azure..." -ForegroundColor Yellow
+ Connect-AzAccount
+}
+
+# Build resource ID if not provided
+if (-not $ClusterResourceId) {
+ if (-not $SubscriptionId -or -not $ResourceGroupName -or -not $ClusterName) {
+ throw "Either ClusterResourceId or (SubscriptionId, ResourceGroupName, ClusterName) must be provided"
+ }
+ $ClusterResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.AzureStackHCI/clusters/$ClusterName"
+}
+
+Write-Host "Enabling Windows Server Subscription for: $ClusterResourceId" -ForegroundColor Cyan
+
+# Get current cluster configuration
+$cluster = Get-AzResource -ResourceId $ClusterResourceId
+
+# Update with Windows Server Subscription enabled
+# Note: This is billed per physical core
+$cluster.Properties.windowsServerSubscription = "Enabled"
+
+$cluster | Set-AzResource -Force
+
+Write-Host "Windows Server Subscription enabled successfully" -ForegroundColor Green
+
+# Verify
+$updatedCluster = Get-AzResource -ResourceId $ClusterResourceId
+Write-Host "Windows Server Subscription: $($updatedCluster.Properties.windowsServerSubscription)" -ForegroundColor Cyan
+
+# Display billing information
+Write-Host "`nBilling Information:" -ForegroundColor Yellow
+Write-Host "- Billing is per physical core across all cluster nodes" -ForegroundColor Gray
+Write-Host "- Charges appear in Azure Cost Management" -ForegroundColor Gray
+Write-Host "- VMs automatically receive Windows Server license" -ForegroundColor Gray
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+Copy-paste ready script to enable Windows Server Subscription — no config file, no helpers.
+
+```powershell title="Enable-WindowsServerSubscription-Standalone.ps1"
+# ============================================================================
+# Script: Enable-WindowsServerSubscription-Standalone.ps1
+# Execution: Run anywhere with Az modules — fully self-contained
+# Prerequisites: Az.Accounts, Az.Resources modules; authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Accounts, Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Azure subscription ID
+$ResourceGroupName = "rg-azurelocal-prod" # Resource group with cluster
+$ClusterName = "azl-cluster-01" # Azure Local cluster name
+#endregion CONFIGURATION
+
+$ErrorActionPreference = 'Stop'
+
+# Connect to Azure
+$ctx = Get-AzContext
+if (-not $ctx) { Connect-AzAccount }
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+$ClusterResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.AzureStackHCI/clusters/$ClusterName"
+
+Write-Host "Enabling Windows Server Subscription for: $ClusterName" -ForegroundColor Cyan
+
+$cluster = Get-AzResource -ResourceId $ClusterResourceId
+$cluster.Properties.windowsServerSubscription = "Enabled"
+$cluster | Set-AzResource -Force
+
+Write-Host "✅ Windows Server Subscription enabled" -ForegroundColor Green
+
+# Verify
+$updated = Get-AzResource -ResourceId $ClusterResourceId
+Write-Host "Windows Server Subscription: $($updated.Properties.windowsServerSubscription)" -ForegroundColor Cyan
+
+Write-Host "`nBilling: Per physical core, charges in Azure Cost Management." -ForegroundColor Yellow
+Write-Host "VMs automatically receive Windows Server license via AVMA." -ForegroundColor Gray
+```
+
+:::info No External Dependencies
+This script is completely self-contained. Edit the values in the `#region CONFIGURATION` block and run. No `infrastructure.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## VM Activation
+
+Once Windows Server Subscription is enabled, VMs automatically activate using AVMA (Automatic Virtual Machine Activation):
+
+```powershell
+# Check VM activation status from within a Windows Server VM
+slmgr /dlv
+
+# The VM should show:
+# - License Status: Licensed
+# - Activation ID: Automatic Virtual Machine Activation
+```
+
+## Verification
+
+After enabling Windows Server Subscription:
+
+```powershell
+# On the cluster node
+Get-AzStackHCI | Select-Object ClusterName, WindowsServerSubscription
+
+# From management server
+$cluster = Get-AzResource -ResourceId $ClusterResourceId
+$cluster.Properties.windowsServerSubscription
+
+# Check VM activation (from within a VM)
+cscript //nologo C:\Windows\System32\slmgr.vbs /dlv
+```
+
+## Cost Considerations
+
+| Item | Details |
+|------|---------|
+| Pricing Model | Per physical core, per month |
+| Core Count | Sum of all physical cores across all nodes |
+| VM Limit | Unlimited Windows Server VMs |
+| Billing Start | Immediately upon enablement |
+
+:::caution Billing Impact
+Windows Server Subscription billing begins immediately when enabled. Ensure budget approval before enabling in production.
+:::
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| VM not activating | Verify cluster connectivity to Azure |
+| Subscription not showing | Wait up to 24 hours for sync |
+| AVMA failed | Check VM has network access to host |
+| Billing not appearing | Check Cost Management for Azure Local charges |
+
+## Related Documentation
+
+- [Windows Server Subscription for Azure Local](https://learn.microsoft.com/en-us/azure-stack/hci/manage/vm-activate)
+- [Automatic Virtual Machine Activation (AVMA)](https://learn.microsoft.com/en-us/windows-server/get-started/automatic-vm-activation)
+- [Azure Local Pricing](https://azure.microsoft.com/en-us/pricing/details/azure-stack/hci/)

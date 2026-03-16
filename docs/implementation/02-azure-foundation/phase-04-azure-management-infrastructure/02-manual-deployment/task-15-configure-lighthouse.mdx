@@ -1,0 +1,351 @@
+---
+title: "Task 15: Configure Lighthouse Server"
+sidebar_label: "Task 15: Lighthouse Server"
+sidebar_position: 15
+description: "Deploy and configure the OpenGear Lighthouse central management server for out-of-band console management of Azure Local infrastructure."
+category: Runbook
+scope: OpenGear Lighthouse server deployment and configuration
+purpose: Establish out-of-band console management for Azure Local nodes
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, lighthouse, opengear, out-of-band, console-management]
+keywords: [Lighthouse, OpenGear, console server, out-of-band, serial console, OOB]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 15: Configure Lighthouse Server
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: OpenGear Lighthouse server deployment and configuration 
+> **PURPOSE**: Establish out-of-band console management for Azure Local nodes 
+> **MASTER REFERENCE**: [OpenGear Lighthouse Documentation](https://opengear.com/docs/lighthouse/)
+
+**Status**: Active
+
+---
+
+## Overview
+
+The OpenGear Lighthouse server provides centralized out-of-band (OOB) console management for Azure Local infrastructure. It connects to OpenGear console servers (OM/CM series) deployed at each site to provide serial console access to physical nodes, switches, and PDUs.
+
+:::info Task Classification
+**Execution Target**: Linux Server (vendor appliance — SSH/Web UI configuration) 
+**Tab Profile**: 3 tabs — SSH Console · Orchestrated Script (Mgmt Server) · Standalone Script
+:::
+
+:::warning Marketplace Image
+The Lighthouse VM uses the OpenGear Marketplace image (`opengear:lighthouse:lighthouse`). You must accept the marketplace terms before deployment (handled in Task 11).
+:::
+
+### Configuration Summary
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| VM Name | `vm-lh-azl-eus-01` | `azure_vms.lighthouse.name` |
+| Hostname | `lh-eus-01` | `azure_vms.lighthouse.hostname` |
+| FQDN | `lh-eus-01.azrl.mgmt` | `azure_vms.lighthouse.fqdn` |
+| IP Address | `10.250.1.40` | `azure_vms.lighthouse.private_ip` |
+| OS | OpenGear Lighthouse 24.x | `azure_vms.lighthouse.os` |
+| Role | OOB Console Management | `azure_vms.lighthouse.role` |
+| VM Size | `Standard_D2s_v4` | `azure_vms.lighthouse.vm_size` |
+
+### Lighthouse Components
+
+| Component | Purpose |
+|-----------|---------|
+| Lighthouse Web UI | Centralized management portal (HTTPS 443) |
+| Console Server Enrollment | Auto-enrollment of OpenGear devices |
+| Smart Groups | Organize managed nodes by site/role |
+| Session Management | SSH/serial console sessions to managed devices |
+
+## Prerequisites
+
+- [ ] [Task 11: Deploy Management VMs](./task-11-deploy-management-vms) completed — Lighthouse VM running
+- [ ] OpenGear marketplace terms accepted
+- [ ] SSH access to Lighthouse VM via Bastion
+- [ ] VM admin credentials available
+- [ ] OpenGear license key (if required)
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Target VM | Lighthouse | `azure_vms.lighthouse` |
+| Resource Group | `rg-azrlmgmt-azl-eus-01` | `azure_vms.lighthouse.resource_group` |
+| Subnet | `snet-azrl-azl-eus-01` | `azure_vms.lighthouse.subnet` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="SSH Console" default>
+
+### SSH Console
+
+> **When to use**: Initial Lighthouse setup via SSH, then switch to Web UI for ongoing management
+
+#### Procedure — Initial Access
+
+1. **Connect to Lighthouse VM** via Bastion SSH
+
+2. **Default credentials**: The OpenGear Lighthouse image uses `root` with the Azure-provisioned SSH key or password
+
+3. **Verify Lighthouse service**:
+ ```bash
+ ogcli get system/version
+ ```
+
+#### Procedure — Network Configuration
+
+4. **Verify IP assignment** (should be set by Azure DHCP/static IP):
+ ```bash
+ ogcli get interfaces
+ ```
+
+5. **Set hostname**:
+ ```bash
+ ogcli update system/hostname hostname='lh-eus-01'
+ ```
+
+6. **Configure DNS** (point to domain controllers):
+ ```bash
+ ogcli update services/dns \
+ servers.0.address='10.250.1.36' \
+ servers.0.address='10.250.1.37'
+ ```
+
+#### Procedure — Web UI Configuration
+
+7. **Access Web UI**: Navigate to `https://10.250.1.40` from the utility server browser
+
+8. **Complete initial setup wizard**:
+ - Set admin password
+ - Configure organization name: `Azure Local Cloud`
+ - Set timezone
+ - Apply license (if required)
+
+#### Procedure — Enrollment Configuration
+
+9. **Configure Enrollment**:
+ - Navigate to **Enrollment** → **Settings**
+ - Enable auto-enrollment
+ - Set enrollment token/password
+ - Configure approved subnet: `10.250.1.0/24`
+
+10. **Create Smart Groups**:
+ - Navigate to **Nodes** → **Smart Groups**
+ - Create groups:
+ - `AzureLocal-Nodes` — cluster node serial consoles
+ - `Network-Switches` — ToR and management switches
+ - `PDUs` — Power distribution units
+
+#### Procedure — User and Authentication
+
+11. **Configure LDAP/AD integration** (optional):
+ - Settings → Authentication → LDAP
+ - Server: dc01 IP (`azure_vms.dc01.private_ip`)
+ - Base DN: `DC=azrl,DC=mgmt`
+ - Bind DN: Service account from AD
+
+12. **Create local admin account**:
+ - Settings → Users → Add
+ - Role: Administrator
+
+#### Validation
+
+- [ ] Lighthouse Web UI accessible on HTTPS 443
+- [ ] `ogcli get system/version` returns expected version
+- [ ] Enrollment enabled and listening
+- [ ] DNS resolving domain FQDN
+- [ ] Smart groups created
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+### Orchestrated Script (Mgmt Server)
+
+> **When to use**: Run from management workstation via SSH — reads `infrastructure.yml`
+
+#### Script
+
+**Path**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-15-configure-lighthouse/bash/invoke-configure-lighthouse.sh`
+
+#### Code
+
+```bash
+#!/bin/bash
+# ============================================================================
+# Script: invoke-configure-lighthouse.sh
+# Execution: Run from management workstation via SSH to Lighthouse
+# Prerequisites: SSH access, yq installed, ogcli available on Lighthouse
+# ============================================================================
+
+set -euo pipefail
+
+CONFIG_PATH="${1:-configs/infrastructure.yml}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source helpers
+source "$SCRIPT_DIR/../../../../../common/utilities/helpers/config-loader.sh"
+source "$SCRIPT_DIR/../../../../../common/utilities/helpers/logging.sh"
+
+# Read config
+LH_IP=$(yq '.azure_vms.lighthouse.private_ip' "$CONFIG_PATH")
+LH_HOSTNAME=$(yq '.azure_vms.lighthouse.hostname' "$CONFIG_PATH")
+DC01_IP=$(yq '.azure_vms.dc01.private_ip' "$CONFIG_PATH")
+DC02_IP=$(yq '.azure_vms.dc02.private_ip' "$CONFIG_PATH")
+ADMIN_USER="root"
+
+log_info "Configuring Lighthouse server at $LH_IP"
+
+ssh "$ADMIN_USER@$LH_IP" << REMOTE_SCRIPT
+set -euo pipefail
+
+# Set hostname
+ogcli update system/hostname hostname='$LH_HOSTNAME'
+
+# Configure DNS servers (domain controllers)
+ogcli update services/dns \
+ servers.0.address='$DC01_IP' \
+ servers.1.address='$DC02_IP'
+
+# Verify
+ogcli get system/version
+ogcli get system/hostname
+
+echo "Lighthouse base configuration complete"
+REMOTE_SCRIPT
+
+log_info "Web UI available at https://$LH_IP — complete wizard manually"
+log_success "Lighthouse base configuration applied"
+```
+
+:::note Partial Automation
+The Lighthouse Web UI wizard (enrollment config, smart groups, user management) must be completed manually via the Web UI. This script handles base OS-level configuration only.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Self-contained bash script. SSH to Lighthouse and run directly.
+
+#### Code
+
+```bash
+#!/bin/bash
+# ============================================================================
+# Script: configure-lighthouse-standalone.sh
+# Execution: Run directly on the Lighthouse VM via SSH
+# ============================================================================
+
+#region CONFIGURATION
+LH_HOSTNAME="lh-eus-01"
+DC01_IP="10.250.1.36"
+DC02_IP="10.250.1.37"
+#endregion CONFIGURATION
+
+set -euo pipefail
+
+echo "=== Lighthouse Server Configuration ==="
+
+# Set hostname
+echo "[1/4] Setting hostname to $LH_HOSTNAME..."
+ogcli update system/hostname hostname="$LH_HOSTNAME"
+
+# Configure DNS
+echo "[2/4] Configuring DNS servers..."
+ogcli update services/dns \
+ servers.0.address="$DC01_IP" \
+ servers.1.address="$DC02_IP"
+
+# Verify
+echo "[3/4] Verifying configuration..."
+echo "Version: $(ogcli get system/version)"
+echo "Hostname: $(ogcli get system/hostname)"
+
+echo "[4/4] Base configuration complete"
+echo ""
+echo "=== Next Steps ==="
+echo "1. Access Web UI at https://$(hostname -I | awk '{print $1}')"
+echo "2. Complete initial setup wizard"
+echo "3. Configure enrollment settings"
+echo "4. Create smart groups"
+echo "5. Set up user authentication"
+```
+
+:::info Partial Automation
+Base configuration is scripted. Smart groups, enrollment, and user management require the Web UI.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Lighthouse Web UI accessible: `curl -k https://10.250.1.40` returns 200
+- [ ] Hostname set: `ogcli get system/hostname`
+- [ ] DNS resolving: `nslookup azrl.mgmt`
+- [ ] Enrollment configured via Web UI
+- [ ] Smart groups created via Web UI
+
+---
+
+## CAF/WAF Landing Zone Model
+
+Lighthouse server configuration is identical regardless of landing zone model — it runs on the VM in the **Management subscription**.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Management** subscription | `azure.subscriptions.management.id` |
+| Target VM | Lighthouse in Management spoke | `azure_vms.lighthouse` |
+
+### Execution Options
+
+The execution is the same as Single Subscription — the scripts run on the VM regardless of which subscription it resides in.
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| Web UI not loading | HTTPS service not started | SSH in, check `ogcli get services/https` |
+| Cannot SSH to Lighthouse | NSG blocking SSH 22 | Add inbound rule for SSH from Bastion subnet |
+| ogcli command not found | Not logged in as root | Use `sudo ogcli` or login as root |
+| Enrollment not working | Wrong enrollment token | Verify token in Web UI → Enrollment → Settings |
+| Marketplace terms error | Terms not accepted | Accept via `az vm image terms accept --publisher opengear --offer lighthouse --plan lighthouse` |
+| Lighthouse not reachable | NIC misconfigured | Check Azure NIC IP assignment matches config |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 14: NDM Server](./task-14-configure-ndm-server) | [Manual Deployment Index](./index.mdx) | [Task 16: Configure WAC](./task-16-configure-wac) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, lighthouse, opengear, out-of-band, console-management
+- Keywords: Lighthouse, OpenGear, console server, out-of-band, serial console, OOB
+- Author: Azure Local Cloudnology Team

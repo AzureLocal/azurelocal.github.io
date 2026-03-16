@@ -1,0 +1,167 @@
+---
+title: "Phase 04: Azure Management Infrastructure"
+sidebar_label: "Phase 04: Management Infrastructure"
+sidebar_position: 4
+description: "Deploy Azure management infrastructure for Azure Local including networking, VPN connectivity, management VMs, and monitoring resources."
+category: Runbook
+scope: Azure management resources deployment
+purpose: Deploy networking, VMs, and monitoring resources for Azure Local management
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 1.1.0
+tags: [azure-local, management-infrastructure, networking, vpn, key-vault, domain-controllers, bastion]
+keywords: [management infrastructure, virtual network, VPN gateway, bastion, NSG, NAT gateway, key vault, domain controller, log analytics]
+status: active
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Phase 04: Azure Management Infrastructure
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Azure management resources deployment 
+> **PURPOSE**: Deploy networking, VMs, and monitoring resources 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Networking](https://learn.microsoft.com/en-us/azure/networking/)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This phase deploys all Azure-side infrastructure needed for Azure Local management and operations. Choose the deployment method that best suits your needs:
+
+## Deployment Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="pcs-cicd" label="CI/CD Pipeline (Recommended)" default>
+
+**✅ Recommended for production deployments**
+
+Deploy the complete Azure management infrastructure using the automated CI/CD Pipeline with the `tf-module-azr-local` Terraform module.
+
+**Benefits:**
+- ✅ Consistent, repeatable deployments
+- ✅ Infrastructure as Code (IaC) with version control
+- ✅ Automated testing and validation
+- ✅ Proper state management via GitLab
+- ✅ Faster deployment with parallel resource creation
+
+**Repository:** `github.com/AzureLocal/CI/CD/tf-module-azr-local`
+
+:::info CI/CD Module Scope
+The CI/CD module deploys core infrastructure but has the following limitations:
+
+**Not Included in CI/CD Module:**
+- ❌ **OpenGear Lighthouse Server** - Must be deployed manually
+- ❌ **Windows Admin Center (WAC) Server** - Must be deployed manually
+- ❌ **Custom Landing Zone Configurations** - Uses single subscription model only
+
+**Fixed Configuration:**
+- 📌 **Landing Zone**: Uses [single subscription model](../phase-01-landing-zones/) (as deployed in Phase 03)
+- 📌 **Resource Groups**: Predefined naming and structure (not customizable)
+- 📌 **Subscriptions**: No multi-subscription topology support
+
+For deployments requiring these components or custom landing zones, use [Manual Deployment](./02-manual-deployment/) or supplement the CI/CD deployment with additional manual steps.
+:::
+
+**👉 [Go to CI/CD Pipeline Deployment](./01-cicd-pipeline-deployment/)**
+
+</TabItem>
+<TabItem value="manual" label="Manual Deployment">
+
+**When to use:**
+- The CI/CD pipeline is unavailable or experiencing issues
+- You need to troubleshoot or customize individual components
+- You're learning or validating the deployment process
+- You need to deploy a single component without running the full pipeline
+
+**👉 [Go to Manual Deployment Procedures](./02-manual-deployment/)**
+
+</TabItem>
+</Tabs>
+
+---
+
+## Component Summary
+
+Both deployment methods provision infrastructure components, but availability varies by method:
+
+### Management Mode (Once per Environment)
+
+| Component | Classification | CI/CD Module | Manual | Purpose |
+|-----------|----------------|------------|--------|---------|
+| Virtual Network & Subnets | **Required** | ✅ | ✅ | Azure Local management network |
+| VPN Gateway | **Required** | ✅ | ✅ | Site-to-site connectivity to on-prem |
+| VPN Connection | **Required** | ✅ | ✅ | Establish tunnel to on-prem site |
+| Azure Bastion | **Recommended** | ✅ | ✅ | Secure RDP/SSH access to VMs |
+| Network Security Groups | **Required** | ✅ | ✅ | Subnet-level security rules |
+| NAT Gateway | **Required** | ✅ | ✅ | Outbound internet for management VMs |
+| Arc Gateway | **Optional** | ✅ | ✅ | Azure Arc hybrid connectivity |
+| Log Analytics Workspace | **Recommended** | ✅ | ✅ | Monitoring and HCI Insights |
+| Key Vault | **Required** | ✅ | ✅ | Secrets management (passwords, keys) |
+| Domain Controllers | **Required** | ⚠️ Optional | ✅ | Active Directory for Azure Local |
+| Utility Server | **Recommended** | ⚠️ Optional | ✅ | Jump box with admin tools |
+| NDM Server | **Recommended** | ⚠️ Optional | ✅ | SNMP/Syslog collection |
+| **Lighthouse Server** | **Recommended** | ❌ | ✅ | **OpenGear console server management** |
+| **Windows Admin Center** | **Recommended** | ❌ | ✅ | **Web-based management portal** |
+
+:::tip Component Availability
+- ✅ = Included in deployment method
+- ⚠️ = Optional in CI/CD module (can be enabled/disabled)
+- ❌ = Not available in CI/CD module, must use manual deployment
+:::
+
+### Cluster Mode (Once per Cluster)
+
+Cluster-specific resources are deployed separately for each Azure Local cluster:
+
+- **VPN Connection** (Local Network Gateway + Connection): Deploy per-site
+- **Cluster Key Vault**: See cluster deployment stages
+- **Cluster Log Analytics Workspace**: See cluster deployment stages
+
+## Prerequisites
+
+Before starting this phase, ensure:
+
+- [ ] [Phase 01: Landing Zones](../phase-01-landing-zones/) completed - Subscription and resource groups exist
+- [ ] [Phase 02: Resource Providers](../phase-02-resource-providers/) completed - Required providers registered
+- [ ] [Phase 03: RBAC Permissions](../phase-03-rbac-permissions/) completed - Deployment identity has required roles
+- [ ] Network IP address ranges documented (avoid conflicts with on-prem)
+- [ ] VPN configuration details from on-prem team (ASN, BGP peer IP, public IP)
+
+## Next Steps
+
+After completing this phase:
+
+1. **Verify VPN connectivity** with on-premises network team
+2. **Configure AD sites and services** on Domain Controllers
+3. **Store credentials** in Key Vault (admin passwords, service accounts)
+4. Proceed to [Phase 05: Identity & Access Management](../phase-05-identity-security/)
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 03: RBAC Permissions](../phase-03-rbac-permissions/) | [Azure Foundation](../index.mdx) | [Phase 05: Identity & Access Management](../phase-05-identity-security/) |
+
+---
+
+## End of Document
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 1.1.0
+- Tags: azure-local, management-infrastructure, networking, vpn, key-vault, domain-controllers, bastion
+- Keywords: management infrastructure, virtual network, VPN gateway, bastion, NSG, NAT gateway, key vault, domain controller, log analytics
+- Author: Azure Local Cloudnology Team

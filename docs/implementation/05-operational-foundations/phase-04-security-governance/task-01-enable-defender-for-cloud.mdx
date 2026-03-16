@@ -1,0 +1,255 @@
+---
+title: "Task 01: Enable Defender for Cloud"
+sidebar_label: "Task 01: Defender for Cloud"
+sidebar_position: 1
+description: "Enable Microsoft Defender for Cloud with security policy initiatives for Azure Local deployments"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Enable Defender for Cloud
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Defender for Cloud enablement 
+> **PURPOSE**: Enable security posture management 
+> **MASTER REFERENCE**: [Microsoft Learn - Defender for Cloud](https://learn.microsoft.com/en-us/azure/defender-for-cloud/defender-for-cloud-introduction)
+
+**Status**: Active
+
+---
+
+Microsoft Defender for Cloud provides cloud security posture management (CSPM) and cloud workload protection (CWP) for your Azure Local deployment. This step enables Defender plans and configures security policies.
+
+:::tip Azure Local Requirements
+For Azure Local deployments, **Defender for Servers Plan 2** is recommended to provide:
+- Vulnerability assessment for Arc-enabled servers
+- Just-in-time VM access
+- File integrity monitoring
+- Adaptive application controls
+:::
+
+## Overview
+
+| Defender Plan | Purpose | Recommendation |
+|---------------|---------|----------------|
+| **Foundational CSPM** | Free security posture assessment | ✅ Always enabled |
+| **Defender for Servers P2** | Arc-enabled server protection | ✅ Required for Azure Local |
+| **Defender for Key Vault** | Key Vault threat protection | ✅ Recommended |
+| **Defender for Resource Manager** | Management plane protection | ✅ Recommended |
+| **Defender for Storage** | Storage account protection | ⚪ Optional |
+| **Defender for DNS** | DNS threat detection | ⚪ Optional |
+
+## Prerequisites
+
+- Azure subscription with Owner or Security Administrator role
+- Log Analytics workspace created in Stage 06
+
+## Procedure
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Enable Defender for Cloud
+
+1. **Navigate to Defender for Cloud**
+ - In Azure Portal, search for **Microsoft Defender for Cloud**
+ - Click **Environment settings** in the left menu
+
+2. **Select Your Subscription**
+ - Expand your management group hierarchy
+ - Click on your Azure Local subscription
+
+3. **Enable Defender Plans**
+ - Toggle **ON** for the following plans:
+ - **Servers** → Select **Plan 2**
+ - **Key Vault** → Toggle ON
+ - **Resource Manager** → Toggle ON
+ - Click **Save**
+
+4. **Configure Auto-Provisioning**
+ - Click **Settings & monitoring**
+ - Enable **Log Analytics agent** or **Azure Monitor Agent**
+ - Select your Log Analytics workspace from Stage 06
+ - Enable **Vulnerability assessment for machines**
+ - Click **Save**
+
+5. **Configure Security Policies**
+ - Go to **Environment settings** → Your subscription
+ - Click **Security policy**
+ - Ensure **Azure Security Benchmark** is assigned
+ - Click **Add more standards** to add custom initiatives
+
+### Configure Email Notifications
+
+1. **Navigate to Email Notifications**
+ - In Defender for Cloud, go to **Environment settings**
+ - Select your subscription
+ - Click **Email notifications**
+
+2. **Configure Alerts**
+ - Enter email addresses for security alerts
+ - Select alert severity: **High** and **Medium**
+ - Toggle **Also notify subscription owners**
+ - Click **Save**
+
+</TabItem>
+<TabItem value="direct" label="Direct Script (On Node)">
+
+```powershell
+# Variables
+$subscriptionId = "<your-subscription-id>"
+$workspaceResourceId = "/subscriptions/$subscriptionId/resourceGroups/rg-management-prod-eastus2/providers/Microsoft.OperationalInsights/workspaces/law-azlmgmt-prod-eus2"
+$emailAddress = "security-team@Infinite azurelocal Corp.com"
+
+# Set subscription context
+az account set --subscription $subscriptionId
+
+# Enable Defender for Servers Plan 2
+az security pricing create `
+ --name VirtualMachines `
+ --tier Standard `
+ --subplan P2
+
+# Enable Defender for Key Vault
+az security pricing create `
+ --name KeyVaults `
+ --tier Standard
+
+# Enable Defender for Resource Manager
+az security pricing create `
+ --name Arm `
+ --tier Standard
+
+# Enable Defender for DNS (optional)
+az security pricing create `
+ --name Dns `
+ --tier Standard
+
+# Configure auto-provisioning for Log Analytics agent
+az security auto-provisioning-setting update `
+ --name default `
+ --auto-provision On
+
+# Configure workspace settings
+az security workspace-setting create `
+ --name default `
+ --target-workspace $workspaceResourceId
+
+# Configure email notifications
+az security contact create `
+ --name default1 `
+ --email $emailAddress `
+ --alert-notifications On `
+ --alerts-admins On
+
+Write-Host "✅ Defender for Cloud enabled with recommended plans"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Variables
+$subscriptionId = "<your-subscription-id>"
+$resourceGroup = "rg-management-prod-eastus2"
+$workspaceName = "law-azlmgmt-prod-eus2"
+$emailAddress = "security-team@Infinite azurelocal Corp.com"
+
+# Connect and set context
+Connect-AzAccount
+Set-AzContext -SubscriptionId $subscriptionId
+
+# Get workspace resource ID
+$workspace = Get-AzOperationalInsightsWorkspace -ResourceGroupName $resourceGroup -Name $workspaceName
+$workspaceId = $workspace.ResourceId
+
+# Enable Defender for Servers Plan 2
+Set-AzSecurityPricing -Name "VirtualMachines" -PricingTier "Standard"
+Write-Host "✅ Defender for Servers enabled" -ForegroundColor Green
+
+# Enable Defender for Key Vault
+Set-AzSecurityPricing -Name "KeyVaults" -PricingTier "Standard"
+Write-Host "✅ Defender for Key Vault enabled" -ForegroundColor Green
+
+# Enable Defender for Resource Manager
+Set-AzSecurityPricing -Name "Arm" -PricingTier "Standard"
+Write-Host "✅ Defender for Resource Manager enabled" -ForegroundColor Green
+
+# Enable Defender for Storage (optional)
+Set-AzSecurityPricing -Name "StorageAccounts" -PricingTier "Standard"
+Write-Host "✅ Defender for Storage enabled" -ForegroundColor Green
+
+# Configure auto-provisioning
+Set-AzSecurityAutoProvisioningSetting -Name "default" -EnableAutoProvision
+Write-Host "✅ Auto-provisioning enabled" -ForegroundColor Green
+
+# Configure workspace
+Set-AzSecurityWorkspaceSetting -Name "default" -Scope "/subscriptions/$subscriptionId" -WorkspaceId $workspaceId
+Write-Host "✅ Workspace configured" -ForegroundColor Green
+
+# Configure security contact
+Set-AzSecurityContact `
+ -Name "default1" `
+ -Email $emailAddress `
+ -AlertAdmin $true `
+ -NotifyOnAlert $true
+Write-Host "✅ Security contact configured" -ForegroundColor Green
+
+Write-Host "`n✅ Defender for Cloud configuration complete" -ForegroundColor Green
+```
+
+</TabItem>
+</Tabs>
+
+## Validation
+
+```powershell
+# Check Defender pricing tiers
+$pricingTiers = Get-AzSecurityPricing
+Write-Host "Defender Plan Status:" -ForegroundColor Cyan
+$pricingTiers | Where-Object { $_.PricingTier -eq "Standard" } | Format-Table Name, PricingTier -AutoSize
+
+# Check auto-provisioning
+$autoProvision = Get-AzSecurityAutoProvisioningSetting
+Write-Host "`nAuto-Provisioning: $($autoProvision.AutoProvision)" -ForegroundColor Cyan
+
+# Check workspace setting
+$workspaceSetting = Get-AzSecurityWorkspaceSetting
+Write-Host "Workspace: $($workspaceSetting.WorkspaceId)" -ForegroundColor Cyan
+```
+
+## Expected Output
+
+```
+Defender Plan Status:
+Name PricingTier
+---- -----------
+VirtualMachines Standard
+KeyVaults Standard
+Arm Standard
+StorageAccounts Standard
+
+Auto-Provisioning: On
+Workspace: /subscriptions/.../workspaces/law-azlmgmt-prod-eus2
+```
+
+## Cost Considerations
+
+| Plan | Cost Model | Estimated Monthly Cost |
+|------|------------|----------------------|
+| Defender for Servers P2 | Per server/hour | ~$15/server/month |
+| Defender for Key Vault | Per 10K transactions | ~$0.02/10K transactions |
+| Defender for Resource Manager | Per subscription | ~$4/subscription/month |
+
+:::note
+Costs vary based on usage. Use [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) for accurate estimates.
+:::
+
+## Next Steps
+
+Proceed to [Task 3: Apply Azure Policy Initiatives](./task-02-apply-azure-policy-initiatives.mdx) to enforce compliance policies.
+

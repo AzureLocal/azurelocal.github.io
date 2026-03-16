@@ -1,0 +1,356 @@
+---
+title: "Task 07: NAT Gateway"
+sidebar_label: "Task 07: NAT Gateway"
+sidebar_position: 7
+description: "Deploy a NAT Gateway for outbound internet connectivity from the management subnet."
+category: Runbook
+scope: NAT Gateway deployment
+purpose: Provide deterministic outbound internet access for management VMs
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, nat-gateway, networking, outbound]
+keywords: [NAT gateway, outbound internet, SNAT, public IP, management subnet]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 07: NAT Gateway
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: NAT Gateway deployment 
+> **PURPOSE**: Provide deterministic outbound internet access for management VMs 
+> **MASTER REFERENCE**: [Microsoft Learn - NAT Gateway](https://learn.microsoft.com/en-us/azure/nat-gateway/nat-overview)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This task deploys an Azure NAT Gateway and associates it with the management subnet. The NAT Gateway provides deterministic outbound internet connectivity with a static public IP, eliminating SNAT port exhaustion and ensuring consistent outbound IP for allowlisting.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::info Terraform Reference
+**Module:** `tf-module-azr-local` 
+**File:** `nat-gateway.tf` 
+**Mode:** Management
+:::
+
+### Components Created
+
+| Resource | Name Pattern | Purpose |
+|----------|-------------|---------|
+| Public IP | `pip-azrlnat-{env}-{region}-01` | NAT Gateway public IP |
+| NAT Gateway | `ng-azrl-{env}-{region}-01` | Outbound internet access |
+| PIP Association | — | Link PIP to NAT GW |
+| Subnet Association | — | Link NAT GW to management subnet |
+
+### NAT Gateway Configuration
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| SKU | Standard | Default |
+| Idle Timeout | Per config (minutes) | `nat_gateway.idle_timeout` |
+| Subnet | Management subnet | `network.azure_vnets.management.subnets.management.name` |
+
+## Prerequisites
+
+- [ ] [Task 01: Virtual Network](./task-01-virtual-network) completed — Management subnet exists
+- [ ] Public IP not already consumed
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+| NAT Gateway Name | `ng-azrl-{env}-{region}-01` | Naming convention |
+| Public IP Name | `pip-azrlnat-{env}-{region}-01` | Naming convention |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Create Public IP**:
+ - Search for **Public IP addresses** → **+ Create**
+ | Field | Value |
+ |-------|-------|
+ | Name | `pip-azrlnat-{env}-{region}-01` |
+ | SKU | Standard |
+ | Assignment | Static |
+
+2. **Create NAT Gateway**:
+ - Search for **NAT gateways** → **+ Create**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | `ng-azrl-{env}-{region}-01` | Naming convention |
+ | Region | Your region | `azure.region` |
+ | Availability zone | No zone | Or zone-redundant |
+ | Idle timeout | Per config (minutes) | `nat_gateway.idle_timeout` |
+
+3. **Outbound IP**: Select the Public IP created in Step 1
+
+4. **Subnet**: Select the management subnet from the VNet
+
+5. **Review + create**: Verify → Click **Create**
+
+#### Validation
+
+- [ ] NAT Gateway provisioning state: **Succeeded**
+- [ ] Public IP associated
+- [ ] Management subnet associated
+- [ ] Outbound connectivity works from management VMs
+
+#### Links
+
+- [Microsoft Learn: Create NAT Gateway](https://learn.microsoft.com/en-us/azure/nat-gateway/quickstart-create-nat-gateway-portal)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-07-nat-gateway/powershell/New-NatGateway.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| PowerShell + Azure CLI | `task-07-nat-gateway/azure-cli/New-NatGateway.azcli.ps1` |
+| Bash + Azure CLI | `task-07-nat-gateway/bash/invoke-nat-gateway.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-NatGateway.ps1
+# Execution: Run from management workstation — reads infrastructure.yml
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "configs/infrastructure.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+$SubscriptionId = $config.azure.subscriptions.($config.network.azure_vnets.management.subscription).id
+$ResourceGroup = $config.network.azure_vnets.management.resource_group
+$Location = $config.network.azure_vnets.management.location
+$VNetName = $config.network.azure_vnets.management.name
+$MgmtSubnet = $config.network.azure_vnets.management.subnets.management.name
+$IdleTimeout = $config.nat_gateway.idle_timeout
+$Environment = $config.azure.environment
+$RegionAbbr = $config.azure.region_abbreviation
+
+$NatGwName = "ng-azrl-$Environment-$RegionAbbr-01"
+$PipName = "pip-azrlnat-$Environment-$RegionAbbr-01"
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Create Public IP
+Write-LogInfo "Creating Public IP: $PipName"
+$pip = New-AzPublicIpAddress -Name $PipName -ResourceGroupName $ResourceGroup `
+ -Location $Location -Sku Standard -AllocationMethod Static
+
+# Create NAT Gateway
+Write-LogInfo "Creating NAT Gateway: $NatGwName"
+$natGw = New-AzNatGateway -Name $NatGwName -ResourceGroupName $ResourceGroup `
+ -Location $Location -Sku Standard -IdleTimeoutInMinutes $IdleTimeout `
+ -PublicIpAddress @($pip)
+
+# Associate to management subnet
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+$subnet = Get-AzVirtualNetworkSubnetConfig -Name $MgmtSubnet -VirtualNetwork $vnet
+Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name $MgmtSubnet `
+ -AddressPrefix $subnet.AddressPrefix -NatGatewayId $natGw.Id | Out-Null
+$vnet | Set-AzVirtualNetwork | Out-Null
+
+Write-LogSuccess "NAT Gateway '$NatGwName' created and associated to '$MgmtSubnet'"
+```
+
+#### Validation
+
+```powershell
+Get-AzNatGateway -ResourceGroupName $ResourceGroup | Format-List Name, ProvisioningState, IdleTimeoutInMinutes
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers needed.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-NatGateway-Standalone.ps1
+# Execution: Run anywhere — fully self-contained
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000"
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
+$Location = "eastus"
+$NatGwName = "ng-azrl-azl-eus-01"
+$PipName = "pip-azrlnat-azl-eus-01"
+$VNetName = "vnet-azrl-azl-eus-01"
+$MgmtSubnet = "snet-azrl-azl-eus-01"
+$MgmtSubnetCidr = "10.250.1.32/27"
+$IdleTimeout = 10
+#endregion CONFIGURATION
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+$pip = New-AzPublicIpAddress -Name $PipName -ResourceGroupName $ResourceGroup `
+ -Location $Location -Sku Standard -AllocationMethod Static
+
+$natGw = New-AzNatGateway -Name $NatGwName -ResourceGroupName $ResourceGroup `
+ -Location $Location -Sku Standard -IdleTimeoutInMinutes $IdleTimeout `
+ -PublicIpAddress @($pip)
+
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name $MgmtSubnet `
+ -AddressPrefix $MgmtSubnetCidr -NatGatewayId $natGw.Id | Out-Null
+$vnet | Set-AzVirtualNetwork | Out-Null
+
+Write-Host "NAT Gateway '$NatGwName' created and associated" -ForegroundColor Green
+```
+
+:::info No External Dependencies
+Self-contained. Edit the `#region CONFIGURATION` block and run.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] NAT Gateway provisioned
+- [ ] Public IP associated
+- [ ] Management subnet associated
+- [ ] Outbound traffic from VMs uses NAT Gateway PIP
+
+---
+
+## CAF/WAF Landing Zone Model
+
+In the CAF/WAF model, the NAT Gateway is deployed in the **Connectivity subscription** alongside the VNet.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Connectivity** subscription | `azure.subscriptions.connectivity.id` |
+| Resource Group | `rg-azrlconn-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+Follow the same procedure as [Single Subscription → Azure Portal](#azure-portal), targeting the **Connectivity** subscription.
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+:::tip Same Script — Different Config
+The orchestrated script is identical. `infrastructure.yml` references the correct Connectivity subscription for CAF/WAF.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+Update `#region CONFIGURATION` for Connectivity subscription:
+
+```powershell
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Connectivity subscription
+$ResourceGroup = "rg-azrlconn-azl-eus-01"
+# ...
+#endregion CONFIGURATION
+```
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] NAT Gateway in **Connectivity** subscription
+- [ ] Outbound connectivity verified
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| SNAT port exhaustion | Too many concurrent connections | Add additional public IPs to NAT GW |
+| NAT GW not taking effect | Subnet not associated | Verify subnet association |
+| Conflicts with load balancer | LB outbound rules take precedence | Remove LB outbound rules or use NAT GW only |
+| Idle timeout too short | Connections drop prematurely | Increase idle timeout (max 120 min) |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 06: NSGs](./task-06-network-security-groups) | [Manual Deployment Index](./index.mdx) | [Task 08: Arc Gateway](./task-08-arc-gateway) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, nat-gateway, networking, outbound
+- Keywords: NAT gateway, outbound internet, SNAT, public IP, management subnet
+- Author: Azure Local Cloudnology Team

@@ -1,0 +1,106 @@
+---
+title: "Task 03: Review Plan Stage"
+sidebar_position: 3
+description: "Review Terraform execution plan showing resource changes"
+---
+
+# Task 03: Review Plan Stage
+
+> **Objective**: Review Terraform plan to verify expected resource changes 
+> **Duration**: ~3 minutes
+
+---
+
+## What Happens
+
+The plan stage:
+1. Authenticates to Azure using CI/CD service principal
+2. Initializes Terraform backend (Azure Storage)
+3. Generates execution plan showing all resource changes
+4. Displays plan output in pipeline logs
+
+---
+
+## Procedure
+
+### 1. Click Plan Job
+
+In CI/CD pipeline view, click the **plan** job.
+
+### 2. Review Plan Output
+
+Scroll through the Terraform plan looking for:
+
+```terraform
+Terraform will perform the following actions:
+
+ # Resource groups
+ + azurerm_resource_group.management
+ 
+ # Networking
+ + azurerm_virtual_network.hub
+ + azurerm_subnet.gateway
+ + azurerm_subnet.azrl
+ + azurerm_subnet.bastion
+ + azurerm_subnet.endpoints
+ + azurerm_subnet.dns
+ 
+ # VPN Gateway (longest deployment time)
+ + azurerm_virtual_network_gateway.vpn
+ 
+ # Security
+ + azurerm_key_vault.management
+ 
+ # Monitoring
+ + azurerm_log_analytics_workspace.management
+ 
+ # Bastion
+ + azurerm_bastion_host.management
+
+Plan: 45 to add, 0 to change, 0 to destroy.
+```
+
+### 3. Verify Resource Counts
+
+Check the summary line matches expectations:
+- **Management mode**: ~30-40 resources
+- **Cluster mode**: ~8-12 resources
+
+### 4. Check for Unexpected Changes
+
+Look for:
+- ❌ Resources being destroyed (should be 0 on initial deployment)
+- ❌ Unexpected resource modifications
+- ✅ Only additions expected
+
+---
+
+## Key Resources to Verify
+
+| Resource Type | What to Check |
+|---------------|---------------|
+| VNet | Correct address space (e.g., 10.100.1.0/24) |
+| Subnets | Correct CIDRs, proper sizing |
+| VPN Gateway | Correct SKU (VpnGw2AZ), BGP configuration |
+| Key Vault | Correct name, access policies |
+| Storage Account | Correct name (lowercase, no hyphens) |
+| Log Analytics | Correct retention settings |
+
+---
+
+## Validation
+
+- [ ] Plan stage completed successfully
+- [ ] Resource count matches expectations
+- [ ] No unexpected destroys or changes
+- [ ] VPN Gateway configuration correct
+- [ ] Network configuration matches planning
+- [ ] Key Vault and storage naming valid
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 02 - Validate Stage](./task-02-monitor-validate-stage.mdx) | [Phase 02 - Execution](./index.mdx) | [Task 04 - Approve](./task-04-approve-deployment.mdx) |

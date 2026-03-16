@@ -1,0 +1,367 @@
+---
+title: "Task 10: Key Vault"
+sidebar_label: "Task 10: Key Vault"
+sidebar_position: 10
+description: "Deploy the management Key Vault for storing deployment secrets, certificates, and credentials."
+category: Runbook
+scope: Key Vault deployment
+purpose: Create centralized secret management for Azure Local infrastructure
+author: Azure Local Cloudnology Team
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags: [azure-local, key-vault, security, secrets]
+keywords: [Key Vault, secrets, certificates, credentials, RBAC, soft delete]
+status: active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 10: Key Vault
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Key Vault deployment 
+> **PURPOSE**: Create centralized secret management for Azure Local infrastructure 
+> **MASTER REFERENCE**: [Microsoft Learn - Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/overview)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This task creates the management Key Vault used to store deployment secrets (VPN shared keys, domain admin passwords, service account credentials) and certificates. All scripts that reference `keyvault://` URIs in `infrastructure.yml` resolve secrets from this vault.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::info Terraform Reference
+**Module:** `tf-module-azr-local` 
+**File:** `key-vault.tf` 
+**Mode:** Management
+:::
+
+### Components Created
+
+| Resource | Name Pattern | Purpose |
+|----------|-------------|---------|
+| Key Vault | `kv-{customer}-platform` | Management secrets store |
+
+### Key Vault Configuration
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| Name | Per config | `azure_infrastructure.key_vaults.management.name` |
+| SKU | Standard | Default |
+| Soft Delete | 7 days retention | Security best practice |
+| Purge Protection | Enabled | Production requirement |
+| RBAC Authorization | Enabled | Preferred over access policies |
+| Public Access | Enabled | Required for Azure Local today |
+| Network ACLs | Bypass Azure Services | `AzureServices` bypass |
+
+### Secrets to Populate
+
+| Secret Name | Purpose | Config Path |
+|-------------|---------|-------------|
+| `azlocal-admin-password` | Azure Local node admin | `azure_infrastructure.key_vaults.management.secrets.azlocal_admin_password` |
+| `recovery-admin-password` | Recovery admin | `azure_infrastructure.key_vaults.management.secrets.recovery_admin_password` |
+| `vpn-shared-key` | S2S VPN PSK | `azure_infrastructure.key_vaults.management.secrets.vpn_shared_key` |
+
+## Prerequisites
+
+- [ ] Resource group exists
+- [ ] Key Vault Administrator or Contributor role
+- [ ] Secrets values prepared (do NOT store in YAML — use Key Vault only)
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.key_vaults.management.resource_group` |
+| Key Vault Name | Per config | `azure_infrastructure.key_vaults.management.name` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Create Key Vault**:
+ - Search for **Key vaults** → **+ Create**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | Per config | `azure_infrastructure.key_vaults.management.name` |
+ | Subscription | Target subscription | `azure.subscriptions.<name>.id` |
+ | Resource Group | Management RG | `azure_infrastructure.key_vaults.management.resource_group` |
+ | Region | Your region | `azure.region` |
+ | Pricing tier | Standard | — |
+
+2. **Access Configuration**:
+ | Field | Value |
+ |-------|-------|
+ | Permission model | Azure role-based access control (recommended) |
+ | Resource access | Enable Azure Resource Manager for template deployment |
+ | Resource access | Enable Azure Virtual Machines for deployment |
+
+3. **Networking**:
+ | Field | Value |
+ |-------|-------|
+ | Public access | All networks (required for Azure Local today) |
+ | Allow trusted Microsoft services | Yes |
+
+4. **Review + create**: Verify → Click **Create**
+
+5. **Add Secrets**: For each secret in the table above:
+ - Key Vault → **Secrets** → **+ Generate/Import**
+ - Set **Name** and **Value** for each secret
+
+#### Validation
+
+- [ ] Key Vault provisioning state: **Succeeded**
+- [ ] RBAC authorization enabled
+- [ ] All required secrets present
+- [ ] Soft delete enabled
+
+#### Links
+
+- [Microsoft Learn: Create Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-10-key-vault/powershell/New-KeyVault.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| PowerShell + Azure CLI | `task-10-key-vault/azure-cli/New-KeyVault.azcli.ps1` |
+| Bash + Azure CLI | `task-10-key-vault/bash/invoke-key-vault.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-KeyVault.ps1
+# Execution: Run from management workstation — reads infrastructure.yml
+# Prerequisites: Az.KeyVault module, authenticated to Azure
+# NOTE: Secrets must be set manually or via separate secret-seeding script
+# ============================================================================
+
+#Requires -Modules Az.KeyVault, Az.Resources
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "configs/infrastructure.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+$SubscriptionId = $config.azure.subscriptions.($config.azure_infrastructure.key_vaults.management.subscription).id
+$ResourceGroup = $config.azure_infrastructure.key_vaults.management.resource_group
+$VaultName = $config.azure_infrastructure.key_vaults.management.name
+$Location = $config.network.azure_vnets.management.location
+$TenantId = $config.azure.tenant.id
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+Write-LogInfo "Creating Key Vault: $VaultName"
+$vault = New-AzKeyVault `
+ -Name $VaultName `
+ -ResourceGroupName $ResourceGroup `
+ -Location $Location `
+ -Sku Standard `
+ -EnableRbacAuthorization `
+ -EnabledForDeployment `
+ -EnabledForTemplateDeployment `
+ -SoftDeleteRetentionInDays 7 `
+ -EnablePurgeProtection
+
+Write-LogSuccess "Key Vault created: $($vault.VaultName)"
+Write-LogInfo "Vault URI: $($vault.VaultUri)"
+Write-LogWarning "Populate secrets manually or via secret-seeding script"
+$vault
+```
+
+#### Validation
+
+```powershell
+Get-AzKeyVault -VaultName $VaultName -ResourceGroupName $ResourceGroup | Format-List VaultName, EnableRbacAuthorization, EnableSoftDelete, ProvisioningState
+```
+
+**Validation Script**: `scripts/validation/02-azure-foundation/phase-04/Test-KeyVault.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers needed.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-KeyVault-Standalone.ps1
+# Execution: Run anywhere — fully self-contained
+# Prerequisites: Az.KeyVault module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.KeyVault, Az.Resources
+
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000"
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
+$VaultName = "kv-demos-platform"
+$Location = "eastus"
+#endregion CONFIGURATION
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+Write-Host "Creating Key Vault: $VaultName" -ForegroundColor Cyan
+$vault = New-AzKeyVault -Name $VaultName -ResourceGroupName $ResourceGroup `
+ -Location $Location -Sku Standard -EnableRbacAuthorization `
+ -EnabledForDeployment -EnabledForTemplateDeployment `
+ -SoftDeleteRetentionInDays 7 -EnablePurgeProtection
+
+Write-Host "Key Vault '$VaultName' created — URI: $($vault.VaultUri)" -ForegroundColor Green
+Write-Host "NOTE: Populate secrets manually" -ForegroundColor Yellow
+```
+
+:::info No External Dependencies
+Self-contained. Edit the `#region CONFIGURATION` block and run. Secrets must be populated separately.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Key Vault provisioned
+- [ ] RBAC authorization enabled
+- [ ] Soft delete and purge protection enabled
+- [ ] All required secrets populated
+
+---
+
+## CAF/WAF Landing Zone Model
+
+In the CAF/WAF model, the management Key Vault is deployed in the **Management subscription**.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Management** subscription | `azure.subscriptions.management.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.key_vaults.management.resource_group` |
+| Key Vault Name | Per config | `azure_infrastructure.key_vaults.management.name` |
+
+:::tip Cluster Key Vault
+A separate cluster Key Vault exists in the **Cluster** resource group for cluster-specific secrets. That is part of Stage 14-15 (Cluster Deployment), not this task.
+:::
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+Follow the same procedure as [Single Subscription → Azure Portal](#azure-portal), targeting the **Management** subscription.
+
+#### Validation
+
+- [ ] Key Vault in **Management** subscription
+- [ ] Cross-subscription access works via RBAC
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+:::tip Same Script — Different Config
+The orchestrated script is identical. `infrastructure.yml` references the correct Management subscription for CAF/WAF.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+Update `#region CONFIGURATION` for Management subscription:
+
+```powershell
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Management subscription
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
+$VaultName = "kv-demos-platform"
+# ...
+#endregion CONFIGURATION
+```
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Key Vault in **Management** subscription
+- [ ] RBAC assignments for operators in other subscriptions
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| Name already taken | Key Vault names globally unique | Choose different name or recover soft-deleted vault |
+| Soft-deleted vault blocks creation | Same name in deleted state | Purge: `Remove-AzKeyVault -VaultName $name -InRemovedState -Location $location` |
+| Cannot access secrets | Missing RBAC role | Assign `Key Vault Secrets User` or `Key Vault Administrator` |
+| Network access denied | Firewall blocking | Add client IP to network ACLs or use Azure Services bypass |
+| Purge protection cannot be disabled | By design — irreversible | Plan purge protection before creation |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 09: Log Analytics](./task-09-log-analytics) | [Manual Deployment Index](./index.mdx) | [Task 11: Deploy Management VMs](./task-11-deploy-management-vms) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
+- Version: 4.0.0
+- Tags: azure-local, key-vault, security, secrets
+- Keywords: Key Vault, secrets, certificates, credentials, RBAC, soft delete
+- Author: Azure Local Cloudnology Team

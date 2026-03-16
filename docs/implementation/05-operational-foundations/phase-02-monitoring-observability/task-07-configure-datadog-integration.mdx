@@ -1,0 +1,557 @@
+---
+title: "Task 07: Configure Datadog Integration"
+sidebar_label: "Task 07: Datadog"
+sidebar_position: 7
+description: "Deploy Datadog agent on Azure Local with WDAC compliance, dashboards, and alerting"
+---
+
+# Task 07: Configure Datadog Integration
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./task-07-configure-datadog-integration.mdx)
+[![Azure Local](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Datadog monitoring integration 
+> **PURPOSE**: Configure Datadog as primary monitoring and alerting platform for Azure Local 
+> **MASTER REFERENCE**: [Datadog Windows Agent](https://docs.datadoghq.com/agent/basic_agent_usage/windows/)
+
+**Status**: Draft
+
+---
+
+:::info Primary Monitoring Platform
+**Datadog is the primary source for Insights, Metrics, and Alerting** for Azure Local Cloud Azure Local deployments. While Azure Monitor provides native telemetry collection, Datadog serves as the centralized platform for dashboards, alerting, and ServiceNow integration.
+:::
+
+## Prerequisites
+
+Before configuring Datadog integration, ensure the following requirements are met:
+
+| Prerequisite | Details | Verification |
+|--------------|---------|--------------|
+| **WDAC Status** | Azure Local WDAC policy in Audit mode for initial deployment | `Get-AsWdacPolicyMode` |
+| **Datadog Account** | Azure Local Cloud Datadog organization access | Verify with deployment team |
+| **API Keys** | Datadog API key and Application key | Stored in Azure Key Vault |
+| **Network Access** | Outbound HTTPS to Datadog endpoints | `*.datadoghq.com:443` |
+| **Azure Policy Access** | Permissions to deploy Azure Policy for agent installation | Azure RBAC |
+| **Steps 1-4 Complete** | Log Analytics, AMA, HCI Insights, and Alerting configured | Previous steps in Stage 18 |
+
+### Datadog Account Information
+
+Gather the following information before proceeding:
+
+```text
+Datadog Account Checklist:
+├── Account Type: ☐ New account ☐ Existing account
+├── Datadog Region: ☐ US1 ☐ US3 ☐ US5 ☐ EU1 ☐ AP1
+├── Organization ID: ________________________________
+├── API Key: ________________________________ (store in Key Vault)
+└── Application Key: ________________________________ (store in Key Vault)
+```
+
+---
+
+## 7.1 Create Datadog WDAC Supplemental Policy
+
+Windows Defender Application Control (WDAC) is enabled by default on Azure Local to control which drivers and applications are allowed to run on cluster nodes. Before installing the Datadog agent, you must create and apply a supplemental WDAC policy to authorize the Datadog directories.
+
+### 7.1.1 Datadog Agent Installation Paths
+
+The following paths must be allowed in the WDAC supplemental policy:
+
+| Path | Purpose |
+|------|---------|
+| `C:\Program Files\Datadog\Datadog Agent\` | Installation directory |
+| `C:\ProgramData\Datadog\` | Configuration directory |
+| `C:\ProgramData\Datadog\logs\` | Log directory |
+| `C:\ProgramData\Datadog\trace\` | Trace directory |
+
+### 7.1.2 Check Current WDAC Policy Status
+
+Connect to an Azure Local node and verify the current WDAC policy mode:
+
+```powershell
+# Connect to cluster node
+$cred = Get-Credential
+Enter-PSSession -ComputerName "{{NODE_IP}}" -Credential $cred
+
+# View current WDAC policy status
+Get-AsWdacPolicyMode
+
+# View detailed policy information
+Get-ASLocalWDACPolicyInfo
+```
+
+### 7.1.3 Create WDAC Supplemental Policy (PowerShell Method)
+
+:::tip Recommended Method
+The PowerShell-based approach provides automated scanning and rule generation for comprehensive coverage.
+:::
+
+**Task 1: Prepare WDAC Environment**
+
+```powershell
+# Switch to audit mode for policy development (if needed)
+$CurrentMode = Get-AsWdacPolicyMode
+if ($CurrentMode.Mode -ne "Audit") {
+ Write-Host "Switching WDAC to Audit Mode for policy development..." -ForegroundColor Yellow
+ Enable-AsWdacPolicy -Mode Audit
+
+ # Verify mode change (takes 2-3 minutes)
+ do {
+ Start-Sleep -Seconds 30
+ $CurrentMode = Get-AsWdacPolicyMode
+ Write-Host "Current WDAC Mode: $($CurrentMode.Mode)" -ForegroundColor Gray
+ } while ($CurrentMode.Mode -eq "Unknown")
+
+ Write-Host "WDAC Mode successfully changed to: $($CurrentMode.Mode)" -ForegroundColor Green
+}
+
+# Create WDAC policy directory structure
+$WDACPath = "C:\WDAC"
+$ScanPath = "C:\DatadogFiles"
+
+Write-Host "Creating WDAC directory structure..." -ForegroundColor Cyan
+New-Item -Path $WDACPath -ItemType Directory -Force
+New-Item -Path "$ScanPath\Agent" -ItemType Directory -Force
+New-Item -Path "$ScanPath\Config" -ItemType Directory -Force
+
+Write-Host "Directory structure created successfully" -ForegroundColor Green
+```
+
+**Task 2: Prepare Datadog Files for Scanning**
+
+```powershell
+# Define Datadog installation source and scan directories
+$DatadogInstaller = "C:\Temp\datadog-agent-7-latest.amd64.msi" # Replace with actual installer path
+$DatadogProgramFiles = "C:\Program Files\Datadog"
+$DatadogProgramData = "C:\ProgramData\Datadog"
+
+Write-Host "Preparing Datadog files for WDAC policy creation..." -ForegroundColor Cyan
+
+# Option 1: If Datadog is already installed, copy binaries to scan directory
+if (Test-Path $DatadogProgramFiles) {
+ Write-Host "Copying installed Datadog files to scan directory..." -ForegroundColor Yellow
+ robocopy "$DatadogProgramFiles" "$ScanPath\Agent" /E /XD logs /XF *.log *.tmp /NFL /NDL
+
+ # Copy configuration files if they exist
+ if (Test-Path $DatadogProgramData) {
+ robocopy "$DatadogProgramData" "$ScanPath\Config" *.yaml *.conf *.cfg /S /NFL /NDL
+ }
+} else {
+ Write-Host "Datadog not installed. Please install Datadog first or extract files manually." -ForegroundColor Red
+ Write-Host "Alternative: Extract MSI contents to $ScanPath for scanning" -ForegroundColor Yellow
+}
+
+# Verify scan directory contents
+$ScanFiles = Get-ChildItem -Path $ScanPath -Recurse -File | Measure-Object
+Write-Host "Prepared $($ScanFiles.Count) files for WDAC policy scanning" -ForegroundColor Green
+```
+
+**Task 3: Generate WDAC Supplemental Policy**
+
+```powershell
+# Define policy parameters
+$PolicyName = "Azure Local Cloud-Datadog-Policy"
+$PolicyPath = "$WDACPath\$PolicyName.xml"
+$PolicyVersion = "1.0.0.1"
+
+Write-Host "Generating WDAC supplemental policy..." -ForegroundColor Cyan
+
+# Create supplemental policy for Datadog agent
+# Using Publisher level with Hash fallback for comprehensive coverage
+New-CIPolicy -MultiplePolicyFormat `
+ -Level Publisher `
+ -FilePath $PolicyPath `
+ -UserPEs `
+ -Fallback Hash `
+ -ScanPath $ScanPath `
+ -PathToCatroot "C:\Windows\System32\CatRoot" `
+ -NoOmitPaths
+
+# Verify policy creation
+if (Test-Path $PolicyPath) {
+ Write-Host "Base policy XML created successfully: $PolicyPath" -ForegroundColor Green
+} else {
+ Write-Error "Failed to create policy XML file"
+ exit 1
+}
+```
+
+**Task 4: Configure Policy Metadata**
+
+```powershell
+Write-Host "Configuring policy metadata..." -ForegroundColor Cyan
+
+# Set policy version
+Set-CIPolicyVersion -FilePath $PolicyPath -Version $PolicyVersion
+
+# Generate new policy ID and set identification
+$PolicyID = Set-CIPolicyIdInfo -FilePath $PolicyPath -PolicyName $PolicyName -ResetPolicyID
+$PolicyGUID = $PolicyID.Substring(11) # Remove "PolicyID: " prefix
+
+Write-Host "Policy ID: $PolicyGUID" -ForegroundColor Gray
+Write-Host "Policy Version: $PolicyVersion" -ForegroundColor Gray
+```
+
+**Task 5: Add File Path Rules**
+
+```powershell
+Write-Host "Adding file path rules for Datadog directories..." -ForegroundColor Cyan
+
+# Define Datadog directory paths for allow rules
+$DatadogPaths = @(
+ "C:\Program Files\Datadog\*",
+ "C:\ProgramData\Datadog\*",
+ "C:\Windows\Temp\dd_*" # Temporary Datadog files
+)
+
+# Read current policy XML
+[xml]$PolicyXML = Get-Content $PolicyPath
+
+# Create FileRules node if it doesn't exist
+if (-not $PolicyXML.SiPolicy.FileRules) {
+ $FileRulesNode = $PolicyXML.CreateElement("FileRules")
+ $PolicyXML.SiPolicy.AppendChild($FileRulesNode) | Out-Null
+}
+
+# Add FilePath rules for each Datadog directory
+$RuleCounter = ($PolicyXML.SiPolicy.FileRules.Allow | Measure-Object).Count + 1
+
+foreach ($Path in $DatadogPaths) {
+ $AllowRule = $PolicyXML.CreateElement("Allow")
+ $AllowRule.SetAttribute("ID", "ID_ALLOW_F_$RuleCounter")
+ $AllowRule.SetAttribute("FriendlyName", "Allow Datadog files in $Path")
+ $AllowRule.SetAttribute("FilePath", $Path)
+
+ $PolicyXML.SiPolicy.FileRules.AppendChild($AllowRule) | Out-Null
+ $RuleCounter++
+}
+
+# Save updated policy XML
+$PolicyXML.Save($PolicyPath)
+Write-Host "File path rules added successfully" -ForegroundColor Green
+```
+
+**Task 6: Deploy Supplemental Policy**
+
+```powershell
+Write-Host "Deploying supplemental policy..." -ForegroundColor Cyan
+
+# Deploy the supplemental policy to cluster
+try {
+ Add-ASWDACSupplementalPolicy -Path $PolicyPath
+ Write-Host "Policy successfully deployed" -ForegroundColor Green
+} catch {
+ Write-Error "Failed to deploy policy: $($_.Exception.Message)"
+}
+
+# Verify policy deployment
+Get-ASLocalWDACPolicyInfo | Where-Object {$_.PolicyName -like "*Datadog*"}
+```
+
+### 7.1.4 Deploy WDAC Policy to All Nodes
+
+After creating the policy on one node, deploy it to all cluster nodes:
+
+```powershell
+# Get all cluster nodes
+$ClusterNodes = Get-ClusterNode | Select-Object -ExpandProperty Name
+
+# Deploy policy to each node
+foreach ($Node in $ClusterNodes) {
+ Write-Host "Deploying WDAC policy to $Node..." -ForegroundColor Cyan
+ 
+ Invoke-Command -ComputerName $Node -ScriptBlock {
+ param($PolicyPath)
+ Add-ASWDACSupplementalPolicy -Path $PolicyPath
+ } -ArgumentList $PolicyPath
+ 
+ Write-Host "Policy deployed to $Node" -ForegroundColor Green
+}
+```
+
+### 7.1.5 Validate WDAC Policy
+
+```powershell
+Write-Host "=== WDAC POLICY VALIDATION REPORT ===" -ForegroundColor Green
+
+# Check policy deployment status on all nodes
+$ClusterNodes = Get-ClusterNode | Select-Object -ExpandProperty Name
+
+foreach ($Node in $ClusterNodes) {
+ Write-Host "`nNode: $Node" -ForegroundColor Cyan
+ 
+ $Policies = Invoke-Command -ComputerName $Node -ScriptBlock {
+ Get-ASLocalWDACPolicyInfo | Where-Object PolicyName -like "*Datadog*"
+ }
+ 
+ if ($Policies) {
+ Write-Host " Policy Name: $($Policies.PolicyName)" -ForegroundColor Gray
+ Write-Host " Policy ID: $($Policies.PolicyID)" -ForegroundColor Gray
+ Write-Host " Status: Deployed ✓" -ForegroundColor Green
+ } else {
+ Write-Host " Status: NOT FOUND ✗" -ForegroundColor Red
+ }
+}
+
+Write-Host "`n=== END VALIDATION REPORT ===" -ForegroundColor Green
+```
+
+---
+
+## 7.2 Deploy Datadog Agent
+
+Deploy Datadog agents across all Azure Local cluster nodes using Azure Policy for consistent, automated deployment.
+
+### 7.2.1 Agent Deployment via Azure Policy (Recommended)
+
+:::tip Automation Reference
+Terraform code for deployment of the Datadog agent via Azure Policy is available in the Azure Local Cloud repository: `tf-module-azr-datadog-integration`
+:::
+
+**Azure Policy Configuration**:
+
+The Datadog agent is deployed automatically via Azure Policy assignment to the Azure Local resource group. The policy:
+
+1. Deploys Datadog agent MSI to all Arc-enabled servers in scope
+2. Configures agent with API key from Key Vault
+3. Enables required integrations (Windows, Hyper-V, Storage)
+4. Sets Datadog site/region for data residency
+
+**Manual Agent Installation** (if Azure Policy is not available):
+
+```powershell
+# Define Datadog configuration
+$DatadogApiKey = "{{DATADOG_API_KEY}}" # Retrieve from Key Vault
+$DatadogSite = "datadoghq.com" # US1 region
+
+# Download and install Datadog agent
+$InstallerUrl = "https://s3.amazonaws.com/ddagent-windows-stable/datadog-agent-7-latest.amd64.msi"
+$InstallerPath = "C:\Temp\datadog-agent-7-latest.amd64.msi"
+
+Invoke-WebRequest -Uri $InstallerUrl -OutFile $InstallerPath
+
+# Install with configuration
+$InstallArgs = "/i `"$InstallerPath`" /qn APIKEY=`"$DatadogApiKey`" SITE=`"$DatadogSite`""
+Start-Process msiexec.exe -ArgumentList $InstallArgs -Wait -NoNewWindow
+
+# Verify installation
+Get-Service datadogagent
+```
+
+### 7.2.2 Configure Agent Integrations
+
+After agent installation, enable required integrations for Azure Local monitoring:
+
+**Windows Server Integration** (`conf.d/win32_event_log.d/conf.yaml`):
+
+```yaml
+init_config:
+
+instances:
+ - path: System
+ start: now
+ filters:
+ - type: error
+ - type: warning
+ 
+ - path: Application
+ start: now
+ filters:
+ - type: error
+ - type: warning
+ 
+ - path: Microsoft-Windows-FailoverClustering/Operational
+ start: now
+```
+
+**Hyper-V Integration** (`conf.d/hyperv.d/conf.yaml`):
+
+```yaml
+init_config:
+
+instances:
+ - {}
+```
+
+### 7.2.3 Validate Agent Deployment
+
+```powershell
+# Check agent service status on all nodes
+$ClusterNodes = Get-ClusterNode | Select-Object -ExpandProperty Name
+
+foreach ($Node in $ClusterNodes) {
+ Write-Host "Checking Datadog agent on $Node..." -ForegroundColor Cyan
+ 
+ $AgentStatus = Invoke-Command -ComputerName $Node -ScriptBlock {
+ $Service = Get-Service datadogagent -ErrorAction SilentlyContinue
+ if ($Service) {
+ @{
+ Status = $Service.Status
+ StartType = $Service.StartType
+ }
+ } else {
+ @{
+ Status = "Not Installed"
+ StartType = "N/A"
+ }
+ }
+ }
+ 
+ if ($AgentStatus.Status -eq "Running") {
+ Write-Host " Status: $($AgentStatus.Status) ✓" -ForegroundColor Green
+ } else {
+ Write-Host " Status: $($AgentStatus.Status) ✗" -ForegroundColor Red
+ }
+}
+```
+
+---
+
+## 7.3 Configure Dashboards
+
+Create comprehensive monitoring dashboards in Datadog for Azure Local infrastructure visibility.
+
+### 7.3.1 Infrastructure Dashboards
+
+Configure the following standard dashboards:
+
+| Dashboard | Purpose | Key Metrics |
+|-----------|---------|-------------|
+| **Cluster Health Overview** | Overall cluster status | Node count, storage health, network status |
+| **Node Performance** | Per-node resource utilization | CPU, memory, disk I/O, network throughput |
+| **Storage Capacity** | Storage pool and volume status | Capacity, IOPS, latency, throughput |
+| **Network Performance** | RDMA and network metrics | RDMA bytes/sec, network errors, latency |
+
+### 7.3.2 Application Dashboards
+
+| Dashboard | Purpose | Key Metrics |
+|-----------|---------|-------------|
+| **Virtual Machine Performance** | VM resource utilization | vCPU, memory, disk, network per VM |
+| **Application-Specific Metrics** | Custom application monitoring | Application-defined KPIs |
+| **Business KPI Monitoring** | Business-level metrics | Availability, response time, throughput |
+
+---
+
+## 7.4 Configure Alerting
+
+Set up Datadog alerts for proactive monitoring with ServiceNow integration for incident management.
+
+### 7.4.1 Alert Thresholds
+
+Configure alerts for critical infrastructure metrics:
+
+| Alert | Condition | Severity | Action |
+|-------|-----------|----------|--------|
+| **Node Offline** | Node not reporting for 5 minutes | Critical | ServiceNow P1 |
+| **Storage Capacity** | Volume > 85% capacity | Warning | ServiceNow P3 |
+| **Storage Capacity** | Volume > 95% capacity | Critical | ServiceNow P1 |
+| **CPU Utilization** | Sustained > 90% for 15 minutes | Warning | ServiceNow P3 |
+| **Memory Pressure** | Available memory < 10% | Warning | ServiceNow P3 |
+| **Disk Latency** | Average > 20ms for 10 minutes | Warning | ServiceNow P3 |
+
+### 7.4.2 ServiceNow Integration
+
+Configure Datadog-to-ServiceNow integration for automated incident creation:
+
+1. **Integration Setup**: Configure ServiceNow integration in Datadog organization settings
+2. **Alert Routing**: Map alert severities to ServiceNow priority levels
+3. **Ticket Assignment**: Configure assignment groups based on alert type
+4. **Escalation Policies**: Define escalation paths for unacknowledged alerts
+
+---
+
+## 7.5 Return to Enforced Mode
+
+After validating Datadog agent functionality, return WDAC to enforced mode:
+
+:::warning Pre-Enforcement Checklist
+Before enabling enforced mode, verify:
+- [ ] Datadog agent running on all nodes
+- [ ] Metrics flowing to Datadog console
+- [ ] No WDAC block events for Datadog in event logs
+- [ ] All dashboards and alerts configured
+:::
+
+```powershell
+# Return to enforced mode after successful testing
+Enable-AsWdacPolicy -Mode Enforced
+
+# Verify mode change
+Get-AsWdacPolicyMode
+```
+
+:::important Azure Site Recovery Compatibility
+**Azure Site Recovery Requirement**: To run Azure Site Recovery on Azure Local, WDAC policies must be set to **Audit mode only** or **disabled**. Azure Site Recovery components are not compatible with WDAC enforcement mode.
+
+If Azure Site Recovery is required:
+- Keep WDAC in audit mode: `Enable-AsWdacPolicy -Mode Audit`
+- Coordinate with deployment teams for security impact assessment
+:::
+
+---
+
+## Validation Checklist
+
+| Validation Item | Command/Check | Expected Result |
+|-----------------|---------------|-----------------|
+| WDAC Policy Deployed | `Get-ASLocalWDACPolicyInfo` | Datadog policy listed on all nodes |
+| Agent Service Running | `Get-Service datadogagent` | Status: Running |
+| Metrics Flowing | Datadog console | Host metrics visible |
+| Dashboards Created | Datadog console | All dashboards populated |
+| Alerts Configured | Datadog console | Alert monitors active |
+| ServiceNow Integration | Test alert | Ticket created in ServiceNow |
+
+---
+
+## Troubleshooting
+
+### Monitor WDAC Events
+
+```powershell
+# Check WDAC event logs for policy violations
+Get-WinEvent -FilterHashtable @{
+ LogName='Microsoft-Windows-CodeIntegrity/Operational'
+ StartTime=(Get-Date).AddHours(-1)
+}
+
+# Filter for Datadog-related blocks
+Get-WinEvent -FilterHashtable @{
+ LogName='Microsoft-Windows-CodeIntegrity/Operational'
+} | Where-Object {$_.Message -like "*datadog*"}
+```
+
+### Agent Not Starting
+
+1. Verify WDAC policy is deployed
+2. Check Windows Event logs for errors
+3. Verify API key configuration in `C:\ProgramData\Datadog\datadog.yaml`
+4. Test network connectivity to Datadog endpoints
+
+### Metrics Not Appearing
+
+1. Verify agent status: `& "C:\Program Files\Datadog\Datadog Agent\bin\agent.exe" status`
+2. Check agent logs: `C:\ProgramData\Datadog\logs\agent.log`
+3. Verify API key is correct
+4. Test connectivity: `Test-NetConnection -ComputerName datadoghq.com -Port 443`
+
+---
+
+## References
+
+- [Microsoft WDAC Documentation](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-wdac)
+- [Datadog Windows Agent Documentation](https://docs.datadoghq.com/agent/basic_agent_usage/windows/)
+- [Datadog Hyper-V Integration](https://docs.datadoghq.com/integrations/hyperv/)
+- Azure Local Cloud Terraform Module: `tf-module-azr-datadog-integration`
+
+---
+
+## Next Steps
+
+- [Task 6 - Configure Network Device Logging](./task-06-configure-network-device-logging.mdx)
+- [Phase 20 - Security & Governance](../phase-04-security-governance/index.mdx)
+
+---
+
+**[← Back to Phase 18: Monitoring & Observability](./index.mdx)**

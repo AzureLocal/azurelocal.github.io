@@ -1,0 +1,549 @@
+---
+title: "Task 02: Hardware Discovery via Dell Redfish API"
+sidebar_label: "Task 02: Hardware Discovery"
+sidebar_position: 2
+description: "Discover all cluster node hardware using Dell iDRAC Redfish API, collecting hardware inventory, BIOS configuration, and iDRAC settings for use in subsequent tasks."
+category: Runbook
+scope: Azure Local hardware provisioning
+purpose: Collect complete hardware inventory, BIOS configuration, and iDRAC configuration from all cluster nodes via Redfish API before OS installation
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-01
+updated: 2026-03-04
+version: 1.2
+tags: ["azure-local", "hardware-discovery", "dell", "redfish", "idrac", "inventory"]
+keywords: ["hardware discovery", "Dell Redfish API", "iDRAC", "hardware inventory", "BIOS", "service tag", "MAC address"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Hardware Discovery via Dell Redfish API
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Azure Local hardware provisioning 
+> **PURPOSE**: Collect complete hardware inventory, BIOS configuration, and iDRAC configuration from all cluster nodes via Redfish API 
+> **MASTER REFERENCE**: [Dell Redfish API Guide](https://www.dell.com/support/kbdoc/en-us/000177920/dell-poweredge-redfish-api-user-s-guide)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Discover all cluster node hardware by connecting to each node's iDRAC via the Redfish API from the management server. This task collects everything needed for Tasks 03–05 in a single execution: hardware inventory, complete BIOS configuration, and complete iDRAC configuration.
+
+**Data collected per node:**
+- Service tag, model, BIOS version, firmware versions
+- iDRAC MAC address
+- System NIC MAC addresses
+- All BIOS attributes (~256 settings) — used in Tasks 04 and 05
+- All iDRAC attributes (~1024 settings) — used in Tasks 04 and 05
+- CPU, memory, storage inventory
+
+:::note No Node Access Required
+All scripts in this task run **from the management server** and connect to iDRAC over the network via HTTPS (port 443). No access to the nodes themselves is required.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Details | Source |
+|-------------|---------|--------|
+| iDRAC IPs | All nodes reachable on port 443 | `nodes.<name>.idrac_ip` in `infrastructure.yml` |
+| iDRAC Credentials | Admin username and password | Key Vault or `infrastructure.yml` |
+| Network Access | Management server can reach iDRAC OOB network | Phase 03 Network Infrastructure |
+| PowerShell 7+ | `Invoke-RestMethod` and `powershell-yaml` module | Management server |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Dell iDRAC UI" default>
+
+> **When to use**: Single nodes, ad-hoc verification, or when scripted access is unavailable
+
+### Procedure
+
+1. Navigate to `https://<idrac-ip>` and log in with iDRAC credentials
+2. **System Information**: Dashboard → record Service Tag, Model, BIOS Version
+3. **iDRAC MAC**: iDRAC Settings → Network → record MAC Address
+4. **System NICs**: System → Network Devices → record MAC addresses for all ports
+5. **Export config**: Configuration → Export Server Configuration Profile → JSON format
+6. Repeat for each node
+
+### Validation
+
+- [ ] Service tag recorded for all nodes
+- [ ] iDRAC MAC addresses recorded for all nodes
+- [ ] System NIC MAC addresses recorded for all nodes
+- [ ] Configuration profiles exported and stored
+
+### Update infrastructure.yml
+
+After collecting data from all nodes, manually update the following fields in `infrastructure.yml`:
+
+| Field | Source | Where to find it |
+|-------|--------|-----------------|
+| `cluster.nodes[<name>].service_tag` | Service Tag | Dashboard → System Information |
+| `cluster.nodes[<name>].idrac_mac` | iDRAC MAC | iDRAC Settings → Network → MAC Address |
+| `cluster.nodes[<name>].management_mac` | Management NIC MAC | System → Network Devices → MAC for management port |
+| `cluster.management_nic_name` | NIC adapter name | System → Network Devices → adapter name (e.g., `Slot 3 Port 1` or `Embedded NIC 1`) |
+
+:::warning Save and commit infrastructure.yml after updating
+All subsequent tasks depend on these values. Do not proceed to Task 03 until `infrastructure.yml` is updated and committed.
+:::
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+> **When to use**: Standard deployment — runs from the management server, reads node list from `infrastructure.yml`
+
+### Script
+
+`scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1`
+
+### Code
+
+```powershell
+#Requires -Version 7.0
+<#
+.SYNOPSIS
+ Invoke-HardwareDiscovery.ps1
+ Orchestrated hardware discovery via Dell iDRAC Redfish API.
+
+.DESCRIPTION
+ Runs from the management server. Reads node list and iDRAC IPs from
+ infrastructure.yml, connects to each iDRAC via Redfish API, and collects:
+ - System info (service tag, model, BIOS version)
+ - NIC inventory (iDRAC MAC, system NIC MACs)
+ - BIOS attributes
+ - iDRAC attributes
+
+ Output JSON files are saved to configs/network-devices/bmc/.
+
+ At completion, optionally calls Update-InfrastructureYml-FromDiscovery.ps1
+ to write discovered values back into infrastructure.yml.
+
+.PARAMETER ConfigPath
+ Path to infrastructure.yml. If not specified, auto-detected from .\configs\.
+
+.PARAMETER OutputPath
+ Path to save discovery JSON files. Default: .\configs\network-devices\bmc
+
+.PARAMETER iDRACUsername
+ iDRAC admin username. Default: root
+
+.PARAMETER SkipYmlUpdate
+ Skip the automatic infrastructure.yml update step after discovery.
+
+.PARAMETER Force
+ Skip the confirmation prompt in the yml update step.
+
+.EXAMPLE
+ .\Invoke-HardwareDiscovery.ps1
+
+.EXAMPLE
+ .\Invoke-HardwareDiscovery.ps1 -ConfigPath ".\configs\infrastructure-poc.yml"
+
+.EXAMPLE
+ .\Invoke-HardwareDiscovery.ps1 -SkipYmlUpdate
+
+.NOTES
+ Author: Azure Local Cloud Azure Local Cloud
+ Version: 1.0.0
+ Phase: 01-hardware-provisioning
+ Task: task-02-hardware-discovery-via-dell-redfish-api
+ Prerequisites: PowerShell 7+, powershell-yaml module, iDRAC network access (port 443)
+#>
+
+[CmdletBinding()]
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath,
+
+ [Parameter(Mandatory = $false)]
+ [string]$OutputPath = ".\configs\network-devices\bmc",
+
+ [Parameter(Mandatory = $false)]
+ [string]$iDRACUsername = "root",
+
+ [Parameter(Mandatory = $false)]
+ [switch]$SkipYmlUpdate,
+
+ [Parameter(Mandatory = $false)]
+ [switch]$Force
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ============================================================================
+# FUNCTIONS
+# ============================================================================
+
+function Write-Log {
+ param([string]$Message, [string]$Level = "INFO")
+ $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+ $color = switch ($Level) {
+ "ERROR" { "Red" }
+ "WARN" { "Yellow" }
+ "SUCCESS" { "Green" }
+ "HEADER" { "Cyan" }
+ default { "White" }
+ }
+ Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
+}
+
+function Resolve-ConfigPath {
+ param([string]$ExplicitPath)
+
+ if ($ExplicitPath) {
+ if (-not (Test-Path $ExplicitPath)) {
+ throw "Specified config file not found: $ExplicitPath"
+ }
+ Write-Log "Using specified config: $ExplicitPath"
+ return $ExplicitPath
+ }
+
+ # Auto-detect
+ $candidates = Get-ChildItem -Path ".\configs\" -Filter "infrastructure*.yml" -ErrorAction SilentlyContinue
+ if (-not $candidates -or $candidates.Count -eq 0) {
+ throw "No infrastructure*.yml files found in .\configs\. Specify -ConfigPath explicitly."
+ }
+
+ if ($candidates.Count -eq 1) {
+ Write-Log "Auto-detected config: $($candidates[0].FullName)"
+ return $candidates[0].FullName
+ }
+
+ # Multiple found — prompt
+ Write-Host "`nMultiple infrastructure config files found:" -ForegroundColor Yellow
+ for ($i = 0; $i -lt $candidates.Count; $i++) {
+ $default = if ($candidates[$i].Name -eq "infrastructure.yml") { " [DEFAULT]" } else { "" }
+ Write-Host " [$($i + 1)] $($candidates[$i].Name)$default" -ForegroundColor White
+ }
+
+ $defaultIndex = ($candidates | ForEach-Object { $_.Name }).IndexOf("infrastructure.yml")
+ if ($defaultIndex -lt 0) { $defaultIndex = 0 }
+
+ $selection = Read-Host "`nSelect config file (Enter for default [$($candidates[$defaultIndex].Name)])"
+ if ([string]::IsNullOrWhiteSpace($selection)) {
+ Write-Log "Using default config: $($candidates[$defaultIndex].FullName)"
+ return $candidates[$defaultIndex].FullName
+ }
+
+ $idx = [int]$selection - 1
+ if ($idx -lt 0 -or $idx -ge $candidates.Count) {
+ throw "Invalid selection: $selection"
+ }
+
+ Write-Log "Using selected config: $($candidates[$idx].FullName)"
+ return $candidates[$idx].FullName
+}
+
+function Invoke-RedfishGet {
+ param([string]$Uri, [PSCredential]$Credential)
+ return Invoke-RestMethod -Uri $Uri -Credential $Credential -SkipCertificateCheck `
+ -ContentType "application/json" -ErrorAction Stop
+}
+
+function Get-NodeInventory {
+ param([string]$NodeName, [string]$iDRACIP, [PSCredential]$Credential)
+
+ Write-Log "=== Discovering: $NodeName ($iDRACIP) ===" "HEADER"
+ $base = "https://$iDRACIP/redfish/v1"
+
+ try {
+ Write-Log " Collecting system info..."
+ $system = Invoke-RedfishGet "$base/Systems/System.Embedded.1" $Credential
+
+ Write-Log " Collecting iDRAC network interfaces..."
+ $idracNics = Invoke-RedfishGet "$base/Managers/iDRAC.Embedded.1/EthernetInterfaces" $Credential
+
+ Write-Log " Collecting system network adapters..."
+ $sysNics = Invoke-RedfishGet "$base/Systems/System.Embedded.1/NetworkInterfaces" $Credential
+
+ Write-Log " Collecting BIOS attributes..."
+ $bios = Invoke-RedfishGet "$base/Systems/System.Embedded.1/Bios" $Credential
+
+ Write-Log " Collecting iDRAC attributes..."
+ $idracAttribs = Invoke-RedfishGet "$base/Managers/iDRAC.Embedded.1/Attributes" $Credential
+
+ Write-Log " Collecting storage inventory..."
+ $storage = Invoke-RedfishGet "$base/Systems/System.Embedded.1/Storage" $Credential
+
+ $inventory = @{
+ NodeName = $NodeName
+ iDRACIP = $iDRACIP
+ CollectedAt = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+ System = $system
+ iDRACInterfaces = $idracNics
+ SystemNICs = $sysNics
+ BIOSAttributes = $bios
+ iDRACAttributes = $idracAttribs
+ Storage = $storage
+ }
+
+ Write-Log " Service Tag: $($system.SKU)" "SUCCESS"
+ return $inventory
+
+ } catch {
+ Write-Log " Discovery failed for $NodeName ($iDRACIP): $_" "ERROR"
+ return $null
+ }
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+try {
+ Write-Log "=== Hardware Discovery via Dell Redfish API ===" "HEADER"
+
+ # Resolve config file
+ $resolvedConfig = Resolve-ConfigPath -ExplicitPath $ConfigPath
+
+ # Load config
+ Import-Module powershell-yaml -ErrorAction Stop
+ $config = Get-Content $resolvedConfig -Raw | ConvertFrom-Yaml
+
+ # Build node list
+ $nodes = @()
+ foreach ($entry in $config.nodes.GetEnumerator()) {
+ $nodes += [PSCustomObject]@{
+ Name = $entry.Key
+ iDRACIP = $entry.Value.idrac_ip
+ }
+ }
+
+ if ($nodes.Count -eq 0) {
+ throw "No nodes found in config. Check 'nodes' section of $resolvedConfig"
+ }
+
+ Write-Log "Nodes to discover: $($nodes.Count)"
+ $nodes | ForEach-Object { Write-Log " $($_.Name) — $($_.iDRACIP)" }
+
+ # Credentials
+ $iDRACPassword = Read-Host "`nEnter iDRAC password for user '$iDRACUsername'" -AsSecureString
+ $cred = New-Object System.Management.Automation.PSCredential($iDRACUsername, $iDRACPassword)
+
+ # Output directory
+ New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+ Write-Log "Output directory: $OutputPath"
+
+ # Discover each node
+ $results = @()
+ foreach ($node in $nodes) {
+ $inventory = Get-NodeInventory -NodeName $node.Name -iDRACIP $node.iDRACIP -Credential $cred
+ if ($inventory) {
+ $serviceTag = $inventory.System.SKU
+ $outFile = Join-Path $OutputPath "$serviceTag.json"
+ $inventory | ConvertTo-Json -Depth 15 | Set-Content $outFile -Encoding UTF8
+ Write-Log " Saved: $outFile" "SUCCESS"
+ $results += [PSCustomObject]@{ NodeName = $node.Name; ServiceTag = $serviceTag; File = $outFile; Success = $true }
+ } else {
+ $results += [PSCustomObject]@{ NodeName = $node.Name; ServiceTag = $null; File = $null; Success = $false }
+ }
+ }
+
+ # Summary
+ Write-Log "=== DISCOVERY SUMMARY ===" "HEADER"
+ $succeeded = @($results | Where-Object { $_.Success })
+ $failed = @($results | Where-Object { -not $_.Success })
+ foreach ($r in $succeeded) { Write-Log " OK $($r.NodeName) — $($r.ServiceTag)" "SUCCESS" }
+ foreach ($r in $failed) { Write-Log " FAIL $($r.NodeName)" "ERROR" }
+ Write-Log "Discovered: $($succeeded.Count) / $($results.Count) nodes"
+
+ if ($failed.Count -gt 0) {
+ Write-Log "Some nodes failed discovery. Review errors above before proceeding." "WARN"
+ }
+
+ # Update infrastructure.yml unless skipped
+ if (-not $SkipYmlUpdate) {
+ Write-Log ""
+ Write-Log "=== Updating infrastructure.yml from discovery data ===" "HEADER"
+ $updaterScript = Join-Path $PSScriptRoot "Update-InfrastructureYml-FromDiscovery.ps1"
+
+ if (-not (Test-Path $updaterScript)) {
+ Write-Log "Update script not found at: $updaterScript" "WARN"
+ Write-Log "Run Update-InfrastructureYml-FromDiscovery.ps1 manually when ready." "WARN"
+ } else {
+ $updaterArgs = @{
+ ConfigPath = $resolvedConfig
+ DiscoveryPath = $OutputPath
+ }
+ if ($Force) { $updaterArgs.Force = $true }
+
+ & $updaterScript @updaterArgs
+ }
+ } else {
+ Write-Log "Skipping infrastructure.yml update (-SkipYmlUpdate specified)." "WARN"
+ Write-Log "Run Update-InfrastructureYml-FromDiscovery.ps1 manually when ready."
+ }
+
+} catch {
+ Write-Log "CRITICAL ERROR: $_" "ERROR"
+ exit 1
+}
+```
+
+### Validation
+
+```powershell
+# Verify inventory files exist for all nodes
+$config = Get-Content ".\infrastructure.yml" -Raw | ConvertFrom-Yaml
+$expectedNodes = $config.nodes.Count
+$actualFiles = (Get-ChildItem ".\configs\network-devices\bmc\*.json").Count
+Write-Host "Expected: $expectedNodes nodes | Found: $actualFiles inventory files"
+```
+
+### infrastructure.yml Update
+
+:::tip Automatic — no action required
+The orchestrated script automatically calls `Update-InfrastructureYml-FromDiscovery.ps1` at completion. It will:
+1. Detect your `infrastructure.yml` (or prompt if multiple `infrastructure*.yml` files are found)
+2. Show a diff of every field it will write
+3. Prompt for confirmation before making any changes
+4. Create a timestamped backup before writing
+
+To skip the automatic update and run it manually later, pass `-SkipYmlUpdate` to the discovery script.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: No management server access; copy-paste ready with all values defined inline
+
+```powershell
+#Requires -Version 7.0
+# ============================================================================
+# Script: Get-HardwareDiscovery-Standalone.ps1
+# Execution: Run from any workstation with iDRAC network access
+# Prerequisites: PowerShell 7+, iDRAC credentials, HTTPS access to iDRAC IPs
+# ============================================================================
+
+#region CONFIGURATION
+$iDRACIPs = @(
+ "192.168.x.x", # Node 01 — replace with actual iDRAC IPs
+ "192.168.x.x" # Node 02
+)
+$iDRACUsername = "root"
+$outputPath = ".\configs\network-devices\bmc"
+#endregion
+
+$iDRACPassword = Read-Host "Enter iDRAC password" -AsSecureString
+$cred = New-Object System.Management.Automation.PSCredential($iDRACUsername, $iDRACPassword)
+
+New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
+
+foreach ($ip in $iDRACIPs) {
+ Write-Host "=== Discovering: $ip ===" -ForegroundColor Cyan
+ $baseUri = "https://$ip/redfish/v1"
+
+ $system = Invoke-RestMethod "$baseUri/Systems/System.Embedded.1" `
+ -Credential $cred -SkipCertificateCheck
+
+ $nics = Invoke-RestMethod "$baseUri/Managers/iDRAC.Embedded.1/EthernetInterfaces" `
+ -Credential $cred -SkipCertificateCheck
+
+ $bios = Invoke-RestMethod "$baseUri/Systems/System.Embedded.1/Bios" `
+ -Credential $cred -SkipCertificateCheck
+
+ $idracAttribs = Invoke-RestMethod "$baseUri/Managers/iDRAC.Embedded.1/Attributes" `
+ -Credential $cred -SkipCertificateCheck
+
+ $inventory = @{
+ iDRACIP = $ip
+ System = $system
+ NICs = $nics
+ BIOS = $bios
+ iDRACAttribs = $idracAttribs
+ CollectedAt = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+ }
+
+ $serviceTag = $system.SKU
+ $outFile = "$outputPath\$serviceTag.json"
+ $inventory | ConvertTo-Json -Depth 10 | Set-Content $outFile
+ Write-Host " Service Tag: $serviceTag | Saved: $outFile" -ForegroundColor Green
+}
+
+Write-Host "`nDiscovery complete. Files in: $outputPath" -ForegroundColor Green
+```
+
+### infrastructure.yml Update
+
+After the script completes, two options to update `infrastructure.yml`:
+
+**Option A — Manual update**
+
+Open `infrastructure.yml` and fill in the following fields using values from the JSON files in `configs/network-devices/bmc/`:
+
+| Field | JSON source path |
+|-------|-----------------|
+| `cluster.nodes[<name>].service_tag` | `$.System.SKU` |
+| `cluster.nodes[<name>].idrac_mac` | `$.NICs.Members[0].MACAddress` |
+| `cluster.nodes[<name>].management_mac` | `$.NICs.Members[<mgmt-port>].MACAddress` |
+| `cluster.management_nic_name` | `$.NICs.Members[<mgmt-port>].Name` |
+
+**Option B — Run the updater script**
+
+If the JSON files are in `configs/network-devices/bmc/`, run:
+
+```powershell
+.\Update-InfrastructureYml-FromDiscovery.ps1
+```
+
+The script will auto-detect your `infrastructure.yml`, show a diff of all changes, and prompt for confirmation before writing. A timestamped backup is created automatically.
+
+:::warning Do not proceed to Task 03 until infrastructure.yml is updated
+All subsequent tasks depend on these values.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Output Files
+
+| File | Description | Used In |
+|------|-------------|---------|
+| `<service-tag>.json` | Per-node hardware, BIOS, iDRAC data | Tasks 03, 04, 05 |
+
+Output location: `configs/network-devices/bmc/`
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `Connection refused` | iDRAC not accessible | Verify iDRAC IP and port 443 reachable from management server |
+| `Authentication failed` | Incorrect credentials | Verify iDRAC password; check `root` account is enabled |
+| `Certificate error` | Self-signed cert | Ensure PowerShell 7+ and `-SkipCertificateCheck` is used |
+| `Timeout` | Slow iDRAC response | Check iDRAC is responsive via web UI; increase script timeout |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 01: iDRAC DHCP Reservations](./task-01-create-dhcp-reservations-for-idrac-interfaces.mdx) | [↑ Phase 01: Hardware Provisioning](./index.mdx) | [Task 03: Management NIC Reservations →](./task-03-create-dhcp-reservations-for-management-nics.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-01 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Fix tab labels, schema keys, standards alignment |
+| 1.2 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Add infrastructure.yml update instructions to all three tabs; document Update-InfrastructureYml-FromDiscovery.ps1 integration |

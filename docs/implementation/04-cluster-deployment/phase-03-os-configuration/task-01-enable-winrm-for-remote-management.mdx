@@ -1,0 +1,228 @@
+---
+title: "Task 01: Enable WinRM for Remote Management"
+sidebar_label: "Task 01: Enable WinRM"
+sidebar_position: 1
+description: "Enable Windows Remote Management on all Azure Local nodes via iDRAC Virtual Console. Must run locally on each node — WinRM cannot be enabled remotely before it exists."
+category: Runbook
+scope: Remote management enablement
+purpose: Bootstrap PowerShell remoting on all cluster nodes so subsequent Phase 03 tasks can run remotely from the management server
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: 1.9
+tags: ["azure-local", "os-configuration", "winrm", "psremoting", "idrac", "powershell"]
+keywords: ["WinRM", "winrm quickconfig", "TrustedHosts", "iDRAC Virtual Console"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Enable WinRM for Remote Management
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Remote management enablement 
+> **PURPOSE**: Bootstrap PowerShell remoting on all cluster nodes so subsequent Phase 03 tasks can run remotely from the management server 
+> **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Enable WinRM on each Azure Local node. This task **must run directly on each node** via iDRAC Virtual Console — WinRM cannot be enabled remotely because it does not exist yet on a fresh OS installation.
+
+Once complete on all nodes, all subsequent Phase 03 tasks can be executed remotely from the management server.
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Phase 02 Complete | Azure Stack HCI OS installed and verified on all nodes | [Phase 02](../phase-02-os-installation/index.mdx) |
+| iDRAC console access | Virtual Console accessible for each node | `infrastructure.yml: nodes.<name>.idrac_ip` |
+| Administrator credentials | Local admin password set during OS installation | Key Vault: `node-<hostname>-local-admin` |
+
+---
+
+## TrustedHosts Configuration
+
+`TrustedHosts` controls which remote computers are allowed to connect to the node via WinRM. Before running the script, identify all networks from which you will be managing these nodes and combine them into a comma-separated value.
+
+:::warning Update TrustedHosts Before Running
+The script defaults to `10.245.64.*` as a placeholder. You **must** update this to match your environment before running. An incorrect or missing TrustedHosts entry will prevent remote management from working and is a common source of "Access denied" failures.
+:::
+
+### Networks to Include
+
+| Network | Source | Example |
+|---------|--------|---------|
+| Management server subnet | `infrastructure.yml: network.management_subnet` | `10.245.64.*` |
+| Point-to-site VPN client pool | `infrastructure.yml: p2s_client_address_pool` | `172.16.0.0/24` |
+| Delivery engineer working network | Laptop/jumpbox subnet during the engagement | `192.168.1.*` |
+
+Include all networks from which you or the management server will connect to the nodes. If you are working from a P2S VPN connection, your VPN-assigned address will come from the `p2s_client_address_pool` range — this must be in TrustedHosts or your remote sessions will be rejected.
+
+### Combining Multiple Networks
+
+`TrustedHosts` accepts a comma-separated list of hostnames, IP addresses, or wildcards:
+
+```powershell
+# Example combining management subnet, P2S VPN pool, and delivery engineer network
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value "192.168.211.*,172.16.0.*,192.168.1.*,10.250.*" -Force
+```
+
+To append to an existing TrustedHosts list without overwriting:
+
+```powershell
+$current = (Get-Item WSMan:\localhost\Client\TrustedHosts).Value
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value "$current,172.16.0.*" -Force
+```
+
+:::tip Use a Subnet Wildcard
+Using a wildcard per subnet (e.g., `10.245.64.*`) is more practical than listing individual IPs and covers the entire subnet for the duration of the engagement.
+:::
+
+---
+
+## Execution
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct Script (On Node)" default>
+
+Run on **each node** via iDRAC Virtual Console. Repeat for every node before proceeding.
+
+1. Open `https://<idrac-ip>` → **Virtual Console** → **Launch**
+2. Log in as `Administrator`
+3. Update the `TrustedHosts` value to match your environment (see [TrustedHosts Configuration](#trustedhosts-configuration) above)
+4. Run the following:
+
+```powershell
+# Enable WinRM
+winrm quickconfig -q
+
+# Set network profile to Private (required for WinRM)
+Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private
+
+# Enable WinRM firewall rules
+Enable-NetFirewallRule -DisplayGroup "Windows Remote Management"
+
+# Configure TrustedHosts — update to include all networks you will manage from
+# Include: management subnet, P2S VPN client pool, delivery engineer working network
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value "10.245.64.*,172.16.0.*" -Force
+
+# Verify
+Get-Service WinRM | Select-Object Name, Status, StartType
+Test-WSMan -ComputerName localhost
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+Paste this script on each node via iDRAC Virtual Console clipboard paste. Update the `#region CONFIGURATION` block before running.
+
+```powershell
+<#
+.SYNOPSIS
+ Enables and configures WinRM on the local Azure Local node.
+
+.DESCRIPTION
+ Bootstrap script that must be run directly on each node via iDRAC Virtual Console.
+ WinRM cannot be enabled remotely — this script runs locally.
+
+ Performs the following:
+ - Enables WinRM via winrm quickconfig
+ - Sets network profile to Private
+ - Enables WinRM firewall rules
+ - Configures TrustedHosts
+ - Verifies WinRM service status
+
+.NOTES
+ Author: Azure Local Cloud Azure Local Cloud
+ Version: 2.0.0
+ Phase: 03-os-configuration
+ Task: task-01-enable-winrm-for-remote-management
+ Run on each node locally via iDRAC Virtual Console.
+#>
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+#region CONFIGURATION
+# Update TrustedHosts to include all networks from which you will manage nodes:
+# - Management server subnet (infrastructure.yml: network.management_subnet)
+# - P2S VPN client pool (infrastructure.yml: p2s_client_address_pool)
+# - Delivery engineer working network (laptop/jumpbox subnet for this engagement)
+$TrustedHosts = "10.245.64.*,172.16.0.*"
+#endregion CONFIGURATION
+
+# Enable WinRM
+winrm quickconfig -q
+
+# Set network profile to Private (required for WinRM)
+Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private
+
+# Enable WinRM firewall rules
+Enable-NetFirewallRule -DisplayGroup "Windows Remote Management"
+
+# Configure TrustedHosts
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value $TrustedHosts -Force
+
+# Verify
+Get-Service WinRM | Select-Object Name, Status, StartType
+Test-WSMan -ComputerName localhost
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Checklist
+
+- [ ] TrustedHosts updated to include all required networks before running
+- [ ] Script completed on all nodes via iDRAC Virtual Console
+- [ ] WinRM service `Running` and `StartType: Automatic` on all nodes
+- [ ] `Test-WSMan -ComputerName localhost` returns schema version without error on all nodes
+- [ ] PSRemoting session can be established from management server to each node
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `winrm quickconfig` fails | WinRM service disabled | `Start-Service WinRM; Set-Service WinRM -StartupType Automatic` |
+| `Test-WSMan` fails locally | Network profile still Public | `Get-NetConnectionProfile \| Set-NetConnectionProfile -NetworkCategory Private` |
+| Management server cannot connect | TrustedHosts not set on management server | Run `Set-Item WSMan:\localhost\Client\TrustedHosts -Value "10.245.64.*" -Force` on the management server |
+| P2S VPN session rejected | P2S client pool not in TrustedHosts | Add `p2s_client_address_pool` range to TrustedHosts on each node |
+| "Access denied" from management server | Wrong credentials | Verify local Administrator password from Key Vault |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Phase 03 Overview](./index.mdx) | [↑ Phase 03: OS Configuration](./index.mdx) | [Task 02: Enable RDP →](./task-02-enable-rdp.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Remove tabs, flat prose version |
+| 1.2 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Incorrect orchestrated tab removed |
+| 1.3 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Direct (On Node) + Standalone tabs |
+| 1.4 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Incorrectly replaced with single orchestrated tab |
+| 1.5 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Single Direct Script (On Node) tab with correct bootstrap script |
+| 1.6 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Add TrustedHosts Configuration section covering management subnet, P2S VPN pool, and delivery engineer network |
+

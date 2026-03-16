@@ -1,0 +1,71 @@
+---
+title: "Appendix N: Fortinet Firewall Maintenance"
+sidebar_label: "Appendix N: Fortinet Maintenance"
+sidebar_position: 14
+description: "Maintenance procedures, reinstallation, flashing, troubleshooting, and management for Fortinet firewalls in Azure Local Anywhere deployments."
+---
+
+# Fortinet Firewall Maintenance
+
+[![Reference](https://img.shields.io/badge/Type-Reference-purple?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference 
+> **SCOPE**: Fortinet firewall maintenance 
+> **PURPOSE**: Provide procedures for reinstalling FortiOS, flashing, troubleshooting, and managing Fortinet firewalls 
+> **MASTER REFERENCE**: [Fortinet Documentation](https://docs.fortinet.com/)
+
+**Status**: Active
+
+---
+
+This document provides maintenance procedures, reinstallation steps, flashing instructions, troubleshooting, and management guidance for Fortinet firewalls (e.g., FortiGate-90G) used in Azure Local Cloud Demos Azure Local Anywhere deployments.
+
+## Reinstalling FortiOS Software
+
+### Using USB Drive
+1. Download the FortiOS image (.out file) from Fortinet support.
+2. Format USB as FAT32 and copy the image.
+3. Boot the firewall into maintenance mode:
+ - Connect console and power on.
+ - Interrupt boot with any key during POST.
+ - Select "Boot from USB" or maintenance mode.
+4. From the CLI:
+ ```bash
+ execute restore image usb <filename>.out
+ ```
+5. Reboot after restoration.
+
+### Using Network
+1. Boot into maintenance mode.
+2. Restore via TFTP:
+ ```bash
+ execute restore image tftp <filename>.out <tftp-server-ip>
+ ```
+
+## Flashing the Device
+FortiOS reinstallation includes firmware flashing. For BIOS updates, contact Fortinet support.
+
+## Troubleshooting
+- **Boot Loops**: Reset to factory defaults.
+- **USB Issues**: Ensure FAT32 format and correct file placement.
+- **License Problems**: Reapply licenses after reinstall.
+- **Connectivity**: Check interface configurations.
+
+## Management
+- Default login: `admin` (password: leave blank initially).
+- Basic config:
+ ```bash
+ config system global
+ set hostname fw00-iic
+ end
+ config system interface
+ edit port1
+ set ip 10.100.64.8/24
+ next
+ end
+ ```
+
+> Data verified with Fortinet FortiOS Documentation as of 2026-02-02.
+
+For questions about these procedures, refer to the Fortinet documentation or contact the Azure Local Cloud documentation team.

@@ -1,0 +1,132 @@
+---
+title: "How to Use This Runbook"
+sidebar_label: "How to Use This Runbook"
+sidebar_position: 2
+description: "Detailed provisioning instructions with tabbed execution options for each step."
+category: "RUNBOOK"
+scope: "Implementation options and configuration"
+purpose: "Guide users through deployment approach selection"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - runbook-usage
+ - execution-options
+keywords:
+ - how to use
+ - execution options
+ - deployment approaches
+status: "approved"
+---
+
+# How to Use This Runbook
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Implementation options and configuration 
+> **PURPOSE**: Guide users through deployment approach selection 
+> **MASTER REFERENCE**: [Microsoft Learn - Deploy Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-introduction)
+
+**Status**: Active
+
+---
+
+This document provides detailed provisioning instructions with **tabbed execution options** for each step. Choose the option that best fits your environment and expertise.
+
+## Understanding the Execution Options
+
+Each task page uses tabs so you can switch between methods without scrolling. Not every task supports all options — only genuinely applicable methods are shown.
+
+| Option | Best For | You Will Need |
+|--------|----------|---------------|
+| **Manual** (Azure Portal, on-site, vendor UI) | Learning, single deployments, visual preference, physical tasks | Web browser / physical access / vendor UI |
+| **Direct Script** (On Node) | Direct console/RDP access to nodes | PowerShell on target nodes, `infrastructure.yml`, helpers |
+| **Orchestrated Script** (Mgmt Server) | Managing from jump box, multiple nodes | Management server, PSRemoting, `infrastructure.yml`, helpers |
+| **Standalone Script** (Copy-Paste) | Sharing externally, demos, one-off runs | PowerShell only — no config file, no helpers needed |
+
+> **⚡ Looking for full automation (IaC/CI/CD)?**
+>
+> The fully automated deployment instructions (Terraform, Bicep, Ansible, CI/CD pipelines) are documented separately in the [Automation section](../automation/). Use that guide for pipeline-driven, repeatable deployments.
+
+## Configuration File: infrastructure.yml
+
+All scripts and procedures now reference values from a single `infrastructure.yml` configuration file. Before starting:
+
+1. **Copy the template**: `infrastructure.yml.template` → `infrastructure.yml`
+2. **Edit values** to match your environment:
+ - Azure tenant and subscription IDs
+ - Resource group names
+ - Network configuration
+ - Tags and naming conventions
+
+3. **Store secrets in Key Vault** (do not put secrets directly in YAML):
+
+```yaml
+# Variable placeholder — replace {{platform.kv_platform_name}} with your Key Vault name
+credentials:
+ local_admin:
+ password: "keyvault://{{platform.kv_platform_name}}/local-admin-password"
+
+# Example: Infinite azurelocal Corp
+credentials:
+ local_admin:
+ password: "keyvault://kv-iic-platform/local-admin-password"
+```
+
+> **📋 Configuration Reference**: See Scripting Framework for complete `infrastructure.yml` structure and variable path conventions.
+
+## Execution Workflow
+
+1. **Review Stage Details** — Understand objectives and tasks
+2. **Select your tab** for each step (Manual, Direct, Orchestrated, or Standalone)
+3. **Complete the step** following that tab's procedure
+4. **Validate** using the verification steps provided
+5. **Proceed to next step**
+
+You can **mix options** throughout the runbook (e.g., use Portal for some steps, scripts for others). Your tab selection persists across pages.
+
+## Script Language Support
+
+**Primary Documentation**: PowerShell with Azure PowerShell modules (`Az.*`)
+
+**Alternative Implementations Available**: For each documented script, the following variants exist in the `scripts/` directory:
+
+| Variant | Naming Pattern | Example | Description |
+|---------|---------------|---------|-------------|
+| **PowerShell + Az Modules** | `Verb-AzResource.ps1` | `New-AzKeyVault.ps1` | Primary. Uses Azure PowerShell modules (`Connect-AzAccount`, `New-AzResourceGroup`, etc.) |
+| **PowerShell + Azure CLI** | `.azcli.ps1` | `Register-ResourceProviders.azcli.ps1` | PowerShell script using Azure CLI commands (`az login`, `az group create`, etc.) |
+| **Bash + Azure CLI** | `az-verb-resource.sh` | `az-create-vnet.sh` | Bash script using Azure CLI commands |
+| **Standalone (no config)** | `Verb-Noun-Standalone.ps1` | `New-AzKeyVault-Standalone.ps1` | Self-contained script with inline variables — no external dependencies |
+| **Orchestrated (remote)** | `Invoke-{VerbNoun}.ps1` | `Invoke-DeployCluster.ps1` | Runs from management server via PSRemoting — reads `infrastructure.yml` |
+
+> **Note**: This runbook documents PowerShell with Azure PowerShell modules as the primary language due to widespread familiarity and cross-platform support (PowerShell 7+). Alternative implementations follow the same logic and variable paths.
+
+## Authentication
+
+Before running any scripts or accessing Azure resources, you must authenticate to Azure. This runbook assumes manual authentication for each session.
+
+**Authentication Options:**
+- [Authentication Methods](05-authentication.mdx) - Manual authentication scripts for PowerShell, Azure CLI, and Bash.
+- [Appendix C: Authentication & Session Setup](appendices/appendix-c-auth-setup.mdx) - Detailed authentication details and troubleshooting.
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Purpose and Scope](./01-purpose-and-scope.mdx) | [Implementation Guide](./index.mdx) | [Key Inputs and Variables](./03-key-inputs-and-variables.mdx) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, runbook-usage, execution-options
+- Keywords: how to use, execution options, deployment approaches
+- Author: Azure Local Cloudnology Team

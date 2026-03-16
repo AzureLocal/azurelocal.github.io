@@ -1,0 +1,295 @@
+---
+title: "Task 05: Group Assignments"
+sidebar_label: "Task 05: Group Assignments"
+sidebar_position: 5
+description: "Step 5 - Group Assignments (task-05-group-assignments.mdx)"
+category: Runbook
+scope: Active Directory group membership
+purpose: Map accounts to security groups
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-03
+version: 1.1
+tags: ["azure-local", "active-directory", "group-membership", "rbac"]
+keywords: ["group assignments", "Active Directory members", "security group membership"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Group Assignments
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Active Directory group membership 
+> **PURPOSE**: Map accounts to security groups 
+> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory) 
+
+**Status**: Active
+
+---
+
+## Overview
+
+![Optional](https://img.shields.io/badge/Required-Optional-yellow?style=flat-square)
+
+> **📋 Optional Step:** Group assignments are only required if you created optional security groups in Step 2.
+
+Map accounts to security groups created in Step 2.
+
+:::info
+
+The active directory information in these documents should have been decided in the [planning phase](../../../planning/) and discovery phases. These are just examples. Please update your scripts with the right OU information, right security groups, DNS, etc.
+
+:::
+
+## Prerequisites
+
+- Security groups created (Step 2)
+- Service and admin accounts created (Step 4)
+- Domain admin access for group management
+
+## Procedures
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Active Directory Users and Computers" default>
+
+1. Open **Active Directory Users and Computers**.
+2. For each group below, right-click → Properties → Members → Add the listed accounts/groups:
+
+| Security Group | Members to Add |
+|----------------|----------------|
+| SG-AzureLocal-Administrators | Break-glass admin, enterprise admin group |
+| SG-AzureLocal-Operations | Operations team group |
+| SG-AzureLocal-ReadOnly | Support / read-only group |
+| SG-AzureLocal-WAC-Administrators | WAC admin group (may overlap with Administrators) |
+| SG-AzureLocal-WAC-Users | Support / read-only group |
+| SG-AzureLocal-HyperV-Administrators | Hyper-V admin group |
+| SG-AzureLocal-Storage-Administrators | Storage admin group |
+
+3. Record membership snapshot in deployment tracking document.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+> **When to use**: Managing from a domain-joined management server — config-driven via infrastructure.yml
+
+#### Script
+
+**Primary**: `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Invoke-ADGroupAssignments.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/azure-cli/Invoke-ADGroupAssignments.ps1` |
+| Bash | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/bash/invoke-ad-group-assignments.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Invoke-ADGroupAssignments.ps1
+# Execution: Run FROM management server — reads infrastructure.yml
+# Prerequisites: powershell-yaml module, ActiveDirectory RSAT, domain access
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = False)]
+ [string]$ConfigPath
+)
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($ConfigPath) {
+ $ConfigFile = $ConfigPath
+} else {
+ $ConfigFile = Join-Path $ScriptDir "..\..\..\..\configs\infrastructure.yml"
+}
+if (!(Test-Path $ConfigFile)) { throw "infrastructure.yml not found at $ConfigFile" }
+
+Import-Module powershell-yaml -ErrorAction Stop
+Import-Module ActiveDirectory
+
+$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
+$clusterId = ($config["accounts"]["account_lcm_username"] -split '-' | Select-Object -Skip 2 -First 1)
+$sgConfig = $config["active_directory"]["security_groups"]
+
+$breakGlass = "adm-AzureLocal-BreakGlass-$clusterId"
+
+Write-Host "[1/2] Assigning members to security groups..." -ForegroundColor Cyan
+
+# Iterate over all security groups defined in infrastructure.yml
+foreach ($key in $sgConfig.Keys) {
+ $groupName = $sgConfig[$key]["name"]
+ $members = $sgConfig[$key]["members"]
+ if (-not $members) { continue }
+
+ # Split comma-separated members if multiple are defined
+ foreach ($member in ($members -split ',\s*')) {
+ try {
+ Add-ADGroupMember -Identity $groupName -Members $member -ErrorAction Stop
+ Write-Host " Added $member -> $groupName" -ForegroundColor Green
+ } catch {
+ Write-Host " Skipped ($groupName): $($_.Exception.Message)" -ForegroundColor Yellow
+ }
+ }
+}
+
+# Add break-glass admin to the admin group
+$adminGroup = $sgConfig["azure_local_admins"]["name"]
+try {
+ Add-ADGroupMember -Identity $adminGroup -Members $breakGlass -ErrorAction Stop
+ Write-Host " Added $breakGlass -> $adminGroup" -ForegroundColor Green
+} catch {
+ Write-Host " Skipped ($adminGroup): $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
+Write-Host "[2/2] Verifying group membership..." -ForegroundColor Cyan
+foreach ($key in $sgConfig.Keys) {
+ $groupName = $sgConfig[$key]["name"]
+ Write-Host "\n$groupName" -ForegroundColor Cyan
+ Get-ADGroupMember $groupName -EA SilentlyContinue | Select-Object SamAccountName
+}
+```
+
+**Validation Script**: `scripts/validation/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Test-ADGroupAssignments.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+
+```powershell
+#region CONFIGURATION
+$ClusterId = "clus01"
+$GroupsOuDN = "OU=Security Groups,OU=IAM,DC=hybrid,DC=mgmt"
+$EnterpriseAdminGroup = "Enterprise-Admins" # Your org's admin group
+$EnterpriseOpsGroup = "Enterprise-Operations" # Your org's operations group
+$SupportGroup = "Enterprise-Support" # Your org's support/read-only group
+$WACAdminGroup = "Enterprise-Admins" # WAC full-access group (may overlap)
+$HyperVAdminGroup = "Enterprise-Admins" # Hyper-V admin group (may overlap)
+$StorageAdminGroup = "Enterprise-Operations" # Storage admin group (may overlap)
+#endregion
+
+Import-Module ActiveDirectory
+$BreakGlassSam = "adm-AzureLocal-BreakGlass-$ClusterId"
+
+# --- Map accounts/groups into security groups ---
+# NOTE: LCM user is created and managed by Task 01 — do not assign it here.
+$assignments = @(
+ # Administrators
+ @{ G="SG-AzureLocal-Administrators"; M=$BreakGlassSam },
+ @{ G="SG-AzureLocal-Administrators"; M=$EnterpriseAdminGroup },
+ # Operations
+ @{ G="SG-AzureLocal-Operations"; M=$EnterpriseOpsGroup },
+ # Read-Only
+ @{ G="SG-AzureLocal-ReadOnly"; M=$SupportGroup },
+ # WAC
+ @{ G="SG-AzureLocal-WAC-Administrators"; M=$WACAdminGroup },
+ @{ G="SG-AzureLocal-WAC-Users"; M=$SupportGroup },
+ # Hyper-V & Storage
+ @{ G="SG-AzureLocal-HyperV-Administrators"; M=$HyperVAdminGroup },
+ @{ G="SG-AzureLocal-Storage-Administrators"; M=$StorageAdminGroup }
+)
+
+foreach ($a in $assignments) {
+ try {
+ Add-ADGroupMember -Identity $a.G -Members $a.M -EA Stop
+ Write-Host " Added $($a.M) -> $($a.G)" -ForegroundColor Green
+ } catch {
+ Write-Host " Skipped ($($a.G)): $($_.Exception.Message)" -ForegroundColor Yellow
+ }
+}
+
+# --- Verify all groups ---
+$groups = @(
+ "SG-AzureLocal-Administrators",
+ "SG-AzureLocal-Operations",
+ "SG-AzureLocal-ReadOnly",
+ "SG-AzureLocal-WAC-Administrators",
+ "SG-AzureLocal-WAC-Users",
+ "SG-AzureLocal-HyperV-Administrators",
+ "SG-AzureLocal-Storage-Administrators"
+)
+foreach ($g in $groups) {
+ Write-Host "`n$g" -ForegroundColor Cyan
+ Get-ADGroupMember $g -EA SilentlyContinue | Select-Object SamAccountName
+}
+```
+
+
+</TabItem>
+</Tabs>
+
+## Verification
+
+```powershell
+$groups = @(
+ "SG-AzureLocal-Administrators",
+ "SG-AzureLocal-Operations",
+ "SG-AzureLocal-ReadOnly",
+ "SG-AzureLocal-WAC-Administrators",
+ "SG-AzureLocal-WAC-Users",
+ "SG-AzureLocal-HyperV-Administrators",
+ "SG-AzureLocal-Storage-Administrators"
+)
+foreach ($g in $groups) {
+ Write-Host "`n$g" -ForegroundColor Cyan
+ Get-ADGroupMember $g -EA SilentlyContinue | Select-Object SamAccountName
+}
+```
+
+## Validation Checklist
+
+- [ ] All 7 security groups have at least one member assigned
+- [ ] Break-glass admin added to Administrators group
+- [ ] Enterprise admin group mapped to Administrators
+- [ ] Operations team mapped to Operations group
+- [ ] Support/read-only group mapped to ReadOnly and WAC-Users
+- [ ] WAC-Administrators, HyperV-Administrators, Storage-Administrators populated
+- [ ] Membership snapshot documented in deployment tracking
+
+## Troubleshooting
+
+### Common Issues
+
+**"Member already exists"**: Add-ADGroupMember throws this when the member is already assigned. The scripts handle this with try/catch — safe to ignore.
+
+**"Cannot find an object with identity"**: The account or group name doesn\'t exist. Verify the SAM account name matches what was created in Steps 2 and 4.
+
+**Nested group membership not resolving**: If you add a group as a member of another group, members of the nested group inherit permissions only if the application supports nested group evaluation. Azure Local and WAC both support this.
+
+### Support Resources
+
+- [Active Directory Group Membership](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-groups)
+- [Add-ADGroupMember Reference](https://learn.microsoft.com/en-us/powershell/module/activedirectory/add-adgroupmember)
+
+---
+
+*Data verified with internal source [Azure Local Provisioning Runbook] and Docusaurus documentation release note dated 2025-12-08.*
+
+## Next Steps
+
+After completing group assignments, proceed to [Phase 09 - Enterprise Network Readiness Validation](../phase-02-enterprise-readiness/) to validate network prerequisites, or review the [Active Directory Preparation Overview](./index.mdx) for the complete process.
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 04: Service & Admin Accounts](./task-04-service-admin-accounts.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Phase 02: Enterprise Readiness →](../phase-02-enterprise-readiness/index.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Standardized runbook format |
+
+---
+
+*End of Task*

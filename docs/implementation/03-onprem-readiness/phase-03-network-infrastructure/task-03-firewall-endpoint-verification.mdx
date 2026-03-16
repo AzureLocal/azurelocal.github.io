@@ -1,0 +1,304 @@
+---
+title: "Task 03: Verify Firewall Endpoints"
+sidebar_label: "Task 03: Firewall Endpoints"
+sidebar_position: 3
+description: "Verify firewall rules for required Azure and Dell endpoints"
+category: Runbook
+scope: Firewall rule verification
+purpose: Verify required endpoints are accessible
+author: Azure Local Cloud CI/CD Engineering
+created: 2026-01-31
+updated: 2026-03-03
+version: 1.1
+tags: ["azure-local", "firewall", "endpoints", "azure-connectivity", "dell-endpoints"]
+keywords: ["firewall rules", "Azure endpoints", "Dell endpoints", "HTTPS inspection"]
+status: Active
+---
+
+# Task 03: Verify Firewall Endpoints
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Firewall rule verification 
+> **PURPOSE**: Verify required endpoints are accessible 
+> **MASTER REFERENCE**: [Microsoft Learn - Firewall Requirements](https://learn.microsoft.com/en-us/azure-stack/hci/concepts/firewall-requirements) 
+
+**Status**: Active 
+**Estimated Time**: 30 minutes 
+**Last Updated**: 2026-01-31
+
+---
+
+## Overview
+
+Verify that firewall rules permit outbound access to required Azure and Dell endpoints. Work with the customer's network team to ensure all required rules are in place before proceeding with cluster deployment.
+
+:::warning Critical Requirements
+- **No HTTPS inspection** - Azure Local does not support SSL/TLS interception
+- **Ports 80 and 443** must be open for outbound traffic
+- **Azure Arc Gateway** can reduce endpoint count when enabled
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Description |
+|-------------|-------------|
+| Network Team | Coordination with firewall administrators |
+| Endpoint Lists | Azure and Dell endpoint tables (below) |
+| Testing Access | Management workstation on same VLAN as nodes |
+| Dell PowerSwitch | Step 2 completed - switches configured |
+
+---
+
+## Azure Public Endpoints
+
+The following Azure endpoints must be accessible from Azure Local cluster nodes:
+
+### Authentication & Core Services
+
+| Endpoint | Port | Component | Arc GW | Notes |
+|----------|------|-----------|--------|-------|
+| `login.microsoftonline.com` | 443 | Authentication | ✅ | Microsoft Entra ID |
+| `<region>.login.microsoft.com` | 443 | Authentication | ✅ | Regional auth |
+| `pas.windows.net` | 443 | Authentication | ✅ | Azure AD auth |
+| `management.azure.com` | 443 | Azure Arc, Deployment | ✅ | Azure Resource Manager |
+| `graph.microsoft.com` | 443 | Deployment | ✅ | Microsoft Graph API |
+
+### Azure Arc Services
+
+| Endpoint | Port | Component | Arc GW | Notes |
+|----------|------|-----------|--------|-------|
+| `<yourarcgatewayendpointid>.gw.arc.azure.com` | 443 | Azure Arc | ✅ | Arc Gateway (unique per deployment) |
+| `his.arc.azure.com` | 443 | Azure Arc | ✅ | Arc Hybrid Identity Service |
+| `<region>.his.arc.azure.com` | 443 | Azure Arc | ✅ | Regional Arc HIS |
+| `guestconfiguration.azure.com` | 443 | Azure Arc | ✅ | Arc Guest Configuration |
+| `<region>.guestconfiguration.azure.com` | 443 | Azure Arc | ✅ | Regional Guest Config |
+| `guestnotificationservice.azure.com` | 443 | Azure Arc | ✅ | Arc Guest Notifications |
+| `dp.stackhci.azure.com` | 443 | Azure Arc | ✅ | Arc Data Plane |
+
+### Azure Local Services
+
+| Endpoint | Port | Component | Arc GW | Notes |
+|----------|------|-----------|--------|-------|
+| `azurestackhci.azurefd.net` | 443 | Deployment | ✅ | Azure Local cloud services |
+| `<yourhcikeyvaultname>.vault.azure.net` | 443 | Deployment | ✅ | Azure Key Vault (unique) |
+| `<region>.obo.arc.azure.com` | 443 | Deployment | ✅ | Arc OBO services |
+| `servicebus.windows.net` | 443 | Deployment | ✅ | Azure Service Bus |
+| `edgesupprd.trafficmanager.net` | 443 | Deployment | ✅ | Edge support services |
+
+### Monitoring & Diagnostics
+
+| Endpoint | Port | Component | Arc GW | Notes |
+|----------|------|-----------|--------|-------|
+| `dc.services.visualstudio.com` | 443 | Monitoring | ✅ | Application Insights |
+| `*.ingest.monitor.azure.com` | 443 | Monitoring | ✅ | Azure Monitor ingestion |
+| `*.handler.control.monitor.azure.com` | 443 | Monitoring | ✅ | Azure Monitor control |
+| `gcs.prod.monitoring.core.windows.net` | 443 | Monitoring | ✅ | Geneva monitoring |
+| `*.ods.opinsights.azure.com` | 443 | Monitoring | ✅ | Log Analytics ODS |
+| `*.oms.opinsights.azure.com` | 443 | Monitoring | ✅ | Log Analytics OMS |
+
+### Storage & Updates (Cannot use Arc Gateway)
+
+| Endpoint | Port | Component | Arc GW | Notes |
+|----------|------|-----------|--------|-------|
+| `*.blob.core.windows.net` | 443 | Storage | ✅ | Azure Blob Storage |
+| `dl.delivery.mp.microsoft.com` | 443, 80 | Updates | ❌ Never | Windows Update delivery |
+| `*.windowsupdate.com` | 443, 80 | Updates | ❌ Never | Windows Update |
+| `*.update.microsoft.com` | 443, 80 | Updates | ❌ Never | Microsoft Update |
+| `download.microsoft.com` | 443 | Updates | ❌ Never | Microsoft downloads |
+| `mcr.microsoft.com` | 443 | ARB, AKS | ❌ Never | Microsoft Container Registry |
+| `*.azurecr.io` | 443 | ARB, AKS | ❌ Never | Azure Container Registry |
+
+### AKS & Resource Bridge (Cannot use Arc Gateway)
+
+| Endpoint | Port | Component | Notes |
+|----------|------|-----------|-------|
+| `k8connecthelm.azureedge.net` | 443 | AKS Infrastructure | Kubernetes Helm charts |
+| `hybridaks.azurecr.io` | 443 | AKS Infrastructure | Hybrid AKS images |
+| `msk8s.api.cdp.microsoft.com` | 443 | AKS Infrastructure | AKS hybrid core API |
+| `kvamanagementoperator.azurecr.io` | 443 | Resource Bridge | ARB container images |
+| `arcbridge.blob.core.windows.net` | 443 | Resource Bridge | ARB blob storage |
+| `gcr.io` | 443 | Resource Bridge | Google Container Registry |
+
+### Certificate Revocation
+
+| Endpoint | Port | Notes |
+|----------|------|-------|
+| `crl.microsoft.com` | 80 | Certificate Revocation List |
+| `mscrl.microsoft.com` | 80 | Microsoft CRL |
+| `crl3.digicert.com` | 80 | DigiCert CRL |
+| `crl4.digicert.com` | 80 | DigiCert CRL |
+| `ocsp.digicert.com` | 80 | DigiCert OCSP |
+| `oneocsp.microsoft.com` | 80 | Microsoft OCSP |
+
+### Time Synchronization
+
+| Endpoint | Port | Protocol | Notes |
+|----------|------|----------|-------|
+| `time.windows.com` | 123 | UDP | Windows NTP |
+
+---
+
+## Dell OEM Endpoints
+
+### Dell Firmware and SBE
+
+| Endpoint | Port | Protocol | Purpose |
+|----------|------|----------|---------|
+| `downloads.dell.com` | 443 | HTTPS | Dell firmware and driver downloads |
+| `dl.dell.com` | 443 | HTTPS | Driver downloads |
+| `*.dell.com` | 443 | HTTPS | Dell general services |
+| `auabormmzpd.blob.core.windows.net` | 443 | HTTPS | Dell SBE package storage |
+| `auabormmzp.blob.core.windows.net` | 443 | HTTPS | Dell SBE package storage |
+
+### Dell SupportAssist
+
+| Endpoint | Port | Protocol | Purpose |
+|----------|------|----------|---------|
+| `apidp.dell.com` | 443 | HTTPS | SupportAssist API gateway |
+| `supportassist.dell.com` | 443 | HTTPS | SupportAssist portal |
+
+---
+
+## Critical Notes
+
+:::danger HTTPS Inspection Not Supported
+Azure Local does **NOT** support HTTPS inspection (TLS/SSL interception). If your firewall performs HTTPS inspection, you must configure bypass rules for all Azure and OEM endpoints. HTTPS inspection will cause deployment and operation failures.
+:::
+
+:::warning Azure Arc Private Link Scopes Not Supported
+Azure Arc Private Link Scopes are **NOT** supported for Azure Local deployments. Do not attempt to configure Private Link for Arc connectivity.
+:::
+
+:::info Unique Per-Deployment Endpoints
+The following endpoints are unique to each deployment:
+- `<yourarcgatewayendpointid>.gw.arc.azure.com` - Your Arc Gateway endpoint ID
+- `<yourhcikeyvaultname>.vault.azure.net` - Your Azure Key Vault name
+- `<region>` placeholders - Replace with your Azure region (e.g., `eastus`, `westeurope`)
+:::
+
+---
+
+## Endpoint Connectivity Test Script
+
+Run from management workstation on the same VLAN as cluster nodes:
+
+```powershell
+# Azure Local Endpoint Connectivity Test
+
+$AzureEndpoints = @(
+ @{ Name = "Azure Resource Manager"; Url = "https://management.azure.com" },
+ @{ Name = "Azure AD"; Url = "https://login.microsoftonline.com" },
+ @{ Name = "Microsoft Graph"; Url = "https://graph.microsoft.com" },
+ @{ Name = "Azure Local Services"; Url = "https://azurestackhci.azurefd.net" },
+ @{ Name = "Microsoft Downloads"; Url = "https://download.microsoft.com" },
+ @{ Name = "Windows Update"; Url = "https://windowsupdate.microsoft.com" },
+ @{ Name = "Azure Monitor"; Url = "https://global.handler.control.monitor.azure.com" }
+)
+
+$DellEndpoints = @(
+ @{ Name = "Dell Downloads"; Url = "https://downloads.dell.com" },
+ @{ Name = "Dell API"; Url = "https://api.dell.com" },
+ @{ Name = "Dell SupportAssist"; Url = "https://supportassist.dell.com" }
+)
+
+Write-Host "`n=== Azure Endpoint Validation ===" -ForegroundColor Cyan
+foreach ($endpoint in $AzureEndpoints) {
+ try {
+ $response = Invoke-WebRequest -Uri $endpoint.Url -Method Head -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop
+ Write-Host "[PASS] $($endpoint.Name): $($endpoint.Url)" -ForegroundColor Green
+ }
+ catch {
+ Write-Host "[FAIL] $($endpoint.Name): $($endpoint.Url) - $($_.Exception.Message)" -ForegroundColor Red
+ }
+}
+
+Write-Host "`n=== Dell Endpoint Validation ===" -ForegroundColor Cyan
+foreach ($endpoint in $DellEndpoints) {
+ try {
+ $response = Invoke-WebRequest -Uri $endpoint.Url -Method Head -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop
+ Write-Host "[PASS] $($endpoint.Name): $($endpoint.Url)" -ForegroundColor Green
+ }
+ catch {
+ Write-Host "[FAIL] $($endpoint.Name): $($endpoint.Url) - $($_.Exception.Message)" -ForegroundColor Red
+ }
+}
+
+Write-Host "`n=== DNS Resolution Test ===" -ForegroundColor Cyan
+$DnsTests = @("management.azure.com", "login.microsoftonline.com", "downloads.dell.com", "time.windows.com")
+foreach ($fqdn in $DnsTests) {
+ try {
+ $result = Resolve-DnsName -Name $fqdn -Type A -ErrorAction Stop
+ Write-Host "[PASS] DNS resolution for $fqdn" -ForegroundColor Green
+ }
+ catch {
+ Write-Host "[FAIL] DNS resolution for $fqdn - $($_.Exception.Message)" -ForegroundColor Red
+ }
+}
+
+Write-Host "`n=== NTP Connectivity Test ===" -ForegroundColor Cyan
+try {
+ $ntpTest = w32tm /stripchart /computer:time.windows.com /samples:1 /dataonly
+ Write-Host "[PASS] NTP connectivity to time.windows.com" -ForegroundColor Green
+}
+catch {
+ Write-Host "[FAIL] NTP connectivity to time.windows.com" -ForegroundColor Red
+}
+
+Write-Host "`n=== Validation Complete ===" -ForegroundColor Cyan
+```
+
+---
+
+## Validation Checklist
+
+### Azure Endpoints
+- [ ] Azure Resource Manager accessible (`management.azure.com`)
+- [ ] Azure AD accessible (`login.microsoftonline.com`)
+- [ ] Microsoft Graph accessible (`graph.microsoft.com`)
+- [ ] Azure Local services accessible (`azurestackhci.azurefd.net`)
+- [ ] Microsoft downloads accessible (`download.microsoft.com`)
+- [ ] Windows Update accessible (`windowsupdate.microsoft.com`)
+- [ ] Azure Monitor endpoints accessible
+
+### Dell Endpoints
+- [ ] Dell downloads accessible (`downloads.dell.com`)
+- [ ] Dell SupportAssist accessible (`supportassist.dell.com`)
+- [ ] Dell SBE storage accessible (`auabormmzpd.blob.core.windows.net`)
+
+### Infrastructure
+- [ ] DNS resolution working for all endpoints
+- [ ] NTP connectivity verified (`time.windows.com`)
+- [ ] No HTTPS inspection configured for these endpoints
+- [ ] Customer network team confirms rules implemented
+
+---
+
+## Next Steps
+
+Proceed to [Task 4 - Network Validation](./task-04-network-validation.mdx) to run comprehensive network validation and Microsoft Environment Checker.
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 02: Dell PowerSwitch](./task-02-dell-powerswitch-configuration.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Task 04: Network Validation →](./task-04-network-validation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud CI/CD Engineering | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud CI/CD Engineering | Standardized runbook format |
+
+---
+
+*End of Task*
