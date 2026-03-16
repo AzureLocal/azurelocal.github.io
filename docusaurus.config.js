@@ -241,7 +241,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Azure Local. Designed by <a href="https://x.com/CountryCloudBoy" target="_blank">@CountryCloudBoy</a> and built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Azure Local. Designed by <a href="https://www.hybridsolutions.cloud" target="_blank">Hybrid Cloud Solutions</a> and built with Docusaurus.`,
       },
       prism: {
         theme: prismThemes.github,
