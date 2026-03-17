@@ -1,0 +1,521 @@
+---
+id: solution-development-standard
+title: Solution Development Standard
+sidebar_label: Solution Development
+sidebar_position: 1
+description: "Standards for solution packaging, multi-tool automation parity, parallelism, and deployment governance"
+---
+
+# Solution Development Standard
+
+[![Standards](https://img.shields.io/badge/Type-Standard-purple?style=flat-square)](../documentation/documentation-standards.mdx)
+[![Solutions](https://img.shields.io/badge/Category-Solutions-blue?style=flat-square)](./index.mdx)
+[![TierPoint](https://img.shields.io/badge/TierPoint-ProdTech-orange?style=flat-square)](https://tierpoint.com)
+
+> **DOCUMENT CATEGORY**: Standard  
+> **SCOPE**: All solution packages in the Azure Local toolkit repository  
+> **PURPOSE**: Define rules for building, maintaining, and deploying solutions across all automation toolchains  
+> **MASTER REFERENCE**: [Documentation Standards](../documentation/documentation-standards.mdx)
+
+**Status**: Active  
+**Applies To**: All solution directories under `solutions/` in the azl-toolkit repository  
+**Last Updated**: 2026-03-13
+
+---
+
+## Purpose
+
+A **solution** is a deployable workload package that provisions and configures cloud or hybrid infrastructure for a specific use case (e.g., SOFS for FSLogix, AVD session hosts, AKS on Azure Local). Each solution lives under `solutions/<name>/` in the azl-toolkit repository.
+
+This standard defines the rules that **every** solution must follow — from directory structure to multi-tool parity to deployment behavior.
+
+:::info Relationship to Other Standards
+This standard builds on:
+- [Scripting Standards](../scripting/scripting-standards.mdx) — PowerShell conventions, credential resolution, logging
+- [Infrastructure Standards](../infrastructure/infrastructure-generation-deployment-process.mdx) — IaC patterns, state management
+- [Variable Management Standards](../variable-management/) — Registry, schema, naming rules
+- [Provisioning Runbook Standard](../provisioning/provisioning-runbook-standard.mdx) — Documentation structure for deployment guides
+:::
+
+---
+
+## 1. Solution Directory Structure
+
+Every solution **must** follow this directory layout:
+
+```text
+solutions/<solution-name>/
+├── solution-<name>.yml          # Generated solution config (DO NOT hand-edit)
+├── README.md                    # Solution overview, prerequisites, quick-start
+├── powershell/                  # PowerShell automation scripts
+│   ├── Deploy-<Name>-Azure.ps1  # Infrastructure deployment (az CLI / Az modules)
+│   └── Configure-<Name>-*.ps1   # Guest OS / workload configuration
+├── terraform/                   # Terraform automation (when applicable)
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── terraform.tfvars         # MUST match infrastructure YAML values — see §3
+│   └── ...
+├── bicep/                       # Bicep templates (when applicable)
+│   ├── main.bicep
+│   └── parameters.json
+└── arm/                         # ARM templates (when applicable)
+    ├── template.json
+    └── parameters.json
+```
+
+:::warning Generated Config Is Read-Only
+The `solution-<name>.yml` file is **generated** by `tools/Generate-SolutionConfig.ps1` from the infrastructure YAML and `configs/solutions.yaml`. Never hand-edit it. If a value is wrong, fix it in `configs/infrastructure-<env>.yml` and regenerate.
+:::
+
+---
+
+## 2. Multi-Tool Automation Parity
+
+### 2.1 The Parity Rule
+
+> **Every automation tool provided for a solution MUST produce the same infrastructure outcome.**
+
+When a solution ships multiple automation options (PowerShell, Terraform, Bicep, ARM), all options must:
+
+- Create the **same resources** with the **same configuration**
+- Use the **same variable values** from the same source of truth
+- Support the **same features** (e.g., per-VM storage paths, static IPs, tagging)
+- Produce **equivalent outputs** (resource IDs, connection strings, etc.)
+
+A user switching from Terraform to PowerShell (or vice versa) should get an identical deployment.
+
+### 2.2 Sync-on-Change Rule
+
+:::danger MANDATORY
+When a feature, variable, or configuration change is made to **any** automation tool for a solution, **all other automation tools for that solution must be updated in the same commit or merge request.**
+:::
+
+| Change Type | What Must Be Updated |
+|-------------|---------------------|
+| New variable added | master-registry.yaml → infrastructure YAML → solutions.yaml → **ALL** automation tools (PS, TF, Bicep, ARM) |
+| Variable value changed | infrastructure YAML → regenerate solution config → verify **ALL** tools read the new value |
+| New resource added | **ALL** automation tools must create the resource with identical config |
+| Resource property changed | **ALL** automation tools must reflect the change |
+| Feature added (e.g., per-VM storage paths) | **ALL** automation tools must implement the feature |
+
+### 2.3 Parity Review Checklist
+
+Every merge request that modifies a solution **must** include this checklist in the MR description:
+
+```markdown
+## Solution Parity Checklist
+- [ ] PowerShell scripts updated and tested
+- [ ] Terraform configs updated and `terraform plan` clean
+- [ ] Bicep templates updated (if applicable)
+- [ ] ARM templates updated (if applicable)
+- [ ] master-registry.yaml updated (if new variables)
+- [ ] infrastructure YAML updated
+- [ ] solutions.yaml updated (if new required variables)
+- [ ] solution-<name>.yml regenerated
+- [ ] All tools produce equivalent `--what-if` / `-WhatIf` / `plan` output
+```
+
+### 2.4 Single Source of Truth
+
+The config chain is **non-negotiable**:
+
+```text
+master-registry.yaml          ← Variable definitions (type, validation, description)
+       ↓
+infrastructure-<env>.yml      ← Environment-specific values
+       ↓
+solutions.yaml                ← Solution → variable mapping
+       ↓
+Generate-SolutionConfig.ps1   ← Assembles the solution config
+       ↓
+solution-<name>.yml           ← What scripts actually consume (GENERATED, READ-ONLY)
+```
+
+**Rules:**
+- Scripts read from `solution-<name>.yml` — never directly from `infrastructure-<env>.yml`
+- Terraform `terraform.tfvars` values **must** match the infrastructure YAML — if they drift, the infrastructure YAML wins
+- No automation tool may define its own variables that bypass this chain
+- Every `$cfg.*` access in scripts must have an inline comment with the YAML path
+
+---
+
+## 3. Variable Governance for Solutions
+
+### 3.1 No Orphan Variables
+
+Every variable used by a solution must exist in:
+
+1. `configs/variables/assets/master-registry.yaml` — with type, description, and validation rules
+2. `configs/infrastructure-<env>.yml` — with the environment-specific value
+3. `configs/solutions.yaml` — listed in the solution's `required_variables` array
+
+If a variable exists in a Terraform `tfvars` or a PowerShell script but **not** in the registry, it is an orphan and must be registered.
+
+### 3.2 Variable Naming
+
+All solution-specific variables follow the pattern:
+
+```text
+wsfc_sofs_<property>          # WSFC SOFS solution
+avd_<property>                # Azure Virtual Desktop solution
+aks_<property>                # AKS solution
+```
+
+Variable naming rules from the [Variable Management Standards](../variable-management/) apply in full: `snake_case`, `^[a-z][a-z0-9_]*$`, max 50 characters.
+
+### 3.3 Map Variables for Per-Resource Configuration
+
+When a property varies per resource instance (e.g., per-VM storage paths), use a **map** variable type:
+
+```yaml title="infrastructure-<env>.yml"
+wsfc_sofs_storage_path_ids:
+  "01": "/subscriptions/.../sp-clus01-vmstore-prd-01"
+  "02": "/subscriptions/.../sp-clus01-vmstore-prd-02"
+  "03": "/subscriptions/.../sp-clus01-vmstore-prd-03"
+```
+
+Scripts must iterate the map by key — never hardcode per-instance values.
+
+---
+
+## 4. Parallel Execution
+
+### 4.1 The Parallelism Rule
+
+> **Independent operations MUST be executed in parallel to minimize deployment time.**
+
+When deploying multiple identical resources (VMs, NICs, disks), operations that have no dependencies on each other should run concurrently.
+
+### 4.2 Identifying Parallel Candidates
+
+| Pattern | Parallel? | Reason |
+|---------|-----------|--------|
+| Creating 3 VMs with no inter-dependencies | **Yes** | Each VM is independent |
+| Creating 3 NICs on the same logical network | **Yes** | NICs are independent |
+| Creating data disks for the same VM | **Yes** | Disks are independent |
+| Creating a VM then attaching disks to it | **No** | Disk attach depends on VM existing |
+| Creating a NIC then creating the VM that uses it | **No** | VM depends on NIC |
+| Installing roles on 3 nodes via PSRemoting | **Yes** | Each node is independent |
+| Creating a cluster then configuring S2D | **No** | S2D depends on cluster |
+
+### 4.3 Implementation Patterns
+
+#### PowerShell — `ForEach-Object -Parallel`
+
+Use PowerShell 7's `-Parallel` for independent Azure CLI operations:
+
+```powershell title="Example: Create 3 NICs in parallel"
+$VMNames | ForEach-Object -Parallel {
+    $VMName = $_
+    $NicName = "$VMName-nic"
+    # Each iteration runs in its own runspace
+    az stack-hci-vm network nic create `
+        --name $NicName `
+        --resource-group $using:ResourceGroup `
+        --custom-location $using:CustomLocationId `
+        --location $using:Location `
+        --subnet-id $using:LogicalNetworkId `
+        --ip-address $using:VMIPs[$VMName]
+} -ThrottleLimit 5
+```
+
+#### PowerShell — `Start-Job` / `Wait-Job`
+
+For operations that need output capture:
+
+```powershell title="Example: Create 3 VMs as background jobs"
+$jobs = @()
+foreach ($VM in $VMNames) {
+    $jobs += Start-Job -ScriptBlock {
+        param($VMName, $RG, $Location, $Image)
+        az stack-hci-vm create --name $VMName --resource-group $RG ...
+    } -ArgumentList $VM, $ResourceGroup, $Location, $ImageName
+}
+$jobs | Wait-Job | Receive-Job
+```
+
+#### Terraform — Implicit Parallelism
+
+Terraform handles parallelism automatically when resources have no `depends_on` or implicit references between them. Use `count` or `for_each` for multi-instance resources:
+
+```hcl title="Example: Terraform parallel VM creation"
+resource "azurerm_stack_hci_virtual_machine" "sofs" {
+  for_each = var.vm_configs
+  name     = each.value.name
+  # Terraform creates all VMs in parallel (up to -parallelism flag)
+}
+```
+
+:::tip Terraform Parallelism Flag
+Increase parallelism for large deployments: `terraform apply -parallelism=10` (default is 10).
+:::
+
+#### Bicep — Batch Deployments
+
+Bicep supports `@batchSize()` for controlling parallel module deployments:
+
+```bicep title="Example: Bicep parallel NIC creation"
+@batchSize(3)
+module nics 'nic.bicep' = [for (vm, i) in vmConfigs: {
+  name: '${vm.name}-nic'
+  params: { ... }
+}]
+```
+
+### 4.4 Parallelism Requirements by Step
+
+Each solution must document which deployment steps are parallelizable. Example for a 3-node SOFS:
+
+| Step | Operation | Parallel | Implementation |
+|------|-----------|----------|----------------|
+| Resource Group | `az group create` | N/A | Single operation |
+| Cloud Witness | Storage account create | N/A | Single operation |
+| NICs | Create 3 NICs | **Yes** | `ForEach-Object -Parallel` |
+| VMs | Create 3 VMs | **Yes** | `ForEach-Object -Parallel` |
+| Data Disks | Create 12 disks | **Yes** | `ForEach-Object -Parallel` |
+| Disk Attach | Attach 4 disks per VM | **Per-VM** | Parallel across VMs, serial within |
+| Role Install | Install features on 3 nodes | **Yes** | `Invoke-Command` with multiple targets |
+| Cluster Create | `New-Cluster` | No | Sequential — single operation |
+| S2D Enable | `Enable-ClusterStorageSpacesDirect` | No | Sequential — depends on cluster |
+
+---
+
+## 5. Idempotency
+
+### 5.1 The Idempotency Rule
+
+> **Every deployment script MUST be idempotent — safe to run multiple times without creating duplicates or errors.**
+
+### 5.2 Implementation Pattern
+
+Before every resource creation, check if it already exists:
+
+```powershell title="Idempotency guard pattern"
+# Check before create
+$existing = az stack-hci-vm show --name $VMName --resource-group $RG 2>$null | ConvertFrom-Json
+if ($existing) {
+    Write-Log "VM '$VMName' already exists. Skipping." "PASS"
+} else {
+    Write-Log "Creating VM: $VMName"
+    az stack-hci-vm create --name $VMName ...
+}
+```
+
+For Terraform, idempotency is built-in via state management. For PowerShell and CLI scripts, **every** create operation must have an existence check.
+
+### 5.3 Idempotency Checklist
+
+| Resource Type | Check Command | 
+|--------------|---------------|
+| Resource Group | `az group exists --name $RG` |
+| Storage Account | `az storage account show --name $Name` |
+| NIC | `az stack-hci-vm network nic show --name $Name --resource-group $RG` |
+| VM | `az stack-hci-vm show --name $Name --resource-group $RG` |
+| Disk | `az stack-hci-vm disk show --name $Name --resource-group $RG` |
+| Failover Cluster | `Get-Cluster -ErrorAction SilentlyContinue` |
+| S2D Volume | `Get-VirtualDisk -FriendlyName $Name -ErrorAction SilentlyContinue` |
+| SOFS Role | `Get-ClusterGroup -Name $Name -ErrorAction SilentlyContinue` |
+| SMB Share | `Get-SmbShare -Name $Name -ScopeName $Scope -ErrorAction SilentlyContinue` |
+
+---
+
+## 6. Credential Management
+
+### 6.1 Zero Interactive Prompts
+
+> **Solution scripts MUST NEVER prompt for credentials interactively during unattended execution.**
+
+The credential resolution order for all solution scripts:
+
+1. **`-Credential` parameter** — passed directly at invocation
+2. **Key Vault** — resolve from `keyvault://` URIs in the solution config (Az.KeyVault first, az CLI fallback)
+3. **Hard fail** — throw a terminating error with a clear message explaining how to provide credentials
+
+:::danger No Read-Host, No Get-Credential Without -UserName
+`Read-Host` and bare `Get-Credential` (without a pre-filled username) are **prohibited** in solution scripts. These block CI/CD pipelines and unattended execution. If Key Vault resolution fails and no `-Credential` was provided, the script must **fail loudly** — not silently wait for input.
+:::
+
+### 6.2 Credential Scope
+
+| Script Purpose | Account | Config Path |
+|---------------|---------|-------------|
+| Azure resource deployment (az CLI) | Logged-in Azure identity | `az login` session |
+| Guest OS config (pre-domain-join) | Local Administrator | `identity.accounts.account_local_admin_*` |
+| Guest OS config (post-domain-join) | LCM domain account | `identity.accounts.account_lcm_*` |
+| Solution-specific admin | Solution admin | Solution-specific KV secret |
+
+---
+
+## 7. WhatIf / Dry-Run Support
+
+### 7.1 Requirement
+
+> **Every solution deployment script MUST support a `-WhatIf` (PowerShell) or equivalent dry-run mode.**
+
+Dry-run mode must:
+- Load and validate all configuration
+- Resolve credentials (to verify Key Vault access)
+- Display what **would** be created/modified
+- Exit without making any changes
+
+### 7.2 Implementation
+
+```powershell title="WhatIf gate pattern"
+if ($WhatIf) {
+    Write-Log "[DRY RUN] Would create the following:" "WARN"
+    Write-Log "  Resource Group:  $ResourceGroup"
+    Write-Log "  VMs:             $VMCount x $VMPrefix"
+    # ... list all resources
+    Write-Log "[DRY RUN] No changes made." "WARN"
+    exit 0
+}
+```
+
+For Terraform, use `terraform plan`. For Bicep/ARM, use `az deployment group what-if`.
+
+---
+
+## 8. Tagging and Metadata
+
+### 8.1 Required Tags
+
+Every Azure resource created by a solution must include these tags:
+
+| Tag Key | Source | Example |
+|---------|--------|---------|
+| `environment` | infrastructure YAML | `production` |
+| `solution` | solutions.yaml | `sofs-azure-local` |
+| `project` | solution config | `SOFS` |
+| `workload` | solution config | `FSLogix` |
+
+### 8.2 Tag Consistency
+
+Tags must be consistent across all automation tools. Define tag values in the infrastructure YAML and pass them through the solution config — never hardcode tags in scripts or Terraform.
+
+---
+
+## 9. Logging and Observability
+
+### 9.1 Log Requirements
+
+All solution scripts must produce structured logs:
+
+- **Log file**: `logs/<solution-name>/<timestamp>_<script-short-name>.log`
+- **Log format**: `[<timestamp>] [<LEVEL>] <message>`
+- **Levels**: `PASS`, `FAIL`, `WARN`, `HEADER`, `INFO`, `VERBOSE`, `DEBUG`
+- **Console + file**: All log output goes to both console (color-coded) and log file
+
+### 9.2 Log Retention
+
+Log files are written to the repo-root-relative `logs/` directory, which is gitignored. Engineers should archive logs from production deployments according to their retention policy.
+
+---
+
+## 10. Error Handling and Recovery
+
+### 10.1 Fail-Fast on Critical Errors
+
+If a critical resource fails to create (e.g., the resource group, a VM), the script must:
+
+1. Log the error with level `FAIL`
+2. Include the Azure error message/code in the log
+3. Terminate execution with a non-zero exit code
+
+### 10.2 Graceful Degradation for Non-Critical Errors
+
+Non-critical operations (e.g., anti-affinity rules, AV exclusion guidance) should:
+
+1. Log the error with level `WARN`
+2. Continue execution
+3. Include the skipped step in the summary output
+
+### 10.3 Resumability
+
+Because all operations are idempotent (§5), a failed script can be re-run after fixing the root cause. The script will skip already-completed steps and resume from the failure point.
+
+---
+
+## 11. Solution Documentation Requirements
+
+Every solution must include documentation in the docs site:
+
+| Document | Location | Purpose |
+|----------|----------|---------|
+| Solution overview | `docs/product-<name>/solutions/<solution>/` | Architecture, prerequisites, design decisions |
+| Deployment guide | Same location | Step-by-step with Execution Options tabs |
+| Variable reference | Same location or inline | All solution-specific variables with descriptions |
+| Troubleshooting | Same location | Common failure modes and remediation |
+
+Documentation must follow the [Provisioning Runbook Standard](../provisioning/provisioning-runbook-standard.mdx) for step-by-step guides.
+
+---
+
+## 12. Testing and Validation
+
+### 12.1 Pre-Deployment Validation
+
+Every solution script should validate prerequisites before attempting deployment:
+
+- Config file exists and parses correctly
+- Required variables are present and non-empty
+- Azure subscription context is set
+- Key Vault is accessible (credential resolution succeeds)
+- Required CLI extensions are installed
+
+### 12.2 Post-Deployment Validation
+
+Every deployment script must include a verification step that confirms:
+
+- All expected resources exist
+- Resources are in the expected provisioning state
+- Resource properties match the input configuration (e.g., disk count, VM size)
+
+### 12.3 WhatIf Testing
+
+Before merging any solution change, run all automation tools in dry-run mode and verify the output matches:
+
+```bash title="Parity validation"
+# PowerShell
+.\solutions\sofs\powershell\Deploy-SOFS-Azure.ps1 -WhatIf
+
+# Terraform
+terraform plan -var-file="terraform.tfvars"
+
+# Bicep (if applicable)
+az deployment group what-if --template-file main.bicep --parameters @parameters.json
+```
+
+All tools must report the same set of resources and configuration values.
+
+---
+
+## Appendix A: Current Solutions
+
+| Solution | Directory | Automation Tools | Status |
+|----------|-----------|-----------------|--------|
+| SOFS (FSLogix) | `solutions/sofs/` | PowerShell, Terraform | Active |
+| AVD | `solutions/avd/` | — | Planned |
+| AKS | `solutions/aks/` | — | Planned |
+| AI Foundry | `solutions/ai_foundry/` | — | Planned |
+| App Services | `solutions/app_services/` | — | Planned |
+| IoT Operations | `solutions/iot_operations/` | — | Planned |
+| Machine Learning | `solutions/machine_learning/` | — | Planned |
+| MI SQL | `solutions/mi_sql/` | — | Planned |
+
+---
+
+## Appendix B: Example — SOFS Parity Matrix
+
+Demonstrates how the SOFS solution maintains parity across PowerShell and Terraform:
+
+| Feature | PowerShell | Terraform |
+|---------|-----------|-----------|
+| Resource group creation | `az group create` | `azurerm_resource_group` |
+| Per-VM storage paths | `$StoragePathIds` hashtable | `storage_path_ids` map variable |
+| Static IPs | `--ip-address` on NIC create | `ip_configuration.private_ip_address` |
+| Data disk attach | `az stack-hci-vm disk attach` | `azurerm_stack_hci_virtual_machine_data_disk` |
+| Idempotency | `az show` before each create | Terraform state |
+| Credential resolution | Key Vault → hard fail | N/A (runs as service principal) |
+| Dry-run mode | `-WhatIf` switch | `terraform plan` |
+| Cloud witness | `az storage account create` | `azurerm_storage_account` |
+| Tagging | `$Tags` hashtable → `--tags` | `tags` variable |

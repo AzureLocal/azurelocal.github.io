@@ -1,0 +1,469 @@
+---
+id: governance
+title: Variable Governance
+sidebar_label: Governance
+---
+
+# Variable Governance
+
+[![Governance](https://img.shields.io/badge/Type-Governance-blue?logo=github)](https://github.com/features/issues)
+[![Process](https://img.shields.io/badge/Process-Standardized-green)](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/)
+[![Lifecycle](https://img.shields.io/badge/Lifecycle-Management-purple)](https://semver.org/)
+
+> **Processes for managing the variable registry lifecycle - from proposal to deployment**
+
+**Process Guide** | **Registry Maintenance** | **Governance Workflows**
+
+---
+
+## Overview
+
+Variable governance ensures the master registry remains accurate, consistent, and useful across all TierPoint Product Technology repositories. This document defines the processes for proposing, reviewing, approving, and deploying changes to the variable system.
+
+### Governance Principles
+
+1. **Single Source of Truth** - Registry is the authoritative reference
+2. **Collaborative Review** - Changes require team approval
+3. **Version Control** - Semantic versioning for changes
+4. **Documentation** - All changes documented and communicated
+5. **Validation** - Automated testing prevents breaking changes
+
+---
+
+## Registry Change Process
+
+### Phase 1: Proposal
+
+**Who:** Any team member  
+**Trigger:** Need for new variable or change to existing variable
+
+**Steps:**
+1. **Check for Duplicates**
+   ```bash
+   # Search registry for similar variables
+   grep -i "cluster.*name" master-registry.yaml
+   ```
+
+2. **Create Issue**
+   - Repository: `tierpoint-prodtech-documentation`
+   - Template: `Variable Registry Change`
+   - Fields:
+     - Variable name
+     - Category
+     - Type and constraints
+     - Use case justification
+     - Impact assessment
+
+3. **Draft Variable Definition**
+   ```yaml
+   # Proposed addition to master-registry.yaml
+   clusters:
+     azure_local:
+       azl_custom_setting:
+         type: string
+         description: "Custom setting for specific use case"
+         required: false
+         example: "default-value"
+   ```
+
+### Phase 2: Review
+
+**Who:** Product Technology Architecture Team  
+**Duration:** 2-5 business days
+
+**Review Criteria:**
+- **Necessity** - Is this variable actually needed?
+- **Naming** - Follows registry naming conventions?
+- **Scope** - Universal or environment-specific?
+- **Constraints** - Appropriate validation rules?
+- **Documentation** - Clear description and examples?
+- **Impact** - Breaking changes to existing repos?
+
+**Review Checklist:**
+```markdown
+- [ ] Variable name follows snake_case convention
+- [ ] Description is clear and actionable
+- [ ] Type constraints are appropriate
+- [ ] Examples provided for complex variables
+- [ ] No duplicates in registry
+- [ ] Impact on existing repositories assessed
+- [ ] Schema generation tested
+```
+
+### Phase 3: Approval
+
+**Who:** Product Technology Lead or Architecture Team  
+**Trigger:** Review completed with no blocking issues
+
+**Approval Process:**
+1. **Technical Review** - Code review of registry changes
+2. **Impact Review** - Assessment of downstream effects
+3. **Documentation Review** - Updates to this governance document
+4. **Final Approval** - Merge authorization
+
+### Phase 4: Implementation
+
+**Who:** Registry maintainer  
+**Trigger:** Change approved
+
+**Steps:**
+1. **Update Registry**
+   ```bash
+   # Edit master-registry.yaml
+   vim docs/standards/variable-management/assets/master-registry.yaml
+   ```
+
+2. **Regenerate Schema**
+   ```bash
+   # Generate updated JSON schema
+   generate-schema --input master-registry.yaml --output infrastructure.schema.json
+   ```
+
+3. **Update Documentation**
+   - Update registry reference
+   - Update examples if needed
+   - Update version numbers
+
+4. **Create Pull Request**
+   - Branch: `feature/variable-{name}`
+   - Description: Links to original issue
+   - Reviewers: Architecture team
+
+### Phase 5: Deployment
+
+**Who:** CI/CD Pipeline  
+**Trigger:** PR merged
+
+**Automated Steps:**
+1. **Version Bump**
+   ```bash
+   # Update version based on change type
+   # Major: Breaking changes
+   # Minor: New variables
+   # Patch: Documentation updates
+   ```
+
+2. **Validation Tests**
+   ```bash
+   # Test schema generation
+   validate-schema infrastructure.schema.json
+   
+   # Test against sample configurations
+   validate-config --schema infrastructure.schema.json --config sample-infrastructure.yml
+   ```
+
+3. **Documentation Build**
+   ```bash
+   # Build Docusaurus site
+   npm run build
+   ```
+
+4. **Notification**
+   - Slack notification to ProdTech team
+   - Email to repository maintainers
+   - Update to change log
+
+---
+
+## Change Types and Versioning
+
+### Semantic Versioning
+
+**Major Version (2.x.x → 3.x.x)**
+- Breaking changes (removed variables, changed types)
+- Requires updates to all environment repositories
+- Communication: Email to all teams, migration guide
+
+**Minor Version (x.2.x → x.3.x)**
+- New variables or categories added
+- Backward compatible
+- Communication: Slack notification, documentation update
+
+**Patch Version (x.x.1 → x.x.2)**
+- Documentation updates, examples, metadata fixes
+- No functional changes
+- Communication: Internal documentation update
+
+### Change Classification
+
+| Change Type | Version Impact | Review Required | Communication |
+|-------------|----------------|-----------------|---------------|
+| **New Variable** | Minor | Architecture Team | Team notification |
+| **Type Change** | Major | All stakeholders | Organization-wide |
+| **Constraint Change** | Major | Architecture Team | Team notification |
+| **Documentation** | Patch | Self-review | None |
+| **Example Update** | Patch | Self-review | None |
+
+---
+
+## Repository Synchronization
+
+### Distribution Model
+
+**Centralized Registry → Distributed Copies**
+
+```
+Master Registry (Documentation Repo)
+    ↓ Sync
+Environment Repositories
+    ↓ Validation
+Infrastructure Deployment
+```
+
+### Sync Process
+
+**Automated Sync (Recommended):**
+```yaml
+# .github/workflows/sync-registry.yml
+name: Sync Variable Registry
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly Monday 2 AM
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Download Latest Registry
+        run: |
+          curl -o variables/master-registry.yaml \
+            https://raw.githubusercontent.com/tierpoint/tierpoint-prodtech-documentation/main/docs/standards/variable-management/assets/master-registry.yaml
+          
+          curl -o variables/infrastructure.schema.json \
+            https://raw.githubusercontent.com/tierpoint/tierpoint-prodtech-documentation/main/docs/standards/variable-management/assets/infrastructure.schema.json
+      
+      - name: Validate Sync
+        run: |
+          # Test schema validity
+          ajv validate -s variables/infrastructure.schema.json -d infrastructure.yml
+      
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v4
+        with:
+          title: 'chore: sync variable registry ${{ github.event.repository.updated_at }}'
+          body: 'Automated sync of master variable registry'
+```
+
+**Manual Sync:**
+```powershell
+# Download latest registry
+Invoke-WebRequest -Uri "https://tierpoint-prodtech-documentation/docs/standards/variable-management/assets/master-registry.yaml" `
+                 -OutFile "variables/master-registry.yaml"
+
+Invoke-WebRequest -Uri "https://tierpoint-prodtech-documentation/docs/standards/variable-management/assets/infrastructure.schema.json" `
+                 -OutFile "variables/infrastructure.schema.json"
+
+# Validate
+.\tools\Validate-Infrastructure.ps1 -ConfigPath .\infrastructure.yml
+```
+
+### Sync Frequency
+
+| Repository Type | Sync Frequency | Trigger |
+|----------------|----------------|---------|
+| **Active Development** | Daily | CI/CD Pipeline |
+| **Stable Production** | Weekly | Scheduled Job |
+| **Archived** | Manual | As needed |
+
+---
+
+## Quality Assurance
+
+### Pre-Merge Checks
+
+**Automated:**
+```yaml
+# CI/CD Pipeline
+- name: Validate Registry Changes
+  run: |
+    # Check YAML syntax
+    yamllint master-registry.yaml
+    
+    # Validate schema generation
+    generate-schema --input master-registry.yaml --output temp-schema.json
+    diff infrastructure.schema.json temp-schema.json
+    
+    # Test against sample configs
+    ajv validate -s infrastructure.schema.json -d sample-infrastructure.yml
+```
+
+**Manual:**
+- [ ] Registry YAML is valid
+- [ ] Schema generates without errors
+- [ ] Sample configurations validate
+- [ ] Documentation builds successfully
+- [ ] No breaking changes without major version bump
+
+### Post-Merge Validation
+
+**Environment Testing:**
+```powershell
+# Validate the deployment configuration
+$configFile = "configs/infrastructure.yml"
+Write-Host "Validating $configFile..."
+
+# Validate against new schema
+.\tools\Validate-Infrastructure.ps1 -ConfigPath $configFile
+
+# Test deployment scripts (dry run)
+.\tools\Test-Deployment.ps1 -ConfigPath $configFile -DryRun
+```
+
+---
+
+## Emergency Changes
+
+### When to Use Emergency Process
+
+- **Security Issues** - Immediate security fixes required
+- **Critical Bugs** - Blocking production deployments
+- **Compliance Requirements** - Regulatory or audit requirements
+
+### Emergency Process
+
+1. **Immediate Fix** - Apply critical change directly
+2. **Documentation** - Record emergency change with justification
+3. **Review** - Post-change review within 24 hours
+4. **Communication** - Notify all affected teams
+5. **Version Update** - Apply appropriate version bump
+
+### Emergency Change Log
+
+```yaml
+# emergency-changes.yaml
+- date: "2026-01-29"
+  change: "Fixed UUID validation pattern"
+  justification: "Blocking production deployments"
+  reviewer: "Security Team"
+  version_impact: "patch"
+  communication: "Email sent to all repository maintainers"
+```
+
+---
+
+## Change Log Management
+
+### Change Log Format
+
+```yaml
+# CHANGELOG.md
+## [2.1.0] - 2025-12-13
+
+### Added
+- Added Hyper-V Host configuration variables (7 variables)
+- Added Arc Resource Bridge for SCVMM integration (5 variables)
+
+### Changed
+- Updated cluster node validation constraints
+
+### Fixed
+- Corrected VLAN range validation (0-4094)
+```
+
+### Change Log Automation
+
+```bash
+# Generate change log from git history
+git log --oneline --grep="registry" --since="2025-12-01" | \
+  grep -E "(Added|Changed|Fixed|Removed)" | \
+  sort -r > changelog-registry.md
+```
+
+---
+
+## Training and Documentation
+
+### New Team Member Onboarding
+
+**Required Reading:**
+1. [Variable Management Overview](../index.mdx)
+2. [Registry Reference](./registry-reference.mdx)
+3. [Usage Workflows](./usage-workflows.mdx)
+4. This governance document
+
+**Hands-on Training:**
+- Create sample infrastructure.yml
+- Validate against schema
+- Propose new variable (simulated)
+
+### Documentation Updates
+
+**When to Update:**
+- New registry features
+- Process changes
+- Common issues discovered
+- Best practices identified
+
+**Update Process:**
+1. Create documentation PR
+2. Review by technical writers
+3. Merge and deploy
+
+---
+
+## Metrics and Monitoring
+
+### Registry Health Metrics
+
+```powershell
+# Registry metrics script
+$registry = Get-Content master-registry.yaml -Raw | ConvertFrom-Yaml
+
+$metrics = @{
+    TotalVariables = ($registry | ConvertTo-Json -Depth 10).Split('"').Count / 2
+    Categories = $registry.PSObject.Properties.Name.Count
+    RequiredVariables = ($registry | ConvertTo-Json -Depth 10 | Select-String '"required": true').Count
+    Version = $registry.version
+}
+
+$metrics | ConvertTo-Json
+```
+
+### Adoption Metrics
+
+- **Repository Coverage** - % of repos using registry
+- **Validation Success Rate** - % of validations passing
+- **Change Frequency** - Variables added per month
+- **Error Reduction** - Deployment failures prevented
+
+### Monitoring Dashboard
+
+```yaml
+# Registry monitoring (proposed)
+metrics:
+  - name: registry_sync_status
+    type: gauge
+    description: "Registry synchronization status across repositories"
+    
+  - name: validation_errors
+    type: counter
+    description: "Schema validation errors detected"
+    
+  - name: change_proposals
+    type: counter
+    description: "Variable change proposals submitted"
+```
+
+---
+
+## Downloads
+
+- [**📂 Master Registry**](./assets/master-registry.yaml)
+- [**📂 JSON Schema**](./assets/infrastructure.schema.json)
+
+---
+
+## Related Documents
+
+- [Registry Reference](./registry-reference.mdx) - Variable definitions
+- [Schema Validation](./schema-validation.mdx) - Validation guide
+- [Usage Workflows](./usage-workflows.mdx) - Implementation guide
+- [Examples](./examples.mdx) - Usage examples
+
+---
+
+*Governance maintained by Product Technology team. Last updated: 2026-01-29*

@@ -1,0 +1,565 @@
+---
+id: provisioning-runbook-standard
+title: Provisioning Runbook Standard
+sidebar_label: Runbook Standard
+sidebar_position: 1
+description: "Framework for creating step-by-step provisioning runbooks with the Execution Options pattern"
+---
+
+# Provisioning Runbook Standard
+
+[![Standards](https://img.shields.io/badge/Type-Standard-purple?style=flat-square)](../documentation/documentation-standards.mdx)
+[![Runbook](https://img.shields.io/badge/Category-Runbook-blue?style=flat-square)](../documentation/documentation-standards.mdx)
+[![TierPoint](https://img.shields.io/badge/TierPoint-ProdTech-orange?style=flat-square)](https://tierpoint.com)
+
+> **DOCUMENT CATEGORY**: Standard  
+> **SCOPE**: Provisioning and deployment runbook documentation  
+> **PURPOSE**: Define the Execution Options Framework for step-by-step deployment guides  
+> **MASTER REFERENCE**: [Documentation Standards](../documentation/documentation-standards.mdx)
+
+**Status**: Active  
+**Applies To**: All provisioning, deployment, and implementation runbooks  
+**Last Updated**: 2026-03-10
+
+---
+
+## Purpose
+
+This standard defines the **Execution Options Framework** — a structured approach for creating provisioning runbooks that guide engineers through deploying and configuring infrastructure.
+
+Documents following this framework must be:
+
+- **Repeatable**: Any qualified engineer should achieve the same result
+- **Context-Aware**: Organized by execution context, not just by tool
+- **Validated**: Include verification steps to confirm success
+- **Flexible**: Support manual, scripted, orchestrated, and standalone execution
+
+:::info Relationship to Documentation Standards
+This standard extends the [Documentation Standards](../documentation/documentation-standards.mdx) for the specific use case of provisioning runbooks. All general documentation requirements (frontmatter, badges, structure) still apply.
+:::
+
+---
+
+## The Execution Options Framework
+
+### Core Concept
+
+Provisioning steps are organized by **execution context** (WHERE and HOW you run the commands). Each task presents its execution options using **tabbed navigation** (`<Tabs>` component).
+
+| Option | Execution Context | Description |
+|--------|-------------------|-------------|
+| **Manual** | GUI / Physical / Web UI | Human-performed steps — Azure Portal, iDRAC Web UI, on-site inspection, WAC, etc. |
+| **Orchestrated Script** | Run FROM management server | Config-driven scripts executed remotely via PSRemoting — reads `infrastructure.yml` |
+| **Standalone Script** | Run anywhere (copy-paste) | Self-contained script — all variables declared in `#region CONFIGURATION` at the top before any executable code. No external dependencies. |
+
+### Task Classification — Select Tabs Before Authoring
+
+Before writing a task document, **classify its execution target**. The target determines which tabs the document receives. This is not optional — every task must be classified.
+
+For the full decision flowchart with Mermaid diagram, see the [Tab Selection Decision Logic](./tab-decision-logic.mdx).
+
+| Execution Target | Tab Profile | Tabs |
+|------------------|-------------|------|
+| **Azure-Only** (Portal / Azure API operations) | 3 tabs | Azure Portal · Azure CLI / PowerShell · Standalone Script |
+| **Windows Server** (On-prem node, GUI/PSRemoting) | Up to 3 tabs | *Contextual GUI* · Orchestrated Script (Mgmt Server) · Standalone Script |
+| **Physical / Vendor Hardware** (iDRAC, switch, firewall) | Variable | *Vendor UI* · API/CLI Script (if API exists) · Standalone Script (if scriptable) |
+| **Network Device** (FortiGate, Dell switch) | Per-device | Tabs per device model, NOT per execution method (`groupId="device-type"`) |
+| **CI/CD Pipeline / Documentation-Only** | No tabs | Single procedure, narrative, validation, or checklist |
+
+:::danger Classify First, Then Author
+**Never start writing tabs without classifying the task.** The classification determines the exact tab count, labels, values, and `groupId`. Skip this step and the document will be wrong.
+:::
+
+### Tab Profiles by Execution Target
+
+#### Azure-Only Tasks (3 Tabs)
+
+Azure is a control-plane operation — there is **no node to run on**.
+
+| Tab | `value` | `label` | Config Source | Default |
+|-----|---------|---------|---------------|---------|
+| 1 | `manual` | `Azure Portal` | N/A | `default` |
+| 2 | `orchestrated` | `Azure CLI / PowerShell` | `infrastructure.yml` | |
+| 3 | `standalone` | `Standalone Script` | `#region CONFIGURATION` | |
+
+```mdx
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+  {/* Azure Portal GUI steps */}
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+  {/* Config-driven script — reads infrastructure.yml */}
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+  {/* Self-contained copy-paste script — #region CONFIGURATION at top */}
+</TabItem>
+</Tabs>
+```
+
+#### Windows Server Tasks (Up to 3 Tabs)
+
+| Tab | `value` | `label` | Config Source | Default |
+|-----|---------|---------|---------------|---------|
+| 1 | `manual` | *Contextual* (SConfig, ADUC, DNS Manager, WAC, etc.) | N/A | `default` (if present) |
+| 2 | `orchestrated` | `Orchestrated Script (Mgmt Server)` | `infrastructure.yml` via PSRemoting | Default if no manual |
+| 3 | `standalone` | `Standalone Script` | `#region CONFIGURATION` | |
+
+```mdx
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="{SConfig | ADUC | DNS Manager | WAC}" default>
+  {/* GUI steps */}
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+  {/* Config-driven script — reads infrastructure.yml via PSRemoting */}
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+  {/* Self-contained copy-paste script — #region CONFIGURATION at top */}
+</TabItem>
+</Tabs>
+```
+
+#### Physical / Vendor Hardware Tasks (Variable Tabs)
+
+| Tab | `value` | `label` | When to Include |
+|-----|---------|---------|-----------------|
+| 1 (default) | `manual` | *Vendor-specific* (iDRAC Web UI, Switch Console, FortiGate GUI) | Always |
+| 2 (if API) | `api` | `API / CLI Script` | Only if vendor provides API/CLI |
+| 3 (if scriptable) | `standalone` | `Standalone Script` | Only if the task is scriptable |
+
+#### Network Device Tasks (Per-Device Tabs)
+
+Network device tasks use `groupId="device-type"` with tabs **per device model**, not per execution method:
+
+```mdx
+<Tabs groupId="device-type">
+<TabItem value="fortigate" label="FortiGate" default>
+  {/* FortiGate-specific procedure */}
+</TabItem>
+<TabItem value="dell-switch" label="Dell Switch">
+  {/* Dell switch-specific procedure */}
+</TabItem>
+</Tabs>
+```
+
+#### CI/CD Pipeline and Documentation-Only
+
+**No tabs.** Write a single narrative procedure, validation checklist, or documentation-only page.
+
+### `groupId` Values
+
+| Context | `groupId` |
+|---------|-----------|
+| Execution option tabs (Azure, Windows, Hardware) | `deployment-method` |
+| Network device variant tabs | `device-type` |
+
+### Default Tab Logic
+
+| Condition | Default Tab |
+|-----------|-------------|
+| Manual tab exists | Manual tab is default |
+| No manual tab | Orchestrated Script is default |
+
+Set the default using the `default` attribute on the `<TabItem>`.
+
+### Tab Labels
+
+The **Manual** tab label must be contextual to the task:
+
+| Scenario | Manual Tab Label |
+|----------|-----------------|
+| Azure Portal action | `Azure Portal` |
+| Physical site work | `On-Site Inspection` |
+| Hardware management UI | `iDRAC Web UI` |
+| Network switch console | `Switch Console` |
+| Windows Admin Center | `Windows Admin Center` |
+| Windows Server Configuration | `SConfig` |
+
+Script tab labels are **fixed** — use these exact strings, no variations:
+
+| Tab | Exact Label |
+|-----|-------------|
+| Azure CLI / PowerShell (Azure-only tasks) | `Azure CLI / PowerShell` |
+| Orchestrated Script (Windows tasks) | `Orchestrated Script (Mgmt Server)` |
+| Standalone Script (all task types) | `Standalone Script` |
+
+### Common Tab Violations
+
+| Violation | Correction |
+|-----------|------------|
+| Azure-only task missing `Azure CLI / PowerShell` tab | Add it with `value="orchestrated"` |
+| Azure-only task uses label `Orchestrated Script (Mgmt Server)` | Rename to `Azure CLI / PowerShell`. Keep `value="orchestrated"` |
+| Windows task uses label `Azure CLI / PowerShell` | Rename to `Orchestrated Script (Mgmt Server)` |
+| Standalone Script has variables scattered through script body | Move all variables into `#region CONFIGURATION` at the top |
+| Orchestrated Script uses hardcoded values | Replace with `$config.{path}` references from `infrastructure.yml` |
+| Inconsistent tab labels across documents | Use exact labels from this document. No abbreviations or rewording |
+| Tabs on CI/CD or documentation-only pages | Remove tabs entirely |
+| Network device task with execution-method tabs | Use `groupId="device-type"` with per-device tabs instead |
+
+### When to Use Each Option
+
+| Option | Best For | Requirements |
+|--------|----------|-------------|
+| **Manual** | Learning, single deployments, visual preference, physical tasks | Web browser / physical access / vendor UI |
+| **Orchestrated Script** | Managing from jump box, Azure API operations, multiple nodes | Management server or workstation, `infrastructure.yml`, helpers |
+| **Standalone Script** | Sharing, demos, one-off runs, copy-paste use, environments without toolkit | PowerShell only — no config file, no helpers needed |
+
+### Script Variants Within Each Option
+
+For Orchestrated / Azure CLI+PS options, multiple script variants are available:
+
+| Variant | File Suffix | Description |
+|---------|-------------|-------------|
+| **PowerShell + Azure PowerShell** | `-az.ps1` | Primary. Uses Az modules (`Connect-AzAccount`, `New-AzResource`) |
+| **PowerShell + Azure CLI** | `-azcli.ps1` | PowerShell script using `az` CLI commands |
+| **Bash + Azure CLI** | `.sh` | Bash script using `az` CLI commands |
+
+> **Note**: PowerShell with Azure PowerShell modules is the primary documented language. Alternative implementations follow the same logic.
+
+### IaC/CI/CD Automation
+
+Fully automated deployments (Terraform, Bicep, Ansible, CI/CD pipelines) are **NOT** part of provisioning runbooks. They are documented separately in the product's **Automation** section.
+
+---
+
+## Document Organization
+
+### Stage and Step Structure
+
+Provisioning documentation follows a hierarchical **stage → step** pattern:
+
+```
+product/implementation/
+├── stage-01-preparation/
+│   ├── _category_.json        # Stage metadata
+│   ├── index.mdx              # Stage overview (Objective, Tasks, Validation, Outcome)
+│   ├── task-01-first-task.mdx # Step with execution options tabs
+│   ├── task-02-second-task.mdx
+│   └── task-03-third-task.mdx
+├── stage-02-foundation/
+│   ├── _category_.json
+│   ├── index.mdx
+│   └── ...
+└── stage-03-deployment/
+    └── ...
+```
+
+### Naming Conventions
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| Stage folder | `stage-{nn}-{description}` | `stage-03-azure-foundation` |
+| Step file | `task-{nn}-{action-description}.mdx` | `task-01-create-key-vault.mdx` |
+| Index file | `index.mdx` | `index.mdx` |
+| Category file | `_category_.json` | `_category_.json` |
+
+:::warning Zero-Padding Required
+Always use two-digit numbers with zero-padding (`01`, `02`, `03`) for proper sorting.
+:::
+
+### Script Naming Conventions
+
+Script naming follows the [PowerShell Organization Standard](../scripting/powershell-organization-standard.mdx) and [Scripting Standards](../scripting/scripting-standards.mdx):
+
+| Context | Naming Pattern | Example |
+|---------|----------------|--------|
+| **Orchestrated** | `Invoke-{Resource}.ps1` | `Invoke-KeyVault.ps1` |
+| **Standalone** | `{Verb}-{Resource}-Standalone.ps1` | `New-AzKeyVault-Standalone.ps1` |
+| **Validation** | `Test-{Component}.ps1` | `Test-KeyVault.ps1` |
+| **Configuration** | `Configure-{Service}.ps1` | `Configure-KeyVaultAccess.ps1` |
+
+---
+
+## Stage Index Structure
+
+Every stage must have an `index.mdx` with these sections:
+
+### Required Sections
+
+| Section | Purpose | Content |
+|---------|---------|---------|
+| **Table of Contents** | Navigation | Links to all steps in this stage |
+| **Objective** | WHY | Single sentence — the goal of this stage |
+| **Tasks** | WHAT | Bullet list of high-level tasks (maps to steps) |
+| **Validation** | HOW to verify | Bullet checklist of success criteria for entire stage |
+| **Outcome** | RESULT | Single sentence — state when stage is complete |
+| **Navigation** | Wayfinding | Previous/Up/Next links |
+
+### Example Stage Index
+
+```mdx
+---
+title: "Stage 5 - Platform Key Vault"
+sidebar_label: "Stage 5 - Key Vault"
+sidebar_position: 5
+description: "Establish centralized secret management for Azure Local deployment"
+---
+
+# Stage 5 — Platform Key Vault
+
+## Table of Contents
+
+- [Task 1 – Create Platform Key Vault](./task-01-create-key-vault.mdx)
+- [Task 2 – Configure Access Policies](./task-02-configure-access.mdx)
+- [Task 3 – Store Deployment Secrets](./task-03-store-secrets.mdx)
+
+---
+
+## Stage Details
+
+### Objective
+
+Establish a platform Key Vault for centralized secret management during Azure Local deployment operations.
+
+### Tasks
+
+- Create platform Azure Key Vault (or configure existing)
+- Configure RBAC access policies for deployment operators and service principals
+- Store deployment secrets (local admin credentials, service principal secrets)
+
+### Validation
+
+- [ ] Platform Key Vault accessible and configured
+- [ ] RBAC access policies correctly assigned
+- [ ] Deployment secrets stored and retrievable by authorized identities
+
+### Outcome
+
+Secure, centralized secret management infrastructure ready to support Azure Local deployment operations.
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 4 - Identity](../stage-04-identity/) | [Implementation Index](../index.mdx) | [Phase 6 - Management Infrastructure](../stage-06-management/) |
+```
+
+---
+
+## Step Document Structure
+
+### Required Sections
+
+Every step document MUST include an **Execution Options** section containing a `<Tabs>` block. Only include tabs for execution methods that genuinely apply to the task.
+
+| Section | Purpose |
+|---------|---------|
+| **Overview** | Brief description of what this step accomplishes |
+| **Execution Options** | `<Tabs>` block with applicable execution methods |
+| **End of Step** | Clear delineation marker |
+| **Navigation** | Previous/Up/Next links |
+
+### Tab Content Requirements
+
+Each tab should contain the following sub-sections as applicable:
+
+| Sub-section | Manual | Orchestrated Script | Standalone Script |
+|-------------|--------|---------------------|-------------------|
+| **When to use** | Yes | Yes | Yes |
+| **Procedure / Code** | Step-by-step GUI | Script path + code | Inline code block |
+| **Alternative Scripts** | N/A | PowerShell, CLI, Bash | N/A |
+| **`#region CONFIGURATION`** | N/A | N/A | Yes (at top, before any executable code) |
+| **Validation** | Checklist | Script reference | Inline verification |
+| **Links** | Microsoft docs | N/A | N/A |
+
+---
+
+## Orchestrated vs Standalone: Key Differences
+
+| Aspect | Orchestrated Script | Standalone Script |
+|--------|---------------------|-------------------|
+| **Naming prefix** | `Invoke-` | `{Verb}-{Noun}-Standalone` |
+| **Execution location** | FROM management server | Anywhere |
+| **Config source** | `infrastructure.yml` + helpers | `#region CONFIGURATION` block (inline) — **all vars at top before any executable code** |
+| **External dependencies** | Config-loader, helpers, PSRemoting | **None** — fully self-contained |
+| **Parameters** | Full: `$ConfigPath`, `$Credential`, `$TargetNode`, `$WhatIf`, `$LogPath` | None — all values hardcoded in CONFIGURATION region |
+| **Credential resolution** | 1. `-Credential` param → 2. Key Vault → 3. `Get-Credential` prompt | N/A |
+| **Remoting** | Uses `Invoke-Command`, PSRemoting | Not required |
+| **Pipeline support** | Returns objects for chaining | Basic output |
+| **Best for** | Multi-node orchestration, Azure API operations, automated pipelines | Sharing, demos, one-off runs, copy-paste use |
+
+### Standalone Script Rule
+
+Every Standalone Script **must** declare all variables in a `#region CONFIGURATION` / `#endregion CONFIGURATION` block **before any executable code**. No variable may be defined outside this block or interleaved with logic.
+
+```powershell
+# CORRECT — all variables at top, then execution logic below
+#region CONFIGURATION
+$ClusterName   = "iic-clus01"          # infrastructure.yml: compute.azure_local.cluster_name
+$ResourceGroup = "rg-azurelocal-prod"  # infrastructure.yml: azure_platform.resource_groups.azl.name
+$Location      = "eastus2"             # infrastructure.yml: azure_platform.region
+#endregion CONFIGURATION
+
+# Execution begins here — never define variables below this line
+New-AzStackHCICluster -Name $ClusterName -ResourceGroupName $ResourceGroup -Location $Location
+```
+
+### Orchestrated Script Required Parameter Contract
+
+Every `Invoke-` script **must** expose these parameters:
+
+| Parameter | Type | Default | Purpose |
+|-----------|------|---------|---------|
+| `-ConfigPath` | `[string]` | `""` | Path to `infrastructure.yml`. Auto-discovered if not provided. |
+| `-Credential` | `[PSCredential]` | `$null` | Override credential resolution. |
+| `-TargetNode` | `[string[]]` | `@()` (all nodes) | Limit to named nodes. Empty = run all. |
+| `-WhatIf` | `[switch]` | `$false` | Dry-run mode. |
+| `-LogPath` | `[string]` | `""` (auto) | Override log file path. |
+
+Plus `[CmdletBinding()]` for built-in `-Verbose` and `-Debug`.
+
+**Credential resolution order** (no exceptions):
+1. `-Credential` parameter (if passed, use immediately)
+2. Key Vault — `Az.KeyVault` module first, `az` CLI fallback
+3. `Get-Credential` interactive prompt (pre-filled username)
+
+### Example: Orchestrated vs Standalone
+
+**Orchestrated Script** — Run FROM management server:
+```powershell
+# Invoke-ConfigureNTP.ps1
+[CmdletBinding()]
+param(
+    [string]$ConfigPath  = "",
+    [PSCredential]$Credential,
+    [string[]]$TargetNode = @(),
+    [switch]$WhatIf,
+    [string]$LogPath     = "",
+    [string[]]$NtpServers = @()   # YAML-overridable: override compute.azure_local.ntp_servers
+)
+$cfg = Get-Content (Resolve-ConfigPath $ConfigPath) | ConvertFrom-Yaml
+$servers = if ($NtpServers.Count) { $NtpServers } else { $cfg.compute.azure_local.ntp_servers }
+# ... credential resolution, logging, PSRemoting execution
+```
+
+**Standalone Script** — Copy-paste ready, no dependencies:
+```powershell
+# Configure-NTP-Standalone.ps1
+#region CONFIGURATION
+$NtpServers  = @("ntp1.iic.local", "ntp2.iic.local")  # NTP server addresses
+$ClusterNodes = @("iic-01-n01", "iic-01-n02")          # Target node names
+$LogFile      = "C:\Logs\ntp-config.log"               # Log output path
+#endregion CONFIGURATION
+
+foreach ($node in $ClusterNodes) {
+    Invoke-Command -ComputerName $node -ScriptBlock {
+        param($Servers)
+        w32tm /config /manualpeerlist:($Servers -join ' ') /syncfromflags:manual /reliable:YES /update
+    } -ArgumentList (, $NtpServers)
+}
+```
+
+---
+
+## Validation Standards
+
+### Validation Should Be a Mix
+
+Each step's validation should include:
+
+1. **Manual checklists** — Human-verifiable items (`[ ]` checkboxes)
+2. **Verification commands** — Inline commands to run
+3. **Validation script references** — Path to reusable validation scripts
+
+### Example Validation Section
+
+````mdx
+### Validation
+
+- [ ] Key Vault created successfully
+- [ ] Key Vault accessible from deployment workstation
+- [ ] Permission model set to RBAC
+
+```powershell
+# Verify Key Vault creation
+Get-AzKeyVault -VaultName $KeyVaultName | Format-List VaultName, Location, EnableRbacAuthorization
+```
+
+**Validation Script**: `scripts/validation/key-vault/Test-KeyVault.ps1`
+````
+
+---
+
+## Quality Checklist
+
+Before publishing a provisioning document, verify:
+
+### Classification
+- [ ] **Execution target classified** (Azure-Only / Windows Server / Physical Hardware / Network Device / CI-CD / Docs-Only)
+- [ ] Tab count and labels match the profile for the classified target
+- [ ] Correct `groupId` used (`deployment-method` or `device-type`)
+
+### Structure
+- [ ] Frontmatter includes all required fields
+- [ ] Execution Options uses `<Tabs>` with correct `groupId`
+- [ ] Only tabs for genuinely applicable methods are included
+- [ ] Step numbering is sequential and zero-padded
+- [ ] Navigation links are accurate
+
+### Stage Index
+- [ ] Table of Contents links to all steps
+- [ ] Objective is a single clear sentence
+- [ ] Tasks map to steps (same count)
+- [ ] Validation is a checkable list
+- [ ] Outcome describes end state
+
+### Step Content
+- [ ] Overview clearly explains the purpose
+- [ ] Each tab has "When to use" guidance
+- [ ] Manual tab only exists when the action is genuinely possible via GUI
+- [ ] Script tabs include primary script + alternatives table
+- [ ] Standalone tab has `#region CONFIGURATION` / `#endregion CONFIGURATION` at top — **all variables before any executable code**
+- [ ] Validation includes checklists, commands, and script references
+
+### Code Quality
+- [ ] All code blocks specify language
+- [ ] No emojis in any script block
+- [ ] Variables use consistent naming
+- [ ] Comments explain non-obvious steps
+- [ ] Commands are copy-paste ready
+- [ ] Orchestrated scripts reference `infrastructure.yml` paths with inline comments (`# path.to.value`)
+- [ ] Standalone scripts have no external dependencies
+- [ ] All Standalone variables are in `#region CONFIGURATION` — none defined in the script body
+
+### Script Naming
+- [ ] Orchestrated scripts use `Invoke-` prefix
+- [ ] Standalone scripts use `-Standalone.ps1` suffix
+- [ ] Orchestrated scripts expose the full required parameter contract
+- [ ] Orchestrated scripts return objects for pipeline
+- [ ] Standalone scripts have `#region CONFIGURATION` / `#endregion CONFIGURATION`
+
+---
+
+## Related Standards
+
+- **[Documentation Standards](../documentation/documentation-standards.mdx)** — Base documentation requirements
+- **[Badge Library](../documentation/badge-library.mdx)** — Badge definitions and usage
+- **[Naming Conventions](../documentation/naming-conventions.mdx)** — Resource naming patterns
+- **[PowerShell Organization Standard](../scripting/powershell-organization-standard.mdx)** — Script standards
+- **[Scripting Standards](../scripting/scripting-standards.mdx)** — Script options, naming, and the Standalone pattern
+- **[Scripting Framework](../scripting/scripting-framework.mdx)** — Script architecture and `infrastructure.yml`
+- **[Tab Selection Decision Logic](./tab-decision-logic.mdx)** — Flowchart and profiles for selecting the correct tab structure per task
+
+---
+
+## Templates
+
+Use these templates for new documents:
+
+- **[Stage Index Template](./stage-index-template.mdx)** — Template for stage overview pages
+- **[Step Template](./step-template.mdx)** — Template for individual step files (with `<Tabs>`)
+
+---
+
+**Version Control**
+
+- Created: 2026-01-30 by Product Technology Team
+- Last Updated: 2026-03-10 by Product Technology Team
+- Version: 5.0.0
+- Tags: standards, provisioning, runbook, deployment, execution-options-framework, tabs, task-classification
+- Keywords: provisioning, runbook, step-by-step, deployment, azure, powershell, orchestrated, standalone, tabs, classification, tab-profiles
+- Author: Product Technology Team

@@ -1,0 +1,578 @@
+---
+id: infrastructure-generation-deployment-process
+title: Infrastructure Generation Deployment Process
+sidebar_label: Infrastructure Generation Deployment Process
+---
+
+# Infrastructure Generation and Deployment Process
+
+[![Standards](https://img.shields.io/badge/Type-Standard-purple?style=flat-square)](./)  
+[![Infrastructure](https://img.shields.io/badge/Category-Infrastructure-blue?style=flat-square&logo=terraform)](./)  
+[![TierPoint](https://img.shields.io/badge/TierPoint-ProdTech-orange?style=flat-square)](https://tierpoint.com)
+
+> **DOCUMENT CATEGORY**: Standard  
+> **SCOPE**: End-to-end infrastructure generation and deployment workflow  
+> **PURPOSE**: Define the process for generating and deploying infrastructure using environment-config.yml  
+> **MASTER REFERENCE**: [Variable Management](../variable-management/)
+
+**Status**: Active  
+**Applies To**: All Azure Local environment repositories  
+**Last Updated**: 2026-01-30
+
+---
+
+## Overview
+
+This document outlines the complete process for:
+
+1. Configuring your environment using `environment-config.yml`
+2. Generating `infrastructure.yml` from templates and variables
+3. Discovering existing resources (Azure tenant and on-premises hardware)
+4. Completing and validating the infrastructure file
+5. Marking deployment readiness
+
+**Related Documentation:**
+
+- Variable Registry Process - Complete variable registry workflows *(to be created)*
+- Infrastructure Generation Flags - Scenario-based filtering logic *(to be created)*
+- Automation Tools Reference - Tool usage guide *(to be created)*
+
+---
+
+## Prerequisites
+
+- Environment repository cloned (e.g., `<org>-azl-env-<site>`)
+- Master Workplace Project repository available (for `master-registry.yaml`)
+- Azure CLI and PowerShell installed
+- Access to target Azure tenant (for discovery)
+- Access to iDRAC/iLO interfaces (for hardware discovery, if applicable)
+
+---
+
+## Process Steps
+
+### Task 1: Configure Environment Parameters
+
+**File:** `environment-config.yml` (create in your environment repo root)
+
+**Action:** Define WHAT infrastructure to generate:
+
+- Node count and storage topology
+- Services to deploy (AVD, Arc, Azure VMs)
+- IP addressing scheme
+- Network structure
+
+**Templates Available:**
+
+- `template/configs/environment-config-simple.yml` - Quick start (2-node minimal)
+- `template/configs/environment-config-REFERENCE.yml` - Complete options reference
+- `template/configs/examples/*.yml` - Real-world scenarios
+
+**Example:**
+
+```powershell
+# Copy a template that matches your scenario
+Copy-Item "C:\git\master-workplace-project\template\configs\examples\2node-switchless.yml" `
+          "C:\git\<your-env-repo>\environment-config.yml"
+
+# Edit key values:
+# - environment.name
+# - starting_ip
+# - storage_adapter_ip_start
+# - address_space
+code environment-config.yml
+```
+
+**Result:** `environment-config.yml` defines generation parameters
+
+**Reference:** Environment Config Templates *(to be created)*
+
+---
+
+### Task 2: Verify Master Registry is Current
+
+**File:** `master-registry.yaml` (in your environment repo)
+
+**Action:** Ensure you have the latest variable definitions and templates.
+
+**Methods:**
+
+**Manual Sync:**
+
+```powershell
+# Copy latest master-registry.yaml from master repo
+Copy-Item "C:\git\master-workplace-project\variables\master-registry.yaml" `
+          "C:\git\<your-env-repo>\variables\master-registry.yaml"
+```
+
+**Automated Sync (Future):**
+
+```powershell
+# Will be automated via sync script
+.\scripts\Sync-MasterRegistry.ps1
+```
+
+**Verification:**
+
+```powershell
+# Check file date and size
+Get-Item ".\variables\master-registry.yaml" | Select-Object LastWriteTime, Length
+```
+
+**Result:** Local `master-registry.yaml` matches master source
+
+**Reference:** Variable Registry Process - Sync Workflows *(to be created)*
+
+---
+
+### Task 3: Generate infrastructure.yml
+
+**Script:** `Generate-Infrastructure.ps1`
+
+**Action:** Generate `infrastructure.yml` structure from templates and variables.
+
+**Usage:**
+
+```powershell
+# Navigate to your environment repo
+cd C:\git\<your-env-repo>
+
+# Generate infrastructure.yml with appropriate flags
+.\scripts\Generate-Infrastructure.ps1 `
+    -ConfigPath "environment-config.yml" `
+    -azure_local `
+    -avd_azure_local `
+    -WhatIf
+
+# Review WhatIf output, then run actual generation
+.\scripts\Generate-Infrastructure.ps1 `
+    -ConfigPath "environment-config.yml" `
+    -azure_local `
+    -avd_azure_local
+```
+
+**Infrastructure Flags:**
+
+- `-azure_local` - Azure Local cluster nodes
+- `-avd_azure` - AVD in Azure cloud
+- `-avd_azure_local` - AVD on Azure Local
+- `-arc_scvmm` - Arc Resource Bridge for SCVMM
+- `-arc_hybrid_vms` - Arc-enabled VMs
+- `-wsfc_s2d` - Windows Failover Cluster with S2D
+- `-wsfc_san` - Windows Failover Cluster with SAN
+
+**Result:** `infrastructure.yml` created with:
+
+- Proper node array structure (based on `node_count`)
+- Network intents (based on `storage_topology`)
+- Logical networks
+- Service definitions (AVD, Arc, etc.)
+- **Empty/placeholder hardware sections** (discovery will populate)
+
+**Reference:** Infrastructure Generation Flags *(to be created)*
+
+---
+
+### Task 4: Verify infrastructure.yml Base Values
+
+**File:** `infrastructure.yml` (newly generated)
+
+**Action:** Verify generation was successful and base values populated correctly.
+
+**Checks:**
+
+```powershell
+# 1. Verify file was created
+Test-Path ".\infrastructure.yml"
+
+# 2. Validate YAML syntax
+.\scripts\Validate-Infrastructure.ps1 -ConfigPath "infrastructure.yml"
+
+# 3. Check node count matches config
+$config = Get-Content "environment-config.yml" -Raw | ConvertFrom-Yaml
+$infra = Get-Content "infrastructure.yml" -Raw | ConvertFrom-Yaml
+$infra.compute.cluster_nodes.Count -eq $config.compute.azure_local.cluster_node_count
+
+# 4. Verify key sections exist (v4.0.0 schema)
+$infra.compute.cluster_nodes            # Should have N nodes
+$infra.networking.onprem.network_intents # Should match storage topology
+$infra.networking.onprem.logical_networks # Should have VLAN definitions
+```
+
+**What to Verify:**
+
+- Node count correct
+- IP addresses match pattern from `environment-config.yml`
+- Storage topology correct (switchless vs switched)
+- Service sections present (AVD, Arc, etc.)
+- Hardware sections empty (expected - discovery will fill)
+
+**Result:** `infrastructure.yml` structure validated, ready for discovery
+
+---
+
+### Task 5: Run Azure Tenant Discovery
+
+**Script:** `Inventory-AzureTenant.ps1` (template available)
+
+**Location:** `template/scripts/discovery/Inventory-AzureTenant.ps1`
+
+**Action:** Discover existing Azure resources in target tenant.
+
+**Usage:**
+
+```powershell
+# Authenticate to Azure
+Connect-AzAccount -Tenant "00000000-aaaa-bbbb-cccc-111111111111"
+
+# Run discovery (reads tenant from infrastructure.yml or prompts)
+.\scripts\discovery\Inventory-AzureTenant.ps1
+
+# Or specify tenant explicitly
+.\scripts\discovery\Inventory-AzureTenant.ps1 `
+    -TenantId "00000000-aaaa-bbbb-cccc-111111111111"
+
+# Include RBAC and Entra ID (comprehensive)
+.\scripts\discovery\Inventory-AzureTenant.ps1 -IncludeRBAC -IncludeEntraId
+
+# Review discovered resources
+code discovery/azure-inventory.json
+```
+
+**What Gets Discovered:**
+
+- Management groups and subscriptions
+- Resource groups and all resources
+- Azure Local (Stack HCI) clusters and resources
+- Networking (VNets, NSGs, subnets, NICs, public IPs)
+- Compute (VMs, disks, availability sets, images)
+- Storage accounts and file shares
+- Security (Key Vaults, managed identities)
+- Monitoring (Log Analytics, Application Insights)
+- Policy assignments
+- RBAC role assignments (optional)
+- Entra ID objects (optional)
+
+**Output:** `discovery/azure-inventory.json`
+
+**Decision Point:**
+Review `azure-inventory.json` and decide:
+
+- Which resources to **import** into `infrastructure.yml` (existing resources to manage)
+- Which resources to **skip** (will be created new)
+- Which resources to **ignore** (CI/CD runners, test resources)
+
+**Import Process:**
+
+```powershell
+# Preview what will be imported (safe WhatIf)
+.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -Azure -WhatIf
+
+# Import Azure resources
+.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -Azure
+
+# Import with new resource addition disabled (update only)
+.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -Azure -AddNew:$false
+```
+
+**Result:** `infrastructure.yml` populated with existing Azure resources
+
+**Reference:**
+
+- Template Discovery Scripts *(to be created)*
+- Tenant Discovery Workflows *(to be created)*
+
+---
+
+### Task 6: Run On-Premises Hardware Discovery
+
+**Scripts:**
+
+- `Get-DellServerInventory-FromiDRAC.ps1` (Dell hardware via Redfish API)
+- `Inventory-OnPrem.ps1` (network devices)
+
+**Location:** `template/scripts/discovery/`
+
+**Action:** Discover actual hardware details from iDRAC interfaces and network devices.
+
+**Usage:**
+
+**Dell Server Discovery (iDRAC Redfish API):**
+
+```powershell
+# Single server (credential prompt)
+.\scripts\discovery\Get-DellServerInventory-FromiDRAC.ps1 -iDRACIP "10.10.10.11"
+
+# Multiple servers with credential
+$cred = Get-Credential  # iDRAC admin credentials
+.\scripts\discovery\Get-DellServerInventory-FromiDRAC.ps1 `
+    -iDRACIP @("10.10.10.11", "10.10.10.12") `
+    -Credential $cred
+
+# With post-discovery import automation
+.\scripts\discovery\Get-DellServerInventory-FromiDRAC.ps1 `
+    -iDRACIP "10.10.10.11" `
+    -RunPostDiscovery
+
+# Review discovered hardware
+code discovery/idrac-inventory.json
+```
+
+**On-Premises Network Devices (Optional):**
+
+```powershell
+# Discover all devices defined in infrastructure.yml
+.\scripts\discovery\Inventory-OnPrem.ps1
+
+# Filter specific device types
+.\scripts\discovery\Inventory-OnPrem.ps1 -DeviceType udm,switch
+
+# Review discovered devices
+code discovery/onprem-inventory.json
+```
+
+**What Gets Discovered:**
+
+**Dell Servers (iDRAC):**
+
+- iDRAC IP addresses and configuration
+- Server manufacturer and model (e.g., "PowerEdge R760xa", "AX-7525")
+- CPU model, core count, hyperthreading status
+- RAM capacity, speed, configuration (per DIMM)
+- Disk counts, sizes, types (NVMe, SSD, HDD by controller)
+- NIC models, MAC addresses, speeds, firmware
+- BIOS and firmware versions
+- Thermal sensors and power supply status
+
+**Network Devices (On-Premises):**
+
+- Ubiquiti UniFi Dream Machine (UDM) - REST API
+- Ubiquiti EdgeRouter - REST/SSH
+- OpenGear console servers - REST API
+- Dell/Sodola switches - REST/SSH
+- Generic SNMP devices
+
+**Decision Point:**
+Review `discovery/idrac-inventory.json` and decide:
+
+- Which hardware details to **import** (discovered servers match expected nodes)
+- Which servers to **exclude** (not part of this deployment)
+- Whether discovered hardware meets requirements (CPU, RAM, disk)
+
+**Import Process:**
+
+```powershell
+# Preview hardware import (safe WhatIf)
+.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -iDRAC -WhatIf
+
+# Import hardware details
+.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -iDRAC
+
+# Import all discovery sources (Azure + iDRAC + On-Prem)
+.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -All
+```
+
+**Result:** `infrastructure.yml` hardware sections populated with actual server details
+
+**Reference:**
+
+- Template Discovery Scripts *(to be created)*
+- Hardware Discovery Process *(to be created)*
+- On-Premises Discovery Process *(to be created)*
+
+---
+
+### Task 7: Complete Manual Values
+
+**File:** `infrastructure.yml`
+
+**Action:** Review and populate any remaining fields that require manual input.
+
+**Interactive Tool (Future):**
+
+```powershell
+# Run interactive completion wizard
+.\scripts\Complete-Infrastructure.ps1 -ConfigPath "infrastructure.yml"
+
+# Wizard will prompt for:
+# - Domain administrator credentials → Where to store? (Key Vault secret name)
+# - Certificate paths → Which certificate to use for service X?
+# - Custom DNS servers → IP addresses?
+# - VPN shared keys → Key Vault secret reference?
+# - Optional features → Enable feature Y? (yes/no)
+```
+
+**Manual Review Fields:**
+Look for placeholders in `infrastructure.yml`:
+
+- `{{PLACEHOLDER}}` - Needs manual input
+- `{{KEY_VAULT_SECRET:secret-name}}` - Reference to Key Vault secret
+- `null` or empty strings in required fields
+
+**Common Manual Fields:**
+
+- Domain administrator credentials (Key Vault reference)
+- Local administrator passwords (Key Vault reference)
+- Certificate thumbprints or paths
+- VPN shared keys (Key Vault reference)
+- Custom VLAN IDs (if not auto-assigned)
+- Optional service toggles (enable/disable features)
+
+**Validation:**
+
+```powershell
+# Validate all required fields are populated
+.\scripts\Validate-Infrastructure.ps1 `
+    -ConfigPath "infrastructure.yml" `
+    -CheckCompleteness
+
+# Should return no errors or warnings
+```
+
+**Result:** `infrastructure.yml` fully populated and ready for deployment
+
+---
+
+### Task 8: Mark Deployment Readiness
+
+**File:** `infra-state.json`
+
+**Action:** Update infrastructure state to indicate `infrastructure.yml` is complete and deployment can begin.
+
+**Update State:**
+
+```powershell
+# Mark infrastructure.yml as complete
+.\scripts\Update-InfraState.ps1 `
+    -Step "infrastructure_generation" `
+    -Status "complete" `
+    -Notes "infrastructure.yml validated and ready for deployment"
+
+# Set next step to deployment
+.\scripts\Update-InfraState.ps1 `
+    -Step "deployment" `
+    -Status "ready" `
+    -Notes "Ready to begin deployment process"
+```
+
+**State File Example:**
+
+```json
+{
+  "environment": "my-deployment",
+  "last_updated": "2025-01-15T10:30:00Z",
+  "steps": {
+    "infrastructure_generation": {
+      "status": "complete",
+      "completed_at": "2025-01-15T10:30:00Z",
+      "notes": "infrastructure.yml validated and ready for deployment"
+    },
+    "deployment": {
+      "status": "ready",
+      "notes": "Ready to begin deployment process"
+    }
+  }
+}
+```
+
+**Result:** Infrastructure generation phase marked complete, deployment phase ready to start
+
+**Reference:** [State Management](./state-management.mdx)
+
+---
+
+## Process Flow Diagram
+
+```
+[1. environment-config.yml]
+         ↓
+[2. Verify master-registry.yaml]
+         ↓
+[3. Generate-Infrastructure.ps1] → infrastructure.yml (structure only)
+         ↓
+[4. Verify infrastructure.yml]
+         ↓
+[5. Discover Azure Tenant] → azure-discovery.json
+         ↓
+[6. Discover On-Prem Hardware] → hardware-discovery.json
+         ↓
+[7. Import & Complete infrastructure.yml] → infrastructure.yml (complete)
+         ↓
+[8. Update infra-state.json] → Deployment Ready
+```
+
+---
+
+## Checklist
+
+Use this checklist to track your progress:
+
+- [ ] **Task 1:** Created `environment-config.yml` from template
+- [ ] **Task 2:** Verified `master-registry.yaml` is current
+- [ ] **Task 3:** Ran `Generate-Infrastructure.ps1` with correct flags
+- [ ] **Task 4:** Validated `infrastructure.yml` structure and base values
+- [ ] **Task 5:** Ran Azure tenant discovery and imported selected resources
+- [ ] **Task 6:** Ran hardware discovery and imported server details
+- [ ] **Task 7:** Completed manual fields and validated completeness
+- [ ] **Task 8:** Updated `infra-state.json` to mark deployment readiness
+
+---
+
+## Related Documentation
+
+### Process Documentation
+
+- Variable Registry Process - Complete variable registry workflows *(to be created)*
+- Tenant Discovery Process - Azure resource discovery *(to be created)*
+- Hardware Discovery Process - iDRAC/iLO discovery *(to be created)*
+
+### Standards & References
+
+- Infrastructure Generation Flags - Scenario filtering *(to be created)*
+- Automation Tools Reference - Tool usage guide *(to be created)*
+- [State Management](./state-management.mdx) - Infrastructure state tracking
+
+### Templates & Examples
+
+- Environment Config Templates - Template documentation *(to be created)*
+- Environment Config Examples - Real-world examples *(to be created)*
+
+---
+
+## ❓ Troubleshooting
+
+### Issue: Generate-Infrastructure.ps1 fails with "Config file not found"
+
+**Solution:** Ensure `environment-config.yml` is in the current directory or provide full path with `-ConfigPath`
+
+### Issue: infrastructure.yml has wrong node count
+
+**Solution:** Verify `node_count` in `environment-config.yml` and regenerate
+
+### Issue: Hardware discovery can't connect to iDRAC
+
+**Solution:**
+
+1. Verify network connectivity: `Test-NetConnection -ComputerName 10.10.10.11 -Port 443`
+2. Check iDRAC credentials
+3. Verify iDRAC is enabled and accessible
+
+### Issue: Validation fails on infrastructure.yml
+
+**Solution:** Run with `-Verbose` to see detailed error messages
+
+```powershell
+.\scripts\Validate-Infrastructure.ps1 -ConfigPath "infrastructure.yml" -Verbose
+```
+
+---
+
+**Version Control**
+
+- Created: 2025-12-15 by Product Technology Team
+- Last Edited: 2025-12-15 by Product Technology Team
+- Version: 1.0.0
+- Tags: process, infrastructure-generation, deployment, workflow
+- Keywords: environment-config, infrastructure.yml, discovery, deployment
+- Author: Product Technology Team
+

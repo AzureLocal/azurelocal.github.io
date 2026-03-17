@@ -1,0 +1,1228 @@
+---
+id: scripting-standards
+title: Scripting Standards
+sidebar_label: Scripting Standards
+---
+# PowerShell Scripting Standards
+
+[![Standards](https://img.shields.io/badge/Standards-PowerShell-purple?logo=powershell)](https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/required-development-guidelines)
+[![Automation](https://img.shields.io/badge/Automation-Scripts-blue?logo=azurepipelines)](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/)
+[![Best-Practices](https://img.shields.io/badge/Best-Practices-green?logo=microsoftazure)](https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/strongly-encouraged-development-guidelines)
+
+> **DOCUMENT CATEGORY**: Standard  
+> **SCOPE**: PowerShell scripting standards for Azure Local infrastructure automation  
+> **PURPOSE**: Define coding standards for all PowerShell scripts across environment repositories  
+> **MASTER REFERENCE**: [PowerShell Organization Standard](./powershell-organization-standard.mdx)
+
+---
+
+
+## Script Naming and Execution Standards
+
+### Naming Conventions
+
+| Script Type                | Naming Pattern                        | Example                        |
+|----------------------------|---------------------------------------|---------------------------------|
+| PowerShell Core            | Verb-Noun.ps1                         | New-Resource.ps1                |
+| Azure PowerShell           | Verb-AzResource.ps1                   | New-AzKeyVault.ps1              |
+| Azure CLI for PowerShell   | az-verb-resource.ps1                  | az-create-vnet.ps1              |
+| Azure CLI (Bash)           | az-verb-resource.sh                   | az-create-vnet.sh               |
+| Standalone (no config)     | Verb-Noun-Standalone.ps1              | New-AzKeyVault-Standalone.ps1   |
+
+Scripts intended for remote/management-box execution must start with the `Invoke-` prefix (e.g., Invoke-DeployCluster.ps1).
+
+### Script Options in Documentation
+
+Provisioning documentation provides multiple script options for each step:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| Option 1 | Manual | Step-by-step portal/UI instructions |
+| Option 2 | Azure PowerShell | Config-driven script using infrastructure.yml |
+| Option 3 | Azure CLI (PowerShell) | Config-driven az CLI in PowerShell |
+| Option 4 | Azure CLI (Bash) | Config-driven az CLI in Bash |
+| Option 5 | Standalone | Self-contained script with inline variables (no external dependencies) |
+
+### Script Structure and Config Usage
+
+**Options 2-4 (Config-Driven):**
+- All scripts must use variables/config from infrastructure.yml (never hardcoded values)
+- All scripts must accept a config/environment parameter
+- All scripts must use helpers (config-loader, keyvault-helper, logging, etc.)
+- **All YAML variable paths used in scripts must match the master-registry and infrastructure schema** — see [Variable Path Compliance](#variable-path-compliance) below
+
+**`Invoke-` Scripts (Remotely-Executed Orchestration Scripts):**
+
+All scripts that execute operations remotely via PSRemoting **must** implement the following credential resolution order — no exceptions:
+
+1. **`-Credential` parameter** — If passed directly at the command line, use it immediately (skip all other resolution)
+2. **Key Vault** — Read the appropriate account credentials from `identity.accounts` in `infrastructure.yml` (see account selection rule below). Attempt `Az.KeyVault` module first, fall back to `az` CLI
+3. **Interactive prompt** — If Key Vault is unavailable or returns null, fall back to `Get-Credential` with the username pre-filled
+
+The `Resolve-KeyVaultRef` function (see [Key Vault Operations](#key-vault-operations)) implements steps 2 and 3. Copy it verbatim into every `Invoke-` script — do not create a new variant.
+
+#### PSRemoting Account Selection Rule
+
+Which account to use for PSRemoting depends on whether the target nodes are domain-joined:
+
+| Deployment Phase | Node State | Account to Use | Config Paths |
+|-----------------|------------|---------------|-------------|
+| Stage `04-cluster-deployment`, **phase 01–05** (up to and including cluster deployment) | Not yet domain-joined — local accounts only | Local Administrator | `identity.accounts.account_local_admin_username` / `account_local_admin_password` |
+| Stage `04-cluster-deployment`, **phase 06+** (post-deployment) and **all later stages** | Domain-joined — Kerberos auth available | LCM domain account | `identity.accounts.account_lcm_username` / `account_lcm_password` |
+
+:::warning Use the LCM account after cluster deployment
+Once the cluster has been deployed (stage 04 / phase 05), all nodes are domain-joined. PSRemoting from a management machine must use the **LCM domain account** (`identity.accounts.account_lcm_username`) — not the local Administrator — to authenticate via Kerberos. Using the local admin account against a domain-joined node from a non-domain machine will fail unless TrustedHosts is configured, which is **not permitted** in these scripts.
+:::
+
+#### Required Parameters for All `Invoke-` Scripts
+
+Every `Invoke-` script **must** expose the following parameters — no exceptions:
+
+| Parameter | Type | Default | Purpose |
+|-----------|------|---------|---------|
+| `-ConfigPath` | `[string]` | `""` | Path to `infrastructure.yml`. Auto-discovered if not provided. |
+| `-Credential` | `[PSCredential]` | `$null` | Override credential resolution (Key Vault / prompt). |
+| `-TargetNode` | `[string[]]` | `@()` (all nodes) | Limit execution to one or more named nodes. Matches against `hostname` or `nodename` from `infrastructure.yml`. Empty = run all nodes. |
+| `-WhatIf` | `[switch]` | `$false` | Dry-run mode — log what *would* happen without making any changes. See [Execution Modes](#invoke-script-execution-modes). |
+| `-LogPath` | `[string]` | `""` (auto) | Override log file path. Default: `./logs/<task-name>/<timestamp>.log` relative to the current working directory (repo root). |
+
+Additionally, all `Invoke-` scripts **must** use `[CmdletBinding()]` to enable the built-in `-Verbose` and `-Debug` switches.
+
+```powershell
+# Example: run against a single node
+.\Invoke-ConfigureNTP-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode node02
+
+# Example: dry-run to see what would change
+.\Invoke-ConfigureNTP-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
+
+# Example: verbose output for troubleshooting
+.\Invoke-ConfigureNTP-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode node01 -Verbose
+
+# Example: debug-level output
+.\Invoke-ConfigureNTP-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -Debug
+
+# Example: custom log path
+.\Invoke-ConfigureNTP-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -LogPath C:\logs\ntp-run.log
+```
+
+#### YAML-Overridable Parameters
+
+All values that an `Invoke-` script reads from `infrastructure.yml` **must** also be exposed as optional parameters so they can be overridden at the command line without editing the config file. When a parameter is supplied, it takes precedence over the YAML value. When omitted, the YAML value is used.
+
+**Required pattern:**
+
+```powershell
+param(
+    [string]$ConfigPath  = "",
+    [PSCredential]$Credential,
+    [string[]]$TargetNode = @(),
+
+    # YAML-overridable values — empty string / empty array = use YAML
+    [string]  $NTPServers    = "",   # identity.active_directory.ntp_servers
+    [string]  $Gateway       = "",   # compute.azure_local.default_gateway
+    [string]  $SubnetMask    = "",   # compute.azure_local.subnet_mask
+    [string[]]$DnsServers    = @(),  # compute.azure_local.dns_servers
+)
+
+# After loading YAML, apply overrides:
+if ($NTPServers  -ne "")        { $ntpPeer     = $NTPServers }
+if ($Gateway     -ne "")        { $gateway     = $Gateway }
+if ($SubnetMask  -ne "")        { $subnetMask  = $SubnetMask }
+if ($DnsServers.Count -gt 0)    { $dnsServers  = $DnsServers }
+```
+
+**Rules:**
+- Parameter names must match the semantic purpose (e.g., `-NTPServers`, not `-Param1`)
+- Comment each parameter with its corresponding `infrastructure.yml` path
+- Never silently ignore a supplied override — log it at `[WARN]` level so it's visible in output
+- Do not make YAML-override parameters mandatory — they must always have a no-op default (empty string or empty array)
+
+**Option 5 (Standalone):**
+- All variables defined in a `#region CONFIGURATION` block at the top
+- No external dependencies (no config-loader, no infrastructure.yml, no helpers)
+- Variable naming matches infrastructure.yml paths (e.g., `$azure_tenant_id`)
+- Can be copied, shared, and run anywhere without the toolkit
+- Use for: external sharing, demos, single-use deployments
+- Do NOT use for: multi-environment automation, CI/CD pipelines
+
+### Variable Path Compliance — Master Registry & Schema
+
+:::danger MANDATORY
+Every variable path used in any script **must** come from the master-registry and conform to the infrastructure schema. **Do not invent, guess, or approximate YAML paths.** This is the #1 source of script failures.
+:::
+
+**Authoritative sources (in order of precedence):**
+
+| Source | Location | Purpose |
+|--------|----------|--------|
+| **Infrastructure Schema** | `configs/variables/assets/infrastructure.schema.json` | JSON Schema that validates every `infrastructure.yml` — defines the exact structure, required fields, types, and patterns |
+| **Master Registry** | `configs/variables/assets/master-registry.yaml` | Complete variable registry with 970+ variables, descriptions, examples, and metadata |
+| **Registry Reference Docs** | [Registry Reference](../variable-management/registry-reference.mdx) | Human-readable documentation of all variable paths |
+
+**Rules — no exceptions:**
+
+1. **Look up before you code** — Before writing any `$cfg.some.path` in a script, verify the exact path exists in `infrastructure.schema.json`. If it's not in the schema, it's not a valid path.
+2. **Schema is the contract** — The schema defines what `infrastructure.yml` files must contain. Scripts must use paths that exist in the schema. If a path doesn't exist in the schema, the script is wrong — not the schema.
+3. **Master registry is the dictionary** — The master-registry provides descriptions, examples, and metadata for every variable. Use it to understand what a variable means and how it should be used.
+4. **Values live in `infrastructure.yml`** — The schema defines the structure, the master-registry defines the vocabulary, and `infrastructure.yml` contains the actual customer values. Scripts read values from `infrastructure.yml` using paths defined by the schema.
+5. **Comment every path** — Every YAML path access in a script must have an inline comment showing the full dotted path:
+
+```powershell
+# CORRECT — path verified against infrastructure.schema.json
+$gateway    = $cfg.compute.azure_local.default_gateway         # compute.azure_local.default_gateway
+$subnetMask = $cfg.compute.azure_local.subnet_mask             # compute.azure_local.subnet_mask
+$dnsServers = @($cfg.compute.azure_local.dns_servers)          # compute.azure_local.dns_servers
+$ntpServers = @($cfg.identity.active_directory.ntp_servers)    # identity.active_directory.ntp_servers
+$adminUser  = $cfg.identity.accounts.account_local_admin_username  # identity.accounts.account_local_admin_username
+$adminPass  = $cfg.identity.accounts.account_local_admin_password  # identity.accounts.account_local_admin_password
+
+# WRONG — invented paths that don't exist in the schema
+$gateway    = $cfg.network.management.gateway        # ❌ DOES NOT EXIST
+$ntpServer  = $cfg.ntp.server                        # ❌ DOES NOT EXIST
+$dnsServers = @($cfg.dns.primary, $cfg.dns.secondary) # ❌ DOES NOT EXIST
+```
+
+6. **Schema validation is mandatory before deployment** — Run `Validate-Infrastructure.ps1` against every `infrastructure.yml` before any script execution. See [Schema Validation](../variable-management/schema-validation.mdx).
+
+**Quick reference — common Phase 03 paths:**
+
+| Variable | Schema Path | PowerShell Access |
+|----------|-------------|------------------|
+| Gateway | `compute.azure_local.default_gateway` | `$cfg.compute.azure_local.default_gateway` |
+| Subnet mask | `compute.azure_local.subnet_mask` | `$cfg.compute.azure_local.subnet_mask` |
+| DNS servers | `compute.azure_local.dns_servers` | `@($cfg.compute.azure_local.dns_servers)` |
+| NTP servers | `identity.active_directory.ntp_servers` | `@($cfg.identity.active_directory.ntp_servers)` |
+| Cluster nodes | `compute.cluster_nodes` | `$cfg.compute.cluster_nodes.GetEnumerator()` |
+| Node hostname | `compute.cluster_nodes.<key>.hostname` | `$_.Value.hostname` |
+| Node IP | `compute.cluster_nodes.<key>.management_ip` | `$_.Value.management_ip` |
+| Admin username | `identity.accounts.account_local_admin_username` | `$cfg.identity.accounts.account_local_admin_username` |
+| Admin password | `identity.accounts.account_local_admin_password` | `$cfg.identity.accounts.account_local_admin_password` |
+
+> See [Variable Management Standard](../variable-management/index.mdx) and [Registry Reference](../variable-management/registry-reference.mdx) for the complete list.
+
+### Linting and Testing
+
+- All PowerShell scripts must pass PSScriptAnalyzer (linting and syntax)
+- All Bash scripts must pass ShellCheck
+- CI/pre-commit hooks will enforce naming, config usage, and structure
+
+### Onboarding and Quickstart
+
+See the [Onboarding](#onboarding) section below for step-by-step setup, template use, and testing instructions. A quickstart script is provided to install required tools and validate your environment.
+
+All standards, onboarding, and automation tools are versioned and cross-linked for discoverability.
+
+**Related Documentation:**
+- [Key Inputs and Variables](../../product-azure-local-anywhere/implementation/03-key-inputs-and-variables.mdx) - infrastructure.yml structure and usage
+- [How to Use This Runbook](../../product-azure-local-anywhere/implementation/02-how-to-use-this-runbook.mdx) - Script execution patterns
+- [Scripting Framework](./scripting-framework.mdx) - Architectural patterns and templates
+
+---
+## Overview
+
+This document defines the coding standards for all PowerShell scripts across Product Technology Azure Local environment repositories. Following these standards ensures scripts work consistently across all environments and maintain high quality, readability, and reliability.
+
+## Golden Rule
+
+> **Scripts read configuration from `infrastructure.yml` using fixed variable paths. The paths never change - only the values differ between environments.**
+
+This principle ensures:
+
+- **Portability**: Same script works across all customer deployment sites
+- **Maintainability**: Update script once, deploy to all environments
+- **Consistency**: Predictable behavior across all repos
+- **Version Control**: Track configuration changes separately from logic
+
+---
+
+## Required Structure for All Scripts
+
+Every PowerShell script must follow this template:
+
+```powershell
+#Requires -Version 7.0
+
+<#
+.SYNOPSIS
+    Brief description of what the script does.
+
+.DESCRIPTION
+    Detailed description including:
+    - What configuration it reads from infrastructure.yml
+    - What Azure resources it creates/modifies
+    - What secrets it reads/writes to Key Vault
+
+.PARAMETER ConfigPath
+    Path to the infrastructure.yml configuration file for the target deployment.
+    Defaults to configs/infrastructure.yml in the repository root.
+
+.EXAMPLE
+    .\New-AzureLocalSP.ps1 -ConfigPath "configs/infrastructure.yml"
+    
+    Creates a service principal using the specified configuration.
+
+.EXAMPLE
+    .\New-AzureLocalSP.ps1 -ConfigPath "configs/infrastructure.yml" -WhatIf
+    
+    Shows what would be created without making changes.
+
+.NOTES
+    Requires: Az module, powershell-yaml module
+    Author: Product Technology Team
+    Date: 2025-12-10
+    Version: 1.0.0
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({Test-Path $_})]
+    [string]$ConfigPath = "configs/infrastructure.yml",
+
+    [Parameter(Mandatory = $false)]
+    [switch]$WhatIf
+)
+
+#Requires -Modules Az.Accounts, Az.KeyVault, powershell-yaml
+
+# ============================================================================
+# INITIALIZATION
+# ============================================================================
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+# Import utilities
+. "$scriptRoot/../utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../utilities/helpers/keyvault-helper.ps1"
+. "$scriptRoot/../utilities/helpers/logging.ps1"
+
+# Load environment configuration
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# ============================================================================
+# MAIN LOGIC
+# ============================================================================
+
+# Your script logic here, using $config to access all values
+
+# ============================================================================
+# CLEANUP / OUTPUT
+# ============================================================================
+```
+
+### Key Components
+
+| Component | Purpose | Required |
+|-----------|---------|----------|
+| **PS Version Requirement** | `#Requires -Version 7.0` — must be the first line of every script | Yes |
+| **Comment-Based Help** | `.SYNOPSIS`, `.DESCRIPTION`, `.PARAMETER`, `.EXAMPLE`, `.NOTES` | Yes |
+| **CmdletBinding** | Enable advanced function features | Yes |
+| **Parameter Validation** | `ValidateScript` for ConfigPath parameter | Yes |
+| **Requires Statement** | Declare module dependencies | Yes |
+| **Error Handling** | `$ErrorActionPreference = "Stop"` | Yes |
+| **Relative Paths** | Use `$PSScriptRoot` for portability | Yes |
+| **Logging Functions** | Use standard logging helpers | Yes |
+
+---
+
+## Variable Path Contract
+
+:::warning Canonical Reference
+This section provides a quick-reference subset. The **complete** path contract is defined in the [Variable Path Compliance](#variable-path-compliance--master-registry--schema) section above and the [Scripting Framework — Variable Path Contract](./scripting-framework.mdx#the-variable-path-contract). Always verify paths against `infrastructure.schema.json`.
+:::
+
+These paths are **guaranteed to exist** in every `infrastructure.yml` (v4.0.0 schema). Scripts MUST use these paths:
+
+### Core Identifiers
+
+| Path | Type | Description |
+|------|------|-------------|
+| `site.code` | string | Site code (short identifier for the deployment) |
+| `site.name` | string | Site display name |
+| `environment` | string | Environment identifier (may be a string or object depending on deployment) |
+| `tags.Environment` | string | Environment tag |
+| `tags.Project` | string | Project name |
+| `tags.ManagedBy` | string | Managing entity (e.g., "Infrastructure as Code") |
+| `tags.Owner` | string | Owner |
+
+### Azure Platform
+
+| Path | Type | Description |
+|------|------|-------------|
+| `azure_platform.tenant.id` | guid | Azure tenant ID |
+| `azure_platform.tenant.name` | string | Tenant display name |
+| `azure_platform.region` | string | Default Azure region (e.g., "eastus") |
+| `azure_platform.subscriptions.<name>.id` | guid | Subscription ID |
+| `azure_platform.subscriptions.<name>.name` | string | Subscription name |
+| `azure_platform.subscriptions.<name>.purpose` | string | Subscription purpose |
+
+### Identity & Credentials
+
+| Path | Type | Description |
+|------|------|-------------|
+| `identity.accounts.account_local_admin_username` | string | Local admin username (used before nodes are domain-joined) |
+| `identity.accounts.account_local_admin_password` | string | Local admin password (`keyvault://` URI) |
+| `identity.accounts.account_lcm_username` | string | LCM domain account username (used after nodes are domain-joined — phase 06+) |
+| `identity.accounts.account_lcm_password` | string | LCM domain account password (`keyvault://` URI) |
+| `identity.active_directory.ntp_servers` | array | NTP server addresses |
+| `identity.active_directory.ad_domain_fqdn` | string | AD domain FQDN |
+
+### Compute
+
+| Path | Type | Description |
+|------|------|-------------|
+| `compute.azure_local.cluster_name` | string | Cluster name |
+| `compute.azure_local.cluster_node_count` | integer | Number of nodes |
+| `compute.azure_local.default_gateway` | string | Default gateway IP |
+| `compute.azure_local.subnet_mask` | string | Subnet mask |
+| `compute.azure_local.dns_servers` | array | DNS server addresses |
+| `compute.cluster_nodes.<key>.hostname` | string | Node hostname |
+| `compute.cluster_nodes.<key>.management_ip` | string | Node management IP |
+
+### Security
+
+| Path | Type | Description | Example |
+|------|------|-------------|---------|
+| `security.keyvault.kv_name` | string | Platform Key Vault name | `kv-tplabs-platform` |
+| `security.credentials.local_admin_password` | string | Local admin password (`keyvault://` URI) | `keyvault://kv-tplabs-platform/local-admin-password` |
+
+---
+
+## Key Vault Operations
+
+### Reading Secrets
+
+**Method 1: Direct Key Vault access using config values**
+
+```powershell
+# Load environment config
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# Get Key Vault name from config                                    # security.keyvault.kv_name
+$kvName = $config.security.keyvault.kv_name                         # e.g., "kv-tplabs-platform"
+
+# Get admin password URI (keyvault:// reference)                    # identity.accounts.account_local_admin_password
+$adminPassUri = $config.identity.accounts.account_local_admin_password
+
+# Resolve via Resolve-KeyVaultRef (see Credential Resolution below)
+$adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
+```
+
+**Method 2: Direct Az module access**
+
+```powershell
+# Read KV name from config                                          # security.keyvault.kv_name
+$kvName = $config.security.keyvault.kv_name
+
+# Retrieve a specific secret by name
+$secret = Get-AzKeyVaultSecret -VaultName $kvName -Name "local-admin-password" -AsPlainText
+```
+
+**Method 3: Platform Key Vault for shared secrets**
+
+```powershell
+# Shared secrets stored in platform KV (e.g., GitHub tokens, VPN keys)
+$kvName = $config.security.keyvault.kv_name                         # security.keyvault.kv_name
+$githubToken = Get-AzKeyVaultSecret -VaultName $kvName -Name "api-github-pat" -AsPlainText
+```
+
+### Writing Secrets
+
+```powershell
+# Write to the platform Key Vault specified in config
+$kvName = $config.security.keyvault.kv_name                         # security.keyvault.kv_name
+
+Set-AzKeyVaultSecret -VaultName $kvName `
+    -Name "new-secret-name" `
+    -SecretValue $secureString `
+    -ContentType "password"
+```
+
+### Parsing keyvault:// URIs
+
+Some config values use the `keyvault://` URI pattern:
+
+```yaml
+credentials:
+  vpn:
+    shared_key_secret: "keyvault://azl-platform-kv/vpn-shared-key"
+```
+
+Parse and retrieve:
+
+```powershell
+$uri = $config.credentials.vpn.shared_key_secret
+$secret = Get-SecretFromUri -Uri $uri
+```
+
+### Credential Resolution for Invoke- Scripts
+
+All `Invoke-` (orchestrated/remote) scripts **must** use this exact `Resolve-KeyVaultRef` function and credential resolution sequence. Copy it verbatim — do not create variants.
+
+```powershell
+function Resolve-KeyVaultRef {
+    param([string]$KvUri)
+    if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { Write-Log "  Not a Key Vault URI: $KvUri" "WARN"; return $null }
+    $vaultName  = $Matches[1]
+    $secretName = $Matches[2]
+
+    if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
+        try {
+            Write-Log "  Retrieving '$secretName' from '$vaultName' (Az.KeyVault)..."
+            $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
+            if ($secret) { Write-Log "  Secret retrieved." "PASS"; return $secret }
+            Write-Log "  Az.KeyVault returned no secret." "WARN"
+        } catch { Write-Log "  Az.KeyVault failed: $_" "WARN" }
+        Write-Log "  Falling back to Azure CLI..." "WARN"
+    } else {
+        Write-Log "  Az.KeyVault module not found — trying Azure CLI..." "WARN"
+    }
+
+    try {
+        $azCmd = Get-Command az -ErrorAction SilentlyContinue
+        if (-not $azCmd) { Write-Log "  Azure CLI (az) not found." "WARN"; return $null }
+        Write-Log "  Retrieving '$secretName' from '$vaultName' (az CLI)..."
+        $tmpErr = [System.IO.Path]::GetTempFileName()
+        $val    = (& az keyvault secret show --vault-name $vaultName --name $secretName --query value --output tsv --only-show-errors 2>$tmpErr)
+        $azErr  = (Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue).Trim()
+        Remove-Item $tmpErr -ErrorAction SilentlyContinue
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($val)) {
+            $errDetail = if ($azErr) { ": $azErr" } else { " (exit $LASTEXITCODE)" }
+            Write-Log "  az CLI failed$errDetail." "WARN"
+            return $null
+        }
+        Write-Log "  Secret retrieved (az CLI)." "PASS"
+        return $val
+    } catch { Write-Log "  az CLI failed: $_" "WARN"; return $null }
+}
+```
+
+**Credential resolution block — two variants depending on deployment phase.**
+
+Use the correct variant based on the [PSRemoting Account Selection Rule](#psremoting-account-selection-rule) above.
+
+**Variant A — Pre-domain (stage 04 phases 01–05, nodes not yet domain-joined):**
+
+```powershell
+# CREDENTIAL RESOLUTION ORDER:
+# 1. -Credential parameter (passed directly)
+# 2. Key Vault — local Administrator account (nodes not yet domain-joined)
+# 3. Interactive Get-Credential prompt
+if (-not $Credential) {
+    $adminUser    = $cfg.identity.accounts.account_local_admin_username    # identity.accounts.account_local_admin_username
+    $adminPassUri = $cfg.identity.accounts.account_local_admin_password    # identity.accounts.account_local_admin_password
+    Write-Log "Resolving local admin credentials from Key Vault..."
+    $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
+    if ($adminPass) {
+        $Credential = New-Object PSCredential(
+            $adminUser,
+            (ConvertTo-SecureString $adminPass -AsPlainText -Force)
+        )
+        Write-Log "Credentials resolved for '$adminUser'." "PASS"
+    } else {
+        Write-Log "Key Vault unavailable — prompting for credentials." "WARN"
+        $Credential = Get-Credential -Message "Enter local Administrator credentials" -UserName $adminUser
+    }
+}
+```
+
+**Variant B — Post-domain (stage 04 phase 06+ and all later stages, nodes are domain-joined):**
+
+```powershell
+# CREDENTIAL RESOLUTION ORDER:
+# 1. -Credential parameter (passed directly)
+# 2. Key Vault — LCM domain account (nodes are domain-joined; Kerberos auth required)
+# 3. Interactive Get-Credential prompt
+if (-not $Credential) {
+    $lcmUser    = $cfg.identity.accounts.account_lcm_username              # identity.accounts.account_lcm_username
+    $lcmPassUri = $cfg.identity.accounts.account_lcm_password              # identity.accounts.account_lcm_password
+    Write-Log "Resolving LCM credentials from Key Vault..."
+    $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri
+    if ($lcmPass) {
+        $Credential = New-Object PSCredential(
+            $lcmUser,
+            (ConvertTo-SecureString $lcmPass -AsPlainText -Force)
+        )
+        Write-Log "Credentials resolved for '$lcmUser'." "PASS"
+    } else {
+        Write-Log "Key Vault unavailable — prompting for credentials." "WARN"
+        $Credential = Get-Credential -Message "Enter LCM credentials for PSRemoting to cluster nodes" -UserName $lcmUser
+    }
+}
+```
+
+:::info Why not TrustedHosts?
+Do **not** add nodes to `WSMan:\localhost\Client\TrustedHosts` as a workaround. Once nodes are domain-joined, PSRemoting uses Kerberos — no TrustedHosts entry needed. Adding workstation entries to TrustedHosts bypasses Kerberos and is not permitted in these scripts.
+:::
+
+---
+
+## Service Principal Patterns
+
+### Creating a Service Principal
+
+```powershell
+# 1. Read required values from config
+$tenantId       = $config.azure_platform.tenant.id                   # azure_platform.tenant.id
+$subscriptionId = $config.azure_platform.subscriptions.lab.id        # azure_platform.subscriptions.<name>.id
+$spName         = "sp-$($config.site.code)-deploy"                   # site.code
+
+# 2. Create the SP
+$sp = New-AzADServicePrincipal -DisplayName $spName
+
+# 3. Store the secret in Platform Key Vault
+$kvName = $config.security.keyvault.kv_name                          # security.keyvault.kv_name
+Set-AzKeyVaultSecret -VaultName $kvName -Name $spName -SecretValue $sp.PasswordCredentials.SecretText
+
+# 4. Output what was created (for updating infrastructure.yml)
+Write-Output "Created SP: $spName"
+Write-Output "App ID: $($sp.AppId)"
+Write-Output "Object ID: $($sp.Id)"
+Write-Output "Secret stored in: $kvName/$spName"
+```
+
+---
+
+## Logging Standards
+
+Use the logging utilities for consistent output:
+
+```powershell
+. "$scriptRoot/../utilities/helpers/logging.ps1"
+
+Write-LogInfo "Starting operation..."
+Write-LogSuccess "Created resource: $resourceName"
+Write-LogWarning "Resource already exists, skipping"
+Write-LogError "Failed to create resource"
+Write-LogDebug "Detailed debug info" -Verbose
+```
+
+### Log Level Guidelines
+
+| Level | When to Use | Example |
+|-------|-------------|---------|
+| **Info** | Normal operations, progress updates | "Starting deployment..." |
+| **Success** | Successful resource creation/modification | "Created resource group: rg-iic-prodtech-eus-hub" |
+| **Warning** | Non-critical issues, skipped operations | "Resource already exists, skipping" |
+| **Error** | Failures that prevent operation | "Failed to connect to Azure" |
+| **Debug** | Detailed diagnostic info (use `-Verbose`) | "Config loaded from: C:\...\infrastructure.yml" |
+
+### Invoke-Script File Logging
+
+:::info MANDATORY for all `Invoke-` scripts
+All orchestrated scripts that run remotely must write log output to a file in addition to the console. This enables post-run review, audit, and troubleshooting.
+:::
+
+**Log file location**: All scripts are executed from the **repo root**. Logs are written to the `logs/` directory at the repo root, organized by task folder name. The `logs/` folder is a sibling to `scripts/`, `configs/`, `docs/`, etc.
+
+```
+prodtech-docs-azl-toolkit/                          # <-- repo root (CWD when running scripts)
+  scripts/
+    deploy/04-cluster-deployment/phase-03-os-configuration/
+      task-07-configure-time-synchronization-ntp/
+        powershell/
+          Invoke-ConfigureNTP-Orchestrated.ps1
+  logs/                                              # <-- log output goes here
+    task-07-configure-time-synchronization-ntp/
+      2026-03-07_143000_ConfigureNTP.log
+      2026-03-07_152200_ConfigureNTP.log
+```
+
+When you run:
+```powershell
+.\scripts\deploy\...\task-07-...\powershell\Invoke-ConfigureNTP-Orchestrated.ps1
+```
+The log lands at:
+```
+.\logs\task-07-configure-time-synchronization-ntp\2026-03-07_143000_ConfigureNTP.log
+```
+
+**Log file naming pattern**: `<YYYY-MM-DD>_<HHmmss>_<ScriptShortName>.log`
+
+**`Write-Log` function for `Invoke-` scripts:**
+
+All `Invoke-` scripts use a self-contained `Write-Log` function (not the helper-based pattern). This function **must** support:
+
+1. **Console output** — colored, timestamped, always visible
+2. **File output** — same content written to the log file (plain text, no ANSI)
+3. **Verbose output** — additional detail when `-Verbose` is passed to the script
+4. **Debug output** — diagnostic detail when `-Debug` is passed to the script
+
+```powershell
+[CmdletBinding()]
+param(
+    [string]$ConfigPath = "",
+    [PSCredential]$Credential,
+    [string[]]$TargetNode = @(),
+    [switch]$WhatIf,
+    [string]$LogPath = ""
+)
+
+# --- Log file initialization ---
+# Scripts are always run from the repo root, so ./logs/<task-folder>/ is CWD-relative
+$scriptShortName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath) -replace '^Invoke-|-Orchestrated$', ''
+$taskFolderName  = Split-Path (Split-Path $PSScriptRoot -Parent) -Leaf   # e.g. task-07-configure-time-synchronization-ntp
+$logDir  = Join-Path (Get-Location).Path "logs\$taskFolderName"
+if ($LogPath -ne "") {
+    $logDir  = Split-Path $LogPath -Parent
+    $logFile = $LogPath
+} else {
+    $logFile = Join-Path $logDir "$(Get-Date -Format 'yyyy-MM-dd_HHmmss')_${scriptShortName}.log"
+}
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $line = "[$ts] [$Level] $Message"
+
+    # Always write to log file (all levels, including VERBOSE and DEBUG)
+    $line | Out-File -FilePath $script:logFile -Append -Encoding utf8
+
+    # Console output (colored, respects verbosity flags)
+    switch ($Level) {
+        "PASS"    { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
+        "FAIL"    { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
+        "WARN"    { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
+        "HEADER"  { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
+        "VERBOSE" { Write-Verbose "[$ts] $Message" }    # only shown with -Verbose
+        "DEBUG"   { Write-Debug  "[$ts] $Message" }     # only shown with -Debug
+        default   { Write-Host "[$ts] [INFO] $Message" }
+    }
+}
+
+# Usage:
+Write-Log "Config loaded from: $ConfigPath"                              # always shown
+Write-Log "Node filter: $($TargetNode -join ', ')" VERBOSE               # only with -Verbose
+Write-Log "Raw YAML object: $($cfg | ConvertTo-Json -Depth 2)" DEBUG     # only with -Debug
+Write-Log "Log file: $logFile"
+```
+
+**Verbosity tiers:**
+
+| Flag | What's Shown | Use Case |
+|------|-------------|----------|
+| *(none)* | INFO, PASS, FAIL, WARN, HEADER | Normal execution |
+| `-Verbose` | All of above + VERBOSE | Troubleshooting — shows config values, intermediate results, per-step details |
+| `-Debug` | All of above + DEBUG | Deep diagnostics — shows raw objects, full error stacks, WinRM transport details |
+
+**Rules:**
+- Log file is **always written** regardless of verbosity flags — it contains ALL levels including VERBOSE and DEBUG
+- Console output respects the verbosity flags
+- Log file path is printed at script start and end
+- Scripts are **always run from the repo root** — log path is `./logs/<task-folder-name>/<timestamp>_<ShortName>.log` relative to CWD
+- The `logs/` directory is `.gitignore`d — never commit log files
+- `-LogPath` overrides the default location (useful for CI/CD or centralized logging)
+
+---
+
+## Error Handling
+
+All scripts must implement comprehensive error handling:
+
+```powershell
+try {
+    # Risky operation
+    $result = New-AzResourceGroup -Name $rgName -Location $location
+    Write-LogSuccess "Created resource group: $rgName"
+}
+catch {
+    Write-LogError "Failed to create resource group: $rgName"
+    Write-LogError $_.Exception.Message
+    
+    # Re-throw if we can't recover
+    throw
+}
+```
+
+### Error Handling Best Practices
+
+**Do:**
+- Use `try/catch` blocks for all external operations (Azure, file I/O, network)
+- Log meaningful error messages with context
+- Include `$_.Exception.Message` for detailed error info
+- Re-throw errors that can't be recovered (`throw`)
+- Set `$ErrorActionPreference = "Stop"` for fail-fast behavior
+
+**Don't:**
+- Silently swallow errors (`catch {}` with no logging)
+
+---
+
+## WhatIf Support
+
+All scripts that modify resources MUST support `-WhatIf`:
+
+```powershell
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Environment,
+    
+    [Parameter(Mandatory = $false)]
+    [switch]$WhatIf
+)
+
+# Use $WhatIf or $PSCmdlet.ShouldProcess for conditional execution
+if ($PSCmdlet.ShouldProcess($rgName, "Create Resource Group")) {
+    New-AzResourceGroup -Name $rgName -Location $location
+    Write-LogSuccess "Created resource group: $rgName"
+}
+else {
+    Write-LogInfo "[WhatIf] Would create resource group: $rgName"
+}
+```
+
+### WhatIf Guidelines
+
+**Do:**
+- Add `[CmdletBinding(SupportsShouldProcess)]` to enable WhatIf
+- Use `$PSCmdlet.ShouldProcess()` for create/modify/delete operations
+- Test with `-WhatIf` before running destructive operations
+- Log what *would* happen when in WhatIf mode
+
+**Don't:**
+- Never make changes when `-WhatIf` is specified
+
+### Invoke-Script Execution Modes {#invoke-script-execution-modes}
+
+:::danger MANDATORY for `Invoke-` scripts
+`$PSCmdlet.ShouldProcess()` does **not** work inside `Invoke-Command` remote scriptblocks. `Invoke-` scripts must implement `-WhatIf` using a simple `$WhatIf` switch passed into the scriptblock as an argument.
+:::
+
+**Pattern for `Invoke-` scripts:**
+
+```powershell
+[CmdletBinding()]
+param(
+    [string]$ConfigPath = "",
+    [PSCredential]$Credential,
+    [string[]]$TargetNode = @(),
+    [switch]$WhatIf             # <-- simple switch, NOT SupportsShouldProcess
+)
+
+# Pass $WhatIf into the remote scriptblock as an argument
+$results = Invoke-Command -ComputerName $ip -Credential $cred `
+    -ArgumentList $ip, $gateway, $prefixLength, $WhatIf.IsPresent `
+    -ScriptBlock {
+        param($IP, $Gateway, $Prefix, [bool]$DryRun)
+
+        # Read-only checks always run
+        $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
+        $currentIP = (Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4).IPAddress
+
+        if ($DryRun) {
+            # Report what WOULD change — make no changes
+            if ($currentIP -ne $IP) {
+                "[WhatIf] Would set IP from $currentIP to $IP/$Prefix GW $Gateway"
+            } else {
+                "[WhatIf] IP already $IP — no change needed"
+            }
+            return
+        }
+
+        # Actual execution
+        New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress $IP `
+            -PrefixLength $Prefix -DefaultGateway $Gateway
+    }
+```
+
+**Execution mode summary:**
+
+| Mode | Flag | Behavior |
+|------|------|----------|
+| **Normal** | *(none)* | Execute all operations, log results |
+| **Dry-run** | `-WhatIf` | Read current state, log what *would* change, make **no modifications** |
+| **Verbose** | `-Verbose` | Normal execution + detailed progress output |
+| **Debug** | `-Debug` | Normal execution + raw diagnostic output |
+| **Dry-run + Verbose** | `-WhatIf -Verbose` | Show what would change with full detail, no modifications |
+
+**Rules:**
+- `-WhatIf` must be respected at **every** point that modifies state (IP config, service restart, hostname rename, firewall rules, etc.)
+- Read-only checks (verify DNS, check hostname, query NTP status) **always execute** even in WhatIf mode
+- WhatIf output must prefix messages with `[WhatIf]` so they're clearly identifiable in console and log file
+- Log file is still written in WhatIf mode (captures the dry-run output for review)
+
+---
+
+## Subscription Context
+
+Always set subscription context explicitly:
+
+```powershell
+# Get subscription ID from config                                    # azure_platform.subscriptions.<name>.id
+$subscriptionId = $config.azure_platform.subscriptions.lab.id
+
+# Set context
+Set-AzContext -SubscriptionId $subscriptionId | Out-Null
+Write-LogInfo "Set context to subscription: $subscriptionId"
+```
+
+### Multi-Subscription Operations
+
+For cross-subscription operations (e.g., cross-tenant access):
+
+```powershell
+# Save current context
+$originalContext = Get-AzContext
+
+try {
+    # Switch to target subscription
+    Set-AzContext -SubscriptionId $targetSubscriptionId | Out-Null
+    
+    # Perform operations in target subscription
+    New-AzResourceGroup -Name $rgName -Location $location
+}
+finally {
+    # Always restore original context
+    Set-AzContext -Context $originalContext | Out-Null
+}
+```
+
+---
+
+## Idempotency
+
+Scripts should be safe to run multiple times (idempotent):
+
+```powershell
+# Check if resource exists before creating
+$existing = Get-AzResourceGroup -Name $rgName -ErrorAction SilentlyContinue
+if ($existing) {
+    Write-LogWarning "Resource group already exists: $rgName"
+}
+else {
+    New-AzResourceGroup -Name $rgName -Location $location
+    Write-LogSuccess "Created resource group: $rgName"
+}
+```
+
+### Idempotency Patterns
+
+| Operation | Pattern |
+|-----------|---------|
+| **Create** | Check existence first, skip if exists |
+| **Update** | Compare current vs desired state, update only if different |
+| **Delete** | Check existence first, skip if already deleted |
+| **Configuration** | Read current config, apply only changed values |
+
+---
+
+## Customer-Specific Scripts
+
+Customer deployment repos contain scripts that read from their `infrastructure.yml`:
+
+```powershell
+# src/powershell/deploy/Initialize-ClusterPrereqs.ps1
+
+# Load customer's configuration
+. "$PSScriptRoot/../utilities/helpers/config-loader.ps1"
+$config = Get-InfrastructureConfig
+
+# Read customer-specific values                                      # compute.azure_local.*
+$clusterName = $config.compute.azure_local.cluster_name              # compute.azure_local.cluster_name
+$nodeCount   = $config.compute.azure_local.cluster_node_count        # compute.azure_local.cluster_node_count
+$topology    = $config.compute.azure_local.network_topology          # compute.azure_local.network_topology
+
+# Adapt logic based on customer's configuration
+if ($topology -eq "switchless") {
+    Write-Host "Configuring switchless RDMA connections for $clusterName"
+}
+elseif ($topology -eq "switched") {
+    Write-Host "Configuring switched network topology for $clusterName"
+}
+```
+
+**Key Point**: Each customer deployment has ONE `infrastructure.yml` file with their specific configuration values.
+
+---
+
+## File Naming Conventions
+
+Follow PowerShell approved verb-noun naming:
+
+| Pattern | Purpose | Example |
+|---------|---------|---------|
+| `New-*.ps1` | Create new resources | `New-AzureLocalSP.ps1` |
+| `Get-*.ps1` | Retrieve/discover info | `Get-TenantInfo.ps1`, `Get-ClusterInventory.ps1` |
+| `Set-*.ps1` | Modify existing resources | `Set-RoleAssignments.ps1` |
+| `Remove-*.ps1` | Delete resources | `Remove-ServicePrincipal.ps1` |
+| `Test-*.ps1` | Validate/check | `Test-ConfigSchema.ps1`, `Test-ClusterHealth.ps1` |
+| `Initialize-*.ps1` | Setup/bootstrap | `Initialize-KeyVault.ps1` |
+| `Export-*.ps1` | Export data | `Export-ToExcel.ps1` |
+| `Import-*.ps1` | Import data | `Import-FromYAML.ps1` |
+| `Deploy-*.ps1` | Deploy infrastructure | `Deploy-NetworkInfrastructure.ps1` |
+| `Configure-*.ps1` | Configure resources | `Configure-ActiveDirectory.ps1` |
+
+**Naming Rules:**
+
+**Do:**
+- Use PascalCase for script names
+- Use approved PowerShell verbs ([Get-Verb](https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands))
+- Use descriptive nouns that indicate resource type
+- Use singular nouns (e.g., `Get-Cluster.ps1`, not `Get-Clusters.ps1`)
+
+**Don't:**
+- Use abbreviations unless standard (e.g., `SP` for Service Principal)
+
+---
+
+## Testing Scripts
+
+Before committing, verify:
+
+### 1. Static Analysis
+
+```powershell
+# Install PSScriptAnalyzer if not already installed
+Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+
+# Run analysis
+Test-ScriptAnalyzer -Path .\script.ps1
+```
+
+### 2. WhatIf Mode
+
+```powershell
+# Always test with WhatIf first
+.\Deploy-Infrastructure.ps1 -ConfigPath "configs/infrastructure.yml" -WhatIf
+```
+
+### 3. Idempotency
+
+```powershell
+# Run twice - second run should be no-op
+.\Deploy-Infrastructure.ps1 -ConfigPath "configs/infrastructure.yml"
+.\Deploy-Infrastructure.ps1 -ConfigPath "configs/infrastructure.yml"  # Should skip existing resources
+```
+
+### 4. Different Configurations
+
+Test with different config files to verify portability:
+
+```powershell
+# Test with a 2-node switchless configuration
+.\Get-ClusterInventory.ps1 -ConfigPath "configs/infrastructure.yml"
+
+# Test with an alternate configuration
+.\Get-ClusterInventory.ps1 -ConfigPath "configs/infrastructure-alt.yml"
+```
+
+### 5. Pester Tests
+
+Create Pester tests for complex scripts:
+
+```powershell
+# tests/unit/Get-ClusterInventory.Tests.ps1
+Describe "Get-ClusterInventory" {
+    It "Should load config from infrastructure.yml" {
+        $config = Get-InfrastructureConfig -ConfigPath "configs/infrastructure.yml"
+        $config.cluster.name | Should -Not -BeNullOrEmpty
+    }
+    
+    It "Should return cluster nodes" {
+        $nodes = Get-ClusterInventory -ConfigPath "configs/infrastructure.yml"
+        $nodes.Count | Should -BeGreaterThan 0
+    }
+}
+```
+
+---
+
+## Script Organization in Repositories
+
+Follow the [PowerShell Organization Standard](./powershell-organization-standard.mdx#standard-folder-structure):
+
+```
+src/powershell/
+├── README.md
+├── discovery/              # Data collection from live environments
+│   ├── Get-DellServerInventory.ps1
+│   └── Get-AzureTenantInfo.ps1
+├── generators/             # Documentation/config generation
+│   ├── Generate-ClusterConfigMD.ps1
+│   └── Generate-FromYAML.ps1
+├── deploy/                 # Deployment automation
+│   ├── Deploy-Infrastructure.ps1
+│   └── Deploy-AzureResources.ps1
+├── configure/              # Post-deployment configuration
+│   ├── Configure-ActiveDirectory.ps1
+│   └── Configure-WAC.ps1
+├── utilities/              # Reusable functions/helpers
+│   └── helpers/
+│       ├── config-loader.ps1
+│       ├── keyvault-helper.ps1
+│       └── logging.ps1
+└── ci-cd/                  # Pipeline integration
+    ├── Build.ps1
+    └── Test.ps1
+```
+
+---
+
+## Code Quality Checklist
+
+Before committing any PowerShell script:
+
+- [ ] **Comment-based help** - Complete `.SYNOPSIS`, `.DESCRIPTION`, `.PARAMETER`, `.EXAMPLE`, `.NOTES`
+- [ ] **Parameter validation** - `ValidateScript` for ConfigPath parameter
+- [ ] **Credential resolution** (`Invoke-` scripts only) - Implements `-Credential` param → Key Vault (`Resolve-KeyVaultRef`) → `Get-Credential` fallback, in that order
+- [ ] **Error handling** - `try/catch` blocks for all risky operations
+- [ ] **Logging** - Use standard logging functions (`Write-LogInfo`, etc.)
+- [ ] **WhatIf support** - `[CmdletBinding(SupportsShouldProcess)]` for modify operations
+- [ ] **Idempotency** - Check existence before create, safe to run multiple times
+- [ ] **Relative paths** - Use `$PSScriptRoot` for portability
+- [ ] **Config-driven** - Read all values from `infrastructure.yml` via `Get-InfrastructureConfig`
+- [ ] **Subscription context** - Set explicitly using `Set-AzContext`
+- [ ] **Static analysis** - Passes `Test-ScriptAnalyzer` with no errors
+- [ ] **Tested** - Verified with WhatIf, idempotency check, and multiple environments
+- [ ] **Named correctly** - Follows approved verb-noun pattern with PascalCase
+
+---
+
+## Onboarding
+
+### Getting Started
+
+New contributors should follow these steps to set up their development environment:
+
+1. **Clone the repository**
+   ```powershell
+   git clone <repository-url>
+   cd <repository-name>
+   ```
+
+2. **Install required tools**
+   - [PowerShell 7+](https://github.com/PowerShell/PowerShell/releases)
+   - [Visual Studio Code](https://code.visualstudio.com/)
+   - [Git](https://git-scm.com/downloads)
+
+3. **Install VS Code extensions**
+   - PowerShell (ms-vscode.powershell)
+   - YAML (redhat.vscode-yaml)
+   - ShellCheck (timonwong.shellcheck)
+
+4. **Install PowerShell modules**
+   ```powershell
+   Install-Module -Name Az -Scope CurrentUser
+   Install-Module -Name powershell-yaml -Scope CurrentUser
+   Install-Module -Name PSScriptAnalyzer -Scope CurrentUser
+   Install-Module -Name Pester -Scope CurrentUser
+   ```
+
+5. **Install ShellCheck** (for Bash scripts)
+   - Windows: `choco install shellcheck` or download from [GitHub](https://github.com/koalaman/shellcheck/releases)
+   - Linux/Mac: `apt-get install shellcheck` or `brew install shellcheck`
+
+6. **Run the quickstart script**
+   ```powershell
+   .\scripts\onboarding\Setup-DevEnv.ps1
+   ```
+   This script:
+   - Validates your environment setup
+   - Installs missing tools and modules
+   - Configures VS Code settings
+   - Runs initial tests to ensure everything works
+
+### Using the Script Template Generator
+
+To create a new standards-compliant script:
+
+```powershell
+.\scripts\tools\New-ScriptFromTemplate.ps1 -ScriptType PowerShell -Name "New-AzureResource" -Description "Creates Azure resources"
+```
+
+**Supported script types:**
+- `PowerShell` - PowerShell Core scripts (Verb-Noun.ps1)
+- `AzurePowerShell` - Azure PowerShell scripts (Verb-AzResource.ps1)
+- `AzureCliPowerShell` - Azure CLI for PowerShell (az-verb-resource.ps1)
+- `AzureCliBash` - Azure CLI Bash scripts (az-verb-resource.sh)
+- `InvokeScript` - Remote/management-box scripts (Invoke-Action.ps1)
+
+The generator will:
+- Create the script file with proper naming
+- Add comment-based help template
+- Include config loading and helper imports
+- Add parameter validation and error handling
+- Place the script in the correct directory
+
+### Running Scripts with Configuration
+
+All scripts accept a config/environment parameter:
+
+```powershell
+# Using config file path (default: configs/infrastructure.yml)
+.\scripts\deploy\New-AzureResource.ps1 -ConfigPath "configs/infrastructure.yml"
+
+# Using custom config path
+.\scripts\deploy\New-AzureResource.ps1 -ConfigPath "C:\custom\path\infrastructure.yml"
+```
+
+### Testing and Validation
+
+**Run PSScriptAnalyzer:**
+```powershell
+Invoke-ScriptAnalyzer -Path .\scripts\deploy\New-AzureResource.ps1
+```
+
+**Run ShellCheck (Bash):**
+```bash
+shellcheck scripts/deploy/az-create-vnet.sh
+```
+
+**Run Pester tests:**
+```powershell
+Invoke-Pester -Path .\scripts\tests\
+```
+
+### CI/Pre-Commit Hooks
+
+The repository includes automated checks that run on commit and in CI pipelines:
+
+**Pre-commit hooks enforce:**
+- Script naming conventions (correct prefix, verb-noun pattern)
+- No hardcoded values (must use config variables)
+- Comment-based help presence and completeness
+- PSScriptAnalyzer/ShellCheck passing
+- Pester test coverage
+
+**To set up pre-commit hooks:**
+```powershell
+.\scripts\tools\Install-PreCommitHooks.ps1
+```
+
+**CI pipeline checks:**
+- All scripts pass PSScriptAnalyzer with zero errors
+- All scripts pass ShellCheck (Bash)
+- All scripts have required parameters (Environment/ConfigPath)
+- All scripts use helpers (config-loader, logging, etc.)
+- All Pester tests pass
+
+---
+
+## Resources
+
+### Official Documentation
+
+- **PowerShell Best Practices**: [Microsoft Docs](https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/strongly-encouraged-development-guidelines)
+- **Approved Verbs**: [Get-Verb Reference](https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands)
+- **PSScriptAnalyzer**: [GitHub](https://github.com/PowerShell/PSScriptAnalyzer)
+- **Pester Testing**: [Pester Docs](https://pester.dev/)
+
+### Related Standards
+
+- [PowerShell Organization Standard](./powershell-organization-standard.mdx) - PowerShell organization in repositories
+- [Naming Conventions](../documentation/naming-conventions.mdx) - File and resource naming standards
+- [Scripting Framework](./scripting-framework.mdx) - Script templates and patterns
+
+---
+
+**Version Control**
+
+- Created: 2025-12-10 by Product Technology Team
+- Last Edited: 2026-02-08 by Product Technology Team
+- Version: 1.1.0
+- Tags: standards, powershell, scripting, automation
+- Keywords: powershell, scripting, automation, standards, best-practices, azure
+- Author: Product Technology Team
+
