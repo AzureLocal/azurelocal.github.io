@@ -1,0 +1,201 @@
+---
+title: "Variable Management Standard"
+sidebar_label: "Variable Management Standard"
+sidebar_position: 4
+description: "Organization-wide variable naming, structure, and management standard for all AzureLocal solution repositories."
+category: "STANDARD"
+scope: "All AzureLocal solution repositories"
+purpose: "Define the canonical variable management pattern used across the org"
+author: "Azure Local Cloudnology Team"
+created: 2026-03-17
+updated: 2026-03-17
+version: "1.0.0"
+tags:
+  - azure-local
+  - configuration
+  - variables
+  - standards
+keywords:
+  - variable management
+  - naming conventions
+  - variables.yml
+  - variables.example.yml
+  - schema validation
+status: "approved"
+---
+
+# Variable Management Standard
+
+[![Standard](https://img.shields.io/badge/Type-Standard-green?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Standard  
+> **SCOPE**: All AzureLocal solution repositories  
+> **PURPOSE**: Canonical variable naming, structure, and management pattern  
+
+**Status**: Active
+
+---
+
+## Overview
+
+Every AzureLocal solution repository follows a **single, standardized pattern** for managing deployment variables. This ensures consistency, validation, and automation compatibility across all solutions.
+
+**Core principle:** One config file, one schema, one reference doc — per repo.
+
+| Artifact | Location | Purpose |
+|----------|----------|---------|
+| Example config | `config/variables.example.yml` | Template with placeholder values — copy to `variables.yml` |
+| Active config | `config/variables.yml` | Environment-specific values (**never committed**) |
+| JSON Schema | `config/schema/variables.schema.json` | Validation rules enforced by CI |
+| Reference doc | `docs/reference/variables.md` | Human-readable variable catalog |
+
+---
+
+## Repository Matrix
+
+| Repository | Config | Schema | Reference Doc | CI Workflow |
+|-----------|--------|--------|---------------|------------|
+| [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | [variables.example.yml](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables.example.yml) | [schema](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/schema/variables.schema.json) | [reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/reference/variables.md) | `validate-config.yml` |
+| [azurelocal-sofs-fslogix](https://github.com/AzureLocal/azurelocal-sofs-fslogix) | [variables.example.yml](https://github.com/AzureLocal/azurelocal-sofs-fslogix/blob/main/config/variables.example.yml) | [schema](https://github.com/AzureLocal/azurelocal-sofs-fslogix/blob/main/config/schema/variables.schema.json) | [reference](https://github.com/AzureLocal/azurelocal-sofs-fslogix/blob/main/docs/reference/variables.md) | `validate-config.yml` |
+| [aurelocal-avd](https://github.com/AzureLocal/aurelocal-avd) | [variables.example.yml](https://github.com/AzureLocal/aurelocal-avd/blob/main/config/variables.example.yml) | [schema](https://github.com/AzureLocal/aurelocal-avd/blob/main/config/schema/variables.schema.json) | [reference](https://github.com/AzureLocal/aurelocal-avd/blob/main/docs/reference/variables.md) | `validate-config.yml` |
+| [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools) | [variables.example.yml](https://github.com/AzureLocal/azurelocal-loadtools/blob/main/config/variables.example.yml) | [schema](https://github.com/AzureLocal/azurelocal-loadtools/blob/main/config/schema/variables.schema.json) | [reference](https://github.com/AzureLocal/azurelocal-loadtools/blob/main/docs/reference/variables.md) | `validate-config.yml` |
+| [azurelocal-vm-conversion-toolkit](https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit) | [variables.example.yml](https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit/blob/main/config/variables.example.yml) | [schema](https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit/blob/main/config/schema/variables.schema.json) | [reference](https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit/blob/main/docs/reference/variables.md) | `validate-config.yml` |
+
+---
+
+## Directory Structure
+
+Every repository follows this layout:
+
+```
+repo-root/
+├── config/
+│   ├── variables.example.yml       # Committed — template
+│   ├── variables.yml               # .gitignored — your values
+│   └── schema/
+│       └── variables.schema.json   # JSON Schema for CI validation
+├── docs/
+│   └── reference/
+│       └── variables.md            # Human-readable variable catalog
+└── .github/
+    └── workflows/
+        └── validate-config.yml     # CI: validates example against schema
+```
+
+---
+
+## Naming Conventions
+
+### File Naming
+
+| File | Name | Notes |
+|------|------|-------|
+| Example config | `variables.example.yml` | Always `.example.yml`, never `.template.yml` |
+| Active config | `variables.yml` | Never committed |
+| Schema | `variables.schema.json` | Draft 2020-12 JSON Schema |
+| Reference doc | `variables.md` | Always at `docs/reference/variables.md` |
+
+### Variable Naming
+
+| Scope | Convention | Example |
+|-------|-----------|---------|
+| Top-level sections | `snake_case` | `azure_local`, `session_hosts` |
+| Keys within sections | `snake_case` | `subscription_id`, `cluster_name` |
+| Booleans | Descriptive name | `enable_real_time: true` |
+| Secrets | `keyvault://` URI | `keyvault://kv-name/secret-name` |
+| Azure resource IDs | Full ARM path | `/subscriptions/.../providers/...` |
+| Enum values | `snake_case` | `auth_method: "managed_identity"` |
+
+### Section Organization
+
+Each `variables.example.yml` is organized into **logical sections** separated by comment headers:
+
+```yaml
+# =============================================================================
+# Section Name
+# =============================================================================
+section_name:
+  key: "value"
+```
+
+Common sections across repos include:
+- **azure** — Subscription, tenant, resource group, location
+- **keyvault** — Key Vault name and auth method
+- **azure_local** — Cluster-specific configuration
+- **tags** — Resource tagging (present in every repo)
+
+Solution-specific sections are documented in each repo's `docs/reference/variables.md`.
+
+---
+
+## Secret Management
+
+Secrets are **never** stored in plaintext in `variables.yml`. All sensitive values use the `keyvault://` URI format:
+
+```yaml
+credentials:
+  admin_password: "keyvault://kv-mysite/admin-password"
+```
+
+**Resolution flow:**
+
+1. Tool parses the URI → vault name + secret name
+2. Tool calls `az keyvault secret show` (or SDK equivalent)
+3. Secret value is passed directly — never written to disk
+
+Repos that use Key Vault references: **toolkit**, **sofs-fslogix**, **avd**, **loadtools**
+
+---
+
+## Schema Validation
+
+Every repo includes a JSON Schema that validates the structure of `variables.example.yml`. The CI workflow runs on every PR and push to `config/**`:
+
+```yaml
+# .github/workflows/validate-config.yml
+name: Validate Config
+on:
+  push:
+    paths: ['config/**']
+  pull_request:
+    paths: ['config/**']
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml jsonschema
+      - run: |
+          python -c "
+          import yaml, jsonschema, sys
+          schema = yaml.safe_load(open('config/schema/variables.schema.json'))
+          data = yaml.safe_load(open('config/variables.example.yml'))
+          jsonschema.validate(data, schema)
+          print('Validation PASSED')
+          "
+```
+
+---
+
+## Getting Started with a New Repo
+
+When adding a new solution repository to the org:
+
+1. **Create** `config/variables.example.yml` with solution-specific sections
+2. **Create** `config/schema/variables.schema.json` with Draft 2020-12 JSON Schema
+3. **Create** `docs/reference/variables.md` documenting every variable with type, required, description, and default
+4. **Add** `.github/workflows/validate-config.yml` (copy from any existing repo)
+5. **Add** `config/variables.yml` to `.gitignore`
+6. **Update this page** with a link in the Repository Matrix table
+
+---
+
+## Related Documentation
+
+- **[Key Inputs and Variables](./03-key-inputs-and-variables.mdx)** — How the toolkit uses `infrastructure.yml` and `master-registry.yaml`  
+- **[Naming Standards](../planning/01-naming-standards.mdx)** — Azure resource naming conventions  
