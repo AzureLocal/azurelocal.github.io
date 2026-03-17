@@ -1,0 +1,694 @@
+---
+title: Step Template
+sidebar_label: Step Template
+sidebar_position: 3
+description: "Copy-paste template for creating provisioning step files with tabbed execution options"
+---
+
+# Step Template
+
+[![Template](https://img.shields.io/badge/Type-Template-purple?style=flat-square)](./provisioning-runbook-standard.mdx)
+[![TierPoint](https://img.shields.io/badge/TierPoint-ProdTech-orange?style=flat-square)](https://tierpoint.com)
+
+> **DOCUMENT CATEGORY**: Template  
+> **SCOPE**: Individual step files for provisioning runbooks  
+> **PURPOSE**: Provide a copy-paste ready template for step files with tabbed execution options  
+> **MASTER REFERENCE**: [Provisioning Runbook Standard](./provisioning-runbook-standard.mdx)
+
+**Status**: Active  
+**Last Updated**: 2026-03-10
+
+---
+
+## Overview
+
+This template provides the structure for step files in provisioning runbooks. Each step uses **tabbed execution options** so readers can switch between methods without scrolling.
+
+### Step 1: Classify the Task
+
+Before copying a template, **classify the execution target** to select the correct variant:
+
+| Execution Target | Template to Use | Tab Count |
+|------------------|----------------|-----------|
+| **Azure-Only** (Portal / Azure API operations) | [Azure-Only Template](#azure-only-template-3-tabs) | 3 |
+| **Windows Server** (On-prem node, GUI/PSRemoting) | [Windows Server Template](#windows-server-template-3-tabs) | Up to 3 |
+| **Physical / Vendor Hardware** | Adapt Azure-Only template — use vendor-specific labels | Variable |
+| **Network Device** | Use `groupId="device-type"` — tabs per device model | Variable |
+| **CI/CD / Documentation-Only** | No tabs — single narrative procedure | 0 |
+
+See the [Tab Selection Decision Logic](./tab-decision-logic.mdx) for the full decision flowchart and the [Provisioning Runbook Standard](./provisioning-runbook-standard.mdx) for complete tab profile definitions.
+
+:::tip How to Use This Template
+1. **Classify** the execution target (Azure? Windows? Hardware? Network? Docs-only?)
+2. Copy the matching **template variant** below
+3. Paste into your new `task-NN-{action}.mdx` file
+4. Replace all `{PLACEHOLDER}` values
+5. **Remove tabs that do not apply** — only keep execution methods that genuinely work for this task
+6. If no manual/portal option exists, move `default` to the Orchestrated tab
+7. Fill in the procedure details for each remaining tab
+:::
+
+---
+
+## Azure-Only Template (3 Tabs)
+
+Use this template for tasks that operate against **Azure control-plane APIs** — creating resources, configuring Azure services, querying Azure Resource Manager. There is **no target node**.
+
+Copy everything below this line:
+
+---
+
+````mdx
+---
+title: "Task N: {Action Description}"
+sidebar_label: "Task N: {Short Label}"
+sidebar_position: {n}
+description: "{Brief description of what this step accomplishes}"
+---
+
+# Task N: {Action Description}
+
+{Brief 1-2 sentence description of what this step accomplishes. Include any skip conditions.}
+
+---
+
+## Execution Options
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Navigate to {Service}**:
+   - In Azure Portal, search for **{Service Name}**
+   - Click **+ Create**
+
+2. **Configure {Resource}**:
+   | Field | Value | Source |
+   |-------|-------|--------|
+   | Subscription | `<your-subscription>` | `infrastructure.yml: azure.subscription.id` |
+   | Resource group | `{rg-name}` | `infrastructure.yml: {path.to.resource_group}` |
+   | Name | `{resource-name}` | `infrastructure.yml: {path.to.name}` |
+   | Region | `{region}` | `infrastructure.yml: azure.location` |
+
+3. **Complete creation**:
+   - Click **Review + create**
+   - Verify settings are correct
+   - Click **Create**
+
+#### Validation
+
+- [ ] {Resource} created successfully
+- [ ] {Resource} accessible from deployment workstation
+
+#### Links
+
+- [Microsoft Docs: {Topic}](https://learn.microsoft.com/en-us/azure/{path}/)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/{stage}/{phase}/{task}/powershell/Invoke-{Resource}.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | `scripts/deploy/{stage}/{phase}/{task}/azure-cli/Invoke-{Resource}.ps1` |
+| Bash | `scripts/deploy/{stage}/{phase}/{task}/bash/invoke-{resource}.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Invoke-{Resource}.ps1
+# Execution: Run from management workstation — reads infrastructure.yml
+# Prerequisites: Azure PowerShell modules, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.{Module}, Az.Resources
+
+[CmdletBinding()]
+param(
+    [string]$ConfigPath   = "",
+    [PSCredential]$Credential,
+    [string[]]$TargetNode = @(),
+    [switch]$WhatIf,
+    [string]$LogPath      = ""
+)
+
+# Load configuration
+$cfg = Get-Content (Resolve-ConfigPath $ConfigPath) | ConvertFrom-Yaml
+
+# Extract values from configuration — verify paths in infrastructure.schema.json
+$ResourceName  = $cfg.{path}.{to}.name          # {path}.{to}.name
+$ResourceGroup = $cfg.{path}.{to}.resource_group # {path}.{to}.resource_group
+$Location      = $cfg.azure_platform.region      # azure_platform.region
+
+# Create resource
+Write-Host "Creating {Resource}: $ResourceName"
+
+$resource = New-Az{Resource} `
+    -Name $ResourceName `
+    -ResourceGroupName $ResourceGroup `
+    -Location $Location
+
+Write-Host "{Resource} created: $($resource.Id)"
+
+# Return object for pipeline
+$resource
+```
+
+#### Validation
+
+```powershell
+Get-Az{Resource} -Name $ResourceName -ResourceGroupName $ResourceGroup | Format-List Name, Location, {Property}
+```
+
+**Validation Script**: `scripts/validation/{category}/Test-{Component}.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready — no config file, no helpers, no dependencies. Ideal for sharing, demos, or environments without the toolkit.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: {Verb}-{Resource}-Standalone.ps1
+# Execution: Run anywhere — fully self-contained, no external dependencies
+# Prerequisites: Azure PowerShell modules, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.{Module}, Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$ResourceName  = "{resource-name}"         # Resource name
+$ResourceGroup = "{rg-name}"               # Target resource group
+$Location      = "{region}"                # Azure region (e.g., eastus2)
+#endregion CONFIGURATION
+
+# Create resource
+Write-Host "Creating {Resource}: $ResourceName"
+
+New-Az{Resource} `
+    -Name $ResourceName `
+    -ResourceGroupName $ResourceGroup `
+    -Location $Location
+
+Write-Host "{Resource} '$ResourceName' created successfully"
+
+# Verify
+Get-Az{Resource} -Name $ResourceName -ResourceGroupName $ResourceGroup | Format-List Name, Location, {Property}
+```
+
+:::info No External Dependencies
+This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block at the top. Edit those values and run — no `infrastructure.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task {N-1} – {Previous Action}](./task-{nn-1}-{previous-action}.mdx) | [Stage Index](./index.mdx) | [Task {N+1} – {Next Action}](./task-{nn+1}-{next-action}.mdx) |
+````
+
+---
+
+## Windows Server Template (3 Tabs)
+
+Use this template for tasks that operate **on Windows Server nodes** — installing features, configuring OS settings, managing services. This profile applies to all Windows tasks regardless of whether the node has the toolkit installed. The Manual tab label must be context-specific (SConfig, ADUC, DNS Manager, WAC, etc.).
+
+Copy everything below this line:
+
+---
+
+````mdx
+---
+title: "Task N: {Action Description}"
+sidebar_label: "Task N: {Short Label}"
+sidebar_position: {n}
+description: "{Brief description of what this step accomplishes}"
+---
+
+# Task N: {Action Description}
+
+{Brief 1-2 sentence description of what this step accomplishes. Include any skip conditions.}
+
+---
+
+## Execution Options
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="{SConfig | ADUC | DNS Manager | WAC}" default>
+
+### {Contextual Manual Title}
+
+> **When to use**: Prefer visual interface, single node, learning the process
+
+#### Procedure
+
+1. **{Step 1}**:
+   - {Instructions}
+
+2. **{Step 2}**:
+   - {Instructions}
+
+#### Validation
+
+- [ ] {Check 1}
+- [ ] {Check 2}
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
+
+### Orchestrated Script Execution
+
+> **When to use**: Managing from jump box or management server — config-driven via `infrastructure.yml` and PSRemoting
+
+#### Script
+
+**Primary**: `scripts/deploy/{stage}/{phase}/{task}/powershell/Invoke-{Action}.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | `scripts/deploy/{stage}/{phase}/{task}/azure-cli/Invoke-{Action}.ps1` |
+| Bash | `scripts/deploy/{stage}/{phase}/{task}/bash/invoke-{action}.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Invoke-{Action}.ps1
+# Execution: Run FROM management server (remote orchestration via PSRemoting)
+# Prerequisites: PSRemoting enabled, infrastructure.yml accessible
+# ============================================================================
+
+[CmdletBinding()]
+param(
+    [string]$ConfigPath   = "",
+    [PSCredential]$Credential,
+    [string[]]$TargetNode = @(),
+    [switch]$WhatIf,
+    [string]$LogPath      = "",
+    # YAML-overridable parameters
+    [{type}]${Variable1}  = $null   # Override {path}: infrastructure.yml: {yaml.path}
+)
+
+# Load configuration
+$cfg = Get-Content (Resolve-ConfigPath $ConfigPath) | ConvertFrom-Yaml
+
+# Extract values — inline comment shows YAML path
+$val1 = if (${Variable1}) { ${Variable1} } else { $cfg.{yaml}.{path}.{key1} }  # {yaml}.{path}.{key1}
+$val2 = $cfg.{yaml}.{path}.{key2}                                                # {yaml}.{path}.{key2}
+$nodes = if ($TargetNode.Count) { $TargetNode } else { $cfg.compute.nodes.Keys }
+
+# Execute remotely
+$results = @()
+foreach ($node in $nodes) {
+    Write-Host "[$node] Running {action}..."
+
+    if ($WhatIf) {
+        Write-Host "[$node] WhatIf: would {action} with val1=$val1"
+        continue
+    }
+
+    $result = Invoke-Command -ComputerName $node -Credential $Credential -ScriptBlock {
+        param($Val1, $Val2)
+        {Remote execution logic}
+    } -ArgumentList $val1, $val2
+
+    $results += [PSCustomObject]@{
+        Node   = $node
+        Status = if ($result) { "Success" } else { "Failed" }
+        Detail = $result
+    }
+}
+
+$results | Format-Table Node, Status, Detail -AutoSize
+# Return for pipeline
+$results
+```
+
+#### Validation
+
+```powershell
+Invoke-Command -ComputerName $nodes -ScriptBlock {
+    {Verification command}
+} | Format-Table PSComputerName, {Property} -AutoSize
+```
+
+**Validation Script**: `scripts/validation/{category}/Test-{Component}.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready — no config file, no helpers, no dependencies. Run from anywhere: management server, laptop, or directly on the node.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: {Verb}-{Resource}-Standalone.ps1
+# Execution: Run anywhere — fully self-contained, no external dependencies
+# Prerequisites: {Required modules or features}
+# ============================================================================
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+${Variable1}   = "{value1}"                      # {Description} — e.g., iic-01-n01
+${Variable2}   = "{value2}"                      # {Description}
+$ClusterNodes  = @("{node1}", "{node2}")          # Target node hostnames
+#endregion CONFIGURATION
+
+# Execute
+Write-Host "Configuring {Resource}..."
+
+foreach ($node in $ClusterNodes) {
+    Invoke-Command -ComputerName $node -ScriptBlock {
+        param($Var1, $Var2)
+        {Remote execution logic}
+    } -ArgumentList ${Variable1}, ${Variable2}
+}
+
+Write-Host "{Resource} configured successfully"
+
+# Verify
+foreach ($node in $ClusterNodes) {
+    Invoke-Command -ComputerName $node -ScriptBlock {
+        {Verification command}
+    }
+}
+```
+
+:::info No External Dependencies
+All values are defined in the `#region CONFIGURATION` block at the top of the script. Edit those values and run — no `infrastructure.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task {N-1} – {Previous Action}](./task-{nn-1}-{previous-action}.mdx) | [Stage Index](./index.mdx) | [Task {N+1} – {Next Action}](./task-{nn+1}-{next-action}.mdx) |
+````
+
+---
+
+## Example: Completed Step File (Azure-Only Task)
+
+````mdx
+---
+title: "Task 1: Create Platform Key Vault"
+sidebar_label: "Task 1: Create Key Vault"
+sidebar_position: 1
+description: "Create a platform Azure Key Vault for centralized deployment secret management"
+---
+
+# Task 1: Create Platform Key Vault
+
+Create a platform Azure Key Vault for centralized deployment secret management. Skip this step if using an existing Key Vault — proceed to Task 2 to verify permissions.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation)  
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+---
+
+## Execution Options
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Navigate to Key Vaults**:
+   - In Azure Portal, search for **Key vaults**
+   - Click **+ Create**
+
+2. **Configure Key Vault**:
+   | Field | Value | Source |
+   |-------|-------|--------|
+   | Subscription | `<your-subscription>` | `infrastructure.yml: azure.subscription.id` |
+   | Resource group | `rg-management-prod` | `infrastructure.yml: key_vaults.platform.resource_group` |
+   | Key vault name | `kv-platform-prod-eus2` | `infrastructure.yml: key_vaults.platform.name` |
+   | Region | `East US 2` | `infrastructure.yml: azure.location` |
+   | Pricing tier | Standard | — |
+
+3. **Access Configuration**:
+   - Permission model: **Azure role-based access control** (recommended)
+   - Click **Next: Access configuration**
+
+4. **Networking**:
+   - Configure as per security requirements
+   - Click **Review + create** → **Create**
+
+#### Validation
+
+- [ ] Key Vault created successfully
+- [ ] Key Vault accessible from deployment workstation
+- [ ] Permission model set to RBAC
+
+#### Links
+
+- [Microsoft Docs: Create Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal)
+
+</TabItem>
+<TabItem value="orchestrated" label="Azure CLI / PowerShell">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-02-platform/task-01-key-vault/powershell/Invoke-KeyVault.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | `scripts/deploy/02-azure-foundation/phase-02-platform/task-01-key-vault/azure-cli/Invoke-KeyVault.ps1` |
+| Bash | `scripts/deploy/02-azure-foundation/phase-02-platform/task-01-key-vault/bash/invoke-key-vault.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Invoke-KeyVault.ps1
+# Execution: Run from management workstation — reads infrastructure.yml
+# Prerequisites: Azure PowerShell modules, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.KeyVault, Az.Resources
+
+[CmdletBinding()]
+param(
+    [string]$ConfigPath   = "",
+    [PSCredential]$Credential,
+    [string[]]$TargetNode = @(),
+    [switch]$WhatIf,
+    [string]$LogPath      = ""
+)
+
+# Load configuration
+$cfg = Get-Content (Resolve-ConfigPath $ConfigPath) | ConvertFrom-Yaml
+
+# Extract values
+$KeyVaultName  = $cfg.security.keyvault.kv_name                    # security.keyvault.kv_name
+$ResourceGroup = $cfg.azure_platform.resource_groups.platform.name  # azure_platform.resource_groups.platform.name
+$Location      = $cfg.azure_platform.region                         # azure_platform.region
+
+if ($WhatIf) {
+    Write-Host "WhatIf: would create Key Vault '$KeyVaultName' in '$ResourceGroup' ($Location)"
+    return
+}
+
+# Create Key Vault
+Write-Host "Creating Key Vault: $KeyVaultName"
+
+$keyVault = New-AzKeyVault `
+    -Name $KeyVaultName `
+    -ResourceGroupName $ResourceGroup `
+    -Location $Location `
+    -EnableRbacAuthorization
+
+Write-Host "Key Vault created: $($keyVault.VaultUri)"
+
+# Return object for pipeline
+$keyVault
+```
+
+#### Validation
+
+```powershell
+Get-AzKeyVault -VaultName $KeyVaultName | Format-List VaultName, Location, EnableRbacAuthorization
+```
+
+**Validation Script**: `scripts/validation/key-vault/Test-KeyVault.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready — no config file, no helpers, no dependencies.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-AzKeyVault-Standalone.ps1
+# Execution: Run anywhere — fully self-contained
+# Prerequisites: Azure PowerShell modules, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.KeyVault, Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$KeyVaultName  = "kv-platform-prod-eus2"     # Key vault name
+$ResourceGroup = "rg-management-prod"         # Target resource group
+$Location      = "eastus2"                    # Azure region
+#endregion CONFIGURATION
+
+# Create Key Vault
+Write-Host "Creating Key Vault: $KeyVaultName"
+
+New-AzKeyVault `
+    -Name $KeyVaultName `
+    -ResourceGroupName $ResourceGroup `
+    -Location $Location `
+    -EnableRbacAuthorization
+
+Write-Host "Key Vault '$KeyVaultName' created successfully"
+
+# Verify
+Get-AzKeyVault -VaultName $KeyVaultName | Format-List VaultName, Location, EnableRbacAuthorization
+```
+
+:::info No External Dependencies
+Edit the values in the `#region CONFIGURATION` block and run. No `infrastructure.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 5 Index](./index.mdx) | [Phase 5 Index](./index.mdx) | [Task 2 – Configure Access](./task-02-configure-access.mdx) |
+````
+
+---
+
+## Script Naming Reference
+
+| Context | Prefix / Suffix | Example |
+|---------|-----------------|---------|
+| **Orchestrated** | `Invoke-` | `Invoke-KeyVault.ps1` |
+| **Standalone** | `-Standalone.ps1` | `New-AzKeyVault-Standalone.ps1` |
+| **Validation** | `Test-` | `Test-KeyVault.ps1` |
+
+---
+
+## Checklist
+
+Before publishing a step file:
+
+### Classification
+- [ ] **Execution target classified** (Azure-Only / Windows Server / Physical Hardware / Network Device / CI-CD / Docs-Only)
+- [ ] Correct template variant used (Azure-Only 3-tab / Windows 3-tab / other)
+- [ ] Tab count and labels match the profile for the classified target
+- [ ] Correct `groupId` used (`deployment-method` or `device-type`)
+
+### Structure
+- [ ] Title uses format: `Task N: {Action}`
+- [ ] Uses `<Tabs groupId="deployment-method">` (or `groupId="device-type"` for network)
+- [ ] Only tabs for genuinely applicable methods are included
+- [ ] Each tab has "When to use" guidance
+- [ ] Navigation links are correct
+
+### Manual Tab (if applicable)
+- [ ] Step-by-step procedure with numbered steps
+- [ ] Configuration table with Source column
+- [ ] Validation checklist
+- [ ] Links to Microsoft docs
+- [ ] **Action is genuinely possible via this interface** (no fabricated steps)
+
+### Azure CLI / PowerShell or Orchestrated Script Tab
+- [ ] Primary script path provided
+- [ ] Alternatives table with all variants
+- [ ] Code block with parameterized script
+- [ ] Script uses `Invoke-` prefix
+- [ ] Script exposes full required parameter contract (`$ConfigPath`, `$Credential`, `$TargetNode`, `$WhatIf`, `$LogPath`)
+- [ ] Script reads `infrastructure.yml` via config-loader — no hardcoded values
+- [ ] `[CmdletBinding()]` present
+- [ ] Script returns object for pipeline
+- [ ] Correct label: `Azure CLI / PowerShell` for Azure tasks, `Orchestrated Script (Mgmt Server)` for Windows
+- [ ] Validation command and script reference included
+
+### Standalone Script Tab
+- [ ] Script name uses `-Standalone.ps1` suffix
+- [ ] `#region CONFIGURATION` / `#endregion CONFIGURATION` block at top — **before any executable code**
+- [ ] **All variables declared inside the CONFIGURATION region** — none defined in the script body
+- [ ] No external dependencies (no helpers, no config-loader, no `infrastructure.yml`)
+- [ ] No emojis in script
+- [ ] Includes inline verification command
+
+---
+
+## Related Templates
+
+- **[Stage Index Template](./stage-index-template.mdx)** — Template for stage overview pages
+- **[Provisioning Runbook Standard](./provisioning-runbook-standard.mdx)** — Framework definition
+- **[Tab Selection Decision Logic](./tab-decision-logic.mdx)** — Flowchart for selecting correct tab profile
+
+---
+
+**Version Control**
+
+- Created: 2026-01-30 by Product Technology Team
+- Last Updated: 2026-03-10 by Product Technology Team
+- Version: 5.0.0

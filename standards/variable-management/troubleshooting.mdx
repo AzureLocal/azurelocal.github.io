@@ -1,0 +1,486 @@
+---
+id: troubleshooting
+title: Troubleshooting
+sidebar_label: Troubleshooting
+---
+
+# Troubleshooting
+
+[![Troubleshooting](https://img.shields.io/badge/Type-Troubleshooting-red?logo=github)](https://github.com/features/troubleshooting)
+[![Practical](https://img.shields.io/badge/Level-Practical-green)](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/)
+[![Operations](https://img.shields.io/badge/Operations-Diagnostics-orange)](https://docs.microsoft.com/en-us/powershell/)
+
+> **Common issues, error messages, and resolution steps for the variable registry and configuration system**
+
+**Diagnostics** | **Error Resolution** | **Common Pitfalls**
+
+---
+
+## Overview
+
+This document covers common issues encountered when working with `infrastructure.yml`, the config-loader, YAML parsing, schema validation, and the variable registry system. Each section includes the error message, root cause, and resolution steps.
+
+---
+
+## YAML Parsing Errors
+
+### Tab Characters in YAML
+
+**Error:**
+```
+ConvertFrom-Yaml : while scanning for the next token
+found character that cannot start any token
+```
+
+**Cause:** YAML does not allow tab characters for indentation. Only spaces are valid.
+
+**Resolution:**
+```powershell
+# Find tabs in your YAML file
+(Get-Content .\configs\infrastructure.yml -Raw) -match "`t"
+
+# Replace tabs with spaces (2-space indent)
+$content = Get-Content .\configs\infrastructure.yml -Raw
+$content = $content -replace "`t", "  "
+Set-Content .\configs\infrastructure.yml -Value $content
+```
+
+**Prevention:** Configure your editor to insert spaces instead of tabs for `.yml`/`.yaml` files.
+
+### Special Characters in Strings
+
+**Error:**
+```
+ConvertFrom-Yaml : while parsing a block mapping
+did not find expected key
+```
+
+**Cause:** Unquoted strings containing YAML special characters (`:`, `#`, `{`, `}`, `[`, `]`, `&`, `*`, `!`, `|`, `>`).
+
+**Resolution:**
+```yaml
+# ❌ Wrong - colon in unquoted string
+description: Deploy: Phase 1
+
+# ✅ Correct - quoted string
+description: "Deploy: Phase 1"
+```
+
+### Multiline String Issues
+
+**Error:**
+```
+ConvertFrom-Yaml : while parsing a block scalar
+found a tab character where an indentation space is expected
+```
+
+**Cause:** Inconsistent indentation in multiline strings.
+
+**Resolution:**
+```yaml
+# ❌ Wrong - mixed indentation
+description: |
+  First line
+    Second line with extra indent
+	Third line with tab
+
+# ✅ Correct - consistent indentation
+description: |
+  First line
+  Second line aligned
+  Third line aligned
+```
+
+---
+
+## powershell-yaml Module Issues
+
+### Module Not Found
+
+**Error:**
+```
+powershell-yaml module not found. Install with: Install-Module powershell-yaml -Scope CurrentUser
+```
+
+**Resolution:**
+```powershell
+# Install the module
+Install-Module -Name powershell-yaml -Scope CurrentUser -Force
+
+# Verify installation
+Get-Module -ListAvailable -Name powershell-yaml
+```
+
+### Version Conflicts
+
+**Error:**
+```
+Import-Module : The following error occurred while loading the extended type data file:
+```
+
+**Cause:** Multiple versions of `powershell-yaml` installed.
+
+**Resolution:**
+```powershell
+# Check installed versions
+Get-Module -ListAvailable -Name powershell-yaml | Select-Object Version, Path
+
+# Remove old versions
+Get-Module -ListAvailable -Name powershell-yaml |
+    Sort-Object Version -Descending |
+    Select-Object -Skip 1 |
+    ForEach-Object { Uninstall-Module -Name powershell-yaml -RequiredVersion $_.Version }
+
+# Import specific version
+Import-Module powershell-yaml -RequiredVersion 0.4.7
+```
+
+### ConvertFrom-Yaml Returns Null
+
+**Error:** No error thrown, but `$config` is `$null` or empty.
+
+**Cause:** Empty YAML file or the `-Raw` flag missing from `Get-Content`.
+
+**Resolution:**
+```powershell
+# ❌ Wrong - Get-Content returns array of lines, not raw string
+$config = Get-Content .\configs\infrastructure.yml | ConvertFrom-Yaml
+
+# ✅ Correct - use -Raw to get single string
+$config = Get-Content .\configs\infrastructure.yml -Raw | ConvertFrom-Yaml
+```
+
+---
+
+## Config-Loader Errors
+
+### Infrastructure Configuration Not Found
+
+**Error:**
+```
+Get-InfrastructureConfig : Infrastructure configuration not found: C:\git\{repo}\configs\infrastructure.yml
+```
+
+**Cause:** The config-loader resolves the path relative to the script's repository root. If the script is running from an unexpected location, the path resolution fails.
+
+**Resolution:**
+```powershell
+# Option 1: Pass explicit path
+$config = Get-InfrastructureConfig -ConfigPath "C:\git\my-repo\configs\infrastructure.yml"
+
+# Option 2: Verify current directory
+Write-Host "Current directory: $(Get-Location)"
+Write-Host "Config exists: $(Test-Path '.\configs\infrastructure.yml')"
+
+# Option 3: Check the repo root detection
+# config-loader.ps1 uses $PSScriptRoot to find repo root
+# Ensure the script is being run from within the repository structure
+```
+
+### Get-B2BConfig - Section Not Found
+
+**Error:**
+```
+Get-B2BConfig : B2B configuration not found in infrastructure.yml. Ensure b2b_configuration section exists.
+```
+
+**Cause:** The `b2b_configuration` section is missing from `infrastructure.yml`. Not all environments require B2B configuration.
+
+**Resolution:**
+```yaml
+# Add the b2b_configuration section to infrastructure.yml
+b2b_configuration:
+  service_tier: "standard"
+  management_tenant:
+    tenant_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    tenant_name: "Management Tenant"
+```
+
+### Ordered Dictionary Access Issues
+
+**Error:**
+```
+Cannot index into a null array.
+```
+
+**Cause:** `ConvertFrom-Yaml` returns `OrderedDictionary` objects, not `PSCustomObject`. Property access syntax differs.
+
+**Resolution:**
+```powershell
+# ❌ Wrong - dot notation may fail on OrderedDictionary
+$value = $config.compute.azure_local.cluster_name
+
+# ✅ Correct - use Get-ConfigValue from config-loader
+$value = Get-ConfigValue -Config $config -Path "compute.azure_local.cluster_name"
+
+# ✅ Also correct - bracket notation
+$value = $config["compute"]["azure_local"]["cluster_name"]
+```
+
+---
+
+## Variable Path Contract Failures
+
+### Test-ConfigPaths Reports Missing Paths
+
+**Error:**
+```powershell
+$validation = Test-ConfigPaths -Config $config
+# Returns: IsValid = False, MissingPaths = @("azure.tenant.id", "solution.name")
+```
+
+**Cause:** The configuration file is missing required paths defined in the Variable Path Contract.
+
+**Resolution:**
+```powershell
+# Check which paths are missing
+$validation = Test-ConfigPaths -Config $config
+if (-not $validation.IsValid) {
+    Write-Warning "Missing required configuration paths:"
+    foreach ($path in $validation.MissingPaths) {
+        Write-Warning "  - $path"
+    }
+}
+
+# Add the missing sections to infrastructure.yml
+```
+
+### Null vs Empty String Values
+
+**Error:** `Test-ConfigPaths` reports a path as missing even though it exists in the YAML.
+
+**Cause:** The path exists but has an empty value (`""` or `~`).
+
+**Resolution:**
+```yaml
+# ❌ These are treated as missing by Test-ConfigPaths
+azure_platform:
+  tenant:
+    id: ""      # Empty string
+    name: ~     # YAML null
+
+# ✅ Provide actual values
+azure_platform:
+  tenant:
+    id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    name: "My Tenant"
+```
+
+---
+
+## Schema Validation Failures
+
+### Required Field Missing
+
+**Error:**
+```
+[ERROR] Validation failed: Missing required property: azure_platform
+  Location: infrastructure.yml (root)
+```
+
+**Resolution:** Add the missing section to your `infrastructure.yml`. Check the [Registry Reference](./registry-reference.mdx) for required fields and their structure.
+
+### Invalid Format (UUID, CIDR, MAC)
+
+**Error:**
+```
+[ERROR] /azure_platform/tenant/id - Does not match format "uuid"
+  Expected: UUID format (e.g., "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+  Actual: "not-a-valid-uuid"
+```
+
+**Resolution:**
+```yaml
+# ❌ Invalid UUID format
+azure_platform:
+  tenant:
+    id: "not-a-valid-uuid"
+
+# ✅ Valid UUID format (lowercase, with hyphens)
+azure_platform:
+  tenant:
+    id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+```
+
+**Common format patterns:**
+| Format | Pattern | Example |
+|--------|---------|---------|
+| UUID | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` | `00000000-aaaa-bbbb-cccc-111111111111` |
+| IPv4 | `x.x.x.x` | `10.42.1.11` |
+| CIDR | `x.x.x.x/xx` | `10.42.1.0/24` |
+| MAC | `xx:xx:xx:xx:xx:xx` | `00:1A:2B:3C:4D:5E` |
+
+### Node Count Mismatch
+
+**Error:**
+```
+[ERROR] Node count mismatch: configured 4 nodes but defined 2 nodes
+```
+
+**Cause:** The `cluster_node_count` value doesn't match the number of entries in `cluster_nodes`.
+
+**Resolution:**
+```yaml
+# Ensure these match
+compute:
+  azure_local:
+    cluster_node_count: 2  # Must match cluster_nodes count
+  cluster_nodes:           # Must have exactly 2 entries
+    node01:
+      hostname: "iic-01-n01"
+      management_ip: "10.42.1.11"
+    node02:
+      hostname: "iic-01-n02"
+      management_ip: "10.42.1.12"
+```
+
+---
+
+## Infrastructure.yml Merge Conflicts
+
+### YAML-Safe Conflict Resolution
+
+When Git produces merge conflicts in YAML files, the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) break YAML parsing.
+
+**Error:**
+```
+ConvertFrom-Yaml : while parsing a block mapping
+did not find expected key
+```
+
+**Resolution:**
+1. Open the file and resolve conflicts manually — YAML structure must be valid
+2. Watch for broken indentation after removing conflict markers
+3. Re-validate after resolution:
+
+```powershell
+# Quick syntax check
+try {
+    $config = Get-Content .\configs\infrastructure.yml -Raw | ConvertFrom-Yaml
+    Write-Host "YAML is valid" -ForegroundColor Green
+} catch {
+    Write-Host "YAML is invalid: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+# Full schema validation
+.\tools\Validate-Infrastructure.ps1 -ConfigPath .\configs\infrastructure.yml
+```
+
+### Duplicate Keys After Merge
+
+**Error:**
+```
+ConvertFrom-Yaml : Duplicate key 'cluster_nodes' found
+```
+
+**Cause:** Both sides of the merge added content under the same YAML key.
+
+**Resolution:** Manually merge the two sections into one, ensuring no duplicate keys exist at the same level.
+
+---
+
+## Common Pitfalls
+
+### Hardcoded Values in Scripts
+
+**Symptom:** Script works in one environment but fails in another.
+
+**Cause:** Values hardcoded instead of reading from `infrastructure.yml`.
+
+**Resolution:** Use `Get-InfrastructureConfig` from config-loader.ps1:
+```powershell
+# ❌ Wrong - hardcoded
+$kvName = "kv-iic-platform"
+
+# ✅ Correct - from config
+$config = Get-InfrastructureConfig -ConfigPath $ConfigFile
+$kvName = $config.platform.kv_platform_name
+```
+
+### Wrong Config Path Hierarchy
+
+**Symptom:** Script reads a value but gets `$null`.
+
+**Cause:** YAML structure doesn't match the dot-notation path being used.
+
+**Resolution:** Use `Get-ConfigValue` with verbose output to trace the path:
+```powershell
+$config = Get-InfrastructureConfig -ConfigPath $ConfigFile
+
+# Trace what's available at each level
+$config.Keys | ForEach-Object { Write-Host "Root key: $_" }
+$config.azure_platform.Keys | ForEach-Object { Write-Host "Azure Platform key: $_" }
+
+# Use Get-ConfigValue for safe access
+$value = Get-ConfigValue -Config $config -Path "azure_platform.tenant.id"
+if ($null -eq $value) {
+    Write-Warning "Path 'azure_platform.tenant.id' not found in config"
+}
+```
+
+### Key Vault Reference Format
+
+**Symptom:** Script tries to use `keyvault://...` string as a literal password.
+
+**Cause:** The `keyvault://` prefix is a reference URI, not a literal value. Scripts must resolve it.
+
+**Resolution:**
+```powershell
+$passwordRef = $config.identity.accounts.account_local_admin_password
+# Value: "keyvault://kv-iic-platform/local-admin-password"
+
+if ($passwordRef -match '^keyvault://([^/]+)/(.+)$') {
+    $kvName = $Matches[1]     # "kv-iic-platform"
+    $secretName = $Matches[2] # "local-admin-password"
+    $password = Get-AzKeyVaultSecret -VaultName $kvName -Name $secretName -AsPlainText
+}
+```
+
+---
+
+## Diagnostic Commands
+
+### Quick Health Check
+
+```powershell
+# 1. Check YAML syntax
+try {
+    $config = Get-Content .\configs\infrastructure.yml -Raw | ConvertFrom-Yaml
+    Write-Host "✅ YAML syntax valid" -ForegroundColor Green
+} catch {
+    Write-Host "❌ YAML syntax error: $($_.Exception.Message)" -ForegroundColor Red
+    return
+}
+
+# 2. Check required sections
+$requiredSections = @("azure_platform", "compute", "networking", "identity", "security")
+foreach ($section in $requiredSections) {
+    if ($config.ContainsKey($section)) {
+        Write-Host "✅ Section '$section' present" -ForegroundColor Green
+    } else {
+        Write-Host "❌ Section '$section' missing" -ForegroundColor Red
+    }
+}
+
+# 3. Check node count consistency
+$declaredCount = $config.compute.azure_local.cluster_node_count
+$actualCount = $config.compute.cluster_nodes.Count
+if ($declaredCount -eq $actualCount) {
+    Write-Host "✅ Node count matches: $declaredCount" -ForegroundColor Green
+} else {
+    Write-Host "❌ Node count mismatch: declared=$declaredCount, defined=$actualCount" -ForegroundColor Red
+}
+```
+
+---
+
+## Related Documents
+
+- [Registry Reference](./registry-reference.mdx) - Variable definitions and constraints
+- [Schema Validation](./schema-validation.mdx) - Validation rules and schema generation
+- [Usage Workflows](./usage-workflows.mdx) - Implementation workflows
+- [Examples](./examples.mdx) - Complete configuration examples
+
+---
+
+*Troubleshooting guide maintained by Product Technology team. Last updated: 2026-02-08*

@@ -1,0 +1,366 @@
+---
+id: registry-reference
+title: Master Variable Registry Reference
+sidebar_label: Registry Reference
+---
+
+# Master Variable Registry Reference
+
+[![Registry](https://img.shields.io/badge/Type-Registry-blue?logo=yaml)](https://yaml.org/)
+[![Version-4.0.0](https://img.shields.io/badge/Version-4.0.0-green)](https://semver.org/)
+[![Variables-970+](https://img.shields.io/badge/Variables-970+-purple)](https://github.com/kristopherjturner/master-workplace-project)
+
+> **Complete reference for the master variable registry - the single source of truth for all variable definitions**
+
+**Complete Variable Reference** | **Authoritative Definitions** | **Version 4.0.0**
+
+---
+
+## Overview
+
+The Master Variable Registry is the single source of truth for all variable definitions used across TierPoint Product Technology repositories. It contains 970+ variables organized into **13 hierarchical sections**, each with detailed metadata including types, constraints, descriptions, and examples.
+
+### Registry Location
+
+**File**: [`./assets/master-registry.yaml`](./assets/master-registry.yaml)
+
+**Version**: 4.0.0  
+**Last Updated**: 2026-03-05  
+**Variables**: 970+  
+**Sections**: 13
+
+### Registry Structure
+
+The registry uses a 13-section hierarchy:
+
+```yaml
+# 1. Metadata
+_metadata:                       # File versioning and change tracking
+
+# 2. Infrastructure Scenarios
+infrastructure_scenarios:        # Deployment type taxonomy
+
+# 3-5. Core Identity
+site:                            # Physical location + hardware
+environment:                     # Environment classification
+tags:                            # Azure resource tagging standards
+
+# 6. Azure Platform
+azure_platform:
+  azure_tenants:                 # Azure AD/Entra ID tenants
+  management_groups:             # Management group hierarchy
+  subscriptions:                 # Azure subscriptions
+  resource_groups:               # Resource group definitions
+
+# 7. Identity
+identity:
+  accounts:                      # Service accounts, credentials, SPs
+  active_directory:              # AD domain settings
+  managed_identities:            # User/system-assigned MIs
+  b2b_configuration:             # Cross-tenant B2B access
+
+# 8. Networking
+networking:
+  azure:                         # Azure networking
+    hub_spoke:                   # Hub-spoke architecture
+    vnets:                       # Virtual networks
+    bastion:                     # Bastion hosts
+    firewall:                    # Azure Firewall rules
+    sdn:                         # Software Defined Networking
+  onprem:                        # On-premises networking
+    vlans:                       # VLAN configurations
+    dhcp:                        # DHCP settings
+    network_intents:             # Network intents
+    logical_networks:            # Logical networks
+    network_devices:             # Switches, ToR devices
+  hybrid:                        # Hybrid connectivity
+    vpn:                         # VPN configurations
+
+# 9. Compute
+compute:
+  vms:                           # Virtual machines
+    azure:                       # Azure VMs (DCs, utility, etc.)
+    arc_hybrid:                  # Arc-enabled hybrid VMs
+  clusters:                      # Azure Local / WSFC clusters
+  cluster_nodes:                 # Individual node definitions
+  cluster_arm_deployment:        # ARM deployment parameters
+  avd:                           # Azure Virtual Desktop
+
+# 10. Storage
+storage_accounts:                # Azure Storage Accounts
+
+# 11. Security
+security:
+  keyvault:                      # Key Vault configuration
+  defender:                      # Defender for Cloud
+  sentinel:                      # Azure Sentinel SIEM/SOAR
+
+# 12. Operations
+operations:
+  monitoring:                    # Monitoring + Log Analytics
+  policy:                        # Azure Policy
+  azure_update_manager:          # OS patching
+  bcdr:                          # Backup/disaster recovery
+  scvmm:                         # SCVMM integration
+
+# 13. DevOps
+devops:
+  gitlab:                        # GitLab CI/CD
+  terraform:                     # Terraform state/providers
+```
+
+---
+
+## Variable Categories
+
+### 1. Infrastructure Scenarios
+
+Defines deployment scenarios and infrastructure types.
+
+**Key Variables:**
+- `azure_local`: Azure Local (Azure Stack HCI) clusters
+- `wsfc_s2d`: Windows Server Failover Clustering with Storage Spaces Direct
+- `wsfc_san`: Windows Server Failover Clustering with SAN storage
+- `avd_azure_local`: Azure Virtual Desktop on Azure Local
+- `scvmm`: System Center Virtual Machine Manager integration
+
+### 2. Site
+
+Physical datacenter location, site metadata, and hardware details.
+
+| Variable | Type | Required | Description |
+|----------|------|----------|-------------|
+| `site_code` | String | Yes | Short site identifier |
+| `site_name` | String | Yes | Full site name |
+| `site_location` | String | Yes | Geographic location |
+| `hardware.hw_vendor` | String | No | Hardware vendor (Dell, etc.) |
+| `hardware.hw_model` | String | No | Server model |
+
+### 3. Environment
+
+Environment identification and metadata.
+
+### 4. Tags
+
+Azure resource tagging standards.
+
+### 5. Azure Platform (`azure_platform`)
+
+Azure organizational hierarchy — tenants, management groups, subscriptions, resource groups.
+
+| Sub-section | Key Variables |
+|-------------|---------------|
+| `azure_tenants` | `aztenant_azurelocal_id`, `aztenant_azurelocal_name` |
+| `management_groups` | Management group hierarchy definitions |
+| `subscriptions` | `sub_bootstrap_id`, subscription IDs |
+| `resource_groups` | `rg_connectivity_hub`, resource group definitions |
+
+### 6. Identity (`identity`)
+
+Accounts, Active Directory, managed identities, and B2B configuration.
+
+| Sub-section | Key Variables |
+|-------------|---------------|
+| `accounts` | `account_local_admin_*`, `spn_*`, service principals |
+| `active_directory` | Domain settings, OU structure |
+| `managed_identities` | User-assigned and system-assigned MIs |
+| `b2b_configuration` | Cross-tenant synchronization settings |
+
+### 7. Networking (`networking`)
+
+All networking organized by scope: Azure, on-premises, and hybrid.
+
+| Sub-section | Key Variables |
+|-------------|---------------|
+| `azure.hub_spoke` | `hub_vnet_name`, `hub_vnet_address_space` |
+| `azure.vnets` | `vnet_name`, virtual network definitions |
+| `azure.bastion` | Bastion host configuration |
+| `azure.firewall` | Azure Firewall rules and policies |
+| `azure.sdn` | Software Defined Networking config |
+| `onprem.vlans` | VLAN definitions |
+| `onprem.dhcp` | DHCP service settings |
+| `onprem.network_intents` | Management, storage, compute intents |
+| `onprem.logical_networks` | Logical network definitions |
+| `onprem.network_devices` | Switches, ToR devices |
+| `hybrid.vpn` | VPN gateway configuration |
+
+### 8. Compute (`compute`)
+
+Virtual machines, clusters, nodes, ARM deployment, and AVD.
+
+| Sub-section | Key Variables |
+|-------------|---------------|
+| `vms.azure` | `azure_vm_dc1_*`, `azure_vm_utility_*` |
+| `vms.arc_hybrid` | Arc-enabled hybrid VM definitions |
+| `clusters` | `cluster_name`, `cluster_node_count`, `arc_resource_group` |
+| `cluster_nodes` | `node_hostname`, `node_management_ip`, `node_idrac_ip` |
+| `cluster_arm_deployment` | ARM deployment parameters |
+| `avd` | Azure Virtual Desktop configuration |
+
+### 9. Storage Accounts (`storage_accounts`)
+
+Azure Storage Account definitions for monitoring, diagnostics, witnesses, and flow logs.
+
+### 10. Security (`security`)
+
+Key Vault, Defender for Cloud, and Sentinel.
+
+| Sub-section | Key Variables |
+|-------------|---------------|
+| `keyvault` | Key Vault names, URIs, secret references |
+| `defender` | Defender for Cloud plans and settings |
+| `sentinel` | SIEM/SOAR workspace and connector config |
+
+### 11. Operations (`operations`)
+
+Monitoring, policy, patching, backup/recovery, and SCVMM.
+
+| Sub-section | Key Variables |
+|-------------|---------------|
+| `monitoring` | Log Analytics workspace, DCR rules |
+| `policy` | Azure Policy assignments and definitions |
+| `azure_update_manager` | OS patching schedules |
+| `bcdr` | Backup and disaster recovery settings |
+| `scvmm` | SCVMM server and Arc Resource Bridge config |
+
+### 12. DevOps (`devops`)
+
+GitLab CI/CD and Terraform configuration.
+
+| Sub-section | Key Variables |
+|-------------|---------------|
+| `gitlab` | `gitlab_project_id`, `gitlab_runner_token` |
+| `terraform` | `tf_backend_storage_account`, `tf_provider_azurerm_version` |
+
+---
+
+## Variable Metadata
+
+Each variable in the registry includes comprehensive metadata:
+
+### Required Metadata
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `type` | Data type | `string`, `integer`, `boolean`, `array`, `object` |
+| `description` | Clear description | `"Azure Local cluster name"` |
+| `required` | Whether mandatory | `true` or `false` |
+
+### Optional Metadata
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `format` | Specialized format | `uuid`, `ipv4`, `cidr`, `email`, `mac` |
+| `pattern` | Regex pattern | `"^[a-z0-9-]+ $"` |
+| `minLength` | Minimum string length | `1` |
+| `maxLength` | Maximum string length | `15` |
+| `minimum` | Minimum numeric value | `1` |
+| `maximum` | Maximum numeric value | `16` |
+| `allowedValues` | Enum values | `["eastus", "westus"]` |
+| `sensitive` | Sensitive data flag | `true` |
+| `example` | Usage example | `"iic-clus01"` |
+| `note` | Additional context | `"NetBIOS compatible"` |
+
+---
+
+## Usage Examples
+
+### Reading Cluster Configuration
+
+```powershell
+# Load infrastructure.yml
+$config = Get-Content .\infrastructure.yml -Raw | ConvertFrom-Yaml
+
+# Access registry-defined variables (v4.0.0 hierarchy paths)
+$clusterName = $config.compute.azure_local.cluster_name
+$nodeCount = $config.compute.azure_local.cluster_node_count
+$nodes = $config.compute.cluster_nodes
+```
+
+### Validating Against Registry
+
+```powershell
+# Validate cluster name length (registry constraint: maxLength: 15)
+if ($clusterName.Length -gt 15) {
+    throw "Cluster name exceeds NetBIOS limit of 15 characters"
+}
+```
+
+### Environment-Specific Values
+
+```yaml
+# infrastructure.yml — environment-specific values (v4.0.0 structure)
+compute:
+  azure_local:
+    cluster_name: "iic-clus01"      # Environment-specific value
+    cluster_node_count: 2           # Registry: minimum: 1, maximum: 16
+  cluster_nodes:
+    node01:
+      hostname: "iic-01-n01"
+      management_ip: "10.0.0.11"
+    node02:
+      hostname: "iic-01-n02"
+      management_ip: "10.0.0.12"
+```
+
+---
+
+## Registry Maintenance
+
+### Version Control
+
+- **Major Version** (2.x.x): Breaking changes, removed variables
+- **Minor Version** (x.2.x): New variables or categories
+- **Patch Version** (x.x.2): Documentation updates, examples
+
+### Adding Variables
+
+1. **Check for Duplicates**: Search registry for similar variables
+2. **Define Metadata**: Include all required and relevant optional fields
+3. **Test Validation**: Ensure JSON schema generates correctly
+4. **Update Documentation**: Add to this reference
+5. **Submit PR**: Follow governance process
+
+### Change Log
+
+**Version 4.0.0 (2026-03-05):**
+- **BREAKING**: Restructured from 40 flat sections → 13 hierarchical sections
+- Dissolved 8 fragment sections (hardware_support, network_config, cluster_networking, cluster_config, cross_reference, monitoring_extended, snmp, arc_resource_bridge)
+- Renamed: `bcdr_backup_recovery` → `operations.bcdr`, `storage` → `storage_accounts`, `azure_firewall` → `networking.azure.firewall`, `hub_spoke_networking` → `networking.azure.hub_spoke`
+- Added: `security.sentinel`, `identity.managed_identities`, `identity.b2b_configuration`, `networking.azure.sdn`, `devops.terraform`
+- All variables gap-analyzed against 3 live infrastructure files + 156 scripts
+
+**Version 2.2.0 (2026-02-01):**
+- Added B2B cross-tenant synchronization (45+ variables)
+- Added GitLab CI/CD configuration variables (4 variables)
+- Added Arc Resource Bridge variables (3 variables)
+
+**Version 2.1.0 (2025-12-13):**
+- Added Hyper-V Host configuration (7 variables)
+- Added Arc Resource Bridge for SCVMM (5 variables)
+- Added Arc Hybrid VM management (8 variables)
+- Added Windows Failover Cluster enhancements (6 variables)
+- Added SCVMM connection enhancements (3 variables)
+- Added Azure Virtual Desktop in Azure cloud (15 variables)
+- Added Azure Virtual Desktop on Azure Local (8 variables)
+- Total: 52 new variables
+
+---
+
+## Downloads
+
+- [**📂 Master Variable Registry YAML**](./assets/master-registry.yaml)
+- [**📂 JSON Schema**](./schema-validation.mdx)
+
+---
+
+## Related Documents
+
+- [Schema Validation](./schema-validation.mdx) - JSON Schema validation
+- [Usage Workflows](./usage-workflows.mdx) - Implementation guide
+- [Governance](./governance.mdx) - Variable lifecycle
+- [Examples](./examples.mdx) - Real-world usage
+
+---
+
+*Registry maintained by Product Technology team. Last updated: 2026-03-05*

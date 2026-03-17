@@ -75,6 +75,15 @@ This starts a local development server at `http://localhost:3000/`.
 - Place in `blog/YYYY-MM-DD-slug/` directory
 - Include `authors` and `tags` frontmatter referencing `blog/authors.yml` and `blog/tags.yml`
 
+## Standards
+
+This project follows the **org-wide AzureLocal standards** documented at [azurelocal.cloud/standards](https://azurelocal.cloud/standards/). Key references:
+
+- [Repository Structure](https://azurelocal.cloud/standards/repo-structure) — Required files, directories, labels, branch naming
+- [Documentation Standards](https://azurelocal.cloud/standards/documentation/documentation-standards) — Writing and formatting
+- [Naming Conventions](https://azurelocal.cloud/standards/documentation/naming-conventions) — Files, variables, resources
+- [Fictional Company Policy](https://azurelocal.cloud/standards/fictional-company-policy) — Use IIC, never Contoso
+
 ## Code of Conduct
 
 Be respectful and constructive. Keep discussions on-topic and collaborative.
