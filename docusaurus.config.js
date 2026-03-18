@@ -83,15 +83,9 @@ const config = {
         },
         items: [
           {
-            type: 'docsVersionDropdown',
+            type: 'doc',
+            docId: 'index',
             position: 'left',
-            //dropdownItemsAfter: [{to: '/versions', label: 'All versions'}],
-            dropdownActiveClassDisabled: true,
-          },
-          {
-            type: 'docsVersion',
-            position: 'left',
-            to: '/docs/intro',
             label: 'Docs',
           },
           { to: '/working', label: 'Blog', position: 'left' },
@@ -178,7 +172,7 @@ const config = {
             items: [
               {
                 label: 'Azure Local Docs',
-                to: '/docs/intro',
+                to: '/docs/',
               },
             ],
           },
