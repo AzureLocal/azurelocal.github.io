@@ -1,0 +1,826 @@
+---
+id: naming-conventions
+title: Naming Conventions
+sidebar_label: Naming Conventions
+sidebar_position: 2
+---
+
+# Naming Conventions
+
+[![Standards](https://img.shields.io/badge/Type-Standard-purple?style=flat-square)](./documentation-standards.mdx)
+[![Naming](https://img.shields.io/badge/Category-Naming-blue?style=flat-square)](./documentation-standards.mdx)
+[![TierPoint](https://img.shields.io/badge/TierPoint-ProdTech-orange?style=flat-square)](https://tierpoint.com)
+
+> **DOCUMENT CATEGORY**: Standard
+> **SCOPE**: Unified naming conventions for all TierPoint infrastructure platforms
+> **PURPOSE**: Establish consistent naming standards across Azure, VMware, Hyper-V, networking, and variables
+> **MASTER REFERENCE**: [Documentation Standards](./documentation-standards.mdx)
+
+**Status**: Active
+**Applies To**: All TierPoint Product Technology repositories
+**Last Updated**: 2026-01-30
+**Version**: 3.1.0
+**Sources**: Variable Management Registry, Azure CAF/WAF, Networking Standards, Infrastructure Patterns
+
+---
+
+## Purpose
+
+This document establishes unified naming conventions across all TierPoint Product Technology infrastructure platforms and repositories. It consolidates standards for VMware, Hyper-V, networking, firewalls, file/directory naming, and variable naming following the master variable registry specifications.
+
+**Consolidates standards for**:
+
+- File and directory structures
+- Variable naming (following master registry snake_case standards)
+- VMware vSphere naming (clusters, hosts, VMs, datastores)
+- Hyper-V naming (hosts, VMs, virtual switches)
+- Azure Local naming (clusters, nodes, resource groups)
+- Azure Virtual Desktop naming (host pools, workspaces, session hosts)
+- Networking naming (VLANs, subnets, firewalls, switches)
+- Git workflow conventions
+
+**Core Principles**:
+
+1. **Consistency** - Use established patterns across all platforms
+2. **Clarity** - Names should be self-explanatory and descriptive
+3. **Compliance** - Follow platform-specific naming rules and character limits
+4. **Maintainability** - Enable easy navigation and automation
+5. **Registry Alignment** - Variables follow master registry technical standards
+
+---
+
+## File and Directory Naming
+
+### General Rules
+
+| Type | Convention | Pattern | Notes |
+|------|-----------|---------|-------|
+| **Directories** | lowercase-with-hyphens | `^[a-z][a-z0-9-]*$` | Use descriptive names, max 50 chars |
+| **Markdown Files** | `README.md` (uppercase) | `README.md`, `CHANGELOG.md`, `TODO.md` | Standard across all repos |
+| **Configuration Files** | lowercase-with-hyphens.ext | `^[a-z][a-z0-9-]*\.[a-z]+$` | Use meaningful extensions |
+| **PowerShell Scripts** | `PascalCase.ps1` | `^[A-Z][a-Za-z0-9]*\.ps1$` | Follow PowerShell conventions |
+| **Python Scripts** | lowercase_with_underscores.py | `^[a-z][a-z0-9_]*\.py$` | Follow Python PEP 8 |
+| **Shell Scripts** | lowercase-with-hyphens.sh | `^[a-z][a-z0-9-]*\.sh$` | Unix convention |
+
+### Special Cases
+
+#### Root-Level Files
+
+**MUST be uppercase**:
+
+- `README.md` (primary repository documentation)
+- `CHANGELOG.md` (version history)
+- `TODO.md` (task tracking when in root)
+- `CONTRIBUTING.md` (contribution guidelines)
+- `LICENSE` (license file)
+- `CODEOWNERS` (code ownership)
+
+#### Documentation Files
+
+**In `docs/` directory**:
+
+- `README.md` (uppercase) for directory indexes
+- `*.md` (lowercase with hyphens) for all other docs
+
+---
+
+## Directory Structure Naming
+
+### Standard Directories (Required)
+
+```text
+repository-root/├── .github/                 # GitHub-specific files (lowercase)
+├── .vscode/                 # VS Code settings (lowercase)
+├── config/                  # Configuration files (lowercase)
+├── docs/                    # Documentation (lowercase)
+│   ├── configuration/       # Generated config docs
+│   ├── design/              # Architecture/design
+│   ├── diagrams/            # DrawIO diagrams (.drawio)
+│   ├── guides/              # How-to guides
+│   └── operations/          # Runbooks
+├── src/                     # Source code (lowercase)
+│   ├── powershell/
+│   ├── terraform/
+│   ├── bicep/
+│   ├── ansible/
+│   └── azurecli/
+├── tests/                   # Test files (lowercase)
+├── tools/                   # Utility tools (lowercase)
+├── logs/                    # Log files (lowercase, gitignored)
+├── CHANGELOG.md            # Version history (UPPERCASE)
+├── README.md               # Repository documentation (UPPERCASE)
+└── TODO.md                 # Task tracking (UPPERCASE)
+```
+
+### Sub-directory Naming
+
+**Use descriptive, lowercase names with hyphens**:
+
+**Good Examples**:
+
+```text
+docs/
+├── configuration/
+├── deployment-guides/
+├── network-design/
+└── troubleshooting/
+
+src/
+├── powershell/
+├── terraform/
+├── ansible/
+└── azure-cli/
+```
+
+**Bad Examples**:
+
+```text
+docs/
+├── Config/              # Don't use mixed case
+├── deployment_guides/   # Don't use underscores
+├── NetworkDesign/       # Don't use PascalCase
+└── Troubleshooting/     # Don't capitalize
+```
+
+---
+
+## Configuration File Naming
+
+### Environment Configuration
+
+| Format | Convention | Pattern |
+|--------|-----------|---------|
+| **.env** | `.env`, `.env.example` | `^\.env(\.example)?$` |
+| **YAML/YML** | `lowercase-with-hyphens.yml` | `^[a-z][a-z0-9-]*\.yml$` |
+| **JSON** | `lowercase-with-hyphens.json` | `^[a-z][a-z0-9-]*\.json$` |
+| **Excel** | `lowercase-with-hyphens.xlsx` | `^[a-z][a-z0-9-]*\.xlsx$` |
+| **CSV** | `lowercase-with-hyphens.csv` | `^[a-z][a-z0-9-]*\.csv$` |
+
+### Infrastructure as Code
+
+| Tool | Convention | Pattern |
+|------|-----------|---------|
+| **Terraform** | `lowercase.tf` | `^[a-z][a-z0-9_]*\.tf$` |
+| **Bicep** | `lowercase-with-hyphens.bicep` | `^[a-z][a-z0-9-]*\.bicep$` |
+| **Ansible** | `lowercase-with-hyphens.yml` | `^[a-z][a-z0-9-]*\.yml$` |
+
+---
+
+## Variable Naming
+
+### Master Registry Standards
+
+All variables MUST follow the master variable registry technical standards:
+
+**Format**: `snake_case` (lowercase with underscores)
+**Pattern**: `^[a-z][a-z0-9_]*$`
+**Maximum Length**: 50 characters
+**Requirements**: Descriptive, unambiguous names
+
+### Environment Variables
+
+**Use UPPERCASE_SNAKE_CASE**:
+
+**Good Examples**:
+
+```bash
+AZURE_SUBSCRIPTION_ID="12345678-1234-1234-1234-123456789012"
+CLUSTER_NAME="iic-clus01"
+NODE_01_IP="192.168.1.10"
+ADMIN_USERNAME="admin"
+MGMT_VLAN_ID="711"
+```
+
+**Bad Examples**:
+
+```bash
+azureSubscriptionId="..."     # Don't use camelCase
+cluster-name="..."            # Don't use lowercase with hyphens
+Node01IP="..."                # Don't mix cases
+```
+
+### PowerShell Variables
+
+**Use PascalCase for local variables**:
+
+**Good Examples**:
+
+```powershell
+$ClusterName = "iic-clus01"
+$SubscriptionId = "12345678-1234-1234-1234-123456789012"
+$ResourceGroupName = "rg-azlocal-prod-eus-001"
+$NodeCount = 4
+```
+
+### Terraform Variables
+
+**Use lowercase_snake_case**:
+
+**Good Examples**:
+
+```hcl
+variable "resource_group_name" {
+  type = string
+}
+
+variable "location" {
+  type = string
+}
+
+variable "cluster_name" {
+  type = string
+}
+```
+
+### Registry Variable Examples
+
+Following master registry patterns:
+
+```yaml
+# Site variables (site category)
+site_code: `ral`               # 2-5 lowercase letters
+site_name: "Raleigh Data Center"
+site_datacenter: "TierPoint RAL"
+
+# Cluster variables (clusters category)
+azure_local_name: "ral-clus01"    # Max 15 chars for NetBIOS
+azure_local_node_count: 4
+
+# Network variables (network_intents category)
+management_subnet_cidr: "192.168.1.0/24"
+management_gateway: "192.168.1.1"
+```
+
+---
+
+## Azure Resource Naming
+
+:::info Authoritative Source
+For complete Azure resource naming standards — including CAF patterns, resource type abbreviations, management groups, VM dual-naming, Entra ID groups, PIM-eligible groups, and all Azure-specific constraints — refer to the master naming standard:
+
+👉 **[Azure Local Naming Standards](../../docs/planning/01-naming-standards.mdx)**
+
+This document covers non-Azure platforms (VMware, Hyper-V, networking, firewalls) and shared conventions (files, directories, variables). Azure resource naming is maintained in a single source of truth to prevent drift between documents.
+:::
+
+---
+
+## VMware vSphere Naming
+
+### Cluster Naming
+
+**Pattern**: `{workload}-{environment}-{datacenter}-{purpose}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| workload | Business function | `^[a-z]{2,8}$` | `azlc`, `iic`, `demo` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| datacenter | Site/datacenter code | `^[a-z]{2,5}$` | `ral`, `atl`, `chi` |
+| purpose | Cluster purpose | `^[a-z]{2,8}$` | `mgmt`, `comp`, `storage` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02`, `03` |
+
+**Examples**:
+- `azlc-prod-ral-mgmt-01` (Azure Local production management cluster)
+- `iic-dev-atl-comp-01` (Phoenix development compute cluster)
+- `demo-test-chi-storage-01` (Demo test storage cluster)
+
+### ESXi Host Naming
+
+**Pattern**: `{workload}-{environment}-{datacenter}-{cluster}-{host-number}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| workload | Business function | `^[a-z]{2,8}$` | `azlc`, `iic`, `demo` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| datacenter | Site/datacenter code | `^[a-z]{2,5}$` | `ral`, `atl`, `chi` |
+| cluster | Cluster identifier | `^[a-z]{2,8}$` | `mgmt`, `comp` |
+| host-number | Host sequence | `^[0-9]{2}$` | `01`, `02`, `03` |
+
+**Examples**:
+- `azlc-prod-ral-mgmt-01` (Management host 1)
+- `iic-dev-atl-comp-02` (Compute host 2)
+- `demo-test-chi-storage-03` (Storage host 3)
+
+### Virtual Machine Naming
+
+**Pattern**: `{workload}-{environment}-{datacenter}-{purpose}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| workload | Business function | `^[a-z]{2,8}$` | `azlc`, `iic`, `demo` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| datacenter | Site/datacenter code | `^[a-z]{2,5}$` | `ral`, `atl`, `chi` |
+| purpose | VM purpose | `^[a-z]{2,8}$` | `web`, `app`, `db`, `mgmt` |
+| sequence | Sequential number | `^[0-9]{3}$` | `001`, `002`, `003` |
+
+**Examples**:
+- `azlc-prod-ral-web-001` (Production web server 1)
+- `iic-dev-atl-app-002` (Development app server 2)
+- `demo-test-chi-db-003` (Test database server 3)
+
+### Datastore Naming
+
+**Pattern**: `{workload}-{environment}-{datacenter}-{type}-{capacity}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| workload | Business function | `^[a-z]{2,8}$` | `azlc`, `iic`, `demo` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| datacenter | Site/datacenter code | `^[a-z]{2,5}$` | `ral`, `atl`, `chi` |
+| type | Storage type | `^[a-z]{2,8}$` | `ssd`, `hdd`, `nvme` |
+| capacity | Storage capacity | `^[0-9]{1,4}[tg]$` | `1t`, `2t`, `500g` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02`, `03` |
+
+**Examples**:
+- `azlc-prod-ral-ssd-2t-01` (Production SSD datastore 2TB)
+- `iic-dev-atl-hdd-10t-02` (Development HDD datastore 10TB)
+- `demo-test-chi-nvme-1t-01` (Test NVMe datastore 1TB)
+
+---
+
+## Hyper-V Naming
+
+### Host Naming
+
+**Pattern**: `{site}-{role}{sequence}` (⚠️ Strict 15-char NetBIOS limit)
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| site | Site code from registry | `^[a-z]{2,5}$` | `ral`, `atl` |
+| role | Host role abbreviation | `^[a-z]{2,4}$` | `hv`, `cl` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02` |
+
+**Examples**:
+- `ral-hv01` (Raleigh Hyper-V host 1 - 8 chars)
+- `atl-cl02` (Atlanta Cluster node 2 - 8 chars)
+- `chi-hv03` (Chicago Hyper-V host 3 - 8 chars)
+
+### Virtual Machine Naming
+
+**Pattern**: `{workload}-{environment}-{datacenter}-{purpose}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| workload | Business function | `^[a-z]{2,8}$` | `azlc`, `iic`, `demo` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| datacenter | Site/datacenter code | `^[a-z]{2,5}$` | `ral`, `atl`, `chi` |
+| purpose | VM purpose | `^[a-z]{2,8}$` | `web`, `app`, `db`, `mgmt` |
+| sequence | Sequential number | `^[0-9]{3}$` | `001`, `002`, `003` |
+
+**Examples**:
+- `azlc-prod-ral-web-001` (Production web server 1)
+- `iic-dev-atl-app-002` (Development app server 2)
+- `demo-test-chi-db-003` (Test database server 3)
+
+### Virtual Switch Naming
+
+**Pattern**: `{workload}-{environment}-{datacenter}-{type}-{network}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| workload | Business function | `^[a-z]{2,8}$` | `azlc`, `iic`, `demo` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| datacenter | Site/datacenter code | `^[a-z]{2,5}$` | `ral`, `atl`, `chi` |
+| type | Switch type | `^[a-z]{2,8}$` | `ext`, `int`, `priv` |
+| network | Network type | `^[a-z]{2,8}$` | `mgmt`, `prod`, `dmz` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02`, `03` |
+
+**Examples**:
+- `azlc-prod-ral-ext-mgmt-01` (External management switch)
+- `iic-dev-atl-int-prod-02` (Internal production switch)
+- `demo-test-chi-priv-dmz-01` (Private DMZ switch)
+
+---
+
+## Azure Local Naming
+
+### Cluster Naming
+
+**Pattern**: `<site>-clus<nn>` (⚠️ Strict 15-char NetBIOS limit for CNO)
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| site | Site code from registry | `^[a-z]{2,5}$` | `ral`, `atl` |
+| constant | Cluster identifier | `clus` | `clus` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02` |
+
+**Examples**:
+- `ral-clus01` (Raleigh Cluster 1 - 10 chars)
+- `atl-clus01` (Atlanta Cluster 1 - 10 chars)
+
+### Node Naming
+
+**Pattern**: `<site>-<cluster#>-N<node#>` (⚠️ Strict 15-char NetBIOS limit)
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| site | Site code from registry | `^[a-z]{2,5}$` | `ral`, `atl` |
+| cluster# | Cluster number | `^[0-9]{2}$` | `01`, `02` |
+| constant | Node identifier | `N` | `N` |
+| node# | Node sequence | `^[0-9]{2}$` | `01`, `02` |
+
+**Examples**:
+- `ral-01-n01` (Raleigh Cluster 01, Node 1 - 10 chars)
+- `ral-01-n02` (Raleigh Cluster 01, Node 2 - 10 chars)
+- `atl-01-n01` (Atlanta Cluster 01, Node 1 - 10 chars)
+
+### Management Infrastructure
+
+**Pattern**: `<site>-<type>-<nn>` (⚠️ 15-char limit for domain-joined servers)
+
+**Examples**:
+- `ral-dc-01`, `ral-dc-02` (Domain Controllers)
+- `ral-ca-01` (Certificate Authority)
+- `ral-wac-01` (WAC Gateway)
+- `ral-tools` (Tools/Jumpbox Server)
+
+### Hardware Naming
+
+**Pattern**: `<site>-<type>-<##>` (Consistent pattern for all physical devices)
+
+| Device | Pattern | Example |
+|--------|---------|---------|
+| iDRAC/BMC | `<node>-i` | `ral-01-n01-i` |
+| ToR Switch | `<site>-sw-<##>` | `ral-sw-01` |
+| Firewall | `<site>-fw-<##>` | `ral-fw-01` |
+| Opengear | `<site>-og-<##>` | `ral-og-01` |
+| PDU | `<site>-pdu-<##>` | `ral-pdu-01` |
+
+### Resource Group Naming
+
+**CAF Pattern**: `rg-<workload>-<environment>-<region>-<instance>`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| prefix | Resource group prefix | `^rg-` | `rg-` |
+| workload | Application or service | `^[a-z]{2,8}$` | `azlocal`, `avd` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| region | Azure region code | `^[a-z]{3,6}$` | `eus`, `eastus`, `wus` |
+| instance | Sequential or purpose | `^[a-z0-9]{2,8}$` | `001`, `arc`, `network` |
+
+**Examples**:
+- `rg-azlocal-prod-eus-001` (Primary cluster resources)
+- `rg-azlocal-prod-eus-arc` (Arc-connected resources)
+- `rg-azlocal-prod-eus-network` (Networking resources)
+
+---
+
+## Azure Virtual Desktop Naming
+
+### Host Pool Naming
+
+**Pattern**: `{workload}-{environment}-{region}-{purpose}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| workload | Business function | `^[a-z]{2,8}$` | `azlc`, `iic`, `demo` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| region | Azure region | `^[a-z]{3,4}$` | `eus`, `wus`, `cus` |
+| purpose | Pool purpose | `^[a-z]{2,8}$` | `desktop`, `remoteapp` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02`, `03` |
+
+**Examples**:
+- `azlc-prod-eus-desktop-01` (Production desktop pool)
+- `iic-dev-wus-remoteapp-02` (Development RemoteApp pool)
+- `demo-test-cus-desktop-01` (Test desktop pool)
+
+### Workspace Naming
+
+**Pattern**: `{workload}-{environment}-{region}-{workspace}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| workload | Business function | `^[a-z]{2,8}$` | `azlc`, `iic`, `demo` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| region | Azure region | `^[a-z]{3,4}$` | `eus`, `wus`, `cus` |
+| workspace | Workspace type | `^[a-z]{2,8}$` | `workspace` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02`, `03` |
+
+**Examples**:
+- `azlc-prod-eus-workspace-01` (Production workspace)
+- `iic-dev-wus-workspace-02` (Development workspace)
+- `demo-test-cus-workspace-01` (Test workspace)
+
+### Session Host Naming
+
+**Pattern**: `{prefix}-{sequence}` (⚠️ Strict 15-char NetBIOS limit)
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| prefix | Host pool prefix | `^[a-zA-Z0-9-]{3,11}$` | `vd-avd`, `vd-azl` |
+| sequence | Sequential number | `^[0-9]{2,3}$` | `01`, `001` |
+
+**Examples**:
+- `vd-avd-01` (Azure AVD host 1 - 9 chars)
+- `vd-azl-002` (Azure Local AVD host 2 - 10 chars)
+
+---
+
+## Networking Naming
+
+### VLAN Naming
+
+**Pattern**: `{site-code}-{purpose}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| site-code | Site identifier | `^[a-z]{2,5}$` | `ral`, `atl`, `chi` |
+| purpose | VLAN purpose | `^[a-z]{2,8}$` | `mgmt`, `prod`, `dmz`, `storage` |
+| sequence | VLAN ID | `^[0-9]{3,4}$` | `100`, `200`, `0711` |
+
+**Examples**:
+- `ral-mgmt-0711` (Raleigh management VLAN 711)
+- `atl-prod-0100` (Atlanta production VLAN 100)
+- `chi-dmz-0200` (Chicago DMZ VLAN 200)
+
+### Subnet Naming
+
+**Pattern**: `{site-code}-{purpose}-{subnet-type}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| site-code | Site identifier | `^[a-z]{2,5}$` | `ral`, `atl`, `chi` |
+| purpose | Subnet purpose | `^[a-z]{2,8}$` | `mgmt`, `prod`, `dmz` |
+| subnet-type | Subnet type | `^[a-z]{2,8}$` | `subnet` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02`, `03` |
+
+**Examples**:
+- `ral-mgmt-subnet-01` (Raleigh management subnet 1)
+- `atl-prod-subnet-02` (Atlanta production subnet 2)
+- `chi-dmz-subnet-01` (Chicago DMZ subnet 1)
+
+### Switch Naming
+
+**Pattern**: `{site-code}-{switch-type}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| site-code | Site identifier | `^[a-z]{2,5}$` | `ral`, `atl`, `chi` |
+| switch-type | Switch type | `^[a-z]{2,8}$` | `core`, `access`, `tor` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02`, `03` |
+
+**Examples**:
+- `ral-core-01` (Raleigh core switch 1)
+- `atl-access-02` (Atlanta access switch 2)
+- `chi-tor-03` (Chicago top-of-rack switch 3)
+
+---
+
+## Firewall Naming
+
+### Firewall Rule Naming
+
+**Pattern**: `{site-code}-{purpose}-{direction}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| site-code | Site identifier  | `ral`, `atl`, `chi` |
+| purpose | Rule purpose | `^[a-z]{2,8}$` | `https`, `rdp`, `ssh`, `icmp` |
+| direction | Traffic direction | `^[a-z]{2,8}$` | `inbound`, `outbound` |
+| sequence | Sequential number | `^[0-9]{3}$` | `001`, `002`, `003` |
+
+**Examples**:
+- `ral-https-inbound-001` (Raleigh HTTPS inbound rule 1)
+- `atl-rdp-outbound-002` (Atlanta RDP outbound rule 2)
+- `chi-ssh-inbound-003` (Chicago SSH inbound rule 3)
+
+### Firewall Policy Naming
+
+**Pattern**: `{site-code}-{environment}-{policy-type}-{sequence}`
+
+| Component | Description | Pattern | Examples |
+|-----------|-------------|---------|----------|
+| site-code | Site identifier  | `ral`, `atl`, `chi` |
+| environment | Environment type | `^[a-z]{3,8}$` | `prod`, `dev`, `test` |
+| policy-type | Policy type | `^[a-z]{2,8}$` | `base`, `app`, `db` |
+| sequence | Sequential number | `^[0-9]{2}$` | `01`, `02`, `03` |
+
+**Examples**:
+- `ral-prod-base-01` (Raleigh production base policy)
+- `atl-dev-app-02` (Atlanta development app policy)
+- `chi-test-db-01` (Chicago test database policy)
+
+---
+
+## ⚠️ Platform-Specific Naming Limits and Constraints
+
+### Azure Resource Naming Limits
+
+| Resource Type | Limit | Valid Characters | Notes |
+|--------------|-------|------------------|-------|
+| **Key Vault** | 3-24 chars | Alphanumeric, hyphens | **NO consecutive hyphens** |
+| **Storage Account** | 3-24 chars | Lowercase letters, numbers | NO hyphens or special chars |
+| **Function App** | 2-60 chars | Alphanumeric, hyphens | Must start with letter/number |
+| **App Service** | 2-60 chars | Alphanumeric, hyphens | Must start with letter/number |
+| **Application Insights** | 1-255 chars | Alphanumeric, hyphens, periods, underscores | - |
+| **Log Analytics** | 4-63 chars | Alphanumeric, hyphens | Start and end with alphanumeric |
+| **Virtual Machine** | 1-15 (Win), 1-64 (Linux) | Alphanumeric, hyphens | - |
+| **Resource Group** | 1-90 chars | Alphanumeric, hyphens, underscores, periods, parentheses | - |
+| **SQL Managed Instance** | 1-63 chars | Lowercase alphanumeric, hyphens | No leading/trailing hyphen |
+
+### VMware vSphere Limits
+
+| Resource Type | Limit | Valid Characters | Notes |
+|--------------|-------|------------------|-------|
+| **Cluster Name** | 1-80 chars | Alphanumeric, hyphens, underscores | - |
+| **ESXi Hostname** | 1-64 chars | Alphanumeric, hyphens | - |
+| **VM Name** | 1-80 chars | Alphanumeric, hyphens, underscores | - |
+| **Datastore Name** | 1-42 chars | Alphanumeric, hyphens, underscores | - |
+
+### Hyper-V Limits
+
+| Resource Type | Limit | Valid Characters | Notes |
+|--------------|-------|------------------|-------|
+| **VM Name** | 1-64 chars | Any except: \ / : * ? " < > \| | - |
+| **Virtual Switch Name** | 1-64 chars | Any except: \ / : * ? " < > \| | - |
+| **Host Name** | 1-15 chars (NetBIOS) | Alphanumeric, hyphens | - |
+
+### Networking Limits
+
+| Resource Type | Limit | Valid Characters | Notes |
+|--------------|-------|------------------|-------|
+| **VLAN Name** | 1-32 chars | Alphanumeric, hyphens | - |
+| **Subnet Name** | 1-80 chars | Alphanumeric, hyphens | - |
+| **Switch Hostname** | 1-32 chars | Alphanumeric, hyphens | - |
+
+---
+
+## Validation Rules and Patterns
+
+### Variable Validation
+
+All variables must follow master registry patterns:
+
+```yaml
+# String validation
+site_code:
+  type: string
+  maxLength: 5
+  pattern: "^[a-z]{2,5}$"
+  example: "AZL"
+
+# Integer validation
+node_count:
+  type: integer
+  minimum: 1
+  maximum: 16
+  default: 2
+
+# Array validation
+dns_servers:
+  type: array
+  items:
+    type: string
+    format: ipv4
+  minItems: 1
+  maxItems: 4
+```
+
+### Resource Name Validation
+
+**Azure Resource Validation**:
+- Key Vault: No consecutive hyphens
+- Storage Account: No hyphens at all
+- Globally unique resources: Key Vault, Storage Account, SQL MI
+
+**Windows/NetBIOS Validation (Strict 15-char Limit)**:
+- **Hyper-V Hosts**: Must be ≤ 15 chars (e.g. `ral-hv01`)
+- **Azure Local Nodes**: Must be ≤ 15 chars (e.g. `ral-01-n01`)
+- **Azure Local Cluster Object**: Must be ≤ 15 chars (e.g. `ral-clus01`)
+- **Windows VMs**: Must be ≤ 15 chars
+- **AVD Session Hosts**: Must be ≤ 15 chars
+
+**VMware Validation**:
+- Cluster names: 80 characters max
+- ESXi hostnames: 64 characters max
+- VM names: 80 characters max
+
+**Networking Validation**:
+- VLAN IDs: 1-4094
+- IP addresses: Valid IPv4 format
+- Subnet masks: Valid CIDR notation
+
+---
+
+## What to Avoid
+
+### Anti-Patterns
+
+**Don't**:
+
+- Mix naming conventions within the same platform
+- Use inconsistent capitalization (`README.md` vs `readme.md`)
+- Use spaces in any resource names
+- Use special characters except hyphens and underscores (where appropriate)
+- Use undocumented abbreviations
+- Create overly long names (>50 characters for variables, check platform limits for resources)
+- Use consecutive hyphens in Key Vault names
+- Use hyphens in Storage Account names
+- Use generic variable names (`name`, `type`, `config`)
+- Exceed platform-specific character limits
+
+**Do**:
+
+- Be consistent across all platforms and resources
+- Use descriptive names following master registry standards
+- Follow tool-specific conventions (PowerShell PascalCase, Terraform snake_case)
+- Document any exceptions
+- Keep names clear and concise
+- Validate against platform naming limits before deployment
+- Use snake_case for all variables (max 50 chars)
+- Reference master variable registry for authoritative definitions
+
+---
+
+## Compliance Checklist
+
+Use this checklist to verify naming compliance:
+
+- [ ] All directories use lowercase-with-hyphens
+- [ ] `README.md` files use uppercase in all locations
+- [ ] PowerShell scripts use `PascalCase.ps1`
+- [ ] Configuration files use lowercase-with-hyphens.ext
+- [ ] Environment variables use `UPPERCASE_SNAKE_CASE`
+- [ ] PowerShell variables use `PascalCase`
+- [ ] Terraform variables use `lowercase_snake_case`
+- [ ] Variables follow master registry snake_case (max 50 chars)
+- [ ] No spaces in any filenames or resource names
+- [ ] Consistent naming within each platform
+- [ ] Azure resources follow CAF naming standards
+- [ ] VMware resources follow vSphere naming patterns
+- [ ] Hyper-V resources follow Windows naming patterns
+- [ ] Networking resources follow VLAN/subnet conventions
+- [ ] Firewall resources follow security naming patterns
+- [ ] Azure resource names validated against length limits
+- [ ] Key Vault names have NO consecutive hyphens
+- [ ] Storage account names have NO hyphens at all
+- [ ] VMware names within character limits
+- [ ] Hyper-V names within character limits
+- [ ] Tag values are under 256 characters
+- [ ] Globally unique names verified (Key Vault, Storage, SQL MI)
+
+---
+
+## Troubleshooting
+
+### Common Naming Issues
+
+**Issue**: Key Vault deployment fails with "Invalid name"
+**Solution**: Check for consecutive hyphens and ensure 3-24 characters
+
+**Issue**: Storage account deployment fails with "Invalid name"
+**Solution**: Remove all hyphens, use only lowercase letters and numbers
+
+**Issue**: VM deployment fails with "Name too long"
+**Solution**: Windows VMs limited to 15 characters for NetBIOS compatibility
+
+**Issue**: VMware cluster creation fails
+**Solution**: Ensure cluster name is 80 characters or less
+
+**Issue**: Variable validation fails
+**Solution**: Check snake_case format, 50-character limit, and registry patterns
+
+**Issue**: Resource group naming conflicts
+**Solution**: Use CAF naming: `rg-<workload>-<environment>-<region>-<instance>`
+
+### Exception Process
+
+In rare cases where customer requirements dictate deviations from standards:
+
+1. Document the exception with business justification
+2. Get approval from ProdTech architecture team
+3. Update naming documentation with exception
+4. Implement with clear comments explaining deviation
+
+---
+
+## References
+
+- [Azure Local Naming Standards](../../docs/planning/01-naming-standards.mdx) - Authoritative Azure resource naming
+- [Master Variable Registry](../variable-management/registry-reference.mdx) - Authoritative variable definitions
+- [Variable Management Technical Standards](../variable-management/technical-standards.mdx) - Naming rules and validation
+- [Microsoft Azure CAF - Resource Naming](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/naming-and-tagging)
+- [Azure CAF - Abbreviation Examples](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-abbreviations)
+- [Azure Naming Rules and Restrictions](https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules)
+- [VMware vSphere Naming Best Practices](https://docs.vmware.com/en/VMware-vSphere/index.html)
+- [PowerShell Approved Verbs](https://docs.microsoft.com/en-us/powershell/scripting/developer/cmdlet/approved-verbs-for-windows-powershell-commands)
+- [Python PEP 8 Style Guide](https://www.python.org/dev/peps/pep-0008/)
+- [Terraform Style Guide](https://www.terraform.io/docs/language/syntax/style.html)
+
+---
+
+## Related Standards
+
+- [Variable Management](../variable-management/index.mdx) - Master registry and governance
+- [Documentation Standards](./documentation-standards.mdx) - Markdown formatting
+
+---
+
+**Version Control**
+
+- Created: 2025-12-04 (original), 2025-12-09 (consolidated), 2026-01-29 (comprehensive)
+- Last Updated: 2026-01-30
+- Version: 3.1.0
+- Next Review: 2026-07-29
+- Sources: Variable Management Registry, Azure CAF/WAF, Networking Standards, Infrastructure Patterns
+- Issue: [#1 - Consolidate Naming Standards Documentation](https://github.com/kristopherjturner/master-workplace-project/issues/1)

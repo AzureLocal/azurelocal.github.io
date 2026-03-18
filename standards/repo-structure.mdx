@@ -1,0 +1,262 @@
+---
+title: Repository Structure Standard
+sidebar_label: Repository Structure
+sidebar_position: 1
+description: "Required files, directory layout, labels, and branch naming conventions for all AzureLocal repositories."
+---
+
+# Repository Structure Standard
+
+[![Standard](https://img.shields.io/badge/Type-Standard-green?style=flat-square)](./index.mdx)
+[![AzureLocal](https://img.shields.io/badge/AzureLocal-Community-0078D4?style=flat-square)](https://azurelocal.cloud)
+
+> **DOCUMENT CATEGORY**: Standard  
+> **SCOPE**: All AzureLocal repositories  
+> **PURPOSE**: Define the required structure every repository must follow  
+
+**Status**: Active  
+**Last Updated**: 2026-03-17
+
+---
+
+## Required Files
+
+Every AzureLocal repository **must** contain all of these files at the root:
+
+| File | Purpose |
+|------|---------|
+| `README.md` | Project overview, quick-start, and link to central standards |
+| `CONTRIBUTING.md` | Contribution guidelines — must link to [central standards](https://azurelocal.cloud/standards/) |
+| `LICENSE` | License file (MIT) |
+| `CHANGELOG.md` | Version history following [Keep a Changelog](https://keepachangelog.com/) |
+| `release-please-config.json` | Release automation config |
+| `.gitignore` | Must exclude `config/variables.yml`, `logs/`, `build/`, `site/` |
+| `mkdocs.yml` | MkDocs Material site configuration (solution repos) |
+
+---
+
+## Required Directories
+
+| Directory | Purpose | Required In |
+|-----------|---------|-------------|
+| `config/` | Configuration files | All solution repos |
+| `config/variables.example.yml` | Variable template (never `variables.yml`) | All solution repos |
+| `config/schema/variables.schema.json` | JSON Schema for CI validation | All solution repos |
+| `docs/` | Documentation source | All repos |
+| `docs/reference/variables.md` | Variable reference catalog | All solution repos |
+| `.github/workflows/` | CI/CD workflows | All repos |
+| `.github/PULL_REQUEST_TEMPLATE.md` | PR template with standards checklist | All repos |
+| `.github/ISSUE_TEMPLATE/` | Issue templates (bug, feature, docs) | All repos |
+| `scripts/` | PowerShell automation scripts | Repos with scripts |
+| `tests/` | Pester tests | Repos with scripts |
+| `logs/` | Runtime log output (`.gitignored`) | Repos with scripts |
+| `styles/` | Vale linting styles | All repos |
+| `project_management/` | Project tracking docs | All repos |
+
+---
+
+## Directory Layout
+
+### Solution Repository (e.g., sofs-fslogix, avd, loadtools, vm-conversion)
+
+```
+repo-root/
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.md
+│   │   ├── feature_request.md
+│   │   └── docs_issue.md
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── workflows/
+│       └── validate-config.yml
+├── config/
+│   ├── variables.example.yml
+│   ├── variables.yml              # .gitignored
+│   └── schema/
+│       └── variables.schema.json
+├── docs/
+│   ├── index.md
+│   ├── reference/
+│   │   └── variables.md
+│   └── ...
+├── scripts/
+├── tests/
+├── logs/                          # .gitignored
+├── styles/
+├── project_management/
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── LICENSE
+├── README.md
+├── mkdocs.yml
+└── release-please-config.json
+```
+
+### Platform Toolkit Repository
+
+```
+azurelocal-toolkit/
+├── .github/
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── workflows/
+│       └── validate-config.yml
+├── config/
+│   ├── variables.example.yml
+│   ├── variables.yml              # .gitignored
+│   ├── infrastructure.yml
+│   └── schema/
+│       ├── variables.schema.json
+│       └── master-registry.yaml
+├── configs/                       # legacy — see config/
+├── docs/
+├── scripts/
+├── tests/
+├── tools/
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── LICENSE
+├── README.md
+├── mkdocs.yml
+└── release-please-config.json
+```
+
+---
+
+## Branch Naming
+
+| Pattern | Usage | Example |
+|---------|-------|---------|
+| `main` | Default branch — always deployable | — |
+| `feature/<description>` | New features or enhancements | `feature/cloud-cache-support` |
+| `fix/<description>` | Bug fixes | `fix/ntfs-permissions` |
+| `docs/<description>` | Documentation changes | `docs/troubleshooting-guide` |
+| `infra/<description>` | CI/CD and infrastructure | `infra/add-pester-tests` |
+| `feature/issue-<N>-<description>` | Tied to a specific issue | `feature/issue-15-variable-standardization` |
+
+---
+
+## Labels
+
+Every repository must have these labels:
+
+### Type Labels
+
+| Label | Color | Description |
+|-------|-------|-------------|
+| `type/feature` | `#1D76DB` | New feature or enhancement |
+| `type/bug` | `#D73A4A` | Bug fix |
+| `type/docs` | `#0075CA` | Documentation |
+| `type/infra` | `#E4E669` | CI/CD, workflows, config |
+| `type/refactor` | `#D4C5F9` | Code improvement, no behavior change |
+| `type/security` | `#B60205` | Security fix or improvement |
+
+### Priority Labels
+
+| Label | Color | Description |
+|-------|-------|-------------|
+| `priority/critical` | `#B60205` | Must fix immediately |
+| `priority/high` | `#D93F0B` | Important — current sprint |
+| `priority/medium` | `#FBCA04` | Normal priority |
+| `priority/low` | `#0E8A16` | Nice to have |
+
+### Solution Labels (org-wide)
+
+| Label | Color | Description |
+|-------|-------|-------------|
+| `solution/sofs` | `#5319E7` | SOFS + FSLogix |
+| `solution/avd` | `#006B75` | Azure Virtual Desktop |
+| `solution/loadtools` | `#1D76DB` | Load testing tools |
+| `solution/vmconvert` | `#D4C5F9` | VM conversion toolkit |
+| `solution/docs-site` | `#0075CA` | Community docs site |
+| `solution/toolkit` | `#E4E669` | Platform toolkit |
+| `solution/workspace` | `#C2E0C6` | Cross-repo / org-wide |
+
+---
+
+## Commit Messages
+
+All repositories use [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <description>
+```
+
+| Type | When |
+|------|------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `infra` | CI/CD, workflows, config |
+| `chore` | Maintenance |
+| `refactor` | Code improvement, no behavior change |
+| `test` | Tests |
+| `style` | Formatting, no logic change |
+
+---
+
+## CI Validation
+
+Every repository with a `config/` directory must include the `validate-config.yml` workflow. See the [Variable Management Standard](/docs/implementation/04-variable-management-standard) for details.
+
+Additionally, the **repo-structure validation** workflow checks for required files on every PR:
+
+```yaml
+# .github/workflows/validate-repo-structure.yml
+name: Validate Repo Structure
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required files
+        run: |
+          missing=0
+          for f in README.md CONTRIBUTING.md LICENSE CHANGELOG.md .gitignore; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required file: $f"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ $missing -gt 0 ]; then
+            echo "::error::$missing required file(s) missing"
+            exit 1
+          fi
+          echo "All required files present"
+
+      - name: Check required directories
+        run: |
+          missing=0
+          for d in docs .github; do
+            if [ ! -d "$d" ]; then
+              echo "::error::Missing required directory: $d/"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ $missing -gt 0 ]; then
+            echo "::error::$missing required directory(s) missing"
+            exit 1
+          fi
+          echo "All required directories present"
+
+      - name: Check PR template exists
+        run: |
+          if [ ! -f ".github/PULL_REQUEST_TEMPLATE.md" ]; then
+            echo "::error::Missing .github/PULL_REQUEST_TEMPLATE.md"
+            exit 1
+          fi
+          echo "PR template found"
+```
+
+---
+
+## Related Standards
+
+- [Documentation Standards](./documentation/documentation-standards.mdx) — Writing and formatting conventions
+- [Scripting Standards](./scripting/scripting-standards.mdx) — PowerShell conventions
+- [Variable Management Standard](/docs/implementation/04-variable-management-standard) — Config file patterns
+- [Fictional Company Policy](./fictional-company-policy.mdx) — IIC usage guidelines

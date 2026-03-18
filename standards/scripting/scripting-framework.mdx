@@ -1,0 +1,527 @@
+---
+id: scripting-framework
+title: Scripting Framework
+sidebar_label: Scripting Framework
+---
+# PowerShell Scripting Framework Design
+
+[![Framework](https://img.shields.io/badge/Framework-Design-purple?logo=microsoftazure)](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/)
+[![PowerShell](https://img.shields.io/badge/PowerShell-Architecture-blue?logo=powershell)](https://docs.microsoft.com/en-us/powershell/)
+[![Configuration](https://img.shields.io/badge/Configuration-Driven-green?logo=yaml)](https://yaml.org/)
+
+> **DOCUMENT CATEGORY**: Standard  
+> **SCOPE**: Scripting framework architecture for Azure Local infrastructure automation  
+> **PURPOSE**: Define design philosophy and patterns for environment-agnostic PowerShell scripts  
+> **MASTER REFERENCE**: [PowerShell Scripting Standards](./scripting-standards.mdx)
+
+---
+
+## Overview
+
+This document describes the design philosophy and patterns for creating **environment-agnostic scripts** that work across all Azure Local environment repositories. The core principle is simple: **scripts read configuration from infrastructure.yml files using fixed variable paths**.
+
+## Core Concept
+
+Every environment has an `infrastructure.yml` file that follows the same structure. Scripts don't hardcode values - they read from configuration. The **variable paths never change**, only the **values differ** between environments.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SINGLE DEPLOYMENT SCENARIO                    │
+│                (One Customer, One Cluster, One Site)             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│                      ┌──────────────────┐                        │
+│                      │ infrastructure.yml│                        │
+│                      │  (Customer Config)│                        │
+│                      └─────────┬─────────┘                        │
+│                                │                                  │
+│                                ▼                                  │
+│                  ┌──────────────────────────┐                     │
+│                  │      DEPLOYMENT SCRIPT   │                     │
+│                  │                          │                     │
+│                  │  Reads standard paths:   │                     │
+│                  │  • azure_platform.tenant │                     │
+│                  │  • compute.azure_local   │                     │
+│                  │  • identity.accounts     │                     │
+│                  └──────────┬───────────────┘                     │
+│                             │                                     │
+│                             ▼                                     │
+│                   ┌──────────────────┐                            │
+│                   │  Azure Resources │                            │
+│                   │     Deployed     │                            │
+│                   └──────────────────┘                            │
+│                                                                   │
+│  Advanced: Multiple sites use same scripts, different config files│
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## The Variable Path Contract
+
+:::danger MANDATORY — DO NOT INVENT YAML PATHS
+All variable paths used in scripts **must** come from the **infrastructure schema** and the **master-registry**. These two files are the single source of truth. If a path doesn't exist in the schema, it is not valid.
+:::
+
+### Authoritative Sources
+
+Every `infrastructure.yml` file must conform to the schema. Every script must use paths defined in the schema.
+
+| Source | File | Purpose |
+|--------|------|---------|
+| **Infrastructure Schema** | [`configs/variables/assets/infrastructure.schema.json`](https://github.com/tierpoint/azl-env/schemas/infrastructure.schema.json) | Validates structure — defines every legal path, type, and constraint |
+| **Master Registry** | `configs/variables/assets/master-registry.yaml` | Complete variable dictionary — descriptions, examples, metadata |
+| **Registry Reference** | [Registry Reference](../variable-management/registry-reference.mdx) | Human-readable documentation |
+
+### Schema-Defined Sections (13-Section Hierarchy)
+
+The schema enforces this top-level structure — these are the **only** valid root keys:
+
+| Root Key | Required | Description |
+|----------|----------|-------------|
+| `_metadata` | No | File versioning and change tracking |
+| `infrastructure_scenarios` | No | Deployment type taxonomy |
+| `site` | **Yes** | Physical location, hardware, site codes |
+| `environment` | **Yes** | Environment classification |
+| `tags` | **Yes** | Azure resource tagging |
+| `azure_platform` | **Yes** | Tenants, subscriptions, management groups, resource groups |
+| `identity` | **Yes** | Accounts, Active Directory, managed identities, B2B, service principals |
+| `networking` | **Yes** | Azure networking, on-prem networking, hybrid connectivity |
+| `compute` | **Yes** | Clusters, cluster nodes, VMs, AVD, ARM deployment |
+| `storage_accounts` | No | Azure Storage Accounts |
+| `security` | No | Key Vault, Defender, Sentinel |
+| `operations` | No | Monitoring, policy, patching, BCDR |
+| `devops` | No | GitLab CI/CD, Terraform state |
+
+### How to Find the Right Path
+
+1. Open `infrastructure.schema.json` and search for the variable name
+2. Follow the nesting: `root → section → subsection → property`
+3. That nesting **is** the dotted path you use in PowerShell: `$cfg.root.section.subsection.property`
+4. Cross-reference with `master-registry.yaml` for descriptions and examples
+5. Comment the path in your script: `$val = $cfg.identity.active_directory.ntp_servers  # identity.active_directory.ntp_servers`
+
+### Common Paths Quick Reference
+
+| Variable | Schema Path | PowerShell |
+|----------|-------------|------------|
+| Tenant ID | `azure_platform.tenant.id` | `$cfg.azure_platform.tenant.id` |
+| Subscription | `azure_platform.subscriptions` | `$cfg.azure_platform.subscriptions` |
+| Tags | `tags.*` | `$cfg.tags` |
+| Site code | `site.code` | `$cfg.site.code` |
+| Environment name | `environment.name` | `$cfg.environment.name` |
+| Admin username | `identity.accounts.account_local_admin_username` | `$cfg.identity.accounts.account_local_admin_username` |
+| Admin password | `identity.accounts.account_local_admin_password` | `$cfg.identity.accounts.account_local_admin_password` |
+| AD domain | `identity.active_directory.ad_domain_fqdn` | `$cfg.identity.active_directory.ad_domain_fqdn` |
+| NTP servers | `identity.active_directory.ntp_servers` | `@($cfg.identity.active_directory.ntp_servers)` |
+| Gateway | `compute.azure_local.default_gateway` | `$cfg.compute.azure_local.default_gateway` |
+| Subnet mask | `compute.azure_local.subnet_mask` | `$cfg.compute.azure_local.subnet_mask` |
+| DNS servers | `compute.azure_local.dns_servers` | `@($cfg.compute.azure_local.dns_servers)` |
+| Cluster nodes | `compute.cluster_nodes.<key>` | `$cfg.compute.cluster_nodes.GetEnumerator()` |
+| Node hostname | `compute.cluster_nodes.<key>.hostname` | `$_.Value.hostname` |
+| Node IP | `compute.cluster_nodes.<key>.management_ip` | `$_.Value.management_ip` |
+
+> **Full reference**: [Registry Reference](../variable-management/registry-reference.mdx) — 970+ variables with descriptions, types, and examples.
+>
+> **Scripting rules**: [Scripting Standards — Variable Path Compliance](../scripting/scripting-standards.mdx#variable-path-compliance--master-registry--schema)
+
+---
+
+## Key Vault Secret Pattern
+
+Secrets are **never stored in YAML**. Instead, configuration contains references using the `keyvault://` URI pattern:
+
+```yaml
+credentials:
+  local_admin:
+    username: "osfadmin"
+    password: "keyvault://azl-platform-kv/local-admin-password"
+  
+  azure_local_sp:
+    app_id: "keyvault://azl-platform-kv/sp-azurelocal-appid"
+    secret: "keyvault://azl-platform-kv/sp-azurelocal-secret"
+```
+
+### How Scripts Resolve Secrets
+
+1. Script loads infrastructure.yml
+2. Script reads the credential path (e.g., `$config.credentials.local_admin.password`)
+3. Script detects `keyvault://` prefix
+4. Script parses: `keyvault://<vault-name>/<secret-name>`
+5. Script calls Azure Key Vault to retrieve actual value
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SECRET RESOLUTION FLOW                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   infrastructure.yml                                         │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │ credentials:                                         │   │
+│   │   local_admin:                                       │   │
+│   │     password: "keyvault://azl-platform-kv/admin-pw" │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │ Script detects keyvault:// prefix                    │   │
+│   │ Parses: vault=azl-platform-kv, secret=admin-pw      │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │ Azure Key Vault API                                  │   │
+│   │ GET https://azl-platform-kv.vault.azure.net/...     │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │ Actual password returned: "MyS3cur3P@ssw0rd!"       │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Script Structure Pattern
+
+Every script should follow this pattern:
+
+```powershell
+# 1. PARAMETER - Optional: Accept config path (defaults to infrastructure.yml)
+param(
+    [string]$ConfigPath
+)
+
+# 2. LOAD CONFIG - Read infrastructure.yml via config-loader
+. "$PSScriptRoot/../utilities/helpers/config-loader.ps1"
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# 3. READ VALUES - Use fixed paths (these never change!)
+$tenantId       = $config.azure_platform.tenant.id                   # azure_platform.tenant.id
+$subscriptionId = $config.azure_platform.subscriptions.lab.id        # azure_platform.subscriptions.<name>.id
+$kvName         = $config.security.keyvault.kv_name                  # security.keyvault.kv_name
+$tags           = $config.tags                                       # tags.*
+
+# 4. RESOLVE SECRETS - If needed (keyvault:// URI pattern)
+$adminPassUri = $config.identity.accounts.account_local_admin_password  # identity.accounts.account_local_admin_password
+$password = Resolve-KeyVaultRef -KvUri $adminPassUri
+
+# 5. DO THE WORK - Same logic, different customer data
+# ... your script logic here ...
+```
+
+---
+
+## Example: Creating a Service Principal
+
+This example shows how a script reads from the customer's `infrastructure.yml`:
+
+```powershell
+# New-DeploymentSP.ps1
+param(
+    [string]$ConfigPath
+)
+
+# Load config via config-loader
+. "$PSScriptRoot/../utilities/helpers/config-loader.ps1"
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# These paths are IDENTICAL across all deployments (v4.0.0 schema)
+$tenantId         = $config.azure_platform.tenant.id                   # azure_platform.tenant.id
+$subscriptionId   = $config.azure_platform.subscriptions.lab.id        # azure_platform.subscriptions.<name>.id
+$siteCode         = $config.site.code                                  # site.code
+$kvName           = $config.security.keyvault.kv_name                  # security.keyvault.kv_name
+
+# Create SP (same logic, different deployment data)
+$spName = "sp-$siteCode-deploy"
+$sp = New-AzADServicePrincipal -DisplayName $spName
+
+# Store credentials in Platform Key Vault
+Set-AzKeyVaultSecret -VaultName $kvName -Name "$spName-appid" -SecretValue $sp.AppId
+Set-AzKeyVaultSecret -VaultName $kvName -Name "$spName-secret" -SecretValue $sp.Secret
+```
+
+**Usage:**
+
+```powershell
+# Deploy using default infrastructure.yml
+.\New-DeploymentSP.ps1
+
+# Or specify a different config path
+.\New-DeploymentSP.ps1 -ConfigPath "./configs/alternate-infrastructure.yml"
+```
+
+---
+
+## Dynamic Key Vault Lookup
+
+Scripts dynamically find the Key Vault from the customer's configuration:
+
+```powershell
+# Script doesn't know which Key Vault - it reads from customer's config
+$config = Get-Content "./configs/infrastructure.yml" -Raw | ConvertFrom-Yaml
+
+# This path is guaranteed to exist in every infrastructure.yml (v4.0.0 schema)
+$kvName = $config.security.keyvault.kv_name                          # security.keyvault.kv_name
+
+# Now script can read/write secrets to the correct vault
+$secret = Get-AzKeyVaultSecret -VaultName $kvName -Name "my-secret"
+```
+
+This means:
+
+- **Each customer** has their Key Vault name in `infrastructure.yml`
+- **Scripts read the vault name** from config, not hardcoded
+- **Same script works** across all customer deployments
+
+---
+
+## Common Script Categories
+
+Scripts are organized by function in the `src/powershell/` directory with language variant subfolders:
+
+```
+src/powershell/
+├── discovery/                      # Data collection from live environments
+│   ├── Get-DellServerInventory.ps1
+│   ├── Get-AzureTenantInfo.ps1
+│   ├── Get-ClusterInventory.ps1
+│   └── Inventory-NetworkInfrastructure.ps1
+│
+├── generators/                     # Documentation/config generation
+│   ├── Generate-ClusterConfigMD.ps1
+│   ├── Generate-FromYAML.ps1
+│   ├── Generate-HostsFile.ps1
+│   └── Export-ToExcel.ps1
+│
+├── deploy/                         # Deployment automation
+│   ├── Deploy-AzureInfrastructure.ps1
+│   ├── Deploy-NetworkInfrastructure.ps1
+│   ├── Deploy-AzureLocalCluster.ps1
+│   └── Initialize-KeyVault.ps1
+│
+├── configure/                      # Post-deployment configuration
+│   ├── Configure-ActiveDirectory.ps1
+│   ├── Configure-DNSServers.ps1
+│   ├── Configure-StaticIP.ps1
+│   ├── Configure-WAC.ps1
+│   └── Register-AzureArc.ps1
+│
+├── utilities/                      # Reusable functions/helpers
+│   └── helpers/
+│       ├── config-loader.ps1      # Get-InfrastructureConfig function
+│       ├── keyvault-helper.ps1    # Secret resolution functions
+│       ├── logging.ps1            # Write-LogInfo, Write-LogError, etc.
+│       └── validation.ps1         # Test-* validation functions
+│
+├── ci-cd/                         # Pipeline integration
+│   ├── Build.ps1
+│   ├── Test.ps1
+│   └── Deploy-Pipeline.ps1
+│
+└── tests/                         # Pester tests
+    ├── unit/
+    └── integration/
+```
+
+### Customer Deployment Example
+
+This shows how scripts read configuration from the customer's `infrastructure.yml`:
+
+```powershell
+# Load configuration
+. "$PSScriptRoot/../utilities/helpers/config-loader.ps1"
+$config = Get-InfrastructureConfig
+
+# Read values from YAML (same paths across all deployments)
+$clusterName = $config.compute.azure_local.cluster_name              # compute.azure_local.cluster_name
+$nodeCount   = $config.compute.azure_local.cluster_node_count        # compute.azure_local.cluster_node_count
+$topology    = $config.compute.azure_local.network_topology          # compute.azure_local.network_topology
+$location    = $config.azure_platform.region                         # azure_platform.region
+
+# Script logic adapts based on customer's config values
+Write-Host "Deploying cluster: $clusterName"
+Write-Host "Location: $location"
+Write-Host "Nodes: $nodeCount"
+
+if ($topology -eq "switchless") {
+    Write-Host "Configuring direct RDMA connections (switchless topology)"
+}
+elseif ($topology -eq "switched") {
+    Write-Host "Configuring switched network topology"
+}
+```
+
+**Key Point**: One deployment, one `infrastructure.yml`, one configuration. The scripts adapt to whatever values are in the file.
+
+---
+
+## Language Variants
+
+Each functional folder can contain language-specific subfolders when needed:
+
+| Subfolder | Contents | File Extensions |
+|-----------|----------|-----------------|
+| `powershell/` | PowerShell + Az modules (primary) | `.ps1` |
+| `azurecli/` | Azure CLI (PowerShell or Bash) | `.ps1`, `.sh` |
+
+**PowerShell + Az Modules** (Primary):
+
+```powershell
+# Uses Azure PowerShell modules
+Connect-AzAccount
+New-AzResourceGroup -Name $rgName -Location "eastus"
+```
+
+**Azure CLI (PowerShell wrapper)**:
+
+```powershell
+# Uses az CLI commands from PowerShell
+az login
+az group create --name $rgName --location "eastus"
+```
+
+**Azure CLI (Bash)**:
+
+```bash
+#!/bin/bash
+# Uses az CLI commands from Bash
+az login
+az group create --name "$RG_NAME" --location "eastus"
+```
+
+---
+
+## Benefits of This Approach
+
+| Benefit | Description |
+|---------|-------------|
+| **Write Once, Use Everywhere** | One script works for any deployment |
+| **No Hardcoded Values** | Everything comes from configuration |
+| **Secrets Stay Secure** | Never in source control, always in Key Vault |
+| **Predictable** | Same paths, same behavior, different data |
+| **Maintainable** | Fix a bug once, all environments benefit |
+| **Auditable** | Configuration is version controlled |
+| **Type-Safe** | JSON Schema validates infrastructure.yml structure |
+| **Environment-Aware** | Scripts adapt logic based on config values (switchless, nested, GPU, etc.) |
+
+---
+
+## Rules for Script Authors
+
+1. **NEVER hardcode** Azure IDs, names, passwords, or environment-specific values
+2. **ALWAYS** accept `-ConfigPath` parameter with a sensible default path
+3. **ALWAYS** use `Get-InfrastructureConfig` to load configuration  
+4. **ALWAYS** use the documented variable paths
+5. **ALWAYS** use `keyvault://` URIs for secrets
+6. **NEVER** store secrets in YAML files
+7. **TEST** your script with different configurations to verify portability
+8. **USE** the platform Key Vault for shared secrets across deployments
+9. **DOCUMENT** which config paths your script requires
+10. **LOG** all operations using standard logging functions
+
+---
+
+## Summary
+
+The pattern is simple:
+
+| Aspect | Rule |
+|--------|------|
+| **Configuration** | Lives in `infrastructure.yml` at repo root |
+| **Variable Paths** | Fixed across all deployments (see contract above) |
+| **Secrets** | Referenced via `keyvault://` URI pattern |
+| **Scripts** | Accept `-ConfigPath`, load config, use fixed paths |
+| **Key Vault Lookup** | Dynamic from `security.keyvault.kv_name` |
+| **Platform Key Vault** | Shared secrets referenced via config |
+
+**One script. Any deployment. Same paths. Different values.**
+
+---
+
+## Real-World Example: Deploy Azure Resource Groups
+
+This script works for **any deployment** without modification:
+
+```powershell
+<#
+.SYNOPSIS
+    Deploy Azure resource groups for a deployment.
+
+.PARAMETER ConfigPath
+    Path to the infrastructure.yml configuration file.
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({Test-Path $_})]
+    [string]$ConfigPath = "configs/infrastructure.yml"
+)
+
+# Load config
+. "$PSScriptRoot/../utilities/helpers/config-loader.ps1"
+. "$PSScriptRoot/../utilities/helpers/logging.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# Read values from config (same paths for all environments)
+$subscriptionId = $config.azure_platform.subscriptions.lab.id        # azure_platform.subscriptions.<name>.id
+$location       = $config.azure_platform.region                      # azure_platform.region
+$tags           = $config.tags                                       # tags.*
+$resourceGroups = $config.azure_platform.resource_groups             # azure_platform.resource_groups
+
+# Set Azure context
+Set-AzContext -SubscriptionId $subscriptionId | Out-Null
+Write-LogInfo "Deploying resource groups for $Environment to $location"
+
+# Deploy each resource group (same logic, different data)
+foreach ($rgKey in $resourceGroups.PSObject.Properties.Name) {
+    $rgName = $resourceGroups.$rgKey.name
+    
+    if ($PSCmdlet.ShouldProcess($rgName, "Create Resource Group")) {
+        $existing = Get-AzResourceGroup -Name $rgName -ErrorAction SilentlyContinue
+        if ($existing) {
+            Write-LogWarning "Resource group exists: $rgName"
+        }
+        else {
+            New-AzResourceGroup -Name $rgName -Location $location -Tag $tags
+            Write-LogSuccess "Created resource group: $rgName"
+        }
+    }
+}
+```
+
+**Usage:**
+
+```powershell
+# Deploy using default infrastructure.yml
+.\Deploy-ResourceGroups.ps1 -WhatIf
+.\Deploy-ResourceGroups.ps1
+
+# Or specify a different config file
+.\Deploy-ResourceGroups.ps1 -ConfigPath "./alternate-config.yml"
+```
+
+Same script. Different deployments. Same outcome. **That's the power of configuration-driven automation.**
+
+---
+
+## Related Documentation
+
+- [PowerShell Scripting Standards](./scripting-standards.mdx) - Coding standards and quality requirements
+- [PowerShell Organization Standard](./powershell-organization-standard.mdx) - Script organization in repositories
+- [Naming Conventions](../documentation/naming-conventions.mdx) - File and resource naming standards
+
+---
+
+**Version Control**
+
+- Created: 2025-12-10 by Product Technology Team
+- Last Edited: 2025-12-10 by GitHub Copilot
+- Version: 1.0.0
+- Tags: standards, powershell, framework, architecture, configuration
+- Keywords: powershell, scripting, framework, configuration-driven, environment-agnostic, azure-local
+- Author: Product Technology Team
+
