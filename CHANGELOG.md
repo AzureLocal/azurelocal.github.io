@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.1](https://github.com/AzureLocal/azurelocal.github.io/compare/v1.0.0...v1.0.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* correct azurelocal-avd workspace path typo ([de08bcf](https://github.com/AzureLocal/azurelocal.github.io/commit/de08bcf34954d9db8128592cb9e8ac6ee3c25bcb))
+
 ## 1.0.0 (2026-03-17)
 
 
