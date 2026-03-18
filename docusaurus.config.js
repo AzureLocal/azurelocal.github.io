@@ -83,6 +83,11 @@ const config = {
         },
         items: [
           {
+            type: 'docsVersionDropdown',
+            position: 'left',
+            dropdownActiveClassDisabled: true,
+          },
+          {
             type: 'doc',
             docId: 'index',
             position: 'left',
