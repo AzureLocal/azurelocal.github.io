@@ -109,7 +109,7 @@ const config = {
                   },
                   {
                     label: 'Azure Virtual Desktop',
-                    href: 'https://azurelocal.github.io/aurelocal-avd/',
+                    href: 'https://azurelocal.github.io/azurelocal-avd/',
                   },
                   {
                     label: 'Load Testing Framework',
@@ -190,7 +190,7 @@ const config = {
               },
               {
                 label: 'Azure Virtual Desktop',
-                href: 'https://azurelocal.github.io/aurelocal-avd/',
+                href: 'https://azurelocal.github.io/azurelocal-avd/',
               },
               {
                 label: 'Load Testing Framework',
