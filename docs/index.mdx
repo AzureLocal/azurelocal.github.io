@@ -1,7 +1,19 @@
 ---
 title: Azure Local Documentation
 description: Comprehensive documentation for deploying and operating Azure Local infrastructure at scale.
-sidebar_class_name: hidden-sidebar-item
+---
+
+[![Reference](https://img.shields.io/badge/Type-Reference-purple?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Active](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Reference
+> **SCOPE**: Complete Azure Local solution documentation
+> **PURPOSE**: Standardized deployment of Azure Local infrastructure
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+**Status**: Active | **Last Updated**: 2025-01-30
+
 ---
 
 Welcome to the **Azure Local Cloud** documentation site — your comprehensive guide to planning, deploying, and operating Azure Local (formerly Azure Stack HCI) infrastructure.
@@ -20,36 +32,28 @@ Welcome to the **Azure Local Cloud** documentation site — your comprehensive g
 | 8 | Test and validate | [Testing & Validation](./implementation/06-testing-validation/) |
 | 9 | Complete handover | [Go Live](./implementation/07-go-live/) |
 
-## Documentation Structure
+## Overview
 
-- **[Planning](./planning/)** — Naming standards, discovery checklists, site assessments, and hardware requirements
-- **[Design](./design/)** — High-Level Design (HLD) and Low-Level Design (LLD) documentation
-- **[Implementation](./implementation/)** — Step-by-step deployment runbook across 8 stages
-- **[Automation](./automation/)** — Terraform, Bicep, Ansible, and CI/CD pipeline references
-- **[Operations](./operations/)** — As-built documentation, monitoring, and support procedures
-- **[Azure Services](./azure-services/)** — Running Azure services on Azure Local (AKS, AVD, SQL MI, IoT, etc.)
-- **[Lab Environment](./lab-environment/)** — Lab setup and access information
-- **[Assets](./assets/)** — Architecture diagrams and images
-- **[Reference](./reference.mdx)** — External links and resources
+Azure Local is a standardized, automation-first solution for deploying Azure Local (formerly Azure Stack HCI) infrastructure. It is designed around a **Two-Repo Architecture** that separates the automation logic from the documentation, ensuring portable and repeatable deployments across different customer environments.
 
-## Prerequisites
+This documentation serves as the "Master Reference" for the solution, while the accompanying **Toolkit Repository** ([azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit)) contains the actual scripts, templates, and configuration files used during deployment.
 
-Before starting a deployment, ensure you have:
+## Prerequisites Checklist
+
+Before starting an Azure Local deployment, ensure you have:
 
 | Requirement | Description |
 |-------------|-------------|
 | Azure Subscription | Active Azure subscription with Owner or Contributor rights |
 | Entra ID Access | Global Administrator or Privileged Role Administrator |
 | Network Connectivity | VPN or ExpressRoute to on-premises environment |
-| Hardware | Dell AX-series nodes (or compatible) racked and powered |
-| Credentials | Access to Dell iDRAC, network switches, and firewalls |
+| Hardware | Azure Local validated nodes racked and powered |
+| Credentials | Access to BMC/iDRAC, network switches, and firewalls |
 | GitHub Access | Source control account with repository access |
 
 See [Prerequisites & Assumptions](./implementation/04-prerequisites-and-assumptions.mdx) for complete details.
 
-## Architecture
-
-This solution uses a **Two-Repo Architecture** that separates automation logic from documentation:
+## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -68,8 +72,135 @@ This solution uses a **Two-Repo Architecture** that separates automation logic f
 
 The **Toolkit Repo** is cloned and instanced for each customer deployment, while this documentation remains the single source of truth for procedures.
 
-## Related Resources
+## Documentation Sections
 
-- **[Azure Local Toolkit](https://azurelocal.cloud/azurelocal-toolkit/)** — Deployment scripts, validation suites, and configuration management
-- **[Microsoft Learn - Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/)** — Official Microsoft documentation
-- **[Azure Arc](https://learn.microsoft.com/en-us/azure/azure-arc/)** — Hybrid cloud management
+| Section | Description | Status | Files |
+|---------|-------------|--------|-------|
+| [Design](./design/) | High-level and low-level design documents | Draft | 3 |
+| [Planning & Discovery](./planning/) | Site assessment, requirements, discovery sessions | Active | 8 |
+| [Implementation](./implementation/) | Complete deployment runbook (Parts 1-8) | Active | 149 |
+| [Automation](./automation/) | IaC templates, CI/CD pipelines | Draft | 7 |
+| [Operations](./operations/) | Day-2 operations, monitoring, support | Draft | 8 |
+| [Azure Services](./azure-services/) | Running Azure services on Azure Local | Active | — |
+| [Lab Environment](./lab-environment/) | Lab access and configuration | Draft | 3 |
+| [Assets](./assets/) | Diagrams, scripts, configurations | Active | 6 |
+| [Reference](./reference.mdx) | External links and resources | Draft | 1 |
+
+## Deployment Stages at a Glance
+
+The implementation is divided into 8 parts with phased tasks:
+
+### Part 1: CI/CD Infrastructure
+
+| Phase | Name | Est. Time | Link |
+|:-----:|------|:---------:|------|
+| 1 | CI/CD Setup | 45 min | [Phase 1](./implementation/01-cicd-infra/phase-01-cicd-setup/) |
+
+### Part 2: Azure Cloud Foundation
+
+| Phase | Name | Est. Time | Link |
+|:-----:|------|:---------:|------|
+| 1 | Landing Zones | 1 hour | [Phase 1](./implementation/02-azure-foundation/phase-01-landing-zones/) |
+| 2 | Resource Providers | 15 min | [Phase 2](./implementation/02-azure-foundation/phase-02-resource-providers/) |
+| 3 | RBAC Permissions | 30 min | [Phase 3](./implementation/02-azure-foundation/phase-03-rbac-permissions/) |
+| 4 | Azure Management Infrastructure | 2 hours | [Phase 4](./implementation/02-azure-foundation/phase-04-azure-management-infrastructure/) |
+| 5 | Identity & Access Management | 1 hour | [Phase 5](./implementation/02-azure-foundation/phase-05-identity-security/) |
+
+### Part 3: On-Premises Readiness
+
+| Phase | Name | Est. Time | Link |
+|:-----:|------|:---------:|------|
+| 1 | Active Directory Preparation | 1 hour | [Phase 1](./implementation/03-onprem-readiness/phase-01-active-directory/) |
+| 2 | Enterprise Network Readiness Validation | 2 hours | [Phase 2](./implementation/03-onprem-readiness/phase-02-enterprise-readiness/) |
+| 3 | Network Infrastructure Configuration | 2 hours | [Phase 3](./implementation/03-onprem-readiness/phase-03-network-infrastructure/) |
+
+### Part 4: Cluster Deployment
+
+| Phase | Name | Est. Time | Link |
+|:-----:|------|:---------:|------|
+| 1 | Hardware Provisioning & BIOS/iDRAC | 1 hour | [Phase 1](./implementation/04-cluster-deployment/phase-01-hardware-provisioning/) |
+| 2 | OS Installation | 2 hours | [Phase 2](./implementation/04-cluster-deployment/phase-02-os-installation/) |
+| 3 | OS Configuration | 1 hour | [Phase 3](./implementation/04-cluster-deployment/phase-03-os-configuration/) |
+| 4 | Arc Registration | 30 min | [Phase 4](./implementation/04-cluster-deployment/phase-04-arc-registration/) |
+| 5 | Cluster Deployment | 2 hours | [Phase 5](./implementation/04-cluster-deployment/phase-05-cluster-deployment/) |
+| 6 | Post-Deployment Configuration | 1 hour | [Phase 6](./implementation/04-cluster-deployment/phase-06-post-deployment/) |
+
+### Part 5: Operational Foundations
+
+| Phase | Name | Est. Time | Link |
+|:-----:|------|:---------:|------|
+| 1 | SDN Integration (Optional) | 2 hours | [Phase 1](./implementation/05-operational-foundations/phase-01-sdn-deployment/) |
+| 2 | Monitoring & Observability | 1 hour | [Phase 2](./implementation/05-operational-foundations/phase-02-monitoring-observability/) |
+| 3 | Backup & DR | 1 hour | [Phase 3](./implementation/05-operational-foundations/phase-03-backup-dr/) |
+| 4 | Security & Governance | 1 hour | [Phase 4](./implementation/05-operational-foundations/phase-04-security-governance/) |
+| 5 | Licensing & Telemetry | 30 min | [Phase 5](./implementation/05-operational-foundations/phase-05-licensing-telemetry/) |
+
+### Part 6: Cluster Testing & Validation
+
+| Activity | Est. Time | Link |
+|----------|:---------:|------|
+| Infrastructure Health Validation | 2 hours | [Testing](./implementation/06-testing-validation/) |
+
+### Part 7: Validation & Handover
+
+| Activity | Est. Time | Link |
+|----------|:---------:|------|
+| Delivery Confirmation | 1 hour | [Validation](./implementation/07-go-live/01-cluster-validation/) |
+| Cluster Handover | 2 hours | [Handover](./implementation/07-go-live/02-cluster-handover/) |
+
+### Part 8: Lifecycle Operations
+
+| Activity | Est. Time | Link |
+|----------|:---------:|------|
+| Client Training & Handover | — | [Training](./implementation/08-lifecycle-operations/client-training-handover) |
+| CMDB Creation | — | [CMDB](./implementation/08-lifecycle-operations/cmdb-creation) |
+| Deprovision Steps | — | [Deprovision](./implementation/08-lifecycle-operations/deprovision-steps) |
+
+**Total Estimated Time**: 20-24 hours (spread across multiple days)
+
+## Key Capabilities
+
+| Capability | Description |
+|------------|-------------|
+| Part-Based Deployment | Infrastructure delivery broken into 8 parts with phased tasks |
+| Validation First | Pre-flight checks and post-deployment validation scripts |
+| Infrastructure as Code | Bicep and Terraform for Azure resource management |
+| Vendor Integration | Standardized workflows for supported hardware vendors |
+| CI/CD Automation | CI/CD pipelines for automated deployments |
+| Drift Detection | Continuous monitoring for configuration drift |
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | 2025-01-30 | Rebrand to Azure Local, remove legacy content |
+| 0.2.0 | 2025-01-30 | Standards compliance update, documentation restructure |
+| 0.1.0 | 2025-01-01 | Initial documentation structure |
+
+## Support & Resources
+
+### Repositories
+
+| Repository | Description | Link |
+|------------|-------------|------|
+| Documentation | This site | [GitHub](https://github.com/AzureLocal/azurelocal.github.io) |
+| Toolkit | Scripts, templates, pipelines | [GitHub](https://github.com/AzureLocal/azurelocal-toolkit) |
+
+### External Resources
+
+| Resource | Link |
+|----------|------|
+| Microsoft Learn - Azure Local | [Documentation](https://learn.microsoft.com/en-us/azure/azure-local/) |
+| Azure Local Catalog | [Validated Hardware](https://azurestackhcisolutions.azure.microsoft.com/) |
+| Azure Arc | [Documentation](https://learn.microsoft.com/en-us/azure/azure-arc/) |
+
+## Browse Documentation
+
+- [Planning & Discovery](./planning/)
+- [Design](./design/)
+- [Implementation Guide](./implementation/)
+- [Operations](./operations/)
+- [Azure Services](./azure-services/)
+- [Automation](./automation/)
+- [Assets](./assets/)
+- [Lab Environment](./lab-environment/)
