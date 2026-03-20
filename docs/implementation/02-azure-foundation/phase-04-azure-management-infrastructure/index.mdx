@@ -6,10 +6,10 @@ description: "Deploy Azure management infrastructure for Azure Local including n
 category: Runbook
 scope: Azure management resources deployment
 purpose: Deploy networking, VMs, and monitoring resources for Azure Local management
-author: Azure Local Cloudnology Team
+author: "Hybrid Cloud Solutions"
 created: 2025-09-15
-updated: 2026-03-03
-version: 1.1.0
+updated: 2026-03-20
+version: 2.0.0
 tags: [azure-local, management-infrastructure, networking, vpn, key-vault, domain-controllers, bastion]
 keywords: [management infrastructure, virtual network, VPN gateway, bastion, NSG, NAT gateway, key vault, domain controller, log analytics]
 status: active
@@ -33,9 +33,30 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-This phase deploys all Azure-side infrastructure needed for Azure Local management and operations. Choose the deployment method that best suits your needs:
+This phase deploys all Azure-side infrastructure needed for Azure Local management and operations. The deployment is organized into three steps:
 
-## Deployment Options
+1. **Deploy Infrastructure** — Provision Azure networking, security, and VM resources (choose CI/CD or manual)
+2. **Configure VMs** — Configure management VM workloads (AD DS, utility server, NDM, Lighthouse, WAC)
+3. **Validate** — Verify connectivity and service health
+
+:::warning Hybrid Connectivity Required
+This phase deploys resources in Azure. **Site-to-Site VPN or ExpressRoute** connectivity between Azure and your on-premises environment is required for management VMs to communicate with Azure Local clusters. Ensure hybrid connectivity is planned before proceeding.
+:::
+
+```mermaid
+flowchart LR
+  A["Step 1\nDeploy Infrastructure"] --> B["Step 2\nConfigure VMs"]
+  B --> C["Step 3\nValidate"]
+  
+  A1[CI/CD Pipeline] --> A
+  A2[Manual Deployment] --> A
+```
+
+---
+
+## Step 1: Deploy Infrastructure
+
+Provision Azure networking, platform resources, and management VMs. Choose the deployment method that best suits your needs:
 
 <Tabs groupId="deployment-method">
 <TabItem value="pcs-cicd" label="CI/CD Pipeline (Recommended)" default>
@@ -57,16 +78,14 @@ Deploy the complete Azure management infrastructure using the automated CI/CD Pi
 The CI/CD module deploys core infrastructure but has the following limitations:
 
 **Not Included in CI/CD Module:**
-- ❌ **OpenGear Lighthouse Server** - Must be deployed manually
-- ❌ **Windows Admin Center (WAC) Server** - Must be deployed manually
-- ❌ **Custom Landing Zone Configurations** - Uses single subscription model only
+- ❌ **OpenGear Lighthouse Server** — Must be deployed via [Manual Task 11](./02-manual-deployment/task-11-deploy-management-vms)
+- ❌ **Windows Admin Center (WAC) Server** — Must be deployed via [Manual Task 11](./02-manual-deployment/task-11-deploy-management-vms)
 
 **Fixed Configuration:**
-- 📌 **Landing Zone**: Uses [single subscription model](../phase-01-landing-zones/) (as deployed in Phase 03)
-- 📌 **Resource Groups**: Predefined naming and structure (not customizable)
-- 📌 **Subscriptions**: No multi-subscription topology support
+- 📌 **Landing Zone**: Uses [single subscription model](../phase-01-landing-zones/)
+- 📌 **Resource Groups**: Predefined naming and structure
 
-For deployments requiring these components or custom landing zones, use [Manual Deployment](./02-manual-deployment/) or supplement the CI/CD deployment with additional manual steps.
+For deployments requiring these components or custom landing zones, supplement with [Manual Deployment](./02-manual-deployment/) steps.
 :::
 
 **👉 [Go to CI/CD Pipeline Deployment](./01-cicd-pipeline-deployment/)**
@@ -87,14 +106,49 @@ For deployments requiring these components or custom landing zones, use [Manual 
 
 ---
 
+## Step 2: Configure VMs
+
+After infrastructure is deployed (regardless of deployment method), configure the management VM workloads:
+
+**👉 [Go to VM Configuration](./03-vm-configuration/)**
+
+| Task | Component | Classification | Purpose |
+|------|-----------|----------------|----------|
+| 1 | [Configure AD DS](./03-vm-configuration/task-01-configure-adds) | **Required** | Promote DCs, create forest, configure DNS |
+| 2 | [Configure Utility Server](./03-vm-configuration/task-02-configure-utility-server) | **Recommended** | Domain join, install admin tools (jump box) |
+| 3 | [Configure NDM Server](./03-vm-configuration/task-03-configure-ndm-server) | **Recommended** | rsyslog, SNMP trap receiver for Azure Monitor |
+| 4 | [Configure Lighthouse Server](./03-vm-configuration/task-04-configure-lighthouse) | **Recommended** | Docker, OpenGear Lighthouse container |
+| 5 | [Configure WAC](./03-vm-configuration/task-05-configure-wac) | **Recommended** | Windows Admin Center gateway |
+
+:::info
+VM Configuration tasks apply to all deployment methods. Whether you used CI/CD or manual deployment for infrastructure, these steps are always required.
+:::
+
+---
+
+## Step 3: Validate
+
+After completing VM configuration, verify:
+
+- [ ] VPN connectivity between Azure and on-premises is operational
+- [ ] Domain Controllers are reachable and DNS resolves correctly
+- [ ] Utility server can RDP to Azure Local cluster nodes
+- [ ] NDM server is receiving syslog/SNMP data from network devices
+- [ ] WAC can connect to Azure Local cluster
+- [ ] Log Analytics Workspace is collecting data
+
+---
+
 ## Component Summary
 
-Both deployment methods provision infrastructure components, but availability varies by method:
+All components deployed across Steps 1 and 2:
 
 ### Management Mode (Once per Environment)
 
+#### Infrastructure Resources (Step 1)
+
 | Component | Classification | CI/CD Module | Manual | Purpose |
-|-----------|----------------|------------|--------|---------|
+|-----------|----------------|------------|--------|----------|
 | Virtual Network & Subnets | **Required** | ✅ | ✅ | Azure Local management network |
 | VPN Gateway | **Required** | ✅ | ✅ | Site-to-site connectivity to on-prem |
 | VPN Connection | **Required** | ✅ | ✅ | Establish tunnel to on-prem site |
@@ -104,17 +158,17 @@ Both deployment methods provision infrastructure components, but availability va
 | Arc Gateway | **Optional** | ✅ | ✅ | Azure Arc hybrid connectivity |
 | Log Analytics Workspace | **Recommended** | ✅ | ✅ | Monitoring and HCI Insights |
 | Key Vault | **Required** | ✅ | ✅ | Secrets management (passwords, keys) |
-| Domain Controllers | **Required** | ⚠️ Optional | ✅ | Active Directory for Azure Local |
-| Utility Server | **Recommended** | ⚠️ Optional | ✅ | Jump box with admin tools |
-| NDM Server | **Recommended** | ⚠️ Optional | ✅ | SNMP/Syslog collection |
-| **Lighthouse Server** | **Recommended** | ❌ | ✅ | **OpenGear console server management** |
-| **Windows Admin Center** | **Recommended** | ❌ | ✅ | **Web-based management portal** |
+| Management VMs | **Required** | ⚠️ Optional | ✅ | DC, Utility, NDM, Lighthouse, WAC VMs |
 
-:::tip Component Availability
-- ✅ = Included in deployment method
-- ⚠️ = Optional in CI/CD module (can be enabled/disabled)
-- ❌ = Not available in CI/CD module, must use manual deployment
-:::
+#### VM Configuration (Step 2)
+
+| Component | Classification | Purpose |
+|-----------|----------------|----------|
+| Active Directory Domain Services | **Required** | Promote DCs, create forest, configure DNS |
+| Utility Server (Jump Box) | **Recommended** | Domain join, admin tools, RDP gateway |
+| NDM Server | **Recommended** | rsyslog + SNMP collection → Azure Monitor |
+| Lighthouse Server | **Recommended** | OpenGear console server management |
+| Windows Admin Center | **Recommended** | Web-based cluster management portal |
 
 ### Cluster Mode (Once per Cluster)
 
@@ -159,9 +213,9 @@ After completing this phase:
 
 **Version Control**
 
-- Created: 2025-09-15 by Azure Local Cloudnology Team
-- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
-- Version: 1.1.0
+- Created: 2025-09-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-20 by Hybrid Cloud Solutions
+- Version: 2.0.0
 - Tags: azure-local, management-infrastructure, networking, vpn, key-vault, domain-controllers, bastion
 - Keywords: management infrastructure, virtual network, VPN gateway, bastion, NSG, NAT gateway, key vault, domain controller, log analytics
-- Author: Azure Local Cloudnology Team
+- Author: Hybrid Cloud Solutions

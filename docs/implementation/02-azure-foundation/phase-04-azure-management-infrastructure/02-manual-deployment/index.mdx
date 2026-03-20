@@ -6,10 +6,10 @@ description: "Manual step-by-step deployment procedures for Azure Local manageme
 category: Runbook
 scope: Manual infrastructure deployment procedures
 purpose: Step-by-step deployment of individual Azure management infrastructure components
-author: Azure Local Cloudnology Team
+author: "Hybrid Cloud Solutions"
 created: 2025-09-15
-updated: 2026-03-03
-version: 2.0.0
+updated: 2026-03-20
+version: 3.0.0
 tags: [azure-local, manual-deployment, management-infrastructure, networking, vpn, key-vault, landing-zone]
 keywords: [manual deployment, virtual network, VPN gateway, bastion, NSG, NAT gateway, key vault, domain controller, landing zone]
 status: active
@@ -62,7 +62,11 @@ Before starting, confirm with your project lead which landing zone model applies
 
 ## Component Summary
 
-This stage deploys all Azure-side infrastructure needed for Azure Local management. Tasks 01-10 create Azure resources; Task 11 deploys all management VMs; Tasks 12-16 configure individual VM workloads.
+This stage deploys all Azure-side infrastructure needed for Azure Local management. Tasks 01-10 create Azure resources; Task 11 deploys all management VMs.
+
+:::tip VM Configuration
+After completing Task 11, proceed to the **[VM Configuration](../03-vm-configuration/)** section to configure individual VM workloads (AD DS, Utility Server, NDM, Lighthouse, WAC). VM Configuration applies regardless of whether you used CI/CD or manual deployment.
+:::
 
 ### Networking and Platform Resources (Tasks 01-10)
 
@@ -85,15 +89,6 @@ This stage deploys all Azure-side infrastructure needed for Azure Local manageme
 |------|-----------|----------------|---------|
 | 11 | [Deploy Management VMs](./task-11-deploy-management-vms) | **Required** | Create all management VM resources in Azure |
 
-### VM Configuration (Tasks 12-16)
-
-| Task | Component | Classification | Purpose |
-|------|-----------|----------------|---------|
-| 12 | [Configure AD DS](./task-12-configure-adds) | **Required** | Promote DCs, create forest, configure DNS |
-| 13 | [Configure Utility Server](./task-13-configure-utility-server) | **Recommended** | Domain join, install admin tools |
-| 14 | [Configure NDM Server](./task-14-configure-ndm-server) | **Recommended** | rsyslog, SNMP trap receiver, firewall |
-| 15 | [Configure Lighthouse Server](./task-15-configure-lighthouse) | **Recommended** | Docker, OpenGear Lighthouse container |
-| 16 | [Configure Windows Admin Center](./task-16-configure-wac) | **Recommended** | WAC gateway installation and access |
 
 ### Cluster Mode (Once per Cluster)
 
@@ -144,12 +139,7 @@ graph TD
  G --> K
  J --> K
  I --> K
- K --> L[Task 12: Configure AD DS]
- K --> M[Task 13: Configure Utility Server]
- K --> N[Task 14: Configure NDM Server]
- K --> O[Task 15: Configure Lighthouse]
- K --> P[Task 16: Configure WAC]
- L --> M
+ K --> L[VM Configuration Section]
 ```
 
 ## Estimated Deployment Time
@@ -167,12 +157,11 @@ graph TD
 | Log Analytics Workspace | ~2 minutes |
 | Key Vault | ~3 minutes |
 | Deploy Management VMs (all) | ~20 minutes |
-| Configure AD DS | ~30 minutes (includes reboot) |
-| Configure Utility Server | ~15 minutes |
-| Configure NDM Server | ~15 minutes |
-| Configure Lighthouse Server | ~20 minutes |
-| Configure WAC | ~15 minutes |
-| **Total** | **~3 hours** |
+| **Total (Infrastructure)** | **~2 hours** |
+
+:::info
+VM configuration time (~1.5 hours) is tracked in the **[VM Configuration](../03-vm-configuration/)** section.
+:::
 
 :::warning VPN Gateway Deployment
 The VPN Gateway takes 30-45 minutes to deploy. Plan accordingly and do not interrupt the deployment.
@@ -191,11 +180,11 @@ Upon completion of this stage:
 - Arc Gateway ready for hybrid connectivity (if deployed)
 - Log Analytics Workspace ready for HCI Insights
 - Key Vault provisioned with deployment secrets
-- Domain Controllers running and AD configured
-- Utility server available as jump box with admin tools
-- NDM server collecting SNMP/syslog data
-- Lighthouse server managing OpenGear console servers
-- Windows Admin Center ready for cluster management
+- All management VMs deployed and ready for configuration
+
+:::tip Next
+Proceed to **[VM Configuration](../03-vm-configuration/)** to configure AD DS, utility server, NDM, Lighthouse, and WAC.
+:::
 
 ## Next Steps
 
@@ -222,9 +211,9 @@ After completing this stage:
 
 **Version Control**
 
-- Created: 2025-09-15 by Azure Local Cloudnology Team
-- Last Updated: 2026-03-03 by Azure Local Cloudnology Team
-- Version: 2.0.0
+- Created: 2025-09-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-20 by Hybrid Cloud Solutions
+- Version: 3.0.0
 - Tags: azure-local, manual-deployment, management-infrastructure, networking, vpn, key-vault, landing-zone
 - Keywords: manual deployment, virtual network, VPN gateway, bastion, NSG, NAT gateway, key vault, domain controller, landing zone
-- Author: Azure Local Cloudnology Team
+- Author: Hybrid Cloud Solutions
