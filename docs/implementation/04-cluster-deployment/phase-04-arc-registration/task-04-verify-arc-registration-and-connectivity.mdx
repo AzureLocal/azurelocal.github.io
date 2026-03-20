@@ -54,14 +54,14 @@ Get-Service himds | Format-Table Name, Status, StartType
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated (all nodes)">
 
-**Run from the management server.** Reads node IPs from `infrastructure.yml` and verifies Arc agent + Azure resource status across all nodes:
+**Run from the management server.** Reads node IPs from `variables.yml` and verifies Arc agent + Azure resource status across all nodes:
 
 :::tip Standards-Compliant Script
 For production deployments, use **`Invoke-ArcVerification-Orchestrated.ps1`** from the `azl-toolkit` repo. Supports `-WhatIf`, `-TargetNode`, `-SkipAzureCheck`, `-Credential`, logging, and parallel execution with detailed pass/fail summary per check per node.
 :::
 
 ```powershell
-$ConfigPath = ".\configs\infrastructure.yml"
+$ConfigPath = ".\config\variables.yml"
 $cfg = Get-Content $ConfigPath
 
 $ServerList = ($cfg | Select-String 'management_ip:\s+"?([^"\s]+)' -AllMatches).Matches |
@@ -123,7 +123,7 @@ Get-AzConnectedMachine -ResourceGroupName $ResourceGroup |
 For manual confirmation:
 
 1. Navigate to **Azure Arc → Machines** in the [Azure Portal](https://portal.azure.com)
-2. Filter by resource group from `infrastructure.yml`
+2. Filter by resource group from `variables.yml`
 3. Confirm all nodes show **Connected** status
 4. Click each node → **Properties** → verify subscription, resource group, and region
 5. If using Arc Gateway: **Networking → Gateway configuration** → verify gateway resource ID

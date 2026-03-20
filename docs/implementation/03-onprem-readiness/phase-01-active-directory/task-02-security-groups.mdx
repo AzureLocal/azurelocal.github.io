@@ -56,7 +56,7 @@ The active directory information in these documents should have been decided in 
 
 ## Security Group Model
 
-Group names follow the convention `SG-{org_prefix}-{cluster_id}-AZL-{role}`, built dynamically from two fields in `active_directory.security_groups` in `infrastructure.yml`. The `cluster_id` suffix makes groups unique per cluster in the same domain.
+Group names follow the convention `SG-{org_prefix}-{cluster_id}-AZL-{role}`, built dynamically from two fields in `active_directory.security_groups` in `variables.yml`. The `cluster_id` suffix makes groups unique per cluster in the same domain.
 
 | YAML Key | Role Suffix | Local Group Assignments | Purpose |
 |---|---|---|---|
@@ -92,7 +92,7 @@ Core Azure Local instance security groups in the enterprise Security Groups OU (
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-> **When to use**: Managing from a domain-joined management server — config-driven via infrastructure.yml
+> **When to use**: Managing from a domain-joined management server — config-driven via variables.yml
 
 #### Script
 
@@ -109,7 +109,7 @@ Core Azure Local instance security groups in the enterprise Security Groups OU (
 ```powershell
 # ============================================================================
 # Script: Invoke-ADSecurityGroups.ps1
-# Execution: Run FROM management server — reads infrastructure.yml
+# Execution: Run FROM management server — reads variables.yml
 # Prerequisites: powershell-yaml module, ActiveDirectory RSAT, domain access
 # ============================================================================
 
@@ -122,9 +122,9 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ($ConfigPath) {
  $ConfigFile = $ConfigPath
 } else {
- $ConfigFile = Join-Path $ScriptDir "..\..\..\..\configs\infrastructure.yml"
+ $ConfigFile = Join-Path $ScriptDir "..\..\..\..\config\variables.yml"
 }
-if (!(Test-Path $ConfigFile)) { throw "infrastructure.yml not found at $ConfigFile" }
+if (!(Test-Path $ConfigFile)) { throw "variables.yml not found at $ConfigFile" }
 
 Import-Module powershell-yaml -ErrorAction Stop
 Import-Module ActiveDirectory

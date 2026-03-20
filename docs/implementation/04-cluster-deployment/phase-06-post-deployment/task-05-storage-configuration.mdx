@@ -22,7 +22,7 @@ import TabItem from '@theme/TabItem';
 
 :::warning This step should already be complete
 Volume sizing and the `cluster_shared_volumes` YAML block should have been completed during
-the **Discovery & Planning** phase. If those values are not in your `infrastructure.yml`,
+the **Discovery & Planning** phase. If those values are not in your `variables.yml`,
 **stop here** and complete sizing before proceeding — all scripts in Sections 2 and 3 read
 exclusively from the YAML. Nothing is hardcoded in the scripts.
 :::
@@ -39,7 +39,7 @@ The calculator requires:
 - Resiliency type (Two-way Mirror / Three-way Mirror)
 - Target usable capacity per volume
 
-Once you have the outputs, populate the following keys in your `infrastructure.yml` before
+Once you have the outputs, populate the following keys in your `variables.yml` before
 running any scripts in this task:
 
 | YAML Path | Example (IIC) | Description |
@@ -67,7 +67,7 @@ Convention: `csv-<site-prefix>-<cluster-id>-<resiliency-short>-<purpose>-<seq>`
 **If your YAML is not yet populated**, use the interactive helper script
 [`Set-StorageVolumesConfig.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/Set-StorageVolumesConfig.ps1)
 from the toolkit. It walks through each value from the calculator output and writes the
-`cluster_shared_volumes` block directly into your `infrastructure.yml`. Skip if the YAML
+`cluster_shared_volumes` block directly into your `variables.yml`. Skip if the YAML
 is already populated.
 
 **Script location:**
@@ -77,7 +77,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 ```
 
 **What it does:**
-- Reads your existing `infrastructure.yml` and pre-fills any values already present
+- Reads your existing `variables.yml` and pre-fills any values already present
 - Prompts for volume count, name, size (GB from the Calculator usable capacity output),
  resiliency (`Mirror` / `Parity` / `MirrorAcceleratedParity`), and filesystem (`ReFS` / `NTFS`)
 - Auto-derives storage path names (`sp-` prefix) and paths (`C:\ClusterStorage\<vol>\VMs`) from each volume name
@@ -96,7 +96,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 ```
 
 :::warning Review before proceeding
-Open `infrastructure.yml` after the script completes and verify the `cluster_shared_volumes`
+Open `variables.yml` after the script completes and verify the `cluster_shared_volumes`
 block before running any Section 2 scripts. The script does **not** validate volume names
 against the naming convention — confirm they follow `csv-<cluster>-<res>-<purpose>-<seq>`.
 :::
@@ -156,7 +156,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 
  Run this script directly ON a cluster node (console, RDP, or Arc SSH).
  Fill in the #region CONFIGURATION block with your environment values.
- No infrastructure.yml dependency.
+ No variables.yml dependency.
 
 .NOTES
  Must be run on (or remoted into) a cluster node with FailoverClusters
@@ -291,7 +291,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 .DESCRIPTION
  Phase 06 — Post-Deployment | Task 05 — Storage Configuration (Section 2)
 
- Reads cluster_shared_volumes.volumes[] from infrastructure.yml and creates
+ Reads cluster_shared_volumes.volumes[] from variables.yml and creates
  each defined volume via Invoke-Command to the cluster VIP. New-Volume is
  executed remotely so it has direct access to the S2D storage pool.
 
@@ -301,7 +301,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  3. Interactive Get-Credential prompt
 
 .PARAMETER ConfigPath
- Path to infrastructure YAML. Defaults to configs/infrastructure.yml in CWD.
+ Path to infrastructure YAML. Defaults to config/variables.yml in CWD.
 
 .PARAMETER Credential
  Override credential resolution — skips Key Vault and prompt.
@@ -362,7 +362,7 @@ function Write-Log {
 
 #region CONFIG LOADING ----------------------------------------------------------
 if ([string]::IsNullOrEmpty($ConfigPath)) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config not found: $ConfigPath" -Level "ERROR"; throw "Config not found"
@@ -611,12 +611,12 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 #Requires -Version 5.1
 <#
 .SYNOPSIS
- Registers Azure Local storage paths in Azure from infrastructure.yml.
+ Registers Azure Local storage paths in Azure from variables.yml.
 
 .DESCRIPTION
  Phase 06 — Post-Deployment | Task 05 — Storage Configuration (Section 3)
 
- Reads cluster_shared_volumes.storage_paths from infrastructure.yml and
+ Reads cluster_shared_volumes.storage_paths from variables.yml and
  registers each entry as an Azure storage path resource using:
  az stack-hci-vm storagepath create
 
@@ -624,7 +624,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  via az CLI from the management server.
 
 .PARAMETER ConfigPath
- Path to infrastructure YAML. Defaults to configs/infrastructure.yml in CWD.
+ Path to infrastructure YAML. Defaults to config/variables.yml in CWD.
 
 .PARAMETER Credential
  Not used for storage path registration (Azure CLI handles auth via az login).
@@ -682,7 +682,7 @@ function Write-Log {
 
 #region CONFIG LOADING ----------------------------------------------------------
 if ([string]::IsNullOrEmpty($ConfigPath)) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config not found: $ConfigPath" -Level "ERROR"; throw "Config not found"
@@ -801,7 +801,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  Phase 06 — Post-Deployment | Task 05 — Storage Configuration (Section 3)
 
  Fill in the #region CONFIGURATION block and run from any machine with
- az CLI access. No infrastructure.yml dependency. No PS Remoting.
+ az CLI access. No variables.yml dependency. No PS Remoting.
 
 .NOTES
  Requires: az CLI logged in with Contributor on the cluster resource group.

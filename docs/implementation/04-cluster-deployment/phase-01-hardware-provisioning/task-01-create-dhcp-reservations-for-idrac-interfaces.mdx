@@ -2,7 +2,7 @@
 title: "Task 01: Create DHCP Reservations for iDRAC Interfaces"
 sidebar_label: "Task 01: iDRAC DHCP Reservations"
 sidebar_position: 1
-description: "Create DHCP reservations for iDRAC out-of-band management interfaces using MAC addresses and planned IPs from infrastructure.yml before hardware arrives on site."
+description: "Create DHCP reservations for iDRAC out-of-band management interfaces using MAC addresses and planned IPs from variables.yml before hardware arrives on site."
 category: Runbook
 scope: Azure Local hardware provisioning
 purpose: Pre-stage DHCP reservations so iDRAC interfaces receive consistent IP addresses from the moment hardware is powered on
@@ -37,7 +37,7 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-Create DHCP reservations for iDRAC out-of-band management interfaces using MAC addresses and planned IPs from `infrastructure.yml`. This task is performed **before hardware arrives on site** — MAC addresses come from the Dell order documentation (packing slip or TechDirect), not from a discovery scan.
+Create DHCP reservations for iDRAC out-of-band management interfaces using MAC addresses and planned IPs from `variables.yml`. This task is performed **before hardware arrives on site** — MAC addresses come from the Dell order documentation (packing slip or TechDirect), not from a discovery scan.
 
 :::info iDRAC Interfaces Only
 This task configures DHCP reservations for **iDRAC (out-of-band) interfaces only**. Management NIC (in-band) reservations are an optional separate task (Task 03). Management NIC static IPs are configured during OS installation.
@@ -52,13 +52,13 @@ This task may be skipped if iDRACs have already been assigned static IP addresse
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | DHCP Server Access | FortiGate admin rights, Windows DHCP admin, or customer DHCP contact | Network team |
-| OOB Network Subnet | Out-of-band VLAN and DHCP scope configured | `infrastructure.yml: network.vlans.oob.cidr` |
-| Node MAC Addresses | iDRAC MAC addresses from Dell order documentation | `infrastructure.yml: nodes.<name>.macs.idrac` |
-| Planned iDRAC IPs | Assigned iDRAC IP per node | `infrastructure.yml: nodes.<name>.idrac_ip` |
+| OOB Network Subnet | Out-of-band VLAN and DHCP scope configured | `variables.yml: network.vlans.oob.cidr` |
+| Node MAC Addresses | iDRAC MAC addresses from Dell order documentation | `variables.yml: nodes.<name>.macs.idrac` |
+| Planned iDRAC IPs | Assigned iDRAC IP per node | `variables.yml: nodes.<name>.idrac_ip` |
 
 ---
 
-## Variables from infrastructure.yml
+## Variables from variables.yml
 
 | Path | Type | Description |
 |------|------|-------------|
@@ -87,14 +87,14 @@ Select the tab matching your DHCP infrastructure:
 2. Navigate to **Policy & Objects** → **DHCP Server**
 3. Select the DHCP server for the OOB management network and click **Edit**
 4. In the **Reserved Addresses** section, click **Create New** for each node:
- - **IP Address**: `nodes.<name>.idrac_ip` from `infrastructure.yml`
- - **MAC Address**: `nodes.<name>.macs.idrac` from `infrastructure.yml`
+ - **IP Address**: `nodes.<name>.idrac_ip` from `variables.yml`
+ - **MAC Address**: `nodes.<name>.macs.idrac` from `variables.yml`
  - **Description**: `<hostname>-iDRAC (Service Tag: <service-tag>)`
 5. Click **OK** to save
 
 ### FortiOS CLI (from Management Server)
 
-Connect via SSH from the management server and run the following for each node. Replace values with actual entries from `infrastructure.yml`.
+Connect via SSH from the management server and run the following for each node. Replace values with actual entries from `variables.yml`.
 
 ```bash
 # ============================================================================
@@ -142,8 +142,8 @@ show system dhcp server | grep -A5 "iDRAC"
 3. Expand server → **IPv4** → **Scope [OOB Network]** → **Reservations**
 4. Right-click **Reservations** → **New Reservation** for each node:
  - **Reservation name**: `<hostname>-iDRAC`
- - **IP address**: `nodes.<name>.idrac_ip` from `infrastructure.yml`
- - **MAC address**: `nodes.<name>.macs.idrac` from `infrastructure.yml`
+ - **IP address**: `nodes.<name>.idrac_ip` from `variables.yml`
+ - **MAC address**: `nodes.<name>.macs.idrac` from `variables.yml`
  - **Description**: `iDRAC for <hostname> (Service Tag: <service-tag>)`
  - Click **Add**
 
@@ -161,7 +161,7 @@ show system dhcp server | grep -A5 "iDRAC"
 
 param(
  [Parameter(Mandatory = $false)]
- [string]$ConfigPath = ".\infrastructure.yml",
+ [string]$ConfigPath = ".\config\variables.yml",
 
  [Parameter(Mandatory = $false)]
  [string]$DHCPServerOverride
@@ -245,9 +245,9 @@ Write-Host "Done." -ForegroundColor Green
 
 ### Information to Provide to Customer
 
-Extract and provide the following from `infrastructure.yml`:
+Extract and provide the following from `variables.yml`:
 
-| Field | infrastructure.yml Path | Example |
+| Field | variables.yml Path | Example |
 |-------|------------------------|---------|
 | iDRAC MAC address | `nodes.<name>.macs.idrac` | `AA:BB:CC:DD:EE:01` |
 | Planned iDRAC IP | `nodes.<name>.idrac_ip` | `10.100.64.11` |
@@ -257,7 +257,7 @@ Extract and provide the following from `infrastructure.yml`:
 
 ### Coordination Steps
 
-1. Extract node data from `infrastructure.yml`
+1. Extract node data from `variables.yml`
 2. Submit request to customer network team with the table above
 3. Confirm scope and VLAN with network team
 4. Obtain confirmation that reservations have been created
@@ -266,8 +266,8 @@ Extract and provide the following from `infrastructure.yml`:
 ### Validation
 
 - [ ] Customer confirms all reservations created
-- [ ] IP addresses match `infrastructure.yml: nodes.<name>.idrac_ip`
-- [ ] MAC addresses match `infrastructure.yml: nodes.<name>.macs.idrac`
+- [ ] IP addresses match `variables.yml: nodes.<name>.idrac_ip`
+- [ ] MAC addresses match `variables.yml: nodes.<name>.macs.idrac`
 - [ ] Reservation names follow convention: `<hostname>-iDRAC`
 
 </TabItem>
@@ -278,8 +278,8 @@ Extract and provide the following from `infrastructure.yml`:
 ## Validation Checklist
 
 - [ ] DHCP reservation created for every node (one per node)
-- [ ] IP addresses match `nodes.<name>.idrac_ip` in `infrastructure.yml`
-- [ ] MAC addresses match `nodes.<name>.macs.idrac` in `infrastructure.yml`
+- [ ] IP addresses match `nodes.<name>.idrac_ip` in `variables.yml`
+- [ ] MAC addresses match `nodes.<name>.macs.idrac` in `variables.yml`
 - [ ] Reservation names follow convention: `<hostname>-iDRAC`
 - [ ] Reservation descriptions include hostname and service tag
 - [ ] All reservations in the correct OOB DHCP scope

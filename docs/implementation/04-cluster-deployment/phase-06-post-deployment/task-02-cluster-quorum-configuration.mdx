@@ -78,7 +78,7 @@ Before configuring quorum, ensure the storage account exists in Azure.
 5. Select **Select the quorum witness** → **Next**
 6. Select **Configure a cloud witness** → **Next**
 7. Enter:
- - **Azure storage account name**: `<cluster_witness.name from infrastructure.yml>`
+ - **Azure storage account name**: `<cluster_witness.name from variables.yml>`
  - **Azure storage account key**: _(key1 from Azure Portal)_
  - **Azure service endpoint**: leave default (`core.windows.net`)
 8. Click **Next** → **Next** → **Finish**
@@ -103,7 +103,7 @@ Before configuring quorum, ensure the storage account exists in Azure.
 
 ### Orchestrated Script (Mgmt Server)
 
-> **When to use**: Config-driven automation from a management server or jump box — reads `infrastructure.yml`, validates/creates the storage account in Azure, then configures quorum via PSRemoting
+> **When to use**: Config-driven automation from a management server or jump box — reads `variables.yml`, validates/creates the storage account in Azure, then configures quorum via PSRemoting
 
 #### Script
 
@@ -116,7 +116,7 @@ Before configuring quorum, ensure the storage account exists in Azure.
 # Script : Invoke-ConfigureClusterQuorum-Orchestrated.ps1
 # Purpose: Validate or create the cloud witness storage account, then configure
 # cluster quorum (Cloud Witness / File Share Witness / Disk Witness)
-# Run : From management server — reads infrastructure.yml, uses PSRemoting
+# Run : From management server — reads variables.yml, uses PSRemoting
 # Prereqs: Az.Accounts, Az.Storage modules; authenticated to Azure
 # ==============================================================================
 
@@ -124,7 +124,7 @@ Before configuring quorum, ensure the storage account exists in Azure.
 
 [CmdletBinding()]
 param(
- [string]$ConfigPath = "", # Path to infrastructure.yml; CWD-relative default
+ [string]$ConfigPath = "", # Path to variables.yml; CWD-relative default
  [PSCredential]$Credential, # Override credential resolution
  [string[]]$TargetNode = @(), # Limit to specific nodes; empty = first cluster node
  [switch]$WhatIf, # Dry-run — validate only, no changes
@@ -166,7 +166,7 @@ Write-Log "Log: $logFile"
 
 # ── Config loading ────────────────────────────────────────────────────────────
 if (-not $ConfigPath) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config file not found: $ConfigPath" 'ERROR'
@@ -340,18 +340,18 @@ return [PSCustomObject]@{
 #### Usage Examples
 
 ```powershell title="Example: Cloud Witness (config-driven)"
-# Reads all values from infrastructure.yml — validates/creates SA automatically
+# Reads all values from variables.yml — validates/creates SA automatically
 .\Invoke-ConfigureClusterQuorum-Orchestrated.ps1 `
- -ConfigPath "configs\infrastructure.yml"
+ -ConfigPath "config\variables.yml"
 
 # Dry-run first
 .\Invoke-ConfigureClusterQuorum-Orchestrated.ps1 `
- -ConfigPath "configs\infrastructure.yml" `
+ -ConfigPath "config\variables.yml" `
  -WhatIf
 
 # Override witness account name
 .\Invoke-ConfigureClusterQuorum-Orchestrated.ps1 `
- -ConfigPath "configs\infrastructure.yml" `
+ -ConfigPath "config\variables.yml" `
  -WitnessAccountName "stwitness01custom"
 ```
 
@@ -370,7 +370,7 @@ Invoke-Command -ComputerName <node> -ScriptBlock {
 
 ### Standalone Script
 
-> **When to use**: Copy-paste ready — no `infrastructure.yml`, no helpers, no external dependencies. Run from a management server, laptop, or jump box. All values are defined in the `#region CONFIGURATION` block.
+> **When to use**: Copy-paste ready — no `variables.yml`, no helpers, no external dependencies. Run from a management server, laptop, or jump box. All values are defined in the `#region CONFIGURATION` block.
 
 #### Code
 
@@ -535,7 +535,7 @@ if ($result.Success) {
 ```
 
 :::info No External Dependencies
-All values are defined in the `#region CONFIGURATION` block at the top. Edit those values and run — no `infrastructure.yml`, no config-loader, no helpers required. Requires `Az.Accounts` and `Az.Storage` PowerShell modules and an active `Connect-AzAccount` session.
+All values are defined in the `#region CONFIGURATION` block at the top. Edit those values and run — no `variables.yml`, no config-loader, no helpers required. Requires `Az.Accounts` and `Az.Storage` PowerShell modules and an active `Connect-AzAccount` session.
 :::
 
 </TabItem>

@@ -90,7 +90,7 @@ Click on the node to view details:
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-> **When to use**: Managing from a domain-joined management server — config-driven via infrastructure.yml
+> **When to use**: Managing from a domain-joined management server — config-driven via variables.yml
 
 #### Script
 
@@ -107,7 +107,7 @@ Click on the node to view details:
 ```powershell
 # ============================================================================
 # Script: Test-OpenGearVerification.ps1
-# Execution: Run FROM management server — reads infrastructure.yml
+# Execution: Run FROM management server — reads variables.yml
 # Prerequisites: powershell-yaml module, Lighthouse API token, OOB network access
 # ============================================================================
 
@@ -122,9 +122,9 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ($ConfigPath) {
  $ConfigFile = $ConfigPath
 } else {
- $ConfigFile = Join-Path $ScriptDir "..\\..\\..\\..\\configs\\infrastructure.yml"
+ $ConfigFile = Join-Path $ScriptDir "..\\..\\..\\..\\configs\\variables.yml"
 }
-if (!(Test-Path $ConfigFile)) { throw "infrastructure.yml not found at $ConfigFile" }
+if (!(Test-Path $ConfigFile)) { throw "variables.yml not found at $ConfigFile" }
 
 Import-Module powershell-yaml -ErrorAction Stop
 
@@ -186,7 +186,7 @@ foreach ($key in $nodes.Keys) {
 </TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
-> **When to use**: Quick verification without infrastructure.yml — manually set variables in the configuration block.
+> **When to use**: Quick verification without variables.yml — manually set variables in the configuration block.
 
 #### Script
 
@@ -248,9 +248,9 @@ foreach ($node in $iDRACs) {
 
 | Port | Expected Label | Configured | Status |
 |------|----------------|------------|--------|
-| Console ports | Per infrastructure.yml `network_devices.opengear.ports.console` | ☐ | ☐ |
-| Network ports | Per infrastructure.yml `network_devices.opengear.ports.network` | ☐ | ☐ |
-| Switch ports | Per infrastructure.yml `network_devices.opengear.ports.switch` | ☐ | ☐ |
+| Console ports | Per variables.yml `network_devices.opengear.ports.console` | ☐ | ☐ |
+| Network ports | Per variables.yml `network_devices.opengear.ports.network` | ☐ | ☐ |
+| Switch ports | Per variables.yml `network_devices.opengear.ports.switch` | ☐ | ☐ |
 
 ### Step 3.5: Test Console Access
 
@@ -274,7 +274,7 @@ foreach ($node in $iDRACs) {
 | Setting | Expected Value | Status |
 |---------|----------------|--------|
 | Bridge Members | net2, sw0p1-sw0p8 | ☐ |
-| IP Address | Per infrastructure.yml `vlans.oob` | ☐ |
+| IP Address | Per variables.yml `vlans.oob` | ☐ |
 | Default Route | Disabled | ☐ |
 
 ### Step 3.7: Test iDRAC Connectivity (via Lighthouse)
@@ -284,10 +284,10 @@ foreach ($node in $iDRACs) {
 
 ```bash
 # SSH to OpenGear via Lighthouse, then ping each node iDRAC IP
-# from infrastructure.yml: nodes.<node_name>.idrac_ip
+# from variables.yml: nodes.<node_name>.idrac_ip
 ping -c 2 <IDRAC_IP_NODE1>
 ping -c 2 <IDRAC_IP_NODE2>
-# Repeat for all nodes defined in infrastructure.yml
+# Repeat for all nodes defined in variables.yml
 ```
 
 **Expected Result**: All iDRAC IPs respond to ping from OpenGear.

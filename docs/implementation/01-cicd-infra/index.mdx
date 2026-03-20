@@ -1,160 +1,129 @@
 ---
-title: "Part 2: CI/CD Infrastructure"
-sidebar_label: "02 - CI/CD Infrastructure"
-sidebar_position: 2
-description: "Establish B2B access, source control project, CI/CD runners, and automation infrastructure"
+title: "Part 1: CI/CD Infrastructure"
+sidebar_label: "01 - CI/CD Infrastructure"
+sidebar_position: 1
+description: "Establish source control project, CI/CD runners, and automation infrastructure"
 ---
 
-# Part 2: CI/CD Infrastructure
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Part 1: CI/CD Infrastructure
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
-[![GitLab](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://gitlab.com)
+[![GitHub](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://github.com)
+[![GitLab](https://img.shields.io/badge/Platform-GitLab-FC6D26?style=flat-square&logo=gitlab)](https://gitlab.com)
+[![Azure DevOps](https://img.shields.io/badge/Platform-Azure%20DevOps-0078D7?style=flat-square&logo=azuredevops)](https://dev.azure.com)
 
-> **DOCUMENT CATEGORY**: Part Overview 
-> **SCOPE**: Azure Local Cloud management infrastructure (Stages 00-02) 
-> **PURPOSE**: Establish B2B access, source control project, CI/CD runners, and automation 
-> **MASTER REFERENCE**: [CI/CD pipeline Documentation](https://docs.gitlab.com/ee/ci/)
+> **DOCUMENT CATEGORY**: Part Overview
+> **SCOPE**: Azure Local management infrastructure (Phase 01)
+> **PURPOSE**: Establish source control project, CI/CD runners, and automation infrastructure
 
-**Status**: Active 
-**Execution**: Once per deployment program 
-**Last Updated**: 2026-01-31
+**Status**: Active
+**Execution**: Once per deployment program
+**Last Updated**: 2026-03-19
 
 ---
 
 ## Part Purpose
 
-This part establishes the Azure Local Cloud management infrastructure required for Azure Local deployments. It covers B2B tenant access, source control project setup, CI/CD runners, and automation user access.
+This part establishes the management infrastructure required for Azure Local deployments. It covers CI/CD service principal creation, source control project setup, CI/CD runners, and automation user access.
 
 ---
 
-## Stages in This Part
+## Phase in This Part
 
-| Stage | Title | Description | Steps |
+| Phase | Title | Description | Steps |
 |-------|-------|-------------|-------|
-| **[Phase 00](./phase-01-cicd-setup/)** | B2B Configuration | Configure Microsoft Entra ID B2B Cross-Tenant Synchronization | 2 |
-| **[Phase 01](./phase-01-cicd-setup/)** | CI/CD Setup | Create source control project, configure settings, environments, and variables | 5 |
-| **Phase 02** | Infrastructure Deployment | Deploy CI/CD runners, Entra ID groups, and verify user access | 3 |
+| **[Phase 01](./phase-01-cicd-setup/)** | CI/CD Setup | Bootstrap Azure access, create source control project, configure settings, environments, variables, and deploy runners | 6 |
 
 ---
 
 ## Execution Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ Part 2: CI/CD Infrastructure │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ │
-│ ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────────────┐ │
-│ │ Stage 00 │ │ Stage 01 │ │ Stage 02 │ │
-│ │ B2B │───▶│ CI/CD │───▶│ Infrastructure Deployment │ │
-│ │ Config │ │ Setup │ │ │ │
-│ └─────────────┘ └─────────────┘ └─────────────────────────────────┘ │
-│ │ │ │ │
-│ ▼ ▼ ▼ │
-│ ┌───────────┐ ┌─────────────┐ ┌───────────────────────────────────┐ │
-│ │ Azure Local Cloud│ │ GitLab │ │ ┌─────────┐ ┌─────────────────┐ │ │
-│ │ Users │ │ Project │ │ │ Runners │ │ Entra Groups │ │ │
-│ │ Synced │ │ Created │ │ └─────────┘ └─────────────────┘ │ │
-│ └───────────┘ └─────────────┘ └───────────────────────────────────┘ │
-│ │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Part 1: CI/CD Infrastructure                                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                    Phase 01: CI/CD Setup                           │  │
+│  ├───────────────────────────────────────────────────────────────────┤  │
+│  │                                                                   │  │
+│  │  Task 01: Bootstrap (Service Principal)                           │  │
+│  │  Task 02: Create Source Control Project                           │  │
+│  │  Task 03: Configure Project Settings                              │  │
+│  │  Task 04: Create Environments                                     │  │
+│  │  Task 05: Configure Variables                                     │  │
+│  │  Task 06: Deploy Runners                                          │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Key Deliverables
 
-| Deliverable | Stage | Description |
-|-------------|-------|-------------|
-| **B2B Tenant Access** | 00 | Azure Local Cloud users synced to customer tenant (Member or Guest type) |
-| **source control project** | 01 | Customer project created from Azure Local Cloud template |
-| **Project Settings** | 01 | Branch protection, merge approvals, security settings configured |
-| **Environments** | 01 | GitLab environments created for each deployment target |
-| **CI/CD runners** | 02 | Self-hosted runners deployed in customer Azure subscription |
-| **Entra ID Groups** | 02 | Azure Local Cloud management groups deployed with RBAC |
-| **User Access** | 02 | Verified deployment team access to Azure resources |
+| Deliverable | Task | Description |
+|-------------|------|-------------|
+| **CI/CD Service Principal** | 01 | Entra ID app registration for pipeline authentication |
+| **Source Control Project** | 02 | Deployment project/repo created from Azure Local template |
+| **Project Settings** | 03 | Branch protection, code review, security settings configured |
+| **Environments** | 04 | Deployment environments created for each target |
+| **CI/CD Variables** | 05 | Environment-specific secrets and variables configured |
+| **CI/CD Runners** | 06 | Self-hosted runners deployed in target Azure subscription |
 
 ---
 
 ## Prerequisites
 
-Before starting Part 2:
+Before starting Part 1:
 
-- [ ] [Part 1: Planning & Discovery](../../planning/) completed
-- [ ] Customer information collected (CID, name, tenant ID, service tier)
-- [ ] Azure Local Cloud MGMT tenant access (Security Administrator or higher)
-- [ ] Customer tenant Global Administrator consent obtained
-- [ ] GitLab access with project creation permissions
+- [ ] [Planning & Discovery](../../planning/) completed
+- [ ] Deployment information collected (organization name, tenant ID, subscription IDs)
+- [ ] Azure CLI installed and authenticated to target tenant
+- [ ] Source control platform access with project/repo creation permissions
 - [ ] Azure subscription access for runner deployment
-
----
-
-## Configuration Templates
-
-JSON and Terraform templates are located in the AZL Toolkit repository:
-
-```
-azurelocal-toolkit/
-├── configs/
-│ └── azure/
-│ └── b2b/ # Stage 00 - B2B config templates
-│ ├── customer-inbound-policy.json
-│ ├── Azure Local Cloud-outbound-policy.json
-│ ├── cts-application.json
-│ ├── cts-credentials.json
-│ ├── cts-provisioning-job.json
-│ ├── cts-group-assignment.json
-│ └── README.md
-└── scripts/
- └── deploy/
- └── stage-0-b2b-config/ # Stage 00 deployment scripts
-```
 
 ---
 
 ## Terraform Modules Used
 
-| Module | Stage | Purpose |
-|--------|-------|---------|
-| `tf-module-azr-gitlab-runner` | 02 | Deploy CI/CD runner VMs in customer subscription |
-| `tf-module-azr-entra-groups` | 02 | Deploy Entra ID groups for Azure Local Cloud access |
+| Module | Task | Purpose |
+|--------|------|---------|
+| `azurelocal-toolkit//terraform/modules/cicd-runner` | 06 | Deploy CI/CD runner VMs in target subscription |
 
 ---
 
 ## Validation Checklist
 
-### Phase 00: B2B Configuration
-- [ ] Azure Local Cloud users synced to customer tenant
-- [ ] User type is correct (Member for Azure Local Cloud, Guest for CI/CD)
-- [ ] Users can authenticate to customer tenant
-- [ ] CTS provisioning job is running
-
-### Phase 01: CI/CD Setup
-- [ ] source control project created with correct naming
-- [ ] Branch protection and merge approvals configured
+- [ ] CI/CD service principal created with correct RBAC roles
+- [ ] Source control project created with correct naming
+- [ ] Branch protection and code review configured
 - [ ] Environments created
 - [ ] Environment variables configured
-
-### Phase 02: Infrastructure Deployment
 - [ ] CI/CD runners deployed and registered
-- [ ] Runners appear online in GitLab
-- [ ] Entra ID groups created
-- [ ] RBAC assignments applied
-- [ ] Azure Local Cloud users can access Azure resources
+- [ ] Runners appear online in source control platform
 
 ---
 
 ## Next Steps
 
-After completing Part 2, proceed to [Part 3: Azure Foundation](../02-azure-foundation/) to establish the Azure cloud infrastructure including landing zones, networking, and security resources.
+After completing Part 1, proceed to [Part 2: Azure Foundation](../02-azure-foundation/) to establish the Azure cloud infrastructure including landing zones, networking, and security resources.
 
 ---
 
 ## References
 
 - [Cross-Tenant Synchronization Overview](https://learn.microsoft.com/en-us/entra/identity/multi-tenant-organizations/cross-tenant-synchronization-overview)
-- [CI/CD pipeline Documentation](https://docs.gitlab.com/ee/ci/)
-- [CI/CD runner Documentation](https://docs.gitlab.com/runner/)
 - [Azure RBAC Documentation](https://learn.microsoft.com/en-us/azure/role-based-access-control/overview)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+- [GitHub Actions Self-Hosted Runners](https://docs.github.com/en/actions/hosting-your-own-runners)
+- [GitLab CI/CD Documentation](https://docs.gitlab.com/ee/ci/)
+- [GitLab Runner Documentation](https://docs.gitlab.com/runner/)
+- [Azure DevOps Pipelines Documentation](https://learn.microsoft.com/en-us/azure/devops/pipelines/)
+- [Azure DevOps Self-Hosted Agents](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/agents)
 

@@ -185,7 +185,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 .DESCRIPTION
  Phase 06 — Post-Deployment | Task 04 — SSH Connectivity to Nodes
 
- For each node in infrastructure.yml:
+ For each node in variables.yml:
  1. Deploys the WindowsOpenSSH Arc VM extension via az connectedmachine extension create
  2. Registers Microsoft.HybridConnectivity RP (once per subscription)
  3. Creates the HybridConnectivity default endpoint
@@ -197,7 +197,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  No WinRM/PSRemoting required — the Arc agent handles the OpenSSH install.
 
 .PARAMETER ConfigPath
- Path to infrastructure YAML config. Defaults to configs/infrastructure.yml
+ Path to infrastructure YAML config. Defaults to config/variables.yml
  relative to CWD (repo root).
 
 .PARAMETER TargetNode
@@ -254,7 +254,7 @@ function Write-Log {
 
 #region CONFIG LOADING ----------------------------------------------------------
 if ([string]::IsNullOrEmpty($ConfigPath)) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config not found: $ConfigPath" -Level "ERROR"; throw "Config not found: $ConfigPath"
@@ -457,7 +457,7 @@ Write-Log "Log: $logFile"
 
 **Connecting:**
 
-```powershell title="Connect via Arc SSH (read Arc resource IDs from infrastructure.yml)"
+```powershell title="Connect via Arc SSH (read Arc resource IDs from variables.yml)"
 # Azure CLI
 az ssh arc `
  --resource-group "rg-c01-azl-eus-01" `

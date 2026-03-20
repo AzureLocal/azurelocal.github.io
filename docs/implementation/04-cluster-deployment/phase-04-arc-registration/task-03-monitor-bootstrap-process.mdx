@@ -113,7 +113,7 @@ For production deployments, use **`Invoke-BootstrapMonitor-Orchestrated.ps1`** f
 - **Azure verification** — calls `Get-AzConnectedMachine` when nodes report agent connected
 - **Continuous mode** — `-ContinuousMode` polls indefinitely until all nodes succeed
 - **Full parameter support** — `-ConfigPath`, `-WhatIf`, `-TargetNode`, `-PollIntervalSeconds`, `-MaxIterations`, `-TailLines`
-- **YAML-overridable** — `-SubscriptionId` and `-ResourceGroup` default from infrastructure.yml
+- **YAML-overridable** — `-SubscriptionId` and `-ResourceGroup` default from variables.yml
 :::
 
 ```powershell title="Run the orchestrated monitor"
@@ -142,7 +142,7 @@ For production deployments, use **`Invoke-BootstrapMonitor-Orchestrated.ps1`** f
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-ConfigPath` | `""` | Path to infrastructure.yml |
+| `-ConfigPath` | `""` | Path to variables.yml |
 | `-Credential` | — | Override credential resolution for WinRM |
 | `-TargetNode` | all nodes | Limit to specific node(s) |
 | `-WhatIf` | — | Show what would be collected without running |
@@ -162,10 +162,10 @@ The inline code below is a simplified polling loop. The `Invoke-` script provide
 
 ```powershell
 # Task 03 - Monitor Bootstrap (simplified inline, all nodes)
-# infrastructure.yml variables:
+# variables.yml variables:
 # compute.cluster_nodes[].management_ip -> $ServerList
 
-$ConfigPath = ".\configs\infrastructure.yml"
+$ConfigPath = ".\config\variables.yml"
 $ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
  ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
 

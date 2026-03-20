@@ -34,13 +34,13 @@ This script makes **no changes** to any node. It only reads and reports state.
 |------|-------|----------------|
 | **01** | WinRM | Service running, HTTP listener active |
 | **02** | RDP | Registry value = 0, firewall rule enabled |
-| **03/04** | Static IP + DHCP disabled | IP matches `infrastructure.yml`, DHCP = Disabled |
-| **05** | DNS servers | Primary and secondary match `infrastructure.yml` |
+| **03/04** | Static IP + DHCP disabled | IP matches `variables.yml`, DHCP = Disabled |
+| **05** | DNS servers | Primary and secondary match `variables.yml` |
 | **06** | DNS resolution | Successful DNS lookup |
 | **07** | NTP | Stratum < 15, source is not `Local CMOS Clock` or `Free-running` |
 | **08** | ICMP | ICMPv4 Echo Request firewall rule enabled |
 | **09** | Unused adapters | No disconnected adapters still enabled |
-| **10** | Hostname | `COMPUTERNAME` matches `infrastructure.yml` hostname |
+| **10** | Hostname | `COMPUTERNAME` matches `variables.yml` hostname |
 | **11** | Storage | No non-primordial pools, no virtual disks, all non-boot disks online |
 
 ---
@@ -50,7 +50,7 @@ This script makes **no changes** to any node. It only reads and reports state.
 | Requirement | Details |
 |---|---|
 | Phase 03 Tasks 01–12 complete | All OS configuration tasks run |
-| `infrastructure.yml` populated | All node IPs, hostnames, network values set |
+| `variables.yml` populated | All node IPs, hostnames, network values set |
 | WinRM accessible from management server | Required for remote checks |
 
 ---
@@ -58,19 +58,19 @@ This script makes **no changes** to any node. It only reads and reports state.
 <Tabs groupId="deployment-method">
 <TabItem value="orchestrated" label="Orchestrated (Mgmt Server)" default>
 
-Run from the management server. Reads all expected values from `infrastructure.yml` and verifies each node remotely.
+Run from the management server. Reads all expected values from `variables.yml` and verifies each node remotely.
 
 ```powershell
 # Task 13 - Phase 03 Verification (all nodes)
 .\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-13-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
- -ConfigPath .\configs\infrastructure.yml
+ -ConfigPath .\config\variables.yml
 ```
 
 **Verify a single node:**
 
 ```powershell
 .\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-13-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
- -ConfigPath .\configs\infrastructure.yml `
+ -ConfigPath .\config\variables.yml `
  -TargetNode azl-lab-01-n02
 ```
 
@@ -202,7 +202,7 @@ A passing run produces a result like:
 
 | Parameter | Required | Description |
 |---|---|---|
-| `-ConfigPath` | Recommended | Path to `infrastructure.yml`. Auto-detects if omitted |
+| `-ConfigPath` | Recommended | Path to `variables.yml`. Auto-detects if omitted |
 | `-Credential` | No | PSCredential. Resolved from Key Vault if omitted |
 | `-TargetNode` | No | Filter to specific node(s) by hostname or IP |
 

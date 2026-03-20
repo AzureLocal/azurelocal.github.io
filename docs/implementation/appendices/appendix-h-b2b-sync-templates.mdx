@@ -21,9 +21,9 @@ description: "JSON templates for Entra ID cross-tenant synchronization configura
 
 ## Overview
 
-This appendix contains JSON template files for configuring Entra ID B2B Cross-Tenant Synchronization (CTS) between Azure Local Cloud MGMT and customer tenants.
+This appendix contains JSON template files for configuring Entra ID B2B Cross-Tenant Synchronization (CTS) between a management tenant and customer tenants.
 
-These templates implement the **Azure Local Cloud approach** which provisions users as **Member** type (not Guest), enabling:
+These templates provision users as **Member** type (not Guest), enabling:
 - Full RBAC/PIM support
 - Seamless Azure portal experience
 - Native Azure Local management capabilities
@@ -35,11 +35,11 @@ These templates implement the **Azure Local Cloud approach** which provisions us
 | File | Description | Deployed To |
 |------|-------------|-------------|
 | `customer-inbound-policy.json` | Cross-tenant access policy allowing CTS inbound | Customer Tenant |
-| `Azure Local Cloud-outbound-policy.json` | Cross-tenant access policy for outbound sync | Azure Local Cloud MGMT |
-| `cts-application.json` | CTS application instantiation template | Azure Local Cloud MGMT |
-| `cts-credentials.json` | Target tenant credentials configuration | Azure Local Cloud MGMT |
-| `cts-provisioning-job.json` | Provisioning job with attribute mappings | Azure Local Cloud MGMT |
-| `cts-group-assignment.json` | Group assignment to CTS configuration | Azure Local Cloud MGMT |
+| `management-outbound-policy.json` | Cross-tenant access policy for outbound sync | Management Tenant |
+| `cts-application.json` | CTS application instantiation template | Management Tenant |
+| `cts-credentials.json` | Target tenant credentials configuration | Management Tenant |
+| `cts-provisioning-job.json` | Provisioning job with attribute mappings | Management Tenant |
+| `cts-group-assignment.json` | Group assignment to CTS configuration | Management Tenant |
 
 ---
 
@@ -51,21 +51,19 @@ Replace these placeholders before deployment:
 |----------|-------------|---------|
 | `{{CUSTOMER_TENANT_ID}}` | Customer's Entra ID tenant ID | `a1b2c3d4-e5f6-7890-abcd-ef1234567890` |
 | `{{CUSTOMER_NAME}}` | Customer name for display purposes | `Infinite azurelocal Corp` |
-| `{{Azure Local Cloud_MGMT_TENANT_ID}}` | Azure Local Cloud MGMT tenant ID | `00000000-aaaa-bbbb-cccc-111111111111` |
+| `{{MGMT_TENANT_ID}}` | Management tenant ID | `00000000-aaaa-bbbb-cccc-111111111111` |
 | `{{SERVICE_PRINCIPAL_ID}}` | CTS service principal ID (from app instantiation) | `12345678-1234-1234-1234-123456789abc` |
 | `{{APP_ROLE_ID}}` | App role ID (from app instantiation) | `87654321-4321-4321-4321-cba987654321` |
 | `{{JOB_ID}}` | Provisioning job ID (from job creation) | `abcd1234-5678-90ab-cdef-1234567890ab` |
 
-### Azure Local Cloud Service Groups
+### Service Groups
 
 | Variable | Group Name | Description |
 |----------|------------|-------------|
-| `{{GROUP_ID_PUBLIC_CLOUD_SERVICES}}` | Public Cloud Services | Core cloud services team |
-| `{{GROUP_ID_PUBLIC_CLOUD_SUPPORT}}` | Public Cloud Support | Support team |
-| `{{GROUP_ID_PUBLIC_CLOUD_IMPLEMENTATION}}` | Public Cloud Implementation Engineering | Implementation engineers |
-| `{{GROUP_ID_PUBLIC_CLOUD_PREMIUM}}` | Public Cloud Premium | Premium tier support |
-| `{{GROUP_ID_SOC}}` | SOC | Security operations center |
-| `{{GROUP_ID_ADVANCED_SERVICES}}` | SEC-SD Advanced Services | Advanced enterprise services |
+| `{{GROUP_ID_OPERATIONS}}` | Operations | Core operations team |
+| `{{GROUP_ID_SUPPORT}}` | Support | Support team |
+| `{{GROUP_ID_ENGINEERING}}` | Engineering | Implementation engineers |
+| `{{GROUP_ID_ADMINS}}` | Admins | Administrative access |
 
 ---
 
@@ -89,11 +87,11 @@ Deploy `customer-inbound-policy.json`
 
 ## Customer Inbound Policy
 
-This policy is deployed to the **Customer Tenant** to allow inbound CTS from Azure Local Cloud.
+This policy is deployed to the **Customer Tenant** to allow inbound CTS from the management tenant.
 
 ```json
 {
- "tenantId": "{{Azure Local Cloud_MGMT_TENANT_ID}}",
+ "tenantId": "{{MGMT_TENANT_ID}}",
  "b2bCollaborationInbound": {
  "usersAndGroups": {
  "accessType": "allowed",
@@ -145,9 +143,9 @@ This policy is deployed to the **Customer Tenant** to allow inbound CTS from Azu
 
 ---
 
-## Azure Local Cloud Outbound Policy
+## Management Outbound Policy
 
-This policy is deployed to **Azure Local Cloud MGMT** to allow outbound sync to customer tenants.
+This policy is deployed to the **management tenant** to allow outbound sync to customer tenants.
 
 ```json
 {
@@ -157,27 +155,19 @@ This policy is deployed to **Azure Local Cloud MGMT** to allow outbound sync to 
  "accessType": "allowed",
  "targets": [
  {
- "target": "{{GROUP_ID_PUBLIC_CLOUD_SERVICES}}",
+ "target": "{{GROUP_ID_OPERATIONS}}",
  "targetType": "group"
  },
  {
- "target": "{{GROUP_ID_PUBLIC_CLOUD_SUPPORT}}",
+ "target": "{{GROUP_ID_SUPPORT}}",
  "targetType": "group"
  },
  {
- "target": "{{GROUP_ID_PUBLIC_CLOUD_IMPLEMENTATION}}",
+ "target": "{{GROUP_ID_ENGINEERING}}",
  "targetType": "group"
  },
  {
- "target": "{{GROUP_ID_PUBLIC_CLOUD_PREMIUM}}",
- "targetType": "group"
- },
- {
- "target": "{{GROUP_ID_SOC}}",
- "targetType": "group"
- },
- {
- "target": "{{GROUP_ID_ADVANCED_SERVICES}}",
+ "target": "{{GROUP_ID_ADMINS}}",
  "targetType": "group"
  }
  ]
@@ -210,12 +200,12 @@ This policy is deployed to **Azure Local Cloud MGMT** to allow outbound sync to 
 
 ## CTS Application Template
 
-Creates the Cross-Tenant Synchronization application in Azure Local Cloud MGMT.
+Creates the Cross-Tenant Synchronization application in the management tenant.
 
 ```json
 {
- "displayName": "Azure Local Cloud CTS to {{CUSTOMER_NAME}}",
- "description": "Cross-Tenant Synchronization application for automated user provisioning from Azure Local Cloud MGMT to {{CUSTOMER_NAME}}",
+ "displayName": "CTS to {{CUSTOMER_NAME}}",
+ "description": "Cross-Tenant Synchronization application for automated user provisioning to {{CUSTOMER_NAME}}",
  "signInAudience": "AzureADMultipleOrgs",
  "web": {
  "redirectUris": [],
@@ -270,11 +260,11 @@ Defines the synchronization rules and attribute mappings.
 {
  "templateId": "Azure2Azure",
  "code": "CTS-{{CUSTOMER_NAME}}",
- "description": "Cross-Tenant Synchronization provisioning job from Azure Local Cloud MGMT to {{CUSTOMER_NAME}}",
+ "description": "Cross-Tenant Synchronization provisioning job to {{CUSTOMER_NAME}}",
  "enabled": true,
  "sourceIdentity": {
  "type": "AzureActiveDirectory",
- "id": "{{Azure Local Cloud_MGMT_TENANT_ID}}"
+ "id": "{{MGMT_TENANT_ID}}"
  },
  "targetIdentity": {
  "type": "AzureActiveDirectory",

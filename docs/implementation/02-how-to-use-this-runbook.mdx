@@ -44,19 +44,19 @@ Each task page uses tabs so you can switch between methods without scrolling. No
 | Option | Best For | You Will Need |
 |--------|----------|---------------|
 | **Manual** (Azure Portal, on-site, vendor UI) | Learning, single deployments, visual preference, physical tasks | Web browser / physical access / vendor UI |
-| **Direct Script** (On Node) | Direct console/RDP access to nodes | PowerShell on target nodes, `infrastructure.yml`, helpers |
-| **Orchestrated Script** (Mgmt Server) | Managing from jump box, multiple nodes | Management server, PSRemoting, `infrastructure.yml`, helpers |
+| **Direct Script** (On Node) | Direct console/RDP access to nodes | PowerShell on target nodes, `variables.yml`, helpers |
+| **Orchestrated Script** (Mgmt Server) | Managing from jump box, multiple nodes | Management server, PSRemoting, `variables.yml`, helpers |
 | **Standalone Script** (Copy-Paste) | Sharing externally, demos, one-off runs | PowerShell only — no config file, no helpers needed |
 
 > **⚡ Looking for full automation (IaC/CI/CD)?**
 >
 > The fully automated deployment instructions (Terraform, Bicep, Ansible, CI/CD pipelines) are documented separately in the [Automation section](../automation/). Use that guide for pipeline-driven, repeatable deployments.
 
-## Configuration File: infrastructure.yml
+## Configuration File: variables.yml
 
-All scripts and procedures now reference values from a single `infrastructure.yml` configuration file. Before starting:
+All scripts and procedures now reference values from a single `variables.yml` configuration file. Before starting:
 
-1. **Copy the template**: `infrastructure.yml.template` → `infrastructure.yml`
+1. **Copy the template**: `variables.example.yml` → `variables.yml`
 2. **Edit values** to match your environment:
  - Azure tenant and subscription IDs
  - Resource group names
@@ -77,7 +77,7 @@ credentials:
  password: "keyvault://kv-iic-platform/local-admin-password"
 ```
 
-> **📋 Configuration Reference**: See Scripting Framework for complete `infrastructure.yml` structure and variable path conventions.
+> **📋 Configuration Reference**: See Scripting Framework for complete `variables.yml` structure and variable path conventions.
 
 ## Execution Workflow
 
@@ -101,7 +101,7 @@ You can **mix options** throughout the runbook (e.g., use Portal for some steps,
 | **PowerShell + Azure CLI** | `.azcli.ps1` | `Register-ResourceProviders.azcli.ps1` | PowerShell script using Azure CLI commands (`az login`, `az group create`, etc.) |
 | **Bash + Azure CLI** | `az-verb-resource.sh` | `az-create-vnet.sh` | Bash script using Azure CLI commands |
 | **Standalone (no config)** | `Verb-Noun-Standalone.ps1` | `New-AzKeyVault-Standalone.ps1` | Self-contained script with inline variables — no external dependencies |
-| **Orchestrated (remote)** | `Invoke-{VerbNoun}.ps1` | `Invoke-DeployCluster.ps1` | Runs from management server via PSRemoting — reads `infrastructure.yml` |
+| **Orchestrated (remote)** | `Invoke-{VerbNoun}.ps1` | `Invoke-DeployCluster.ps1` | Runs from management server via PSRemoting — reads `variables.yml` |
 
 > **Note**: This runbook documents PowerShell with Azure PowerShell modules as the primary language due to widespread familiarity and cross-platform support (PowerShell 7+). Alternative implementations follow the same logic and variable paths.
 

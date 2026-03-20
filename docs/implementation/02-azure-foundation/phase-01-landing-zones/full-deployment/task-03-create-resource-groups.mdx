@@ -57,7 +57,7 @@ Create resource groups within each subscription following the full CAF/WAF deplo
 | **Subscriptions** | All subscriptions created and associated with management groups ([Task 02](./task-02-create-subscriptions)) |
 | **Permissions** | Contributor or Owner role on each target subscription |
 | **Authenticated Azure session** | See [Authentication](../../../05-authentication.mdx) |
-| **`infrastructure.yml`** | Configured with resource group names per subscription |
+| **`variables.yml`** | Configured with resource group names per subscription |
 
 ## Resource Group Plan
 
@@ -142,7 +142,7 @@ For multiple clusters in the same subscription, increment the cluster identifier
 #### Validation
 
 - [ ] All resource groups created in the correct subscriptions
-- [ ] Resource group names match `infrastructure.yml`
+- [ ] Resource group names match `variables.yml`
 - [ ] Resource groups are in the correct region
 
 #### Links
@@ -154,7 +154,7 @@ For multiple clusters in the same subscription, increment the cluster identifier
 
 ### Azure CLI / PowerShell
 
-> **When to use**: Scripted deployment reading values from `infrastructure.yml`
+> **When to use**: Scripted deployment reading values from `variables.yml`
 
 #### Script
 
@@ -177,7 +177,7 @@ For multiple clusters in the same subscription, increment the cluster identifier
 #Requires -Modules Az.Resources
 
 # Load configuration
-$config = Get-Content "./infrastructure.yml" | ConvertFrom-Yaml
+$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
 $location = $config.azure.region
 
 # Build resource group list: each entry = subscription name + RG name
@@ -326,7 +326,7 @@ foreach ($entry in $Plan) {
 ```
 
 :::info No External Dependencies
-This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `infrastructure.yml`, no config-loader, no helpers required.
+This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `variables.yml`, no config-loader, no helpers required.
 :::
 
 </TabItem>
@@ -352,7 +352,7 @@ After resource groups are deployed:
 
 ## References
 
-- [tf-module-azr-governance (GitLab)](https://github.com/AzureLocal/core/terraform-modules/azure/tf-module-azr-governance)
+- [Azure Local Toolkit — Governance Module](https://github.com/AzureLocal/azurelocal-toolkit)
 - [Microsoft Learn — Manage Resource Groups](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal)
 - [Microsoft Learn — Resource Naming Conventions](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming)
 - [Microsoft Learn — Resource Tagging](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources)

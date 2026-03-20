@@ -64,7 +64,7 @@ The [`AzureLocal/azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-t
 **What's in the repo:**
 
 - 200+ PowerShell scripts organized by deployment stage (Azure Foundation, On-Prem Readiness, Cluster Deployment, Operational Foundations, Testing, Handover, Lifecycle)
-- Master infrastructure configuration template (`config/infrastructure.yml`)
+- Master infrastructure configuration template (`config/variables.yml`)
 - Planning utilities (S2D capacity calculator)
 
 **Getting started:** See the repo [README](https://github.com/AzureLocal/azurelocal-toolkit#readme) for deployment stage guides.

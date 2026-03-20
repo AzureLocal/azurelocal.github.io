@@ -63,7 +63,7 @@ Install Azure Stack HCI OS on all cluster nodes. This phase covers ISO mounting 
 |-------------|-------------|--------|
 | Phase 01 Complete | BIOS and iDRAC settings validated and compliant (Tasks 04/05) | [Phase 01](../phase-01-hardware-provisioning/index.mdx) |
 | Dell BOSS Cards | Boot Optimized Storage Solution cards installed in all nodes | Hardware |
-| iDRAC Access | Virtual Console and Virtual Media control available | `infrastructure.yml: nodes.<name>.idrac_ip` |
+| iDRAC Access | Virtual Console and Virtual Media control available | `variables.yml: nodes.<name>.idrac_ip` |
 | Gold Image ISO | Dell Azure Local Gold Image ISO available on network share or USB | Azure Local Cloud build team |
 
 ---
@@ -134,12 +134,12 @@ graph TD
 
 ## Quick Start
 
-Verify iDRAC Virtual Console and Virtual Media access for all nodes before starting. iDRAC IPs are defined in `infrastructure.yml` under `nodes.<name>.idrac_ip`.
+Verify iDRAC Virtual Console and Virtual Media access for all nodes before starting. iDRAC IPs are defined in `variables.yml` under `nodes.<name>.idrac_ip`.
 
 ```powershell
 # Test iDRAC connectivity for all nodes
 Import-Module powershell-yaml
-$config = Get-Content ".\infrastructure.yml" -Raw | ConvertFrom-Yaml
+$config = Get-Content ".\config\variables.yml" -Raw | ConvertFrom-Yaml
 $config.nodes.Values | ForEach-Object {
  $result = Test-NetConnection -ComputerName $_.idrac_ip -Port 443 -WarningAction SilentlyContinue
  $status = if ($result.TcpTestSucceeded) { "Reachable" } else { "Unreachable" }

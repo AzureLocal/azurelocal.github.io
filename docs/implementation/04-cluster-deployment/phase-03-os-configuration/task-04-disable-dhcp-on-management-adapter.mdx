@@ -86,13 +86,13 @@ after cluster deployment.
 
 ## Configuration Reference
 
-The `infrastructure.yml` path used by the orchestrated script:
+The `variables.yml` path used by the orchestrated script:
 
 | yml Path | Used for | Example |
 |----------|----------|---------|
 | `nodes.<name>.management_ip` | PSRemoting target IP (management NIC static) | `10.100.200.11` |
 
-The exclusion pattern is defined in `#region CONFIGURATION` of both scripts. No other values are read from `infrastructure.yml` — this task does not modify networking parameters, only disables DHCP.
+The exclusion pattern is defined in `#region CONFIGURATION` of both scripts. No other values are read from `variables.yml` — this task does not modify networking parameters, only disables DHCP.
 
 ---
 
@@ -335,7 +335,7 @@ Ethernet Remote NDIS Compatible Device Up Skipped (excluded) Skipped
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-Run from the management server. Reads `nodes.<name>.management_ip` from `infrastructure.yml` to connect to each node.
+Run from the management server. Reads `nodes.<name>.management_ip` from `variables.yml` to connect to each node.
 
 **No session loss expected**: this task does not change the management IP — DHCP is only being disabled on adapters. The management NIC already has a static IP from Task 03.
 
@@ -349,7 +349,7 @@ Run from the management server. Reads `nodes.<name>.management_ip` from `infrast
  Disables DHCP on all physical adapters on every Azure Local node using PSRemoting.
 
 .DESCRIPTION
- Runs from the management server. Reads node management IPs from infrastructure.yml,
+ Runs from the management server. Reads node management IPs from variables.yml,
  connects to each node over PSRemoting, and runs the DHCP-disable logic remotely.
 
  No session loss expected: disabling DHCP on non-management adapters, and the
@@ -371,7 +371,7 @@ Run from the management server. Reads `nodes.<name>.management_ip` from `infrast
 
 .EXAMPLE
  .\Invoke-DisableDHCP-Orchestrated.ps1
- .\Invoke-DisableDHCP-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure.yml"
+ .\Invoke-DisableDHCP-Orchestrated.ps1 -ConfigPath "C:\config\variables.yml"
 #>
 
 [CmdletBinding()]
@@ -699,7 +699,7 @@ try {
 
 ```
 [2026-03-05 09:12:00] [HEADER] === Invoke-DisableDHCP-Orchestrated.ps1 ===
-[2026-03-05 09:12:00] [INFO] Loading node configurations from: C:\configs\infrastructure.yml
+[2026-03-05 09:12:00] [INFO] Loading node configurations from: C:\config\variables.yml
 [2026-03-05 09:12:00] [INFO] Node: node01 IP: 10.100.200.11
 [2026-03-05 09:12:00] [INFO] Node: node02 IP: 10.100.200.12
 [2026-03-05 09:12:00] [INFO] Nodes to process: 2
@@ -773,8 +773,8 @@ active on the network and cannot obtain an address even with DHCP nominally enab
 | Adapter still showing `Enabled` after script | Script exited with non-zero | Review output log; rerun script and check for errors |
 | Connectivity lost after running | Script disabled DHCP on management NIC before static IP was set | Re-run Task 03 first; boot node via console or iDRAC |
 | `Set-NetIPInterface` access denied | Script not run as local admin | Relaunch PowerShell as Administrator |
-| Orchestrated script: `No infrastructure*.yml found` | Config file not in search path | Pass `-ConfigPath` explicitly: `.\Invoke-DisableDHCP-Orchestrated.ps1 -ConfigPath C:\path\to\infrastructure.yml` |
-| Orchestrated script: `management_ip not found` | Node entry missing `management_ip` in yml | Verify `nodes.<name>.management_ip` is populated in `infrastructure.yml` |
+| Orchestrated script: `No infrastructure*.yml found` | Config file not in search path | Pass `-ConfigPath` explicitly: `.\Invoke-DisableDHCP-Orchestrated.ps1 -ConfigPath C:\path\to\variables.yml` |
+| Orchestrated script: `management_ip not found` | Node entry missing `management_ip` in yml | Verify `nodes.<name>.management_ip` is populated in `variables.yml` |
 | Node cannot be reached via PSRemoting | WinRM not configured | Run `Enable-PSRemoting -Force` on the node (Task 02 enables RDP — verify WinRM separately) |
 
 ---
@@ -792,4 +792,4 @@ active on the network and cannot obtain an address even with DHCP nominally enab
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
-| 2.0 | 2026-03-05 | Azure Local Cloud Azure Local Cloudnology | Full rewrite to standards — complete frontmatter, 2-tab structure (Direct + Orchestrated), Standalone tab removed, full embedded scripts, NDIS defensive pattern, infrastructure.yml integration in orchestrated script |
+| 2.0 | 2026-03-05 | Azure Local Cloud Azure Local Cloudnology | Full rewrite to standards — complete frontmatter, 2-tab structure (Direct + Orchestrated), Standalone tab removed, full embedded scripts, NDIS defensive pattern, variables.yml integration in orchestrated script |

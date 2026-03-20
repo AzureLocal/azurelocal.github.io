@@ -61,15 +61,15 @@ The simplified deployment creates a **single** resource group for all cluster re
 | **Subscription** | Created and accessible ([Task 02](./task-02-create-subscription)) |
 | **Permissions** | Contributor or Owner role on the subscription |
 | **Authenticated Azure session** | See [Authentication](../../../05-authentication.mdx) |
-| **`infrastructure.yml`** | Configured with subscription ID, resource group name, and region |
+| **`variables.yml`** | Configured with subscription ID, resource group name, and region |
 
 ## Resource Group Reference
 
 | Attribute | Value | Config Path |
 |-----------|-------|-------------|
-| **Subscription** | Per config | `infrastructure.yml → azure.subscriptions.lab.id` |
-| **Resource Group Name** | Per config | `infrastructure.yml → azure_resources.resource_group_name` |
-| **Region** | Per config | `infrastructure.yml → cluster.location` |
+| **Subscription** | Per config | `variables.yml → azure.subscriptions.lab.id` |
+| **Resource Group Name** | Per config | `variables.yml → azure_resources.resource_group_name` |
+| **Region** | Per config | `variables.yml → cluster.location` |
 
 ### IIC Example Values
 
@@ -113,9 +113,9 @@ cmp-iic-root ← root MG (Task 01)
 
  | Field | Value | Source |
  |-------|-------|--------|
- | Subscription | `<subscription>` | `infrastructure.yml → azure.subscriptions.lab.id` |
- | Resource group | `<rg-name>` | `infrastructure.yml → azure_resources.resource_group_name` |
- | Region | `<region>` | `infrastructure.yml → cluster.location` |
+ | Subscription | `<subscription>` | `variables.yml → azure.subscriptions.lab.id` |
+ | Resource group | `<rg-name>` | `variables.yml → azure_resources.resource_group_name` |
+ | Region | `<region>` | `variables.yml → cluster.location` |
 
 3. **Complete creation**:
  - Click **Review + create** → verify all fields → **Create**
@@ -123,7 +123,7 @@ cmp-iic-root ← root MG (Task 01)
 #### Validation
 
 - [ ] Resource group appears in the correct subscription
-- [ ] Resource group name matches `infrastructure.yml`
+- [ ] Resource group name matches `variables.yml`
 - [ ] Region matches `cluster.location`
 
 #### Links
@@ -135,7 +135,7 @@ cmp-iic-root ← root MG (Task 01)
 
 ### Azure CLI / PowerShell
 
-> **When to use**: Scripted deployment reading values from `infrastructure.yml`
+> **When to use**: Scripted deployment reading values from `variables.yml`
 
 #### Script
 
@@ -158,7 +158,7 @@ cmp-iic-root ← root MG (Task 01)
 #Requires -Modules Az.Resources
 
 # Load configuration
-$config = Get-Content "./infrastructure.yml" | ConvertFrom-Yaml
+$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
 
 # Extract values
 $SubscriptionId = $config.azure.subscriptions.lab.id
@@ -224,7 +224,7 @@ Get-AzResourceGroup -Name $ResourceGroupName | Format-List ResourceGroupName, Lo
 ```
 
 :::info No External Dependencies
-This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `infrastructure.yml`, no config-loader, no helpers required.
+This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `variables.yml`, no config-loader, no helpers required.
 :::
 
 </TabItem>
@@ -238,8 +238,8 @@ This script is completely self-contained. All values are defined in the `#region
 |---------|-------|------------|
 | Permission denied | `AuthorizationFailed` | Verify Contributor or Owner role on the subscription |
 | Duplicate name | `ResourceGroupAlreadyExists` | RG already exists — verify it's in the correct subscription and region, then move on |
-| Invalid location | `LocationNotAllowed` | Check Azure Policy allowed-locations constraints; confirm `cluster.location` in `infrastructure.yml` |
-| Subscription not found | `SubscriptionNotFound` | Verify `azure.subscriptions.lab.id` in `infrastructure.yml` is correct |
+| Invalid location | `LocationNotAllowed` | Check Azure Policy allowed-locations constraints; confirm `cluster.location` in `variables.yml` |
+| Subscription not found | `SubscriptionNotFound` | Verify `azure.subscriptions.lab.id` in `variables.yml` is correct |
 
 ## Next Steps
 

@@ -51,8 +51,8 @@ Remediate non-compliant BIOS or iDRAC settings identified in Task 04 using Dell 
 |-------------|-------------|--------|
 | Task 02 Complete | Discovery JSON files present for all nodes | `configs/network-devices/bmc/<service-tag>.json` |
 | Task 04 Complete | Compliance report identifying non-compliant settings | `configs/network-devices/bmc/bios-compliance-report.json` |
-| iDRAC Access | Redfish API reachable on port 443 | `infrastructure.yml: nodes.<name>.idrac_ip` |
-| iDRAC Credentials | iDRAC admin credentials in Azure Key Vault | `infrastructure.yml: key_vault.*` |
+| iDRAC Access | Redfish API reachable on port 443 | `variables.yml: nodes.<name>.idrac_ip` |
+| iDRAC Credentials | iDRAC admin credentials in Azure Key Vault | `variables.yml: key_vault.*` |
 | Maintenance Window | Nodes can be rebooted (~10 min per node for BIOS changes) | Scheduled with customer |
 
 ---
@@ -97,7 +97,7 @@ For each node listed as FAIL in the Task 04 compliance report, apply remediation
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-Apply remediation automatically using the Task 04 compliance report. Reads `infrastructure.yml` for iDRAC IPs and Key Vault references, calls the Redfish API, schedules reboots, and confirms compliance.
+Apply remediation automatically using the Task 04 compliance report. Reads `variables.yml` for iDRAC IPs and Key Vault references, calls the Redfish API, schedules reboots, and confirms compliance.
 
 `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-05-bios-and-idrac-settings-remediation/powershell/Invoke-BIOSRemediation.ps1`
 
@@ -112,7 +112,7 @@ Apply remediation automatically using the Task 04 compliance report. Reads `infr
 
 param(
  [Parameter(Mandatory = $false)]
- [string]$ConfigPath = ".\infrastructure.yml",
+ [string]$ConfigPath = ".\config\variables.yml",
 
  [Parameter(Mandatory = $false)]
  [string]$ComplianceReportPath = ".\configs\network-devices\bmc\bios-compliance-report.json",

@@ -1,95 +1,153 @@
 ---
 title: "Task 01: Bootstrap"
 sidebar_position: 1
-description: "Run the bootstrap script to establish initial CI/CD access"
+description: "Create the CI/CD service principal and configure Azure access"
 ---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 # Task 01: Bootstrap
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure-0078D4?style=flat-square&logo=microsoftazure)](https://portal.azure.com)
 
-> **DOCUMENT CATEGORY**: Runbook Step 
-> **SCOPE**: CI/CD service principal bootstrap 
-> **PURPOSE**: Create Azure Local Cloud-cicd app registration and service principal 
-> **MASTER REFERENCE**: [bash-azr-automation](https://github.com/AzureLocal/core/bash-azr-automation)
+> **DOCUMENT CATEGORY**: Runbook Step
+> **SCOPE**: CI/CD service principal bootstrap
+> **PURPOSE**: Create an Entra ID app registration and service principal for CI/CD pipeline authentication
 
-**Status**: Active 
-**Applies To**: All Azure Local deployments 
-**Last Updated**: 2026-01-30
-
----
-
-> **Source:** bash-azr-automation/cicd-access.sh
+**Status**: Active
+**Applies To**: All Azure Local deployments
+**Last Updated**: 2026-03-19
 
 ---
 
 ## Objective
 
-Create the `Azure Local Cloud-cicd` app registration and service principal in the customer tenant for CI/CD pipeline pipeline authentication.
+Create an Entra ID app registration and service principal in the target tenant so CI/CD pipelines can authenticate to Azure and manage resources.
 
 ---
 
 ## Prerequisites
 
-- [ ] B2B configuration complete (Stage 00)
-- [ ] Azure CLI installed and authenticated to customer tenant
-- [ ] Access to customer subscription(s)
-- [ ] `access.json` file from bash-azr-automation repo
+- [ ] Azure CLI installed and authenticated (`az login`)
+- [ ] Signed in to the **target tenant** (verify with `az account show`)
+- [ ] **Application Administrator** or **Global Administrator** role in Entra ID
+- [ ] **Owner** or **User Access Administrator** on each target subscription
+- [ ] Target subscription ID(s) available
 
 ---
 
 ## Procedure
 
-### Run the Bootstrap Script
-
-1. Clone the `bash-azr-automation` repository
-2. Navigate to the directory containing `cicd-access.sh`
-3. Run the script with all customer subscription IDs:
+### Step 1: Create the App Registration and Service Principal
 
 ```bash
-./cicd-access.sh "subscription-id-1" "subscription-id-2"
+# Set variables
+APP_NAME="azurelocal-cicd"
+SUBSCRIPTION_IDS=("subscription-id-1" "subscription-id-2")
+
+# Create app registration with a 2-year secret
+az ad app create --display-name "$APP_NAME"
+APP_ID=$(az ad app list --display-name "$APP_NAME" --query "[0].appId" -o tsv)
+
+# Create service principal
+az ad sp create --id "$APP_ID"
+
+# Create client secret (2-year expiry)
+SECRET=$(az ad app credential reset --id "$APP_ID" --years 2 --query "password" -o tsv)
+
+# Get tenant ID
+TENANT_ID=$(az account show --query "tenantId" -o tsv)
+
+echo "ARM_CLIENT_ID:     $APP_ID"
+echo "ARM_CLIENT_SECRET: $SECRET"
+echo "ARM_TENANT_ID:     $TENANT_ID"
 ```
 
-### What the Script Does
+> **Important:** Save the `ARM_CLIENT_SECRET` immediately — it cannot be retrieved again.
 
-1. **Creates App Registration:** `Azure Local Cloud-cicd`
-2. **Creates Service Principal** for the app
-3. **Creates Secret** with 2-year expiration
-4. **Assigns RBAC Roles** per subscription:
- - `Contributor`
- - `User Access Administrator`
-5. **Registers Provider:** `Microsoft.Compute`
-6. **Enables Feature:** `Microsoft.Compute/EncryptionAtHost`
-7. **Configures API Permissions:** `RoleManagement.ReadWrite.Directory`
+### Step 2: Assign RBAC Roles
 
-### Grant Admin Consent
+Assign roles on each target subscription:
 
-After script completion:
+```bash
+for SUB_ID in "${SUBSCRIPTION_IDS[@]}"; do
+  # Contributor — manage resources
+  az role assignment create \
+    --assignee "$APP_ID" \
+    --role "Contributor" \
+    --scope "/subscriptions/$SUB_ID"
 
-1. Navigate to **Entra ID** → **App registrations** → **Azure Local Cloud-cicd**
+  # User Access Administrator — manage RBAC assignments
+  az role assignment create \
+    --assignee "$APP_ID" \
+    --role "User Access Administrator" \
+    --scope "/subscriptions/$SUB_ID"
+done
+```
+
+### Step 3: Register Providers and Features
+
+```bash
+for SUB_ID in "${SUBSCRIPTION_IDS[@]}"; do
+  az account set --subscription "$SUB_ID"
+
+  # Register the Compute provider
+  az provider register --namespace "Microsoft.Compute"
+
+  # Enable EncryptionAtHost feature
+  az feature register \
+    --namespace "Microsoft.Compute" \
+    --name "EncryptionAtHost"
+done
+```
+
+### Step 4: Add API Permissions
+
+```bash
+# Add Microsoft Graph — RoleManagement.ReadWrite.Directory (Application)
+GRAPH_APP_ID="00000003-0000-0000-c000-000000000000"
+ROLE_MGMT_ID="9e3f62cf-ca93-4989-b6ce-bf83c28f9fe8"
+
+az ad app permission add \
+  --id "$APP_ID" \
+  --api "$GRAPH_APP_ID" \
+  --api-permissions "$ROLE_MGMT_ID=Role"
+```
+
+### Step 5: Grant Admin Consent
+
+Grant admin consent via the **Azure Portal** or CLI:
+
+<Tabs>
+<TabItem value="portal" label="Portal">
+
+1. Navigate to **Entra ID** → **App registrations** → **azurelocal-cicd**
 2. Select **API permissions**
 3. Click **Grant admin consent for \<tenant\>**
 
-### Record Output Values
+</TabItem>
+<TabItem value="cli" label="Azure CLI">
 
-Save these values for GitLab environment variables:
+```bash
+az ad app permission admin-consent --id "$APP_ID"
+```
 
-| Value | GitLab Variable |
-|-------|-----------------|
-| App ID | `ARM_CLIENT_ID` |
-| App password | `ARM_CLIENT_SECRET` |
-| Tenant ID | `ARM_TENANT_ID` |
+</TabItem>
+</Tabs>
 
 ---
 
 ## Verification
 
-- [ ] `Azure Local Cloud-cicd` app registration exists
+- [ ] App registration `azurelocal-cicd` exists in Entra ID
 - [ ] Service principal created
-- [ ] RBAC roles assigned on all subscriptions
+- [ ] `Contributor` and `User Access Administrator` roles assigned on all target subscriptions
+- [ ] `Microsoft.Compute` provider registered
+- [ ] `EncryptionAtHost` feature enabled
 - [ ] Admin consent granted for API permissions
-- [ ] Output values recorded
+- [ ] Credentials saved securely (will be stored in CI/CD platform in [Task 05](task-05-configure-variables.mdx))
 
 ---
 
@@ -97,13 +155,32 @@ Save these values for GitLab environment variables:
 
 **App already exists:**
 ```
-Azure Local Cloud-cicd app registration already exists. If you need to rerun this, 
-please delete the app registration first before trying again.
+An app registration with the name "azurelocal-cicd" already exists.
 ```
-→ Delete existing app registration and rerun
+→ Delete the existing app registration first: `az ad app delete --id <APP_ID>`
+
+**Insufficient permissions:**
+```
+Insufficient privileges to complete the operation.
+```
+→ Ensure you have **Application Administrator** role in Entra ID and **Owner** on the target subscription(s)
+
+**Feature registration pending:**
+```
+Feature "EncryptionAtHost" is in "Registering" state.
+```
+→ Wait a few minutes, then check status: `az feature show --namespace Microsoft.Compute --name EncryptionAtHost`
 
 ---
 
 ## References
 
-- [Azure AD App Registrations](https://learn.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)
+- [Register an application with Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)
+- [Assign Azure roles using Azure CLI](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-cli)
+- [Azure CLI — az ad app](https://learn.microsoft.com/en-us/cli/azure/ad/app)
+
+---
+
+## Next Steps
+
+[Create Source Control Project](task-02-create-project.mdx)

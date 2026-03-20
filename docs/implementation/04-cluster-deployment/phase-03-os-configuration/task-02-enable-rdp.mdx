@@ -46,7 +46,7 @@ WinRM is already enabled from [Task 01](./task-01-enable-winrm-for-remote-manage
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Task 01 Complete | WinRM enabled on all nodes | [Task 01: Enable WinRM](./task-01-enable-winrm-for-remote-management.mdx) |
-| iDRAC console access | Virtual Console accessible for each node (if using SConfig or Direct tab) | `infrastructure.yml: nodes.<name>.idrac_ip` |
+| iDRAC console access | Virtual Console accessible for each node (if using SConfig or Direct tab) | `variables.yml: nodes.<name>.idrac_ip` |
 | Administrator credentials | Local admin password set during OS installation | Key Vault: `node-<hostname>-local-admin` |
 
 ---
@@ -94,10 +94,10 @@ if ($rdp.fDenyTSConnections -eq 0) {
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-Run from the management server. Reads node names from `infrastructure.yml`.
+Run from the management server. Reads node names from `variables.yml`.
 
 ```powershell
-$ConfigPath = ".\configs\infrastructure.yml"
+$ConfigPath = ".\config\variables.yml"
 $config = ConvertFrom-Yaml (Get-Content $ConfigPath -Raw)
 $NodeNames = $config.cluster.nodes | ForEach-Object { $_.name }
 $Credential = Get-Credential -Message "Enter local Administrator credentials"
@@ -202,4 +202,4 @@ Test-NetConnection -ComputerName <node-ip> -Port 3389
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
-| 2.0 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Full rewrite to standards — complete frontmatter, 4-tab structure, orchestrated reads infrastructure.yml, standalone with config region, Navigation and Version Control |
+| 2.0 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Full rewrite to standards — complete frontmatter, 4-tab structure, orchestrated reads variables.yml, standalone with config region, Navigation and Version Control |

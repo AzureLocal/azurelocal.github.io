@@ -46,7 +46,7 @@ cluster health checks, network diagnostics, and Azure Local validation tooling.
 2. Enable `File and Printer Sharing (Echo Request - ICMPv6-In)`
 3. Verify each rule is enabled and report pass/fail
 
-No configuration variables are required — this task has no values to read from `infrastructure.yml`.
+No configuration variables are required — this task has no values to read from `variables.yml`.
 
 ---
 
@@ -168,7 +168,7 @@ Run from the management server to enable ICMP on all nodes in a single pass.
 
 **Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-08-enable-icmp-ping/powershell/Invoke-EnableICMP-Orchestrated.ps1`
 
-Reads all `cluster_nodes` entries from `infrastructure.yml`. Connects to each
+Reads all `cluster_nodes` entries from `variables.yml`. Connects to each
 node via PSRemoting and enables both ICMPv4 and ICMPv6 inbound rules.
 
 ```powershell title="Invoke-EnableICMP-Orchestrated.ps1"
@@ -178,11 +178,11 @@ node via PSRemoting and enables both ICMPv4 and ICMPv6 inbound rules.
  Enables ICMP (ping) firewall rules on all Azure Local nodes via PSRemoting.
 
 .DESCRIPTION
- Runs from the management server. Reads node IPs from infrastructure.yml,
+ Runs from the management server. Reads node IPs from variables.yml,
  connects to each node over PSRemoting, and enables ICMPv4/ICMPv6 inbound
  firewall rules.
 
- infrastructure.yml paths used:
+ variables.yml paths used:
  cluster_nodes[].management_ip - PSRemoting connection target per node
  cluster_nodes[].hostname - Node hostname (display only)
 
@@ -197,7 +197,7 @@ node via PSRemoting and enables both ICMPv4 and ICMPv6 inbound rules.
 
 .EXAMPLE
  .\Invoke-EnableICMP-Orchestrated.ps1
- .\Invoke-EnableICMP-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure.yml"
+ .\Invoke-EnableICMP-Orchestrated.ps1 -ConfigPath "C:\config\variables.yml"
 #>
 
 [CmdletBinding()]
@@ -226,14 +226,14 @@ function Resolve-ConfigPath {
  param([string]$Provided)
  if ($Provided -ne "" -and (Test-Path $Provided)) { return $Provided }
  $candidates = @(
- "$env:USERPROFILE\infrastructure.yml",
- "C:\configs\infrastructure.yml",
- "$PSScriptRoot\..\..\..\..\..\configs\infrastructure.yml"
+ "$env:USERPROFILE\variables.yml",
+ "C:\config\variables.yml",
+ "$PSScriptRoot\..\..\..\..\..\config\variables.yml"
  )
  foreach ($c in $candidates) {
  if (Test-Path $c) { return (Resolve-Path $c).Path }
  }
- throw "infrastructure.yml not found. Pass -ConfigPath or place it in a standard location."
+ throw "variables.yml not found. Pass -ConfigPath or place it in a standard location."
 }
 
 function Get-ClusterNodes {
@@ -272,7 +272,7 @@ $configFile = Resolve-ConfigPath -Provided $ConfigPath
 Write-Log "Config: $configFile"
 
 $nodes = Get-ClusterNodes -FilePath $configFile
-if ($nodes.Count -eq 0) { throw "cluster_nodes not found or empty in infrastructure.yml" }
+if ($nodes.Count -eq 0) { throw "cluster_nodes not found or empty in variables.yml" }
 
 Write-Log "Nodes: $($nodes.Count) found"
 

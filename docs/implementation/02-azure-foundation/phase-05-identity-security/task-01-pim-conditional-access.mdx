@@ -194,10 +194,10 @@ Before starting this task, ensure:
 
 ### Azure CLI / PowerShell
 
-> **When to use**: Scripted PIM configuration from management workstation — reads values from `infrastructure.yml`
+> **When to use**: Scripted PIM configuration from management workstation — reads values from `variables.yml`
 
 :::note No Toolkit Script
-There is no dedicated toolkit script for PIM configuration. Use the Microsoft Graph PowerShell commands below. The commands read subscription and user IDs from `infrastructure.yml`.
+There is no dedicated toolkit script for PIM configuration. Use the Microsoft Graph PowerShell commands below. The commands read subscription and user IDs from `variables.yml`.
 :::
 
 #### Code
@@ -212,7 +212,7 @@ There is no dedicated toolkit script for PIM configuration. Use the Microsoft Gr
 #Requires -Modules Microsoft.Graph.Identity.Governance, Az.Accounts
 
 param(
- [string]$ConfigPath = "./infrastructure.yml"
+ [string]$ConfigPath = "./config/variables.yml"
 )
 
 # Load configuration
@@ -272,7 +272,7 @@ $eligible | Format-Table PrincipalId, RoleDefinitionId, Status, EndDateTime
 
 ### Standalone Script
 
-> **When to use**: Copy-paste ready — no `infrastructure.yml`, no helpers, no dependencies. Edit the `#region CONFIGURATION` block and run.
+> **When to use**: Copy-paste ready — no `variables.yml`, no helpers, no dependencies. Edit the `#region CONFIGURATION` block and run.
 
 #### Code
 
@@ -441,7 +441,7 @@ After 24–48 hours in report-only, review the **Conditional Access Insights** w
 
 ### Azure CLI / PowerShell
 
-> **When to use**: Scripted CA policy creation from management workstation — reads break-glass account IDs from `infrastructure.yml`
+> **When to use**: Scripted CA policy creation from management workstation — reads break-glass account IDs from `variables.yml`
 
 :::note No Toolkit Script
 There is no dedicated toolkit script for Conditional Access configuration. Use the Microsoft Graph PowerShell commands below.
@@ -459,7 +459,7 @@ There is no dedicated toolkit script for Conditional Access configuration. Use t
 #Requires -Modules Microsoft.Graph.Identity.SignIns
 
 param(
- [string]$ConfigPath = "./infrastructure.yml"
+ [string]$ConfigPath = "./config/variables.yml"
 )
 
 $config = Get-Content $ConfigPath | ConvertFrom-Yaml
@@ -557,7 +557,7 @@ Get-MgIdentityConditionalAccessPolicy -All |
 
 ### Standalone Script
 
-> **When to use**: Copy-paste ready — no `infrastructure.yml`, no helpers, no dependencies. Edit the `#region CONFIGURATION` block with your break-glass account object IDs.
+> **When to use**: Copy-paste ready — no `variables.yml`, no helpers, no dependencies. Edit the `#region CONFIGURATION` block with your break-glass account object IDs.
 
 #### Code
 
@@ -672,7 +672,7 @@ Two permanently-exempt emergency access accounts are **mandatory** before any Co
 - [ ] Permanent Global Administrator role assigned (not eligible — PIM excluded)
 - [ ] Passwords stored offline (safe or sealed envelope)
 - [ ] FIDO2 key registered (stored separately from password)
-- [ ] Object IDs documented in `infrastructure.yml` under `identity.break_glass_account_ids`
+- [ ] Object IDs documented in `variables.yml` under `identity.break_glass_account_ids`
 - [ ] Excluded from CA001, CA002, CA003 by object ID
 - [ ] Alert configured: trigger on any sign-in from either account
 - [ ] Access review procedure documented (test annually)

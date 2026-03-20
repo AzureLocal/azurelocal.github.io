@@ -34,7 +34,7 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-This task creates the management Key Vault used to store deployment secrets (VPN shared keys, domain admin passwords, service account credentials) and certificates. All scripts that reference `keyvault://` URIs in `infrastructure.yml` resolve secrets from this vault.
+This task creates the management Key Vault used to store deployment secrets (VPN shared keys, domain admin passwords, service account credentials) and certificates. All scripts that reference `keyvault://` URIs in `variables.yml` resolve secrets from this vault.
 
 :::info Task Classification
 **Execution Target**: Azure-Only (control-plane API operation) 
@@ -42,7 +42,7 @@ This task creates the management Key Vault used to store deployment secrets (VPN
 :::
 
 :::info Terraform Reference
-**Module:** `tf-module-azr-local` 
+**Module:** `azurelocal-toolkit` 
 **File:** `key-vault.tf` 
 **Mode:** Management
 :::
@@ -147,7 +147,7 @@ This task creates the management Key Vault used to store deployment secrets (VPN
 
 ### Azure CLI / PowerShell
 
-> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
 
 #### Script
 
@@ -164,7 +164,7 @@ This task creates the management Key Vault used to store deployment secrets (VPN
 ```powershell
 # ============================================================================
 # Script: New-KeyVault.ps1
-# Execution: Run from management workstation — reads infrastructure.yml
+# Execution: Run from management workstation — reads variables.yml
 # Prerequisites: Az.KeyVault module, authenticated to Azure
 # NOTE: Secrets must be set manually or via separate secret-seeding script
 # ============================================================================
@@ -174,7 +174,7 @@ This task creates the management Key Vault used to store deployment secrets (VPN
 param(
  [Parameter(Mandatory = $false)]
  [ValidateScript({Test-Path $_})]
- [string]$ConfigPath = "configs/infrastructure.yml"
+ [string]$ConfigPath = "config/variables.yml"
 )
 
 $ErrorActionPreference = "Stop"
@@ -308,7 +308,7 @@ Follow the same procedure as [Single Subscription → Azure Portal](#azure-porta
 ### Azure CLI / PowerShell
 
 :::tip Same Script — Different Config
-The orchestrated script is identical. `infrastructure.yml` references the correct Management subscription for CAF/WAF.
+The orchestrated script is identical. `variables.yml` references the correct Management subscription for CAF/WAF.
 :::
 
 </TabItem>

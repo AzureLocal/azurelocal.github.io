@@ -65,9 +65,9 @@ Management groups have two identifiers:
 
 | Attribute | Value | Source |
 |-----------|-------|--------|
-| **Parent MG ID** | `cmp-iic-root` | `infrastructure.yml` → `azure.management_groups.tenant_root.name` |
-| **Landing Zone MG ID** | `cmp-landing-zones-iic` | `infrastructure.yml` → `azure.management_groups.landing_zone.name` |
-| **Display Name** | `IIC Landing Zone Management Group` | `infrastructure.yml` → `azure.management_groups.landing_zone.display_name` |
+| **Parent MG ID** | `cmp-iic-root` | `variables.yml` → `azure.management_groups.tenant_root.name` |
+| **Landing Zone MG ID** | `cmp-landing-zones-iic` | `variables.yml` → `azure.management_groups.landing_zone.name` |
+| **Display Name** | `IIC Landing Zone Management Group` | `variables.yml` → `azure.management_groups.landing_zone.display_name` |
 
 ### Target Structure
 
@@ -82,7 +82,7 @@ Tenant Root Group
 - **Root management group** already exists in the tenant
 - **Permissions**: Management Group Contributor (or Owner) on the root management group
 - **Authenticated Azure session** — see [Authentication](../../../05-authentication.mdx)
-- **`infrastructure.yml`** configured with management group values
+- **`variables.yml`** configured with management group values
 
 ---
 
@@ -106,16 +106,16 @@ Tenant Root Group
 
  | Field | Value | Source |
  |-------|-------|--------|
- | Management group ID | `<landing-zone-mg-id>` | `infrastructure.yml` → `azure.management_groups.landing_zone.name` |
- | Management group display name | `<display-name>` | `infrastructure.yml` → `azure.management_groups.landing_zone.display_name` |
- | Parent | Root MG from config | `infrastructure.yml` → `azure.management_groups.tenant_root.name` |
+ | Management group ID | `<landing-zone-mg-id>` | `variables.yml` → `azure.management_groups.landing_zone.name` |
+ | Management group display name | `<display-name>` | `variables.yml` → `azure.management_groups.landing_zone.display_name` |
+ | Parent | Root MG from config | `variables.yml` → `azure.management_groups.tenant_root.name` |
 
 3. **Save** and wait for creation to complete.
 
 #### Validation
 
 - [ ] Landing zone MG appears under the root MG in the portal
-- [ ] MG ID matches the value in `infrastructure.yml`
+- [ ] MG ID matches the value in `variables.yml`
 - [ ] Display name is correct
 
 #### Links
@@ -127,7 +127,7 @@ Tenant Root Group
 
 ### Azure CLI / PowerShell
 
-> **When to use**: Scripted deployment reading values from `infrastructure.yml`
+> **When to use**: Scripted deployment reading values from `variables.yml`
 
 #### Script
 
@@ -150,7 +150,7 @@ Tenant Root Group
 #Requires -Modules Az.Resources
 
 # Load configuration
-$config = Get-Content "./infrastructure.yml" | ConvertFrom-Yaml
+$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
 
 # Extract values
 $ParentMgName = $config.azure.management_groups.tenant_root.name
@@ -217,7 +217,7 @@ Get-AzManagementGroup -GroupName $LandingZoneMgName | Format-List Name, DisplayN
 ```
 
 :::info No External Dependencies
-This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `infrastructure.yml`, no config-loader, no helpers required.
+This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `variables.yml`, no config-loader, no helpers required.
 :::
 
 </TabItem>
@@ -231,7 +231,7 @@ This script is completely self-contained. All values are defined in the `#region
 |-------|---------|------------|
 | Permission denied | `AuthorizationFailed` | Verify Management Group Contributor or Owner role on the root MG |
 | Duplicate ID | `ManagementGroupAlreadyExists` | The MG already exists — verify it's under the correct parent and move on |
-| Parent not found | `ParentManagementGroupNotFound` | Confirm the root MG ID in `infrastructure.yml` matches what exists in the tenant |
+| Parent not found | `ParentManagementGroupNotFound` | Confirm the root MG ID in `variables.yml` matches what exists in the tenant |
 
 ## Next Steps
 

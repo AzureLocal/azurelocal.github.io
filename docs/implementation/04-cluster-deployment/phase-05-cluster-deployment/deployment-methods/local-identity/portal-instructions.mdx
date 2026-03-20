@@ -111,7 +111,7 @@ The local administrator password **MUST be identical** across all cluster nodes.
 Microsoft requires a **non-built-in** local administrator account with identical credentials on every cluster node before portal deployment begins.
 
 :::danger Do NOT use the built-in Administrator account
-Microsoft explicitly states: do not use the built-in `Administrator` account for Local Identity deployments. Create a separate, non-default local account. The account name is configured at `identity.accounts.account_local_admin_username` in `infrastructure.yml`.
+Microsoft explicitly states: do not use the built-in `Administrator` account for Local Identity deployments. Create a separate, non-default local account. The account name is configured at `identity.accounts.account_local_admin_username` in `variables.yml`.
 
 **Source**: [MS Learn — Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
 :::
@@ -139,7 +139,7 @@ Do NOT set the same password as the built-in `Administrator` account, and do NOT
 </TabItem>
 <TabItem value="direct" label="Direct Script (On Node)">
 
-Run this script directly on each node via RDP or console session. All variables are defined inline — no `infrastructure.yml` or toolkit access required on the node.
+Run this script directly on each node via RDP or console session. All variables are defined inline — no `variables.yml` or toolkit access required on the node.
 
 **Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Deploy-CreateLocalAdmin.ps1`
 
@@ -179,7 +179,7 @@ Repeat on every cluster node. Verify the account exists with identical credentia
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-Run from the **repo root** on the management/jump box. Reads account credentials and node IPs from `infrastructure.yml` and creates the local account on all cluster nodes via PSRemoting.
+Run from the **repo root** on the management/jump box. Reads account credentials and node IPs from `variables.yml` and creates the local account on all cluster nodes via PSRemoting.
 
 **Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1`
 
@@ -192,7 +192,7 @@ Run from the **repo root** on the management/jump box. Reads account credentials
 
 .DESCRIPTION
  Runs from the management/jump box. Reads the target account name and password from
- infrastructure.yml, connects to each node over PSRemoting using an existing local
+ variables.yml, connects to each node over PSRemoting using an existing local
  administrator credential, and creates the deployment account if it does not already
  exist. Adds the account to the Administrators group and verifies the result.
 
@@ -202,13 +202,13 @@ Run from the **repo root** on the management/jump box. Reads account credentials
  - Have a password of at least 14 characters
  Ref: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault
 
- infrastructure.yml paths used:
+ variables.yml paths used:
  identity.accounts.account_local_admin_username - New account username to create
  identity.accounts.account_local_admin_password - Key Vault ref for new account password
  compute.cluster_nodes[].management_ip - PSRemoting connection target per node
 
 .PARAMETER ConfigPath
- Path to infrastructure.yml. Auto-discovers infrastructure*.yml if not provided.
+ Path to variables.yml. Auto-discovers infrastructure*.yml if not provided.
 
 .PARAMETER Credential
  EXISTING local administrator credentials used to connect to cluster nodes via
@@ -224,12 +224,12 @@ Run from the **repo root** on the management/jump box. Reads account credentials
  Override the log file path.
 
 .PARAMETER LocalAdminUsername
- Override the local admin username. Takes precedence over infrastructure.yml.
+ Override the local admin username. Takes precedence over variables.yml.
 
 .EXAMPLE
- .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
- .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode iic-01-n01
- .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
+ .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -ConfigPath .\config\variables.yml
+ .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -ConfigPath .\config\variables.yml -TargetNode iic-01-n01
+ .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -ConfigPath .\config\variables.yml -WhatIf
 
 .NOTES
  Author: Azure Local Cloud Azure Local Cloud
@@ -465,8 +465,8 @@ The password must be **identical** across all cluster nodes and **at least 14 ch
 |-------|-------|-------|
 | **Subscription** | Select subscription | Must have Contributor + UAA |
 | **Resource group** | Select or create | Dedicated RG for cluster |
-| **Cluster name** | `<CLUSTER_NAME>` | From `infrastructure.yml: compute.arm_deployment.cluster_name` |
-| **Region** | `<AZURE_REGION>` | From `infrastructure.yml: azure_platform.azure_tenants.aztenant_location` |
+| **Cluster name** | `<CLUSTER_NAME>` | From `variables.yml: compute.arm_deployment.cluster_name` |
+| **Region** | `<AZURE_REGION>` | From `variables.yml: azure_platform.azure_tenants.aztenant_location` |
 
 **Add Arc-registered machines:**
 1. Click **Add machines**
@@ -519,7 +519,7 @@ Microsoft explicitly prohibits using the built-in `Administrator` account for Lo
 **Network intents:**
 
 :::info Network intents are defined by your planning design
-The number of intents, traffic type assignments, and adapter bindings configured here must match the design from your planning and discovery sessions, as captured in `infrastructure.yml` under `compute.arm_deployment.network_intents`. Do not assume a specific number of intents or a fixed layout.
+The number of intents, traffic type assignments, and adapter bindings configured here must match the design from your planning and discovery sessions, as captured in `variables.yml` under `compute.arm_deployment.network_intents`. Do not assume a specific number of intents or a fixed layout.
 
 Typical layouts:
 
@@ -531,19 +531,19 @@ Typical layouts:
 | 3-intent | Compute | Compute |
 | 3-intent | Storage | Storage |
 
-For adapter assignments for each intent, refer to `compute.arm_deployment.network_intents[*].intent_adapters` in your `infrastructure.yml`.
+For adapter assignments for each intent, refer to `compute.arm_deployment.network_intents[*].intent_adapters` in your `variables.yml`.
 :::
 
 **IP Allocation:**
 
 | Setting | Value | Source |
 |---------|-------|--------|
-| Starting IP | First available IP | `infrastructure.yml: compute.arm_deployment.ip_allocation.starting_ip` |
-| Ending IP | Last available IP | `infrastructure.yml: compute.arm_deployment.ip_allocation.ending_ip` |
-| Subnet mask | e.g., `255.255.255.0` | `infrastructure.yml: compute.arm_deployment.subnet_mask` |
-| Default gateway | Gateway IP | `infrastructure.yml: compute.arm_deployment.default_gateway` |
-| DNS servers | Primary, Secondary | `infrastructure.yml: compute.arm_deployment.dns_servers` |
-| **Zone name (domain)** | `<DNS_ZONE_NAME>` | `infrastructure.yml: compute.arm_deployment.domain_fqdn` — **Local Identity only** |
+| Starting IP | First available IP | `variables.yml: compute.arm_deployment.ip_allocation.starting_ip` |
+| Ending IP | Last available IP | `variables.yml: compute.arm_deployment.ip_allocation.ending_ip` |
+| Subnet mask | e.g., `255.255.255.0` | `variables.yml: compute.arm_deployment.subnet_mask` |
+| Default gateway | Gateway IP | `variables.yml: compute.arm_deployment.default_gateway` |
+| DNS servers | Primary, Secondary | `variables.yml: compute.arm_deployment.dns_servers` |
+| **Zone name (domain)** | `<DNS_ZONE_NAME>` | `variables.yml: compute.arm_deployment.domain_fqdn` — **Local Identity only** |
 
 :::info Zone name — Local Identity only
 This field only appears for Local Identity deployments. Enter the DNS zone where Host A records for each node have been pre-created (e.g., `iic.local`). Must match the zone used when configuring node DNS entries in the pre-deployment DNS requirements step.
@@ -560,7 +560,7 @@ Minimum **6 consecutive IPs** required for cluster + Arc Resource Bridge. Do NOT
 **Step 1 — Select Identity Provider:**
 Under the **Identity** section of the Management tab:
 1. From the **Identity** dropdown, select **Local identity with Azure Key Vault**
-2. In the **Key Vault** field, enter or select the Key Vault name (`infrastructure.yml: security.keyvault.kv_azl.kv_azl_name`)
+2. In the **Key Vault** field, enter or select the Key Vault name (`variables.yml: security.keyvault.kv_azl.kv_azl_name`)
 
 | Setting | Value | Description |
 |---------|-------|-------------|
@@ -721,7 +721,7 @@ Write-Host "`n[DONE] Cluster health check complete on $env:COMPUTERNAME" -Foregr
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
 
-Run from the **repo root** on the management/jump box. Reads node IPs and credentials from `infrastructure.yml` and checks cluster health on all nodes via PSRemoting.
+Run from the **repo root** on the management/jump box. Reads node IPs and credentials from `variables.yml` and checks cluster health on all nodes via PSRemoting.
 
 **Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1`
 
@@ -732,7 +732,7 @@ Run from the **repo root** on the management/jump box. Reads node IPs and creden
  Orchestrated cluster health verification for Azure Local deployments.
 
 .PARAMETER ConfigPath
- Path to infrastructure.yml.
+ Path to variables.yml.
 .PARAMETER Credential
  Override credential for PSRemoting.
 .PARAMETER TargetNode
@@ -743,16 +743,16 @@ Run from the **repo root** on the management/jump box. Reads node IPs and creden
  Override log file path.
 
 .EXAMPLE
- .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml
- .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -TargetNode iic-01-n01
- .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -WhatIf
+ .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath config/variables.yml
+ .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath config/variables.yml -TargetNode iic-01-n01
+ .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath config/variables.yml -WhatIf
 
 .NOTES
  Author: Azure Local Cloud Azure Local Cloud
  Version: 1.0.0
  Phase: 05-cluster-deployment
  Task: task-03-verify-deployment-completion
- Execution: Run from management server with access to infrastructure.yml
+ Execution: Run from management server with access to variables.yml
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -795,7 +795,7 @@ function Write-Log {
 . (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\config-loader.ps1")
 . (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\keyvault-helper.ps1")
 
-if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml" }
+if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml" }
 Write-Log "Loading configuration from: $ConfigPath"
 $cfg = Get-ClusterConfig -ConfigPath $ConfigPath
 #endregion CONFIG LOADING
@@ -883,7 +883,7 @@ if ($failCount -gt 0) {
 </TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
-Self-contained. No `infrastructure.yml` required. Define all variables in `#region CONFIGURATION` before running.
+Self-contained. No `variables.yml` required. Define all variables in `#region CONFIGURATION` before running.
 
 **Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Test-ClusterHealth-Standalone.ps1`
 
@@ -966,7 +966,7 @@ if ($adAware.Value -ne 2) {
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
 
-Run from the **repo root** on the management/jump box. Reads node IPs and credentials from `infrastructure.yml` and verifies Local Identity configuration on all nodes via PSRemoting.
+Run from the **repo root** on the management/jump box. Reads node IPs and credentials from `variables.yml` and verifies Local Identity configuration on all nodes via PSRemoting.
 
 **Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1`
 
@@ -977,13 +977,13 @@ Run from the **repo root** on the management/jump box. Reads node IPs and creden
  Orchestrated Local Identity configuration verification for Azure Local deployments.
 
 .DESCRIPTION
- Reads cluster configuration from infrastructure.yml and verifies Local Identity
+ Reads cluster configuration from variables.yml and verifies Local Identity
  state on all cluster nodes via PSRemoting. Checks per node:
  1. Domain = WORKGROUP (not domain-joined)
  2. ADAware cluster parameter = 2 (AD-less / Local Identity mode)
 
 .PARAMETER ConfigPath
- Path to infrastructure.yml.
+ Path to variables.yml.
 .PARAMETER Credential
  Override credential for PSRemoting.
 .PARAMETER TargetNode
@@ -994,16 +994,16 @@ Run from the **repo root** on the management/jump box. Reads node IPs and creden
  Override log file path.
 
 .EXAMPLE
- .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml
- .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -TargetNode iic-01-n01,iic-01-n02
- .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -WhatIf
+ .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/variables.yml
+ .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/variables.yml -TargetNode iic-01-n01,iic-01-n02
+ .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/variables.yml -WhatIf
 
 .NOTES
  Author: Azure Local Cloud Azure Local Cloud
  Version: 1.0.0
  Phase: 05-cluster-deployment
  Task: task-03-verify-deployment-completion
- Execution: Run from management server with access to infrastructure.yml
+ Execution: Run from management server with access to variables.yml
  Source: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault
 #>
 
@@ -1047,7 +1047,7 @@ function Write-Log {
 . (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\config-loader.ps1")
 . (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\keyvault-helper.ps1")
 
-if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml" }
+if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml" }
 Write-Log "Loading configuration from: $ConfigPath"
 $cfg = Get-ClusterConfig -ConfigPath $ConfigPath
 #endregion CONFIG LOADING
@@ -1136,7 +1136,7 @@ if ($failCount -gt 0) {
 </TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
-Self-contained. No `infrastructure.yml` required. Define all variables in `#region CONFIGURATION` before running.
+Self-contained. No `variables.yml` required. Define all variables in `#region CONFIGURATION` before running.
 
 **Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Test-LocalIdentityConfig-Standalone.ps1`
 
@@ -1180,7 +1180,7 @@ During Local Identity deployment, Azure automatically stores a `RecoveryAdmin` a
 Get-AzKeyVaultSecret -VaultName "<VAULT_NAME>" -Name "RecoveryAdmin" -AsPlainText
 ```
 
-`VAULT_NAME` = `infrastructure.yml: security.keyvault.kv_azl.kv_azl_name`
+`VAULT_NAME` = `variables.yml: security.keyvault.kv_azl.kv_azl_name`
 :::
 
 :::warning RDP is disabled after deployment

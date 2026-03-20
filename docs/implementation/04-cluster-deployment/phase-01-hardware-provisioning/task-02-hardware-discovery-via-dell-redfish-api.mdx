@@ -55,8 +55,8 @@ All scripts in this task run **from the management server** and connect to iDRAC
 
 | Requirement | Details | Source |
 |-------------|---------|--------|
-| iDRAC IPs | All nodes reachable on port 443 | `nodes.<name>.idrac_ip` in `infrastructure.yml` |
-| iDRAC Credentials | Admin username and password | Key Vault or `infrastructure.yml` |
+| iDRAC IPs | All nodes reachable on port 443 | `nodes.<name>.idrac_ip` in `variables.yml` |
+| iDRAC Credentials | Admin username and password | Key Vault or `variables.yml` |
 | Network Access | Management server can reach iDRAC OOB network | Phase 03 Network Infrastructure |
 | PowerShell 7+ | `Invoke-RestMethod` and `powershell-yaml` module | Management server |
 
@@ -85,9 +85,9 @@ All scripts in this task run **from the management server** and connect to iDRAC
 - [ ] System NIC MAC addresses recorded for all nodes
 - [ ] Configuration profiles exported and stored
 
-### Update infrastructure.yml
+### Update variables.yml
 
-After collecting data from all nodes, manually update the following fields in `infrastructure.yml`:
+After collecting data from all nodes, manually update the following fields in `variables.yml`:
 
 | Field | Source | Where to find it |
 |-------|--------|-----------------|
@@ -96,14 +96,14 @@ After collecting data from all nodes, manually update the following fields in `i
 | `cluster.nodes[<name>].management_mac` | Management NIC MAC | System → Network Devices → MAC for management port |
 | `cluster.management_nic_name` | NIC adapter name | System → Network Devices → adapter name (e.g., `Slot 3 Port 1` or `Embedded NIC 1`) |
 
-:::warning Save and commit infrastructure.yml after updating
-All subsequent tasks depend on these values. Do not proceed to Task 03 until `infrastructure.yml` is updated and committed.
+:::warning Save and commit variables.yml after updating
+All subsequent tasks depend on these values. Do not proceed to Task 03 until `variables.yml` is updated and committed.
 :::
 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-> **When to use**: Standard deployment — runs from the management server, reads node list from `infrastructure.yml`
+> **When to use**: Standard deployment — runs from the management server, reads node list from `variables.yml`
 
 ### Script
 
@@ -120,7 +120,7 @@ All subsequent tasks depend on these values. Do not proceed to Task 03 until `in
 
 .DESCRIPTION
  Runs from the management server. Reads node list and iDRAC IPs from
- infrastructure.yml, connects to each iDRAC via Redfish API, and collects:
+ variables.yml, connects to each iDRAC via Redfish API, and collects:
  - System info (service tag, model, BIOS version)
  - NIC inventory (iDRAC MAC, system NIC MACs)
  - BIOS attributes
@@ -129,10 +129,10 @@ All subsequent tasks depend on these values. Do not proceed to Task 03 until `in
  Output JSON files are saved to configs/network-devices/bmc/.
 
  At completion, optionally calls Update-InfrastructureYml-FromDiscovery.ps1
- to write discovered values back into infrastructure.yml.
+ to write discovered values back into variables.yml.
 
 .PARAMETER ConfigPath
- Path to infrastructure.yml. If not specified, auto-detected from .\configs\.
+ Path to variables.yml. If not specified, auto-detected from .\configs\.
 
 .PARAMETER OutputPath
  Path to save discovery JSON files. Default: .\configs\network-devices\bmc
@@ -141,7 +141,7 @@ All subsequent tasks depend on these values. Do not proceed to Task 03 until `in
  iDRAC admin username. Default: root
 
 .PARAMETER SkipYmlUpdate
- Skip the automatic infrastructure.yml update step after discovery.
+ Skip the automatic variables.yml update step after discovery.
 
 .PARAMETER Force
  Skip the confirmation prompt in the yml update step.
@@ -226,11 +226,11 @@ function Resolve-ConfigPath {
  # Multiple found — prompt
  Write-Host "`nMultiple infrastructure config files found:" -ForegroundColor Yellow
  for ($i = 0; $i -lt $candidates.Count; $i++) {
- $default = if ($candidates[$i].Name -eq "infrastructure.yml") { " [DEFAULT]" } else { "" }
+ $default = if ($candidates[$i].Name -eq "variables.yml") { " [DEFAULT]" } else { "" }
  Write-Host " [$($i + 1)] $($candidates[$i].Name)$default" -ForegroundColor White
  }
 
- $defaultIndex = ($candidates | ForEach-Object { $_.Name }).IndexOf("infrastructure.yml")
+ $defaultIndex = ($candidates | ForEach-Object { $_.Name }).IndexOf("variables.yml")
  if ($defaultIndex -lt 0) { $defaultIndex = 0 }
 
  $selection = Read-Host "`nSelect config file (Enter for default [$($candidates[$defaultIndex].Name)])"
@@ -365,10 +365,10 @@ try {
  Write-Log "Some nodes failed discovery. Review errors above before proceeding." "WARN"
  }
 
- # Update infrastructure.yml unless skipped
+ # Update variables.yml unless skipped
  if (-not $SkipYmlUpdate) {
  Write-Log ""
- Write-Log "=== Updating infrastructure.yml from discovery data ===" "HEADER"
+ Write-Log "=== Updating variables.yml from discovery data ===" "HEADER"
  $updaterScript = Join-Path $PSScriptRoot "Update-InfrastructureYml-FromDiscovery.ps1"
 
  if (-not (Test-Path $updaterScript)) {
@@ -384,7 +384,7 @@ try {
  & $updaterScript @updaterArgs
  }
  } else {
- Write-Log "Skipping infrastructure.yml update (-SkipYmlUpdate specified)." "WARN"
+ Write-Log "Skipping variables.yml update (-SkipYmlUpdate specified)." "WARN"
  Write-Log "Run Update-InfrastructureYml-FromDiscovery.ps1 manually when ready."
  }
 
@@ -398,17 +398,17 @@ try {
 
 ```powershell
 # Verify inventory files exist for all nodes
-$config = Get-Content ".\infrastructure.yml" -Raw | ConvertFrom-Yaml
+$config = Get-Content ".\config\variables.yml" -Raw | ConvertFrom-Yaml
 $expectedNodes = $config.nodes.Count
 $actualFiles = (Get-ChildItem ".\configs\network-devices\bmc\*.json").Count
 Write-Host "Expected: $expectedNodes nodes | Found: $actualFiles inventory files"
 ```
 
-### infrastructure.yml Update
+### variables.yml Update
 
 :::tip Automatic — no action required
 The orchestrated script automatically calls `Update-InfrastructureYml-FromDiscovery.ps1` at completion. It will:
-1. Detect your `infrastructure.yml` (or prompt if multiple `infrastructure*.yml` files are found)
+1. Detect your `variables.yml` (or prompt if multiple `infrastructure*.yml` files are found)
 2. Show a diff of every field it will write
 3. Prompt for confirmation before making any changes
 4. Create a timestamped backup before writing
@@ -477,13 +477,13 @@ foreach ($ip in $iDRACIPs) {
 Write-Host "`nDiscovery complete. Files in: $outputPath" -ForegroundColor Green
 ```
 
-### infrastructure.yml Update
+### variables.yml Update
 
-After the script completes, two options to update `infrastructure.yml`:
+After the script completes, two options to update `variables.yml`:
 
 **Option A — Manual update**
 
-Open `infrastructure.yml` and fill in the following fields using values from the JSON files in `configs/network-devices/bmc/`:
+Open `variables.yml` and fill in the following fields using values from the JSON files in `configs/network-devices/bmc/`:
 
 | Field | JSON source path |
 |-------|-----------------|
@@ -500,9 +500,9 @@ If the JSON files are in `configs/network-devices/bmc/`, run:
 .\Update-InfrastructureYml-FromDiscovery.ps1
 ```
 
-The script will auto-detect your `infrastructure.yml`, show a diff of all changes, and prompt for confirmation before writing. A timestamped backup is created automatically.
+The script will auto-detect your `variables.yml`, show a diff of all changes, and prompt for confirmation before writing. A timestamped backup is created automatically.
 
-:::warning Do not proceed to Task 03 until infrastructure.yml is updated
+:::warning Do not proceed to Task 03 until variables.yml is updated
 All subsequent tasks depend on these values.
 :::
 
@@ -546,4 +546,4 @@ Output location: `configs/network-devices/bmc/`
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | Azure Local Cloud Azure Local Cloudnology | Initial document |
 | 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Fix tab labels, schema keys, standards alignment |
-| 1.2 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Add infrastructure.yml update instructions to all three tabs; document Update-InfrastructureYml-FromDiscovery.ps1 integration |
+| 1.2 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Add variables.yml update instructions to all three tabs; document Update-InfrastructureYml-FromDiscovery.ps1 integration |

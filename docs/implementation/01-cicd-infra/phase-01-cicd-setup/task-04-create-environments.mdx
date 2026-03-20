@@ -1,69 +1,152 @@
 ---
 title: "Task 04: Create Environments"
 sidebar_position: 4
-description: "Create GitLab environments"
+description: "Create deployment environments for CI/CD pipelines"
 ---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 # Task 04: Create Environments
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
-[![GitLab](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://github.com/AzureLocal)
+[![GitHub](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://github.com)
+[![GitLab](https://img.shields.io/badge/Platform-GitLab-FC6D26?style=flat-square&logo=gitlab)](https://gitlab.com)
+[![Azure DevOps](https://img.shields.io/badge/Platform-Azure_DevOps-0078D7?style=flat-square&logo=azuredevops)](https://dev.azure.com)
 
 > **DOCUMENT CATEGORY**: Runbook Step 
-> **SCOPE**: GitLab environment creation 
-> **PURPOSE**: Create GitLab environments for customer infrastructure 
-> **MASTER REFERENCE**: [GitLab Environments](https://docs.gitlab.com/ee/ci/environments/)
+> **SCOPE**: Deployment environment creation 
+> **PURPOSE**: Create deployment environments for infrastructure automation 
 
 **Status**: Active 
 **Applies To**: All Azure Local deployments 
-**Last Updated**: 2026-01-30
-
----
-
-> **Source:** internal-docs/create-gitlab-environments.md
+**Last Updated**: 2026-03-19
 
 ---
 
 ## Objective
 
-Create GitLab environments to manage customer infrastructure using IaC and automation.
+Create deployment environments to manage infrastructure using IaC and automation. Environments provide deployment targets with optional protection rules and approval gates.
 
 ---
 
 ## Prerequisites
 
-- [ ] Project settings configured (Step 03)
-- [ ] GitLab `Maintainer` role on the project
+- [ ] Project settings configured (Task 03)
+- [ ] Admin / Maintainer role on the project
 
 ---
 
-## Procedure
+## Environment Naming Convention
 
-### Create New Environment
-
-1. Navigate to the project in GitLab
-2. Select **Operate** → **Environments**
-3. Click **New Environment**
-4. Enter the environment name
-5. Leave **External URL** blank
-6. Click **Save**
-
-### Environment Naming Convention
+Use consistent naming across all platforms:
 
 | Cloud/Service | Example Names |
 |---------------|---------------|
 | Azure Production | `azr-prod-us`, `azr-prod-eu` |
 | Azure Development | `azr-dev-us` |
-| AWS | `aws-dev-eu`, `aws-prod-us` |
-| Megaport | `megaport` |
-| Datadog | `datadog` |
+| Azure Staging | `azr-staging` |
+
+---
+
+## Procedure
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+### Create Environments
+
+1. Navigate to **Settings** → **Environments**
+2. Click **New environment**
+3. Enter the environment name (e.g., `azr-prod-us`)
+4. Click **Configure environment**
+
+### Configure Protection Rules
+
+For production environments, add protection rules:
+
+| Setting | Value |
+|---------|-------|
+| Required reviewers | ✅ Add 1–2 required reviewers |
+| Wait timer | Optional — add delay before deployment (minutes) |
+| Deployment branches | `main` only (select **Selected branches** → add `main`) |
+
+Repeat for each environment in the naming convention table above.
+
+:::tip
+GitHub Environments integrate with GitHub Actions via the `environment:` key in workflow YAML. Protection rules automatically gate deployments.
+:::
+
+**References:** [GitHub — Using environments for deployment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+### Create Environments
+
+1. Navigate to the project in GitLab
+2. Select **Operate** → **Environments**
+3. Click **New Environment**
+4. Enter the environment name (e.g., `azr-prod-us`)
+5. Leave **External URL** blank
+6. Click **Save**
+
+Repeat for each environment in the naming convention table above.
+
+### Configure Protection (Optional)
+
+For production environments:
+
+1. Navigate to **Settings** → **CI/CD** → **Protected Environments**
+2. Select the environment
+3. Set **Allowed to deploy** to the appropriate role or group
+
+:::tip
+GitLab Environments are referenced in `.gitlab-ci.yml` via the `environment:` keyword. Protected environments require approval before deployment jobs run.
+:::
+
+**References:** [GitLab — Environments and deployments](https://docs.gitlab.com/ee/ci/environments/)
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+### Create Environments
+
+1. Navigate to **Pipelines** → **Environments**
+2. Click **New environment**
+3. Enter the environment name (e.g., `azr-prod-us`)
+4. Select **None** for Resource (environments are used as deployment targets)
+5. Click **Create**
+
+Repeat for each environment in the naming convention table above.
+
+### Configure Approvals and Checks
+
+For production environments:
+
+1. Open the environment → click **⋮** (more options) → **Approvals and checks**
+2. Add **Approvals**:
+   - Add 1–2 required approvers
+   - Set timeout (e.g., 72 hours)
+3. Optionally add **Branch control**:
+   - Allowed branches: `refs/heads/main`
+
+:::tip
+Azure DevOps Environments are referenced in YAML pipelines via the `environment:` key in deployment jobs. Approvals and checks automatically gate deployments.
+:::
+
+**References:** [Azure DevOps — Create and target an environment](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/environments)
+
+</TabItem>
+</Tabs>
 
 ---
 
 ## Verification
 
-- [ ] Environment created for each Azure subscription
+- [ ] Environment created for each deployment target
 - [ ] Environment names follow naming convention
+- [ ] Production environments have protection rules / approval gates configured
 
 ---
 
@@ -75,4 +158,6 @@ Create GitLab environments to manage customer infrastructure using IaC and autom
 
 ## References
 
-- [GitLab Environments](https://docs.gitlab.com/ee/ci/environments/)
+- [GitHub — Using environments for deployment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
+- [GitLab — Environments and deployments](https://docs.gitlab.com/ee/ci/environments/)
+- [Azure DevOps — Create and target an environment](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/environments)

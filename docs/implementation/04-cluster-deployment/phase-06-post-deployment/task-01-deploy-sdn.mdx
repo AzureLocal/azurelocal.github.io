@@ -142,7 +142,7 @@ If the prefix does not meet these requirements, `Add-EceFeature` will fail immed
 
 ### Step 1 — Verify vSwitch Name
 
-The SDN deployment requires the external vSwitch name to be populated at `compute.azure_local.vm_switch_name` in `infrastructure.yml` before proceeding.
+The SDN deployment requires the external vSwitch name to be populated at `compute.azure_local.vm_switch_name` in `variables.yml` before proceeding.
 
 <Tabs groupId="deployment-method">
 <TabItem value="manual" label="Direct Script (On Node)" default>
@@ -161,7 +161,7 @@ RDP or console to any cluster node, copy `Get-VirtualSwitchName-Standalone.ps1` 
 # ==============================================================================
 # Script : Get-VirtualSwitchName-Standalone.ps1
 # Purpose: Discover the external vSwitch name on this cluster node and display
-# the value to copy into infrastructure.yml
+# the value to copy into variables.yml
 # Run : RDP or console directly on any cluster node — no external dependencies
 # ==============================================================================
 
@@ -187,7 +187,7 @@ $switches | Format-Table Name, SwitchType, NetAdapterInterfaceDescription -AutoS
 
 $primary = $switches | Select-Object -First 1
 Write-Host "================================================================" -ForegroundColor Green
-Write-Host " Copy this value into configs/infrastructure.yml:" -ForegroundColor Green
+Write-Host " Copy this value into config/variables.yml:" -ForegroundColor Green
 Write-Host ""
 Write-Host " compute:" -ForegroundColor White
 Write-Host " azure_local:" -ForegroundColor White
@@ -197,9 +197,9 @@ Write-Host " YAML path: compute.azure_local.vm_switch_name" -ForegroundColor Gra
 Write-Host "================================================================" -ForegroundColor Green
 ```
 
-Copy the highlighted `vm_switch_name` value from the output into `configs/infrastructure.yml` on the management server:
+Copy the highlighted `vm_switch_name` value from the output into `config/variables.yml` on the management server:
 
-```yaml title="configs/infrastructure.yml"
+```yaml title="config/variables.yml"
 compute:
  azure_local:
  vm_switch_name: "ConvergedSwitch(hci)" # compute.azure_local.vm_switch_name
@@ -207,12 +207,12 @@ compute:
 
 #### Validation
 
-- [ ] `compute.azure_local.vm_switch_name` is populated in `infrastructure.yml`
+- [ ] `compute.azure_local.vm_switch_name` is populated in `variables.yml`
 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-> **When to use**: Managing from management server or jump box — config-driven via `infrastructure.yml` and PSRemoting
+> **When to use**: Managing from management server or jump box — config-driven via `variables.yml` and PSRemoting
 
 #### Script
 
@@ -230,13 +230,13 @@ compute:
 # ==============================================================================
 # Script : Get-VirtualSwitchName.ps1
 # Purpose: Discover the external vSwitch name on the first cluster node and
-# write it back to infrastructure.yml at compute.azure_local.vm_switch_name
+# write it back to variables.yml at compute.azure_local.vm_switch_name
 # Run : From the repo root before running Invoke-DeploySDN-Orchestrated.ps1
 # ==============================================================================
 
 [CmdletBinding()]
 param(
- [string]$ConfigPath = "", # Path to infrastructure.yml; CWD-relative default
+ [string]$ConfigPath = "", # Path to variables.yml; CWD-relative default
  [PSCredential]$Credential, # Override credential resolution
  [switch]$WhatIf # Show what would be written — no config changes made
 )
@@ -263,7 +263,7 @@ Write-Log "Log: $logFile"
 
 # ── Config loading ────────────────────────────────────────────────────────────
 if (-not $ConfigPath) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config file not found: $ConfigPath" 'ERROR'
@@ -435,18 +435,18 @@ Write-Log "Get-VirtualSwitchName completed"
 
 ```powershell title="Discover vSwitch and write to config"
 .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Get-VirtualSwitchName.ps1 `
- -ConfigPath .\configs\infrastructure.yml
+ -ConfigPath .\config\variables.yml
 ```
 
 ```powershell title="WhatIf — discover and report without writing to config"
 .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Get-VirtualSwitchName.ps1 `
- -ConfigPath .\configs\infrastructure.yml `
+ -ConfigPath .\config\variables.yml `
  -WhatIf
 ```
 
 #### Validation
 
-- [ ] `compute.azure_local.vm_switch_name` is populated in `infrastructure.yml`
+- [ ] `compute.azure_local.vm_switch_name` is populated in `variables.yml`
 
 </TabItem>
 </Tabs>
@@ -477,7 +477,7 @@ RDP to the domain controller and run `Set-SDNDns-Standalone.ps1`. Edit the `#reg
 # settings or creates/validates a static A record for the Network
 # Controller REST endpoint.
 # Run this script directly on the DNS server (domain controller).
-# No external dependencies — no infrastructure.yml, no helpers.
+# No external dependencies — no variables.yml, no helpers.
 # Run : RDP to the domain controller and execute
 # ==============================================================================
 
@@ -615,7 +615,7 @@ Write-Host "================================================================" -F
 ```
 
 :::info No External Dependencies
-All values are defined in the `#region CONFIGURATION` block at the top. No `infrastructure.yml`, no config-loader, no helpers required. Run directly on the domain controller via RDP or console.
+All values are defined in the `#region CONFIGURATION` block at the top. No `variables.yml`, no config-loader, no helpers required. Run directly on the domain controller via RDP or console.
 :::
 
 #### Validation
@@ -653,7 +653,7 @@ All values are defined in the `#region CONFIGURATION` block at the top. No `infr
 
 [CmdletBinding()]
 param(
- [string]$ConfigPath = "", # Path to infrastructure.yml; CWD-relative default
+ [string]$ConfigPath = "", # Path to variables.yml; CWD-relative default
  [string]$ResourceGroupName = "", # Override DC VM resource group (default: from config)
  [string]$VMName = "", # Override DC VM name (default: from config)
  [switch]$WhatIf # Validate and report — do not create DNS records
@@ -681,7 +681,7 @@ Write-Log "Log: $logFile"
 
 # ── Config loading ────────────────────────────────────────────────────────────
 if (-not $ConfigPath) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config file not found: $ConfigPath" 'ERROR'
@@ -846,14 +846,14 @@ try {
 
 ```powershell title="Run from repo root — dynamic mode"
 .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-ConfigureSDNDns-Orchestrated.ps1 `
- -ConfigPath "configs\infrastructure.yml"
+ -ConfigPath "config\variables.yml"
 ```
 
 **Invocation: WhatIf (validate only — no changes)**
 
 ```powershell title="Run from repo root — dry run"
 .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-ConfigureSDNDns-Orchestrated.ps1 `
- -ConfigPath "configs\infrastructure.yml" `
+ -ConfigPath "config\variables.yml" `
  -WhatIf
 ```
 
@@ -861,7 +861,7 @@ try {
 
 ```powershell title="Run from repo root — explicit VM target"
 .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-ConfigureSDNDns-Orchestrated.ps1 `
- -ConfigPath "configs\infrastructure.yml" `
+ -ConfigPath "config\variables.yml" `
  -ResourceGroupName "iic-rg-infra" `
  -VMName "iic-dc01"
 ```
@@ -936,7 +936,7 @@ $Credential = $null
 ```
 
 :::info No External Dependencies
-All values are defined in the `#region CONFIGURATION` block at the top. No `infrastructure.yml`, no config-loader, no helpers required. Requires PSRemoting access to a cluster node with the Azure Stack HCI Administrator role.
+All values are defined in the `#region CONFIGURATION` block at the top. No `variables.yml`, no config-loader, no helpers required. Requires PSRemoting access to a cluster node with the Azure Stack HCI Administrator role.
 :::
 
 #### Validation
@@ -952,7 +952,7 @@ Get-ClusterResource | Where-Object { $_.ResourceType -match 'Network' }
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-> **When to use**: Managing from management server or jump box — config-driven via `infrastructure.yml` and PSRemoting
+> **When to use**: Managing from management server or jump box — config-driven via `variables.yml` and PSRemoting
 
 #### Script
 
@@ -971,14 +971,14 @@ Get-ClusterResource | Where-Object { $_.ResourceType -match 'Network' }
 # Script : Invoke-DeploySDN-Orchestrated.ps1
 # Purpose: Enable SDN integration on Azure Local by deploying Network Controller
 # as a Failover Cluster service (SDN enabled by Arc)
-# Run : From management server — reads infrastructure.yml, uses PSRemoting
+# Run : From management server — reads variables.yml, uses PSRemoting
 # Prereqs: FailoverClusters module accessible; Azure Stack HCI Admin role on node
 # WARNING: SDN enablement is IRREVERSIBLE. Once enabled, it cannot be disabled.
 # ==============================================================================
 
 [CmdletBinding()]
 param(
- [string]$ConfigPath = "", # Path to infrastructure.yml; CWD-relative default
+ [string]$ConfigPath = "", # Path to variables.yml; CWD-relative default
  [PSCredential]$Credential, # Override credential resolution
  [string[]]$TargetNode = @(), # Specific node to run Add-EceFeature on; empty = first node
  [switch]$WhatIf, # Dry-run — validate only, no changes
@@ -1021,7 +1021,7 @@ Write-Log "Log: $logFile"
 
 # ── Config loading ────────────────────────────────────────────────────────────────────────────
 if (-not $ConfigPath) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config file not found: $ConfigPath" 'ERROR'
@@ -1269,20 +1269,20 @@ return [PSCustomObject]@{ Node = $nodeHostname; NodeIp = $nodeIp; SdnPrefix = $s
 
 ```powershell title="Enable SDN — dynamic DNS, acknowledge maintenance window"
 .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-DeploySDN-Orchestrated.ps1 `
- -ConfigPath .\configs\infrastructure.yml `
+ -ConfigPath .\config\variables.yml `
  -AcknowledgeMaintenanceWindow
 ```
 
 ```powershell title="Enable SDN — static DNS, skip all prompts"
 .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-DeploySDN-Orchestrated.ps1 `
- -ConfigPath .\configs\infrastructure.yml `
+ -ConfigPath .\config\variables.yml `
  -AcknowledgeMaintenanceWindow `
  -AcknowledgeDNSRecordCreation
 ```
 
 ```powershell title="WhatIf — validate config and report, no changes"
 .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-DeploySDN-Orchestrated.ps1 `
- -ConfigPath .\configs\infrastructure.yml `
+ -ConfigPath .\config\variables.yml `
  -WhatIf
 ```
 
@@ -1458,7 +1458,7 @@ if ($result.Success) {
 ```
 
 :::info No External Dependencies
-All values are defined in the `#region CONFIGURATION` block at the top. No `infrastructure.yml`, no config-loader, no helpers required. Requires PSRemoting access to a cluster node with the Azure Stack HCI Administrator role.
+All values are defined in the `#region CONFIGURATION` block at the top. No `variables.yml`, no config-loader, no helpers required. Requires PSRemoting access to a cluster node with the Azure Stack HCI Administrator role.
 :::
 
 #### Validation
@@ -1476,7 +1476,7 @@ All values are defined in the `#region CONFIGURATION` block at the top. No `infr
 | Check | Command | Expected Result |
 |-------|---------|-----------------|
 | OS build | `systeminfo.exe \| Select-String "OS Version"` | `10.0.26100` |
-| vSwitch name set | `infrastructure.yml` → `compute.azure_local.vm_switch_name` | Non-empty string |
+| vSwitch name set | `variables.yml` → `compute.azure_local.vm_switch_name` | Non-empty string |
 | NC cluster group | `Get-ClusterGroup \| Where-Object Name -match "Network Controller"` | `State: Online` |
 | NC cluster resources | `Get-ClusterResource \| Where-Object ResourceType -match "Network"` | All `State: Online` |
 | DNS resolution | `Resolve-DnsName "<SDNPrefix>-NC.<domain>"` | Resolves to reserved IP |
@@ -1484,7 +1484,7 @@ All values are defined in the `#region CONFIGURATION` block at the top. No `infr
 
 ### Validation Checklist
 
-- [ ] `compute.azure_local.vm_switch_name` populated in `infrastructure.yml`
+- [ ] `compute.azure_local.vm_switch_name` populated in `variables.yml`
 - [ ] DNS record resolves correctly (`Resolve-DnsName <SDNPrefix>-NC.<domain>`)
 - [ ] `Add-EceFeature` completes with a successful action plan outcome
 - [ ] `Get-ClusterGroup | Where-Object Name -match "Network Controller"` — state `Online`

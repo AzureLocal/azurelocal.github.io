@@ -2,7 +2,7 @@
 title: "Task 03: Create DHCP Reservations for Management NICs"
 sidebar_label: "Task 03: Management NIC Reservations"
 sidebar_position: 3
-description: "Create DHCP reservations for in-band management network interfaces using MAC addresses from Task 02 hardware discovery and planned IPs from infrastructure.yml."
+description: "Create DHCP reservations for in-band management network interfaces using MAC addresses from Task 02 hardware discovery and planned IPs from variables.yml."
 category: Runbook
 scope: Azure Local hardware provisioning
 purpose: Pre-stage DHCP reservations for management NICs so nodes receive consistent IPs on first OS boot, enabling automated remote configuration
@@ -47,7 +47,7 @@ This task is **optional but strongly recommended** for enterprise deployments. C
 - Consistent IP addressing throughout the deployment lifecycle until static IPs are configured
 :::
 
-Create DHCP reservations for in-band management NICs using MAC addresses from `infrastructure.yml` (populated from Task 02 hardware discovery) and planned IPs from `infrastructure.yml`. Although these interfaces are ultimately assigned **static IPs during OS configuration**, DHCP reservations provide consistent temporary addressing for remote automation workflows.
+Create DHCP reservations for in-band management NICs using MAC addresses from `variables.yml` (populated from Task 02 hardware discovery) and planned IPs from `variables.yml`. Although these interfaces are ultimately assigned **static IPs during OS configuration**, DHCP reservations provide consistent temporary addressing for remote automation workflows.
 
 ---
 
@@ -55,14 +55,14 @@ Create DHCP reservations for in-band management NICs using MAC addresses from `i
 
 | Requirement | Description | Source |
 |-------------|-------------|--------|
-| Task 02 Complete | Management NIC MACs populated in `infrastructure.yml` | `infrastructure.yml: nodes.<name>.macs.onboard_port1` |
+| Task 02 Complete | Management NIC MACs populated in `variables.yml` | `variables.yml: nodes.<name>.macs.onboard_port1` |
 | DHCP Server Access | FortiGate admin rights, Windows DHCP admin, or customer DHCP contact | Network team |
-| Management Network Subnet | Management VLAN DHCP scope configured | `infrastructure.yml: network.vlans.management.cidr` |
-| Planned Management IPs | Assigned management IP per node | `infrastructure.yml: nodes.<name>.management_ip` |
+| Management Network Subnet | Management VLAN DHCP scope configured | `variables.yml: network.vlans.management.cidr` |
+| Planned Management IPs | Assigned management IP per node | `variables.yml: nodes.<name>.management_ip` |
 
 ---
 
-## Variables from infrastructure.yml
+## Variables from variables.yml
 
 | Path | Type | Description |
 |------|------|-------------|
@@ -90,14 +90,14 @@ Select the tab matching your DHCP infrastructure:
 2. Navigate to **Policy & Objects** → **DHCP Server**
 3. Select the DHCP server for the management network and click **Edit**
 4. In the **Reserved Addresses** section, click **Create New** for each node:
- - **IP Address**: `nodes.<name>.management_ip` from `infrastructure.yml`
- - **MAC Address**: `nodes.<name>.macs.onboard_port1` from `infrastructure.yml`
+ - **IP Address**: `nodes.<name>.management_ip` from `variables.yml`
+ - **MAC Address**: `nodes.<name>.macs.onboard_port1` from `variables.yml`
  - **Description**: `<hostname>-mgmt (Service Tag: <service-tag>)`
 5. Click **OK** to save
 
 ### FortiOS CLI (from Management Server)
 
-Connect via SSH from the management server and run the following for each node. Replace values with actual entries from `infrastructure.yml`.
+Connect via SSH from the management server and run the following for each node. Replace values with actual entries from `variables.yml`.
 
 ```bash
 # ============================================================================
@@ -145,8 +145,8 @@ show system dhcp server | grep -A5 "mgmt"
 3. Expand server → **IPv4** → **Scope [Management Network]** → **Reservations**
 4. Right-click **Reservations** → **New Reservation** for each node:
  - **Reservation name**: `<hostname>-mgmt`
- - **IP address**: `nodes.<name>.management_ip` from `infrastructure.yml`
- - **MAC address**: `nodes.<name>.macs.onboard_port1` from `infrastructure.yml`
+ - **IP address**: `nodes.<name>.management_ip` from `variables.yml`
+ - **MAC address**: `nodes.<name>.macs.onboard_port1` from `variables.yml`
  - **Description**: `Mgmt NIC for <hostname> (Service Tag: <service-tag>)`
  - Click **Add**
 
@@ -164,7 +164,7 @@ show system dhcp server | grep -A5 "mgmt"
 
 param(
  [Parameter(Mandatory = $false)]
- [string]$ConfigPath = ".\infrastructure.yml",
+ [string]$ConfigPath = ".\config\variables.yml",
 
  [Parameter(Mandatory = $false)]
  [string]$DHCPServerOverride
@@ -248,9 +248,9 @@ Write-Host "Done." -ForegroundColor Green
 
 ### Information to Provide to Customer
 
-Extract and provide the following from `infrastructure.yml`:
+Extract and provide the following from `variables.yml`:
 
-| Field | infrastructure.yml Path | Example |
+| Field | variables.yml Path | Example |
 |-------|------------------------|---------|
 | Management NIC MAC | `nodes.<name>.macs.onboard_port1` | `C4:CB:E1:F9:AF:E4` |
 | Planned management IP | `nodes.<name>.management_ip` | `192.168.203.11` |
@@ -260,7 +260,7 @@ Extract and provide the following from `infrastructure.yml`:
 
 ### Coordination Steps
 
-1. Extract node data from `infrastructure.yml`
+1. Extract node data from `variables.yml`
 2. Submit request to customer network team with the table above
 3. Confirm VLAN and DHCP scope with network team
 4. Obtain confirmation that reservations have been created
@@ -269,8 +269,8 @@ Extract and provide the following from `infrastructure.yml`:
 ### Validation
 
 - [ ] Customer confirms all reservations created
-- [ ] IP addresses match `infrastructure.yml: nodes.<name>.management_ip`
-- [ ] MAC addresses match `infrastructure.yml: nodes.<name>.macs.onboard_port1`
+- [ ] IP addresses match `variables.yml: nodes.<name>.management_ip`
+- [ ] MAC addresses match `variables.yml: nodes.<name>.macs.onboard_port1`
 - [ ] Reservation names follow convention: `<hostname>-mgmt`
 
 </TabItem>
@@ -282,7 +282,7 @@ Extract and provide the following from `infrastructure.yml`:
 
 ```powershell
 # Windows DHCP — List management NIC reservations
-$config = Get-Content ".\infrastructure.yml" -Raw | ConvertFrom-Yaml
+$config = Get-Content ".\config\variables.yml" -Raw | ConvertFrom-Yaml
 $MgmtScopeId = ($config.network.vlans.management.cidr -split '/')[0]
 $DHCPServer = $config.network.vlans.management.dhcp.server
 
@@ -300,8 +300,8 @@ azlocal-node02-mgmt 192.168.203.12 c4-cb-e1-f9-ca-2e Mgmt NIC for azlocal-node02
 ```
 
 - [ ] DHCP reservation created for every node (one per node)
-- [ ] IP addresses match `nodes.<name>.management_ip` in `infrastructure.yml`
-- [ ] MAC addresses match `nodes.<name>.macs.onboard_port1` in `infrastructure.yml`
+- [ ] IP addresses match `nodes.<name>.management_ip` in `variables.yml`
+- [ ] MAC addresses match `nodes.<name>.macs.onboard_port1` in `variables.yml`
 - [ ] Reservation names follow convention: `<hostname>-mgmt`
 - [ ] Reservation descriptions include hostname and service tag
 - [ ] All reservations in the correct management DHCP scope

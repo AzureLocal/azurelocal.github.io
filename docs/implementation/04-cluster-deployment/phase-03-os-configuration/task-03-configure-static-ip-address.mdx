@@ -2,10 +2,10 @@
 title: "Task 03: Configure Static IP Address"
 sidebar_label: "Task 03: Static IP"
 sidebar_position: 3
-description: "Configure static IP addresses on the management network adapter for each Azure Local cluster node using explicit values from infrastructure.yml."
+description: "Configure static IP addresses on the management network adapter for each Azure Local cluster node using explicit values from variables.yml."
 category: Runbook
 scope: Network IP configuration
-purpose: Assign static management IP addresses to all nodes using explicit IP values from infrastructure.yml
+purpose: Assign static management IP addresses to all nodes using explicit IP values from variables.yml
 author: Azure Local Cloud Azure Local Cloudnology
 created: 2026-01-31
 updated: 2026-03-04
@@ -26,7 +26,7 @@ import TabItem from '@theme/TabItem';
 
 > **DOCUMENT CATEGORY**: Runbook 
 > **SCOPE**: Network IP configuration 
-> **PURPOSE**: Assign static management IP addresses to all nodes using explicit IP values from `infrastructure.yml` — not read from DHCP 
+> **PURPOSE**: Assign static management IP addresses to all nodes using explicit IP values from `variables.yml` — not read from DHCP 
 > **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
 
 **Status**: Active
@@ -35,10 +35,10 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-Configure a static IP address on the management network adapter of each Azure Local node. All IP parameters — address, subnet prefix, gateway, and DNS — come explicitly from `infrastructure.yml`. Scripts do **not** read the current DHCP-assigned address.
+Configure a static IP address on the management network adapter of each Azure Local node. All IP parameters — address, subnet prefix, gateway, and DNS — come explicitly from `variables.yml`. Scripts do **not** read the current DHCP-assigned address.
 
 :::warning Explicit values required — verify before running
-All IP values in `infrastructure.yml` must be correct before running. The scripts hard-fail if any placeholder values remain, and permanently lock in whatever IP you specify.
+All IP values in `variables.yml` must be correct before running. The scripts hard-fail if any placeholder values remain, and permanently lock in whatever IP you specify.
 :::
 
 The process on each node:
@@ -57,11 +57,11 @@ The process on each node:
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Tasks 01–02 Complete | WinRM and RDP enabled on all nodes | [Task 01](./task-01-enable-winrm-for-remote-management.mdx), [Task 02](./task-02-enable-rdp.mdx) |
-| Management IP per node | Static IP to assign | `infrastructure.yml: nodes.<name>.management_ip` |
-| Subnet prefix length | e.g. `24` for /24 | `infrastructure.yml: network.management.prefix_length` |
-| Default gateway | Management network gateway | `infrastructure.yml: network.management.gateway` |
-| DNS servers | Primary and secondary DNS | `infrastructure.yml: dns.primary`, `dns.secondary` |
-| Management NIC name | Exact adapter name on all nodes | `infrastructure.yml: cluster.management_nic_name` (from Phase 01 hardware discovery) |
+| Management IP per node | Static IP to assign | `variables.yml: nodes.<name>.management_ip` |
+| Subnet prefix length | e.g. `24` for /24 | `variables.yml: network.management.prefix_length` |
+| Default gateway | Management network gateway | `variables.yml: network.management.gateway` |
+| DNS servers | Primary and secondary DNS | `variables.yml: dns.primary`, `dns.secondary` |
+| Management NIC name | Exact adapter name on all nodes | `variables.yml: cluster.management_nic_name` (from Phase 01 hardware discovery) |
 
 ---
 
@@ -73,7 +73,7 @@ The process on each node:
 Run on each node via iDRAC Virtual Console or RDP.
 
 :::info Identify the Management Adapter Before Starting
-The adapter number shown in SConfig varies. Before selecting, run `Get-NetAdapter` in PowerShell to list all adapters and confirm the correct name. The management adapter name is recorded in `infrastructure.yml: cluster.management_nic_name` from the iDRAC discovery performed in Phase 01.
+The adapter number shown in SConfig varies. Before selecting, run `Get-NetAdapter` in PowerShell to list all adapters and confirm the correct name. The management adapter name is recorded in `variables.yml: cluster.management_nic_name` from the iDRAC discovery performed in Phase 01.
 
 Common adapter names by NIC vendor:
 
@@ -85,17 +85,17 @@ Common adapter names by NIC vendor:
 :::
 
 1. Open iDRAC Virtual Console or connect via RDP
-2. Run `Get-NetAdapter` in PowerShell — note the adapter name matching `infrastructure.yml: cluster.management_nic_name`
+2. Run `Get-NetAdapter` in PowerShell — note the adapter name matching `variables.yml: cluster.management_nic_name`
 3. Type `SConfig` and press Enter (or it auto-launches)
 4. Select option **8** — Network settings
 5. SConfig lists adapters by number — select the number corresponding to your management adapter identified in step 2
 6. Select option **1** — Set Network Adapter Address
 7. Enter **S** for Static
-8. Enter the static IP address from `infrastructure.yml: nodes.<name>.management_ip`
+8. Enter the static IP address from `variables.yml: nodes.<name>.management_ip`
 9. Enter the subnet mask (e.g., `255.255.255.0` for /24, `255.255.255.128` for /25)
-10. Enter the default gateway from `infrastructure.yml: network.management.gateway`
-11. Select option **2** — Set DNS Servers; enter primary from `infrastructure.yml: dns.primary`
-12. Enter secondary DNS from `infrastructure.yml: dns.secondary`
+10. Enter the default gateway from `variables.yml: network.management.gateway`
+11. Select option **2** — Set DNS Servers; enter primary from `variables.yml: dns.primary`
+12. Enter secondary DNS from `variables.yml: dns.secondary`
 13. Repeat for every node
 
 </TabItem>
@@ -107,9 +107,9 @@ Common adapter names by NIC vendor:
 
 ### Configuration Values
 
-Before running, edit the `#region CONFIGURATION` block at the top of the script with values from `infrastructure.yml`:
+Before running, edit the `#region CONFIGURATION` block at the top of the script with values from `variables.yml`:
 
-| Script Variable | infrastructure.yml Path | Example |
+| Script Variable | variables.yml Path | Example |
 |----------------|------------------------|---------|
 | `ManagementNIC` | `cluster.management_nic_name` | `Slot 3 Port 1` or `Embedded NIC 1` |
 | `IPAddress` | `nodes.<name>.management_ip` | `10.10.1.11` |
@@ -148,7 +148,7 @@ Before running, edit the `#region CONFIGURATION` block at the top of the script 
  Task: task-03-configure-static-ip-address
  Execution: Run directly on the node (console, KVM, or PSRemoting)
  Prerequisites: PowerShell 5.1+, local admin rights
- Source values: infrastructure.yml per-node management_ip, network.management.gateway,
+ Source values: variables.yml per-node management_ip, network.management.gateway,
  dns.primary, dns.secondary, cluster.management_nic_name
 
 .EXAMPLE
@@ -164,22 +164,22 @@ Before running, edit the `#region CONFIGURATION` block at the top of the script 
 $ManagementNIC = "REPLACE_WITH_NIC_NAME" # Exact adapter name from Get-NetAdapter
  # Dell Nvidia/Mellanox: "Slot 3 Port 1"
  # Dell Embedded Intel/Broadcom: "Embedded NIC 1"
- # Source: infrastructure.yml -> cluster.management_nic_name
+ # Source: variables.yml -> cluster.management_nic_name
 
 $IPAddress = "REPLACE_WITH_IP" # e.g. "10.10.1.11"
- # Source: infrastructure.yml -> nodes.<name>.management_ip
+ # Source: variables.yml -> nodes.<name>.management_ip
 
 $PrefixLength = 0 # Subnet prefix (e.g. 24 for /24, 25 for /25)
- # Source: infrastructure.yml -> network.management.prefix_length
+ # Source: variables.yml -> network.management.prefix_length
 
 $Gateway = "REPLACE_WITH_GATEWAY" # e.g. "10.10.1.1"
- # Source: infrastructure.yml -> network.management.gateway
+ # Source: variables.yml -> network.management.gateway
 
 $DNSPrimary = "REPLACE_WITH_DNS1" # e.g. "10.10.0.10"
- # Source: infrastructure.yml -> dns.primary
+ # Source: variables.yml -> dns.primary
 
 $DNSSecondary = "REPLACE_WITH_DNS2" # e.g. "10.10.0.11"
- # Source: infrastructure.yml -> dns.secondary
+ # Source: variables.yml -> dns.secondary
 
 $RetryCount = 3 # Number of attempts if validation fails
 $RetryDelaySec = 10 # Seconds between retries
@@ -482,7 +482,7 @@ try {
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script (Mgmt Server)">
 
-> **When to use**: Standard deployment — reads all configuration from `infrastructure.yml` and configures all nodes via PSRemoting
+> **When to use**: Standard deployment — reads all configuration from `variables.yml` and configures all nodes via PSRemoting
 
 **Script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-03-configure-static-ip-address/powershell/Invoke-ConfigureStaticIP-Orchestrated.ps1`
 
@@ -500,7 +500,7 @@ In most deployments, DHCP reservations mean the node's current IP equals the tar
  Configures static IP addresses on all Azure Local nodes from the management server.
 
 .DESCRIPTION
- Runs from the management server. Reads all IP configuration from infrastructure.yml
+ Runs from the management server. Reads all IP configuration from variables.yml
  (management IP, prefix, gateway, DNS, NIC name) and pushes the configuration to
  each node via PSRemoting.
 
@@ -510,7 +510,7 @@ In most deployments, DHCP reservations mean the node's current IP equals the tar
  waits for the node to stabilise on its new IP, then opens a fresh session to the
  new static IP and runs a verification query to confirm all settings took.
 
- Infrastructure.yml paths used per node:
+ Variables.yml paths used per node:
  nodes.<name>.management_ip -> static IP to assign
  network.management.prefix_length -> subnet prefix (e.g. 24)
  network.management.gateway -> default gateway
@@ -519,10 +519,10 @@ In most deployments, DHCP reservations mean the node's current IP equals the tar
  cluster.management_nic_name -> exact NIC adapter name
 
 .PARAMETER ConfigPath
- Path to infrastructure.yml. Auto-detected from .\configs\ if not specified.
+ Path to variables.yml. Auto-detected from .\configs\ if not specified.
 
 .PARAMETER NodeNames
- Specific node names to target. Default: all nodes in infrastructure.yml.
+ Specific node names to target. Default: all nodes in variables.yml.
 
 .PARAMETER Credential
  PSCredential for PSRemoting. Prompted if not provided.
@@ -614,10 +614,10 @@ function Resolve-ConfigPath {
 
  Write-Host "`nMultiple config files found:" -ForegroundColor Yellow
  for ($i = 0; $i -lt $candidates.Count; $i++) {
- $default = if ($candidates[$i].Name -eq "infrastructure.yml") { " [DEFAULT]" } else { "" }
+ $default = if ($candidates[$i].Name -eq "variables.yml") { " [DEFAULT]" } else { "" }
  Write-Host " [$($i+1)] $($candidates[$i].Name)$default"
  }
- $defaultIdx = ($candidates | ForEach-Object { $_.Name }).IndexOf("infrastructure.yml")
+ $defaultIdx = ($candidates | ForEach-Object { $_.Name }).IndexOf("variables.yml")
  if ($defaultIdx -lt 0) { $defaultIdx = 0 }
  $sel = Read-Host "`nSelect config (Enter for default [$($candidates[$defaultIdx].Name)])"
  if ([string]::IsNullOrWhiteSpace($sel)) { return $candidates[$defaultIdx].FullName }
@@ -633,11 +633,11 @@ function Get-NodeConfigs {
  $dns = $Config.dns
  $clusterNIC = $Config.cluster.management_nic_name
 
- if (-not $mgmtNet.gateway) { throw "network.management.gateway not set in infrastructure.yml" }
- if (-not $mgmtNet.prefix_length) { throw "network.management.prefix_length not set in infrastructure.yml" }
- if (-not $dns.primary) { throw "dns.primary not set in infrastructure.yml" }
- if (-not $dns.secondary) { throw "dns.secondary not set in infrastructure.yml" }
- if (-not $clusterNIC) { throw "cluster.management_nic_name not set in infrastructure.yml" }
+ if (-not $mgmtNet.gateway) { throw "network.management.gateway not set in variables.yml" }
+ if (-not $mgmtNet.prefix_length) { throw "network.management.prefix_length not set in variables.yml" }
+ if (-not $dns.primary) { throw "dns.primary not set in variables.yml" }
+ if (-not $dns.secondary) { throw "dns.secondary not set in variables.yml" }
+ if (-not $clusterNIC) { throw "cluster.management_nic_name not set in variables.yml" }
 
  $nodeConfigs = [System.Collections.Generic.List[hashtable]]::new()
 
@@ -646,7 +646,7 @@ function Get-NodeConfigs {
  $nodeData = $entry.Value
 
  if (-not $nodeData.management_ip) {
- Write-Log "Node $nodeName has no management_ip in infrastructure.yml — skipping" "WARN"
+ Write-Log "Node $nodeName has no management_ip in variables.yml — skipping" "WARN"
  continue
  }
 
@@ -880,7 +880,7 @@ try {
  if ($NodeNames -and $NodeNames.Count -gt 0) {
  $allNodeConfigs = $allNodeConfigs | Where-Object { $NodeNames -contains $_.NodeName }
  if ($allNodeConfigs.Count -eq 0) {
- throw "None of the specified NodeNames found in infrastructure.yml: $($NodeNames -join ', ')"
+ throw "None of the specified NodeNames found in variables.yml: $($NodeNames -join ', ')"
  }
  }
 
@@ -934,7 +934,7 @@ try {
 
 ```powershell
 # Run on each node — verify static assignment
-$nic = "Embedded NIC 1" # replace with cluster.management_nic_name from infrastructure.yml
+$nic = "Embedded NIC 1" # replace with cluster.management_nic_name from variables.yml
 Get-NetIPAddress -InterfaceAlias $nic -AddressFamily IPv4 |
  Select-Object IPAddress, PrefixLength, PrefixOrigin
 
@@ -953,11 +953,11 @@ Resolve-DnsName "azure.microsoft.com" -ErrorAction SilentlyContinue | Select-Obj
 | Issue | Cause | Resolution |
 |-------|-------|------------|
 | Script hard-fails on startup | `REPLACE` placeholder values remain | Edit `#region CONFIGURATION` block with real values |
-| `Adapter not found` error | NIC name in config doesn't match the node | Run `Get-NetAdapter` on the node; update `cluster.management_nic_name` in `infrastructure.yml` |
+| `Adapter not found` error | NIC name in config doesn't match the node | Run `Get-NetAdapter` on the node; update `cluster.management_nic_name` in `variables.yml` |
 | Node unreachable after orchestrated run | IP changed (no DHCP reservation) | Orchestrator will auto-reconnect to target IP; check logs for reconnect status |
 | `PrefixOrigin` shows `Dhcp` after script | DHCP not fully disabled | Run `Set-NetIPInterface -InterfaceAlias '<nic>' -Dhcp Disabled` on the node |
-| Wrong IP locked in permanently | Incorrect value in `infrastructure.yml` | Correct `management_ip` in yml; rerun the script — it will detect mismatch and reconfigure |
-| Gateway unreachable after config | Wrong gateway in `infrastructure.yml` | Verify `network.management.gateway`; check upstream switch VLAN |
+| Wrong IP locked in permanently | Incorrect value in `variables.yml` | Correct `management_ip` in yml; rerun the script — it will detect mismatch and reconfigure |
+| Gateway unreachable after config | Wrong gateway in `variables.yml` | Verify `network.management.gateway`; check upstream switch VLAN |
 | DNS not resolving | DNS not set or wrong servers | Verify `dns.primary` / `dns.secondary`; rerun script |
 
 ---

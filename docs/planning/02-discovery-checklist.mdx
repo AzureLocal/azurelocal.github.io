@@ -33,7 +33,7 @@ This section covers discovery activities performed **once per deployment program
 
 ### Section 1: Azure Tenant and Identity Requirements
 
-**Reference:** [Azure Local Cloud Onboarding Process](https://docs.Azure Local Cloudmgmt.com/Offerings/Professional/Azure/Onboard/)
+**Reference:** [Microsoft Learn - Entra ID Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
 
 #### Customer Tenant Information
 
@@ -44,87 +44,50 @@ This section covers discovery activities performed **once per deployment program
  - Global Administrator contact: `________________________________`
  - Global Administrator email: `________________________________`
 
-- [ ] **Azure Local Cloud Service Details**
- - Service tier: ☐ Professional ☐ Premium ☐ Other: `____________`
- - Additional services: ☐ SOC ☐ AES ☐ None
+- [ ] **Azure Subscription Details**
  - Estimated monthly Azure spend: `$____________`
  - Budget alert threshold: `$____________`
  - Notification distribution email(s): `________________________________`
 
-#### External Collaboration Settings
-
-- [ ] **Current Guest User Policies**
- - Guest invitations enabled: ☐ Yes ☐ No
- - Guest users can invite: ☐ Yes ☐ No
- - Collaboration restrictions: ☐ Allow any domain ☐ Allow specific domains ☐ Block specific domains
- - Domain allowlist/blocklist: `________________________________`
-
-- [ ] **MFA and Authentication Requirements**
- - MFA enforced for all users: ☐ Yes ☐ No
- - MFA required for external users: ☐ Yes ☐ No
- - Device compliance required: ☐ Yes ☐ No
- - Trusted MFA claims from Azure Local Cloud: ☐ Accept ☐ Require re-authentication
-
 #### Conditional Access Policies
 
-- [ ] **External User Access Policies**
- - Policies blocking external users exist: ☐ Yes ☐ No ☐ Unknown
- - Policy names affecting guest access: `________________________________`
- - Exclusions required for management tenants: ☐ Yes ☐ No
- - Policy exemption approval obtained: ☐ Yes ☐ No ☐ N/A
+- [ ] **Access Policies**
+ - MFA enforced for all users: ☐ Yes ☐ No
+ - Device compliance required: ☐ Yes ☐ No
+ - Conditional access policies that may block service principal authentication: ☐ Yes ☐ No ☐ Unknown
+ - Policy names affecting automation: `________________________________`
 
-- [ ] **Required Policy Exclusions**
- - Azure Local Cloud CSP Tenant ID: `{{Azure Local Cloud_CSP_TENANT_ID}}` (from `infrastructure.yml`) - Exclude: ☐ Yes ☐ No ☐ N/A
- - Azure Local Cloud MGMT Tenant ID: `{{Azure Local Cloud_MGMT_TENANT_ID}}` (from `infrastructure.yml`) - Exclude: ☐ Yes ☐ No
+### Section 2: Source Control and CI/CD Requirements
 
-#### Cross-Tenant Sync Configuration
+**Reference:** [CI/CD Infrastructure Setup](../implementation/01-cicd-infra/)
 
-- [ ] **B2B Collaboration Settings**
- - Inbound B2B collaboration enabled for Azure Local Cloud: ☐ Yes ☐ No
- - Inbound B2B direct connect enabled: ☐ Yes ☐ No
- - Cross-tenant sync enabled: ☐ Yes ☐ No
- - Trust settings configured (MFA, device compliance): ☐ Yes ☐ No
-
-- [ ] **Azure Local Cloud User Provisioning**
- - Automatic user provisioning preferred: ☐ Yes ☐ No (manual invites)
- - User assignment groups identified: ☐ Yes ☐ No
- - Attribute mapping reviewed: ☐ Yes ☐ No
-
-### Section 2: GitLab and CI/CD Requirements
-
-**Reference:** [Customer source control project Setup Guide](https://docs.Azure Local Cloudmgmt.com/Providers/Gitlab/Implementation/customer_gitlab_project_setup_guide.md)
-
-#### source control project Configuration
+#### Source Control Project Configuration
 
 - [ ] **Project Naming and Structure**
- - Customer ID number (CID): `cid_______`
- - Customer short name (lowercase, no spaces): `________________________________`
- - source control project name format: `cid###-customer_name`
+ - Customer short name (lowercase, hyphens): `________________________________`
+ - Source control project name format: `<customer>-azurelocal`
  - Final project name: `________________________________`
- - Service tier (determines project path):
- - ☐ Professional → `Azure Local Cloud/customers/Professional/`
- - ☐ Premium → `Azure Local Cloud/customers/Premium/`
- - ☐ Megaport → `Azure Local Cloud/customers/Megaport/`
- - ☐ Sandbox → `Azure Local Cloud/[sub-group]/sandbox/`
+ - Source control platform:
+ - ☐ GitHub
+ - ☐ GitLab
+ - ☐ Azure DevOps
 
-- [ ] **source control project Settings**
- - Template to use: ☐ cid0000-customer_name (default) ☐ Other: `____________`
+- [ ] **Source Control Project Settings**
+ - Template to use: ☐ Azure Local template (default) ☐ Other: `____________`
  - Project avatar/logo available: ☐ Yes ☐ No
  - Project description: `________________________________`
- - Merge request approvals required: ☐ 2 (default) ☐ 3 (Azure Local Cloud/_core) ☐ 0 (sandbox)
- - Approval groups: ☐ CI/CD (default) ☐ pcie (megaport) ☐ Both
+ - Pull/merge request approvals required: ☐ 2 (default) ☐ 3 (core repos) ☐ 0 (sandbox)
+ - Approval groups: ☐ CI/CD (default)
 
-#### GitLab Environments
+#### CI/CD Environments
 
 - [ ] **Environment Configuration**
- - Cloud provider: ☐ Azure ☐ AWS ☐ Multi-cloud
- - Primary environment name: `________________________________` (e.g., `azr-prod-us`, `aws-prod-us`)
+ - Cloud provider: ☐ Azure
+ - Primary environment name: `________________________________` (e.g., `azr-prod-us`)
  - Additional environments needed:
  - ☐ Development: `________________________________`
  - ☐ Testing: `________________________________`
  - ☐ Staging: `________________________________`
- - ☐ Megaport: `megaport`
- - ☐ Datadog: `datadog`
  - ☐ Other: `________________________________`
 
 #### Service Principal Requirements
@@ -144,13 +107,13 @@ This section covers discovery activities performed **once per deployment program
 - [ ] **Credential Storage**
  - Azure Key Vault name: `________________________________`
  - Key Vault resource group: `________________________________`
- - Secret naming convention: `sp-Azure Local Cloud-cicd-*` (appid, secret, tenantid, objectid)
+ - Secret naming convention: `sp-azurelocal-cicd-*` (appid, secret, tenantid, objectid)
  - Secret rotation policy: ☐ 90 days ☐ 180 days ☐ 365 days (max)
  - Calendar reminders configured for rotation: ☐ Yes ☐ No
 
 ### Section 3: CI/CD Infrastructure Requirements
 
-**Reference:** [Deploy Customer CI/CD runners](https://docs.Azure Local Cloudmgmt.com/Providers/Gitlab/Implementation/deploy_customer_runners.md)
+**Reference:** [CI/CD Runner Deployment](../implementation/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners)
 
 #### CI/CD runner Infrastructure Sizing
 
@@ -164,7 +127,7 @@ This section covers discovery activities performed **once per deployment program
  - VM instance size: ☐ Standard_D2s_v3 (default) ☐ Standard_D4s_v3 ☐ Other: `____________`
  - Autoscaling max instances: ☐ 2 (default) ☐ 3-5 ☐ 6-10
  - Azure region for runner deployment: `________________________________`
- - Resource group name: `________________________________` (default: `rg-{cusid}-cicd-prod-{region}-001`)
+ - Resource group name: `________________________________` (default: `rg-{customer}-cicd-prod-{region}-001`)
 
 - [ ] **Network Connectivity**
  - SSH access required (for Ansible): ☐ Yes (azrshci product) ☐ No
@@ -210,35 +173,22 @@ This section covers discovery activities performed **once per deployment program
  - Microsoft Teams notifications: ☐ Yes ☐ No - Webhook: `________________________________`
  - Custom integrations: `________________________________`
 
-### Section 4: Azure Local Cloud Access and Group Requirements
+### Section 4: Access and Group Requirements
 
-**Reference:** [Deploy Azure Local Cloud Entra ID Groups](https://docs.Azure Local Cloudmgmt.com/Providers/Azure/Implementation/Azure Local Cloud-groups-mop.md)
+**Reference:** [Microsoft Learn - Entra ID Role-Based Access](https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/)
 
-#### Service Tier Group Assignments
+#### Entra ID Group Configuration
 
-- [ ] **Service Tier Configuration**
- - Service tier: ☐ Professional ☐ Premium ☐ Other: `____________`
- - Professional tier groups (if applicable):
- - ☐ `TRP-ENG-CI/CD` (Public Cloud Services - core engineering)
- - ☐ `TRP-ENG-PCS-L2` (Level 2 engineers)
- - ☐ `TRP-ENG-PCS-L3` (Level 3 engineers)
- - ☐ `TRP-MGMT-CI/CD` (Management and leadership)
- - Premium tier groups (if applicable):
- - ☐ All Professional groups above
- - ☐ `TRP-ENG-PCS-PREMIUM` (Premium-specific engineering)
- - ☐ Additional dedicated resources as contracted
-
-- [ ] **Additional Service Groups**
- - SOC (Security Operations Center): ☐ Yes ☐ No
- - If Yes: ☐ `TRP-SEC-SOC` group assignment
- - AES (Advanced Engineering Services): ☐ Yes ☐ No
- - If Yes: ☐ `TRP-SEC-SD Advanced Services` group assignment
- - Other services: `________________________________`
+- [ ] **Operational Groups**
+ - Operations team group name: `________________________________` (e.g., `azurelocal-ops`)
+ - Engineering team group name: `________________________________` (e.g., `azurelocal-eng`)
+ - Admin team group name: `________________________________` (e.g., `azurelocal-admins`)
+ - Additional groups needed: `________________________________`
 
 #### RBAC Role Requirements
 
 - [ ] **Azure RBAC Roles**
- - Azure Local Cloud group RBAC assignment preference:
+ - Deployment team RBAC assignment preference:
  - ☐ Owner (full control, includes RBAC management)
  - ☐ Contributor + User Access Administrator (recommended, granular permissions)
  - ☐ Custom role (specify requirements): `________________________________`
@@ -249,43 +199,26 @@ This section covers discovery activities performed **once per deployment program
 #### Entra ID Role Requirements
 
 - [ ] **Entra ID Admin Roles**
- - Azure Local Cloud user Entra ID role preference:
+ - Deployment team Entra ID role preference:
  - ☐ Default roles (Global Reader, Service Support Administrator)
- - ☐ POLP roles (Directory Readers, Security Reader, Service Support Administrator)
+ - ☐ Least-privilege roles (Directory Readers, Security Reader, Service Support Administrator)
  - ☐ Custom roles (specify): `________________________________`
- - Customer preference: ☐ Default ☐ POLP (if customer pushes back on Global Reader)
- - Justification for POLP if selected: `________________________________`
-
-#### Automation Account Requirements
-
-- [ ] **Group Management Automation**
- - Automation account name: `________________________________` (default: `aa-Azure Local Cloudentra-{env}-{region}`)
- - Automation account resource group: `________________________________`
- - Automation account region: `________________________________`
- - Group management runbook schedule:
- - Frequency: ☐ Daily ☐ Twice daily ☐ Hourly ☐ Custom: `____________`
- - Schedule time (UTC): `____________` (default: 02:00 UTC daily)
-
-- [ ] **Required Microsoft Graph Permissions**
- - User.Read.All (read user information): ☐ Required
- - Group.ReadWrite.All (manage group membership): ☐ Required
- - Directory.Read.All (read directory data): ☐ Required
- - RoleManagement.ReadWrite.Directory (assign Entra ID roles): ☐ Required if role automation enabled
+ - Justification for custom roles if selected: `________________________________`
 
 ### Section 5: Azure Landing Zone and Governance
 
-**Reference:** [tf-module-azr-governance](https://github.com/AzureLocal/core/terraform-modules/azure/tf-module-azr-governance)
+**Reference:** [Azure Local Toolkit — Governance Module](https://github.com/AzureLocal/azurelocal-toolkit)
 
 #### Management Group Hierarchy
 
 - [ ] **Management Group Structure**
- - Root management group name: `________________________________` (e.g., `CBB Root`)
- - Azure Local Cloud management group name: `________________________________` (e.g., `Azure Local Cloud`)
- - Azure Local management group name: `________________________________` (e.g., `CBB Azure Local`)
+ - Root management group name: `________________________________` (e.g., `IIC Root`)
+ - Platform management group name: `________________________________` (e.g., `Platform`)
+ - Landing zones management group name: `________________________________` (e.g., `Landing Zones`)
  - Additional management groups needed: `________________________________`
 
 - [ ] **Policy Inheritance**
- - Azure Policy set assignment scope: ☐ Root ☐ Azure Local Cloud MG ☐ Azure Local MG ☐ Subscription
+ - Azure Policy set assignment scope: ☐ Root ☐ Platform MG ☐ Landing Zones MG ☐ Subscription
  - Custom policies required: ☐ Yes ☐ No
  - Policy exclusions needed: ☐ Yes ☐ No - Specify: `________________________________`
 
@@ -297,20 +230,20 @@ This section covers discovery activities performed **once per deployment program
 #### Subscription Planning
 
 - [ ] **Management Subscription**
- - Subscription name: `________________________________` (e.g., `Azure Local Cloud Management`)
+ - Subscription name: `________________________________` (e.g., `Management`)
  - Subscription ID (if existing): `________________________________`
- - Subscription owner: ☐ Azure Local Cloud ☐ Customer ☐ Shared
+ - Subscription owner: `________________________________`
  - Cost center/billing tag: `________________________________`
  - Budget alert threshold: `$____________`
 
 - [ ] **Azure Local Subscription(s)**
  - Number of subscriptions needed: ☐ 1 ☐ 2-5 ☐ 6-10 ☐ 10+
- - Subscription naming pattern: `________________________________` (e.g., `CBB Azure Local - {Region}`)
+ - Subscription naming pattern: `________________________________` (e.g., `AzureLocal - {Region}`)
  - Subscription IDs (if existing):
  1. `________________________________`
  2. `________________________________`
  3. `________________________________`
- - Subscription owners: ☐ Azure Local Cloud ☐ Customer ☐ Shared
+ - Subscription owners: `________________________________`
  - Cost centers/billing tags: `________________________________`
  - Budget alert thresholds: `________________________________`
 
@@ -332,7 +265,7 @@ This section covers discovery activities performed **once per deployment program
 
 #### Governance Module Configuration
 
-- [ ] **tf-module-azr-governance Settings**
+- [ ] **Governance Module Settings**
  - Module version: `________________________________` (e.g., `~> 1.0`)
  - Deployment subscription: `________________________________`
  - Deployment resource group: `________________________________`
@@ -354,7 +287,7 @@ This section covers discovery activities performed **once per deployment program
 #### Resource Group Structure
 
 - [ ] **Resource Group Naming Convention**
- - Naming pattern: `________________________________` (e.g., `rg-{cusid}-{purpose}-{env}-{region}-{instance}`)
+ - Naming pattern: `________________________________` (e.g., `rg-{customer}-{purpose}-{env}-{region}-{instance}`)
  - Example resource group name: `________________________________` (e.g., `rg-iic-azlocal-prod-eus-001`)
  - Delimiter: ☐ Hyphen (-) ☐ Underscore (_) ☐ None
 

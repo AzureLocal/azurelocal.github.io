@@ -107,7 +107,7 @@ logical networks show provisioning state **Succeeded** and VLAN IDs match the si
 <TabItem value="orchestrated" label="Orchestrated">
 
 **When to use:** Config-driven, logged verification from the management server. Reads cluster
-node list and credentials from `infrastructure.yml`. Produces a timestamped log in
+node list and credentials from `variables.yml`. Produces a timestamped log in
 `logs/task-08-post-deployment-verification/` for handoff documentation.
 
 **Script:**
@@ -122,7 +122,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 #Requires -Version 5.1
 <#
 .SYNOPSIS
- Orchestrated: verifies all Phase 06 post-deployment tasks against infrastructure.yml.
+ Orchestrated: verifies all Phase 06 post-deployment tasks against variables.yml.
 
 .DESCRIPTION
  Phase 06 — Post-Deployment | Task 08 — Post-Deployment Verification
@@ -134,7 +134,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  All checks are idempotent — nothing is created or modified.
 
 .PARAMETER ConfigPath
- Path to infrastructure YAML. Defaults to configs\infrastructure.yml in CWD.
+ Path to infrastructure YAML. Defaults to config\variables.yml in CWD.
 
 .PARAMETER Credential
  Credential for PSRemoting to cluster nodes. If omitted, resolved via Key Vault
@@ -152,7 +152,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 
 .PARAMETER WacServer
  FQDN or IP of the Windows Admin Center server. Override at the command line or set
- management.wac.server_fqdn in infrastructure.yml. If empty, WAC checks are skipped.
+ management.wac.server_fqdn in variables.yml. If empty, WAC checks are skipped.
 
 .PARAMETER ClusterName
  Override cluster name. Defaults to compute.azure_local.cluster_name from YAML.
@@ -231,7 +231,7 @@ Write-Log "======================================================="
 
 #region CONFIG LOADING ----------------------------------------------------------
 if ([string]::IsNullOrEmpty($ConfigPath)) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config not found: $ConfigPath" "FAIL"; throw "Config not found"
@@ -490,7 +490,7 @@ if ($failCount -gt 0) { throw "$failCount check(s) failed. Review log: $LogPath"
 <TabItem value="standalone" label="Standalone">
 
 **When to use:** Copy-paste ready with no external dependencies — no toolkit clone or
-`infrastructure.yml` required. Edit the `#region CONFIGURATION` block and run from any
+`variables.yml` required. Edit the `#region CONFIGURATION` block and run from any
 workstation with PSRemoting access to cluster nodes.
 
 **Script:**

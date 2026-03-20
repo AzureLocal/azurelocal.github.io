@@ -19,7 +19,7 @@ description: "Microsoft CAF-aligned naming conventions for Azure Local deploymen
 
 ---
 
-Naming conventions are established during discovery workshops with customers to ensure consistency across all Azure Local infrastructure components. Azure Local Cloud follows **Microsoft Cloud Adoption Framework (CAF)** naming standards aligned with Azure best practices and the Azure Local Cloud Master Variable Registry.
+Naming conventions are established during discovery workshops with customers to ensure consistency across all Azure Local infrastructure components. Azure Local Cloud follows **Microsoft Cloud Adoption Framework (CAF)** naming standards aligned with Azure best practices and the Azure Local Cloud Variable Management Standard.
 
 ## Overview
 
@@ -49,10 +49,10 @@ During customer discovery sessions and environment design, these standards serve
 During discovery, deployment teams work with customers to establish naming standards that will be used throughout the implementation. These standards:
 
 - Follow Microsoft CAF/WAF best practices
-- Align with Azure Local Cloud Master Variable Registry
+- Align with Azure Local Cloud Variable Management Standard
 - Cover on-premises infrastructure (cluster nodes, management servers)
 - Cover Azure resources (resource groups, virtual networks, storage accounts)
-- Support automation via variable substitution (`infrastructure.yml`)
+- Support automation via variable substitution (`variables.yml`)
 - Ensure technical compliance with platform limits (NetBIOS 15-char, Azure resource limits, etc.)
 
 :::tip Microsoft CAF Reference
@@ -396,12 +396,12 @@ Management groups have **two distinct identifiers** that serve different purpose
 
 | **Component** | **Description** | **Examples** |
 |---------------|-----------------|--------------|
-| `prefix` | Organization short code (chosen by org) | `tp`, `cid001`, `contoso` |
+| `prefix` | Organization short code (chosen by org) | `iic`, `acme`, `azl` |
 | `purpose` | Functional role in hierarchy | `root`, `platform`, `platform-identity`, `landing-zones` |
 | `tenant` | Tenant/environment short code | `prod`, `dev`, `staging` |
 
 :::info Prefix is Organization-Specific
-The `{prefix}` is whatever the organization chooses — there is no universal default. Azure Local Cloud uses `tp` internally. Customer deployments use the customer ID (e.g., `cid001`). The prefix must be consistent across all management groups in a tenant.
+The `{prefix}` is whatever the organization chooses — there is no universal default. For example, Infinite Improbability Corp might use `iic` and another organization might use `acme`. The prefix must be consistent across all management groups in a tenant.
 :::
 
 ---
@@ -433,16 +433,16 @@ For smaller or customer deployments that don't require full Azure Landing Zone g
 
 ```text
 Tenant Root Group
-└── {prefix}-{tenant}-root (e.g., cid001-prod-root)
- └── sub-{org}-azurelocal-{site} (e.g., sub-cid001-azurelocal-ral)
+└── {prefix}-{tenant}-root (e.g., iic-prod-root)
+ └── sub-{org}-azurelocal-{site} (e.g., sub-iic-azurelocal-ral)
 ```
 
-**Customer Example** (Customer ID: `cid001`, Tenant: `prod`):
+**Customer Example** (Org: `iic`, Tenant: `prod`):
 
 | **Resource** | **ID / Name** | **Display Name** |
 |-------------|---------------|-------------------|
-| Management Group | `cid001-prod-root` | `CID001 Root` |
-| Subscription | `sub-cid001-azurelocal-ral` | — |
+| Management Group | `iic-prod-root` | `Infinite Improbability Corp Root` |
+| Subscription | `sub-iic-azurelocal-ral` | — |
 
 :::tip When to Use Model A
 - Customer has a single Azure Local cluster
@@ -483,19 +483,19 @@ Tenant Root Group
  └── azl-decommissioned-prod Azure Local Cloud Decommissioned
 ```
 
-**Customer Example** (Prefix: `cid001`, Tenant: `prod`):
+**Customer Example** (Prefix: `iic`, Tenant: `prod`):
 
 ```text
 Tenant Root Group
-└── cid001-prod-root CID001 Root
- ├── cid001-platform-prod CID001 Platform
- │ ├── cid001-platform-identity-prod CID001 Platform - Identity
- │ ├── cid001-platform-security-prod CID001 Platform - Security
- │ ├── cid001-platform-connectivity-prod CID001 Platform - Connectivity
- │ └── cid001-platform-management-prod CID001 Platform - Management
- ├── cid001-landing-zones-prod CID001 Landing Zones
- ├── cid001-sandbox-prod CID001 Sandbox
- └── cid001-decommissioned-prod CID001 Decommissioned
+└── iic-prod-root                            IIC Root
+ ├── iic-platform-prod                       IIC Platform
+ │ ├── iic-platform-identity-prod           IIC Platform - Identity
+ │ ├── iic-platform-security-prod           IIC Platform - Security
+ │ ├── iic-platform-connectivity-prod       IIC Platform - Connectivity
+ │ └── iic-platform-management-prod         IIC Platform - Management
+ ├── iic-landing-zones-prod                   IIC Landing Zones
+ ├── iic-sandbox-prod                         IIC Sandbox
+ └── iic-decommissioned-prod                   IIC Decommissioned
 ```
 
 :::tip When to Use Model B
@@ -577,7 +577,7 @@ Subscriptions organize Azure resources for billing, governance, and access contr
 | Azure Local | `sub-<org>-azurelocal-<site>` | `sub-Azure Local Cloud-azurelocal-ral` | `sub_azure_local_name` |
 | Workloads | `sub-<org>-workloads-<env>` | `sub-Azure Local Cloud-workloads-prod` | `sub_workloads_name` |
 
-**Variable Mapping** (from Master Variable Registry):
+**Variable Mapping** (from `config/variables.yml`):
 ```yaml
 subscriptions:
  sub_bootstrap_id: "00000000-1111-2222-3333-444444444444"
@@ -876,7 +876,7 @@ Private DNS zones enable name resolution for Azure Private Endpoints. These zone
 
 #### VLANs
 
-**Standard VLAN Allocation** (Master Variable Registry):
+**Standard VLAN Allocation** (from `config/variables.yml`):
 
 | **VLAN ID** | **Purpose** | **Variable Name** | **Notes** |
 | ----------- | --------------- | ------------------------ | ------------------------- |
@@ -1481,22 +1481,22 @@ backup_policies:
 
 This section covers operational resources for deployment automation and GitLab integration.
 
-### 3.1 source control projects
+### 3.1 Source Control Projects
 
-**Pattern**: `cid###-<customer_name>`
+**Pattern**: `<customer>-azurelocal`
 
 **Examples**:
-- `cid001-acme-corp` (Customer ID 001 - ACME Corp)
-- `cid042-globaltech` (Customer ID 042 - GlobalTech)
-- `cid100-enterprise-solutions` (Customer ID 100 - Enterprise Solutions)
+- `acme-azurelocal` (ACME Corp)
+- `globaltech-azurelocal` (GlobalTech)
+- `enterprise-solutions-azurelocal` (Enterprise Solutions)
 
 **Variable Mapping**:
 ```yaml
-gitlab:
- project_name: "cid{{customer_id}}-{{customer_name}}"
+project:
+  project_name: "{{customer_name}}-azurelocal"
 ```
 
-### 3.2 GitLab Environments
+### 3.2 CI/CD Environments
 
 **Pattern**: `azr-<stage>-<region>`
 
@@ -1507,10 +1507,10 @@ gitlab:
 
 **Variable Mapping**:
 ```yaml
-gitlab:
- environment_deploy: "azr-deploy-{{region}}"
- environment_validate: "azr-validate-{{region}}"
- environment_production: "azr-production-{{region}}"
+cicd:
+  environment_deploy: "azr-deploy-{{region}}"
+  environment_validate: "azr-validate-{{region}}"
+  environment_production: "azr-production-{{region}}"
 ```
 
 ### 3.3 CI/CD Service Principal
@@ -1615,7 +1615,7 @@ See [Microsoft CAF: Abbreviation Examples for Azure Resources](https://learn.mic
 
 ### 4.3 Variable Substitution Reference
 
-For automation via `infrastructure.yml`, use these variable patterns:
+For automation via `variables.yml`, use these variable patterns:
 
 #### Common Variables
 
@@ -1640,7 +1640,7 @@ For automation via `infrastructure.yml`, use these variable patterns:
 | South Central US | `southcentralus` | `scus` |
 
 :::tip Automation Integration
-All variables shown in `{{curly braces}}` are defined in the **Master Variable Registry** and can be populated from `infrastructure.yml` using automation scripts. See [Key Inputs and Variables](../implementation/03-key-inputs-and-variables.mdx) for complete variable reference.
+All variables shown in `{{curly braces}}` are defined in the **Variable Schema** and can be populated from `config/variables.yml` using automation scripts. See [Key Inputs and Variables](../implementation/03-key-inputs-and-variables.mdx) for complete variable reference.
 :::
 
 ---
@@ -1652,13 +1652,13 @@ All variables shown in `{{curly braces}}` are defined in the **Master Variable R
 Before finalizing naming standards, validate alignment with both CAF and Azure Local Cloud standards:
 
 - [ ] **CAF Compliance**: All Azure resource names follow CAF patterns
-- [ ] **Variable Registry Alignment**: Names map to Master Variable Registry variables
+- [ ] **Variable Schema Alignment**: Names map to `config/schema/variables.schema.json` definitions
 - [ ] **Uniqueness**: No conflicts with existing customer infrastructure
 - [ ] **Azure Compliance**: All names meet Azure-specific requirements and constraints
 - [ ] **DNS Compatibility**: Names are valid for DNS records (lowercase recommended)
 - [ ] **Length Constraints**: Names fit within service-specific character limits
 - [ ] **Consistency**: Patterns are applied uniformly across all resources
-- [ ] **Documentation**: All naming conventions documented in `infrastructure.yml`
+- [ ] **Documentation**: All naming conventions documented in `variables.yml`
 - [ ] **Automation Ready**: Naming patterns support `{{variable}}` substitution
 - [ ] **Customer Approval**: Naming standards reviewed and approved by customer
 

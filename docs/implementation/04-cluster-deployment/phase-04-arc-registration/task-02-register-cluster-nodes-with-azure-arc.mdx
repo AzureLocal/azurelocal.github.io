@@ -155,7 +155,7 @@ The inline code below uses `Select-String` regex to extract values from YAML, wh
 
 ```powershell
 # Task 02 - Register Nodes with Azure Arc (orchestrated, all nodes)
-# infrastructure.yml variables (schema v4.0.0):
+# variables.yml variables (schema v4.0.0):
 # azure_platform.tenant.id -> $TenantId
 # azure_platform.subscriptions.lab.id -> $SubscriptionId
 # compute.azure_local.arc_resource_group -> $ResourceGroup
@@ -164,7 +164,7 @@ The inline code below uses `Select-String` regex to extract values from YAML, wh
 # identity.service_principal.client_id -> $SpnId
 # compute.cluster_nodes[].management_ip -> $ServerList
 
-$ConfigPath = ".\configs\infrastructure.yml"
+$ConfigPath = ".\config\variables.yml"
 $cfg = Get-Content $ConfigPath
 
 $TenantId = ($cfg | Select-String 'tenant_id:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
@@ -218,10 +218,10 @@ Microsoft provides a GUI wizard — the **Azure Stack HCI Configurator App** —
 | Setting | Value | Source |
 |---|---|---|
 | Authentication | Interactive or Service Principal | User preference |
-| Tenant ID | From `infrastructure.yml` | `azure_platform.tenant.id` |
-| Subscription ID | From `infrastructure.yml` | `azure_platform.subscriptions.lab.id` |
-| Resource Group | From `infrastructure.yml` | `compute.azure_local.arc_resource_group` |
-| Region | From `infrastructure.yml` | `azure_platform.region` |
+| Tenant ID | From `variables.yml` | `azure_platform.tenant.id` |
+| Subscription ID | From `variables.yml` | `azure_platform.subscriptions.lab.id` |
+| Resource Group | From `variables.yml` | `compute.azure_local.arc_resource_group` |
+| Region | From `variables.yml` | `azure_platform.region` |
 | Arc Gateway | Enabled | `compute.azure_local.arc_gateway_id` |
 
 1. Download from [aka.ms/ashciconfigurator](https://aka.ms/ashciconfigurator)
@@ -251,7 +251,7 @@ The wrapper:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-ConfigPath` | *(required)* | Path to infrastructure.yml |
+| `-ConfigPath` | *(required)* | Path to variables.yml |
 | `-TargetNode` | all nodes | Target specific node(s) — passed to both scripts |
 | `-WhatIf` | — | Dry-run registration only, no monitor window |
 | `-PollIntervalSeconds` | 60 | Monitor poll interval (passed to monitor) |

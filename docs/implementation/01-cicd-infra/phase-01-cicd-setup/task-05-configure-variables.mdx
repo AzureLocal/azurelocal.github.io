@@ -1,72 +1,106 @@
 ---
 title: "Task 05: Configure Environment Variables"
 sidebar_position: 5
-description: "Configure GitLab environment variables"
+description: "Configure CI/CD environment variables for Azure authentication"
 ---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 # Task 05: Configure Environment Variables
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
-[![GitLab](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://github.com/AzureLocal)
+[![GitHub](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://github.com/AzureLocal)
+[![GitLab](https://img.shields.io/badge/Platform-GitLab-FC6D26?style=flat-square&logo=gitlab)](https://gitlab.com)
+[![Azure DevOps](https://img.shields.io/badge/Platform-Azure%20DevOps-0078D7?style=flat-square&logo=azuredevops)](https://dev.azure.com)
 
 > **DOCUMENT CATEGORY**: Runbook Step 
 > **SCOPE**: CI/CD pipeline variable configuration 
 > **PURPOSE**: Configure environment variables for Azure authentication 
-> **MASTER REFERENCE**: [CI/CD pipeline Variables](https://docs.gitlab.com/ee/ci/variables/)
+> **MASTER REFERENCE**: See platform-specific docs below
 
 **Status**: Active 
 **Applies To**: All Azure Local deployments 
-**Last Updated**: 2026-01-30
-
----
-
-> **Source:** internal-docs/configure-gitlab-environment-variables.md
+**Last Updated**: 2026-03-19
 
 ---
 
 ## Objective
 
-Configure CI/CD pipeline environment variables for each customer Azure subscription.
+Configure CI/CD pipeline environment variables for each target Azure subscription.
 
 ---
 
 ## Prerequisites
 
-- [ ] Environments created (Step 04)
-- [ ] Bootstrap values from Step 01 (ARM_CLIENT_ID, ARM_CLIENT_SECRET)
+- [ ] Environments created (Task 04)
+- [ ] Bootstrap values from Task 01 (`ARM_CLIENT_ID`, `ARM_CLIENT_SECRET`)
+
+---
+
+## Required Variables
+
+Configure the following variables for **each** target Azure subscription:
+
+| Variable | Description | Sensitivity |
+|----------|-------------|-------------|
+| `ARM_TENANT_ID` | Entra ID tenant ID | Masked |
+| `ARM_SUBSCRIPTION_ID` | Azure subscription ID | Masked |
+| `ARM_CLIENT_ID` | `azurelocal-cicd` App Registration ID (from Task 01) | Masked |
+| `ARM_CLIENT_SECRET` | `azurelocal-cicd` App Registration secret (from Task 01) | Secret |
 
 ---
 
 ## Procedure
 
-:::note
-Follow these steps for **each** customer Azure subscription managed by Azure Local Cloud.
-:::
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+### Configure Repository Secrets
+
+1. Navigate to your repository → **Settings** → **Secrets and variables** → **Actions**
+2. Click **New repository secret** for each variable:
+
+| Secret Name | Value |
+|-------------|-------|
+| `ARM_TENANT_ID` | Entra ID tenant ID |
+| `ARM_SUBSCRIPTION_ID` | Azure subscription ID |
+| `ARM_CLIENT_ID` | App Registration client ID |
+| `ARM_CLIENT_SECRET` | App Registration client secret |
+
+### Environment-Scoped Secrets (Recommended)
+
+For multi-environment deployments, use environment-scoped secrets:
+
+1. Go to **Settings** → **Environments** → select environment (e.g. `azr-prod-us`)
+2. Under **Environment secrets**, click **Add secret**
+3. Add environment-specific values for `ARM_SUBSCRIPTION_ID` (and others if they differ per environment)
+
+> **Tip:** Repository-level secrets apply to all environments. Use environment secrets to override per environment.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+### Configure CI/CD Variables
 
 1. Navigate to **Settings** → **CI/CD**
 2. Expand **Variables**
-3. Select **Add variable** for each required variable
-
-### Azure Variables
+3. Click **Add variable** for each required variable:
 
 | Variable | Configuration |
 |----------|---------------|
 | **ARM_TENANT_ID** | |
 | Type | `Variable` |
 | Environments | Select target environment |
-| Visibility | `Masked` |
-| Protect variable | Off |
-| Expand variable reference | Off |
-| Value | Azure AD tenant ID |
+| Flags | `Masked` |
+| Value | Entra ID tenant ID |
 
 | Variable | Configuration |
 |----------|---------------|
 | **ARM_SUBSCRIPTION_ID** | |
 | Type | `Variable` |
 | Environments | Select target environment |
-| Visibility | `Masked` |
-| Protect variable | Off |
-| Expand variable reference | Off |
+| Flags | `Masked` |
 | Value | Azure subscription ID |
 
 | Variable | Configuration |
@@ -74,41 +108,87 @@ Follow these steps for **each** customer Azure subscription managed by Azure Loc
 | **ARM_CLIENT_ID** | |
 | Type | `Variable` |
 | Environments | Select target environment |
-| Visibility | `Masked` |
-| Protect variable | Off |
-| Expand variable reference | Off |
-| Value | `Azure Local Cloud-cicd` App Registration ID (from Bootstrap) |
+| Flags | `Masked` |
+| Value | `azurelocal-cicd` App Registration ID (from Task 01) |
 
 | Variable | Configuration |
 |----------|---------------|
 | **ARM_CLIENT_SECRET** | |
 | Type | `Variable` |
 | Environments | Select target environment |
-| Visibility | `Masked` |
-| Protect variable | Off |
-| Expand variable reference | Off |
-| Value | `Azure Local Cloud-cicd` App Registration secret (from Bootstrap) |
+| Flags | `Masked` |
+| Value | `azurelocal-cicd` App Registration secret (from Task 01) |
 
-### AWS Variables (if applicable)
+> **Tip:** Scope variables to specific environments to support multi-subscription deployments.
 
-| Variable | Configuration |
-|----------|---------------|
-| **TF_VAR_AWS_TARGET_ACCOUNT_ID** | |
-| Type | `Variable` |
-| Environments | Select target environment |
-| Visibility | `Masked` |
-| Value | AWS account ID |
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+### Create Variable Group
+
+1. Navigate to **Pipelines** → **Library**
+2. Click **+ Variable group**
+3. Name it: `azure-credentials-<environment>` (e.g. `azure-credentials-azr-prod-us`)
+4. Add variables:
+
+| Variable | Value | Lock |
+|----------|-------|------|
+| `ARM_TENANT_ID` | Entra ID tenant ID | 🔒 |
+| `ARM_SUBSCRIPTION_ID` | Azure subscription ID | 🔒 |
+| `ARM_CLIENT_ID` | App Registration client ID | 🔒 |
+| `ARM_CLIENT_SECRET` | App Registration client secret | 🔒 |
+
+5. Click **Save**
+
+### Link to Pipeline
+
+Reference the variable group in your pipeline YAML:
+
+```yaml
+variables:
+  - group: azure-credentials-azr-prod-us
+```
+
+> **Tip:** Create separate variable groups per environment and link them using pipeline stages.
+
+</TabItem>
+</Tabs>
 
 ---
 
 ## Verification
 
 - [ ] All required variables configured per environment
-- [ ] Variables are masked
+- [ ] Sensitive values are masked/secret
 - [ ] Variables scoped to correct environments
+- [ ] Test pipeline can authenticate to Azure
+
+---
+
+## Next Steps
+
+[Deploy Runners](task-06-deploy-runners.mdx)
 
 ---
 
 ## References
 
-- [CI/CD pipeline Variables](https://docs.gitlab.com/ee/ci/variables/)
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+- [GitHub Actions Secrets](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions)
+- [GitHub Environments](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment)
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+- [GitLab CI/CD Variables](https://docs.gitlab.com/ee/ci/variables/)
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+- [Azure DevOps Variable Groups](https://learn.microsoft.com/en-us/azure/devops/pipelines/library/variable-groups)
+- [Azure DevOps Pipeline Variables](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/variables)
+
+</TabItem>
+</Tabs>

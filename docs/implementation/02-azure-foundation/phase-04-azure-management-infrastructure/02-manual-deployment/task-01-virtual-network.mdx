@@ -42,7 +42,7 @@ This task creates the management Virtual Network (VNet) and all required subnets
 :::
 
 :::info Terraform Reference
-**Module:** `tf-module-azr-local` 
+**Module:** `azurelocal-toolkit` 
 **File:** `network.tf` 
 **Mode:** Management
 :::
@@ -145,7 +145,7 @@ In the single subscription model, all management infrastructure is deployed to a
 
 ### Azure CLI / PowerShell
 
-> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
 
 #### Script
 
@@ -158,7 +158,7 @@ In the single subscription model, all management infrastructure is deployed to a
 | Bash + Azure CLI | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-01-virtual-network/bash/invoke-virtual-network.sh` |
 
 :::tip Same Script for Both Landing Zone Models
-This script reads `infrastructure.yml` directly — subscription, resource group, and all resource names come from the config. The config is pre-populated for your landing zone model during Planning & Discovery, so **one script works for both models**.
+This script reads `variables.yml` directly — subscription, resource group, and all resource names come from the config. The config is pre-populated for your landing zone model during Planning & Discovery, so **one script works for both models**.
 :::
 
 #### Code
@@ -166,7 +166,7 @@ This script reads `infrastructure.yml` directly — subscription, resource group
 ```powershell
 # ============================================================================
 # Script: New-VirtualNetwork.ps1
-# Execution: Run from management workstation — reads infrastructure.yml
+# Execution: Run from management workstation — reads variables.yml
 # Prerequisites: Az.Network module, authenticated to Azure
 # ============================================================================
 
@@ -175,7 +175,7 @@ This script reads `infrastructure.yml` directly — subscription, resource group
 param(
  [Parameter(Mandatory = $false)]
  [ValidateScript({Test-Path $_})]
- [string]$ConfigPath = "configs/infrastructure.yml"
+ [string]$ConfigPath = "config/variables.yml"
 )
 
 $ErrorActionPreference = "Stop"
@@ -306,7 +306,7 @@ $vnet.Subnets | Format-Table Name, AddressPrefix
 ```
 
 :::info No External Dependencies
-This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `infrastructure.yml`, no config-loader, no helpers required.
+This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `variables.yml`, no config-loader, no helpers required.
 :::
 
 </TabItem>
@@ -389,17 +389,17 @@ In CAF/WAF, this VNet is created in the **Connectivity** subscription — not th
 
 ### Azure CLI / PowerShell
 
-> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `infrastructure.yml`
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
 
 :::tip Same Script — Different Config
-The orchestrated script is **identical** to the Single Subscription version. The `infrastructure.yml` is pre-populated with the correct Connectivity subscription and resource group for your CAF/WAF landing zone. No code change required.
+The orchestrated script is **identical** to the Single Subscription version. The `variables.yml` is pre-populated with the correct Connectivity subscription and resource group for your CAF/WAF landing zone. No code change required.
 :::
 
 #### Script
 
 **Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-01-virtual-network/powershell/New-VirtualNetwork.ps1`
 
-See the [Single Subscription → Azure CLI / PowerShell](#azure-cli--powershell) tab above for the full script. The only difference is the values in `infrastructure.yml`.
+See the [Single Subscription → Azure CLI / PowerShell](#azure-cli--powershell) tab above for the full script. The only difference is the values in `variables.yml`.
 
 #### Validation
 

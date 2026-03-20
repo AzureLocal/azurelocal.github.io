@@ -5,7 +5,7 @@ sidebar_position: 6
 description: "Verify that DNS servers are correctly configured on the management NIC of each Azure Local node and that critical Azure endpoints resolve successfully."
 category: Runbook
 scope: DNS client verification
-purpose: Confirm DNS configuration matches infrastructure.yml and that Azure endpoints resolve from each node
+purpose: Confirm DNS configuration matches variables.yml and that Azure endpoints resolve from each node
 author: Azure Local Cloud Azure Local Cloudnology
 created: 2026-01-31
 updated: 2026-03-04
@@ -26,7 +26,7 @@ import TabItem from '@theme/TabItem';
 
 > **DOCUMENT CATEGORY**: Runbook 
 > **SCOPE**: DNS client verification 
-> **PURPOSE**: Confirm DNS configuration matches `infrastructure.yml` and that Azure endpoints 
+> **PURPOSE**: Confirm DNS configuration matches `variables.yml` and that Azure endpoints 
 > resolve from each node — prerequisite for Arc registration and AD operations 
 > **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
 
@@ -46,7 +46,7 @@ This task does **not** change any configuration — it is a read-only validation
 
 1. Hard-fail on any `REPLACE` placeholder remaining in `#region CONFIGURATION`
 2. Find the management adapter by **exact name** — exit and list adapters if not found
-3. Read the configured DNS servers and compare against expected values from `infrastructure.yml`
+3. Read the configured DNS servers and compare against expected values from `variables.yml`
 4. Test resolution of five critical Azure endpoints
 5. Report pass/fail per server and per endpoint; exit with code 1 on any failure
 
@@ -57,15 +57,15 @@ This task does **not** change any configuration — it is a read-only validation
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Task 05 complete | DNS servers configured on management NIC | [Task 05: Configure DNS](./task-05-configure-dns-servers.mdx) |
-| DNS IPs confirmed | Validated DNS server addresses | `infrastructure.yml`: `dns.primary`, `dns.secondary` |
-| NIC name confirmed | Management adapter name | `infrastructure.yml`: `cluster.management_nic_name` |
+| DNS IPs confirmed | Validated DNS server addresses | `variables.yml`: `dns.primary`, `dns.secondary` |
+| NIC name confirmed | Management adapter name | `variables.yml`: `cluster.management_nic_name` |
 | Network reachability | DNS servers reachable from nodes | Site network configuration |
 
 ---
 
 ## Configuration Reference
 
-| `infrastructure.yml` path | Script variable | Example |
+| `variables.yml` path | Script variable | Example |
 |----------------------------|----------------|---------|
 | `cluster.management_nic_name` | `$ManagementNIC` | `Embedded NIC 1` |
 | `dns.primary` | `$ExpectedDNSPrimary` | `10.100.10.2` |
@@ -85,7 +85,7 @@ Run on each node individually — via RDP, console, or KVM.
 
 **Edit the `#region CONFIGURATION` block before running:**
 
-| Variable | `infrastructure.yml` path | Example |
+| Variable | `variables.yml` path | Example |
 |----------|----------------------------|---------|
 | `$ManagementNIC` | `cluster.management_nic_name` | `Embedded NIC 1` |
 | `$ExpectedDNSPrimary` | `dns.primary` | `10.100.10.2` |
@@ -105,11 +105,11 @@ Run on each node individually — via RDP, console, or KVM.
  Behaviour:
  - Hard-fails on any REPLACE placeholder remaining in #region CONFIGURATION
  - Finds the management adapter by exact name — lists adapters and exits if not found
- - Compares configured DNS servers against expected values from infrastructure.yml
+ - Compares configured DNS servers against expected values from variables.yml
  - Tests resolution of Azure Arc and Azure Resource Manager endpoints
  - Exits with code 1 on any DNS mismatch or resolution failure
 
- Variables: All values come from infrastructure.yml (see mapping table below)
+ Variables: All values come from variables.yml (see mapping table below)
  cluster.management_nic_name → $ManagementNIC
  dns.primary → $ExpectedDNSPrimary
  dns.secondary → $ExpectedDNSSecondary
@@ -280,7 +280,7 @@ Run from the management server to verify all nodes in a single pass.
 **Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-06-verify-dns-client-configuration/powershell/Invoke-VerifyDNS-Orchestrated.ps1`
 
 Reads `cluster.management_nic_name`, `dns.primary`, `dns.secondary`, and all
-`nodes.<name>.management_ip` values from `infrastructure.yml`. Connects to each
+`nodes.<name>.management_ip` values from `variables.yml`. Connects to each
 node via PSRemoting and validates DNS configuration and endpoint resolution.
 
 ```powershell title="Invoke-VerifyDNS-Orchestrated.ps1"
@@ -291,10 +291,10 @@ node via PSRemoting and validates DNS configuration and endpoint resolution.
 
 .DESCRIPTION
  Runs from the management server. Reads DNS and node IP values from
- infrastructure.yml, connects to each node over PSRemoting, and validates
+ variables.yml, connects to each node over PSRemoting, and validates
  the DNS server configuration and Azure endpoint resolution.
 
- infrastructure.yml paths used:
+ variables.yml paths used:
  cluster.management_nic_name - Management adapter name to check
  dns.primary - Expected primary DNS server IP
  dns.secondary - Expected secondary DNS server IP
@@ -311,7 +311,7 @@ node via PSRemoting and validates DNS configuration and endpoint resolution.
 
 .EXAMPLE
  .\Invoke-VerifyDNS-Orchestrated.ps1
- .\Invoke-VerifyDNS-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure.yml"
+ .\Invoke-VerifyDNS-Orchestrated.ps1 -ConfigPath "C:\config\variables.yml"
 #>
 
 [CmdletBinding()]
@@ -343,14 +343,14 @@ function Resolve-ConfigPath {
  param([string]$Provided)
  if ($Provided -ne "" -and (Test-Path $Provided)) { return $Provided }
  $candidates = @(
- "$env:USERPROFILE\infrastructure.yml",
- "C:\configs\infrastructure.yml",
- "$PSScriptRoot\..\..\..\..\..\configs\infrastructure.yml"
+ "$env:USERPROFILE\variables.yml",
+ "C:\config\variables.yml",
+ "$PSScriptRoot\..\..\..\..\..\config\variables.yml"
  )
  foreach ($c in $candidates) {
  if (Test-Path $c) { return (Resolve-Path $c).Path }
  }
- throw "infrastructure.yml not found. Pass -ConfigPath or place it in a standard location."
+ throw "variables.yml not found. Pass -ConfigPath or place it in a standard location."
 }
 
 function Get-YamlValue {
@@ -421,7 +421,7 @@ function Get-YamlNodes {
 #region MAIN
 
 Write-Log "=== Task 06 - Verify DNS Client Configuration (Orchestrated) ===" "HEADER"
-Write-Log "Reading configuration from infrastructure.yml..."
+Write-Log "Reading configuration from variables.yml..."
 
 $configFile = Resolve-ConfigPath -Provided $ConfigPath
 Write-Log "Config: $configFile"
@@ -436,10 +436,10 @@ Write-Log "Expected Primary DNS : $expectedPrimary"
 Write-Log "Expected Secondary DNS : $expectedSecondary"
 Write-Log "Nodes : $($nodeNames -join ', ')"
 
-if (-not $mgmtNIC) { throw "cluster.management_nic_name not found in infrastructure.yml" }
-if (-not $expectedPrimary) { throw "dns.primary not found in infrastructure.yml" }
-if (-not $expectedSecondary){ throw "dns.secondary not found in infrastructure.yml" }
-if ($nodeNames.Count -eq 0) { throw "No nodes found in infrastructure.yml" }
+if (-not $mgmtNIC) { throw "cluster.management_nic_name not found in variables.yml" }
+if (-not $expectedPrimary) { throw "dns.primary not found in variables.yml" }
+if (-not $expectedSecondary){ throw "dns.secondary not found in variables.yml" }
+if ($nodeNames.Count -eq 0) { throw "No nodes found in variables.yml" }
 
 $cred = Get-Credential -Message "Enter credentials for PSRemoting to Azure Local nodes"
 
@@ -456,7 +456,7 @@ $nodeResults = @()
 foreach ($nodeName in $nodeNames) {
  $mgmtIP = Get-YamlValue -FilePath $configFile -KeyPath @("nodes", $nodeName, "management_ip")
  if (-not $mgmtIP) {
- Write-Log "[$nodeName] management_ip not found in infrastructure.yml - skipping" "WARN"
+ Write-Log "[$nodeName] management_ip not found in variables.yml - skipping" "WARN"
  continue
  }
 
@@ -544,7 +544,7 @@ if ($failCount -eq 0) {
 
 ```
 [2026-03-04 10:00:00] [HEADER] === Invoke-VerifyDNS-Orchestrated.ps1 ===
-[2026-03-04 10:00:00] [INFO ] Config: C:\configs\infrastructure.yml
+[2026-03-04 10:00:00] [INFO ] Config: C:\config\variables.yml
 [2026-03-04 10:00:00] [INFO ] management_nic_name : Embedded NIC 1
 [2026-03-04 10:00:00] [INFO ] dns.primary : 10.100.10.2
 [2026-03-04 10:00:00] [INFO ] dns.secondary : 10.100.10.3
@@ -569,8 +569,8 @@ Node Hostname PrimaryDNS SecondaryDNS DNSStatus EndpointsFailed Status
 
 ## Validation Checklist
 
-- [ ] Primary DNS server matches `infrastructure.yml`: `dns.primary`
-- [ ] Secondary DNS server matches `infrastructure.yml`: `dns.secondary`
+- [ ] Primary DNS server matches `variables.yml`: `dns.primary`
+- [ ] Secondary DNS server matches `variables.yml`: `dns.secondary`
 - [ ] Configuration confirmed on all nodes
 - [ ] `management.azure.com` resolves from all nodes
 - [ ] `login.microsoftonline.com` resolves from all nodes
@@ -583,13 +583,13 @@ Node Hostname PrimaryDNS SecondaryDNS DNSStatus EndpointsFailed Status
 
 | Issue | Root Cause | Remediation |
 |-------|------------|-------------|
-| Script hard-fails on startup | `REPLACE` placeholder values remain | Edit `#region CONFIGURATION` with real values from `infrastructure.yml` |
-| `Adapter not found` error | NIC name in config doesn't match | Run `Get-NetAdapter` on the node; update `cluster.management_nic_name` in `infrastructure.yml` |
-| DNS mismatch — wrong IPs returned | Task 05 not completed or used incorrect values | Re-run Task 05 with correct values from `infrastructure.yml` |
+| Script hard-fails on startup | `REPLACE` placeholder values remain | Edit `#region CONFIGURATION` with real values from `variables.yml` |
+| `Adapter not found` error | NIC name in config doesn't match | Run `Get-NetAdapter` on the node; update `cluster.management_nic_name` in `variables.yml` |
+| DNS mismatch — wrong IPs returned | Task 05 not completed or used incorrect values | Re-run Task 05 with correct values from `variables.yml` |
 | Azure endpoints fail to resolve | DNS servers unreachable or missing forwarders | Verify DNS servers are online; check forwarder configuration on DNS server |
 | Endpoints resolve internally but not externally | DNS forwarder not configured for internet | Add internet forwarder to DNS server (e.g., `8.8.8.8`) |
-| Orchestrated script: `cluster.management_nic_name not found` | Key missing from `infrastructure.yml` | Add `management_nic_name` to the `cluster:` block in yml |
-| Orchestrated script: `dns.primary not found` | Key missing from `infrastructure.yml` | Add `dns.primary` and `dns.secondary` to the `dns:` block in yml |
+| Orchestrated script: `cluster.management_nic_name not found` | Key missing from `variables.yml` | Add `management_nic_name` to the `cluster:` block in yml |
+| Orchestrated script: `dns.primary not found` | Key missing from `variables.yml` | Add `dns.primary` and `dns.secondary` to the `dns:` block in yml |
 | Node unreachable via PSRemoting | WinRM not configured or firewall blocking | Verify Task 01 (WinRM) completed; check firewall rules |
 
 ---
@@ -607,4 +607,4 @@ Node Hostname PrimaryDNS SecondaryDNS DNSStatus EndpointsFailed Status
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
-| 2.0 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Full rewrite to standards — complete frontmatter, bare-node 2-tab structure (Direct, Orchestrated), Standalone tab removed, full embedded scripts, explicit NIC and DNS values from infrastructure.yml, Assert-ConfigValues hard-fail, Azure endpoint resolution test |
+| 2.0 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Full rewrite to standards — complete frontmatter, bare-node 2-tab structure (Direct, Orchestrated), Standalone tab removed, full embedded scripts, explicit NIC and DNS values from variables.yml, Assert-ConfigValues hard-fail, Azure endpoint resolution test |

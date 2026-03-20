@@ -120,7 +120,7 @@ if ($secret -and $secret.Enabled) {
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
 
-Run identity checks only using the `Invoke-ArcPrerequisites-Orchestrated.ps1` script with `-SkipConnectivity`. Reads SPN, resource group, Key Vault, and Arc Gateway details from `infrastructure.yml`.
+Run identity checks only using the `Invoke-ArcPrerequisites-Orchestrated.ps1` script with `-SkipConnectivity`. Reads SPN, resource group, Key Vault, and Arc Gateway details from `variables.yml`.
 
 :::tip Standards-Compliant Script
 **`Invoke-ArcPrerequisites-Orchestrated.ps1`** includes both identity and connectivity checks. Use `-SkipConnectivity` to run identity checks only, or `-SkipIdentity` to run connectivity only. Both run by default. Use `-NoArcGateway` to skip the Arc Gateway validation check.
@@ -186,10 +186,10 @@ For production deployments, use **`Invoke-ArcPrerequisites-Orchestrated.ps1`** w
 
 ```powershell
 # Task 01 Step 2 — Connectivity Validation (orchestrated, all nodes)
-# infrastructure.yml variables:
+# variables.yml variables:
 # compute.cluster_nodes[].management_ip -> $ServerList
 
-$ConfigPath = ".\configs\infrastructure.yml"
+$ConfigPath = ".\config\variables.yml"
 $ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
  ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
 
@@ -238,7 +238,7 @@ All Environment Checker tests should show `Succeeded`:
 
 | Issue | Resolution |
 |---|---|
-| SPN not found | Verify `identity.service_principal.client_id` in `infrastructure.yml` matches Entra ID app registration |
+| SPN not found | Verify `identity.service_principal.client_id` in `variables.yml` matches Entra ID app registration |
 | No RBAC role on RG | Assign **Azure Connected Machine Onboarding** (minimum) on the Arc resource group |
 | KV secret not accessible | Check Key Vault access policies or RBAC; verify secret name matches the `keyvault://` URI in YAML |
 | Secret expired or disabled | Rotate the SPN secret in Entra ID and update Key Vault |

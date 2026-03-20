@@ -34,7 +34,7 @@ appendix or in the custom image management section of this documentation.
 - CSV volumes created and healthy (Task 05 complete)
 - Azure identity authenticated: `az login` or Az PowerShell `Connect-AzAccount`
 - `az stack-hci-vm` CLI extension installed (`az extension add --name stack-hci-vm`)
-- `marketplace_images` block populated in `infrastructure.yml`
+- `marketplace_images` block populated in `variables.yml`
 
 ---
 
@@ -90,7 +90,7 @@ or when CLI access is unavailable.
 <TabItem value="orchestrated" label="Orchestrated">
 
 **When to use:** Automated or repeatable deployment. Reads image definitions from
-`infrastructure.yml` and creates all images in sequence. Run from the management server.
+`variables.yml` and creates all images in sequence. Run from the management server.
 
 **Script:**
 [`Invoke-MarketplaceImages-Orchestrated.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/Invoke-MarketplaceImages-Orchestrated.ps1)
@@ -104,7 +104,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 #Requires -Version 5.1
 <#
 .SYNOPSIS
- Orchestrated: downloads all marketplace_images entries from infrastructure.yml
+ Orchestrated: downloads all marketplace_images entries from variables.yml
  to the Azure Local cluster as gallery images.
 
 .DESCRIPTION
@@ -115,7 +115,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  skipped. Supports -WhatIf for dry-run validation.
 
 .PARAMETER ConfigPath
- Path to infrastructure YAML. Defaults to configs\infrastructure.yml in CWD.
+ Path to infrastructure YAML. Defaults to config\variables.yml in CWD.
 
 .PARAMETER Credential
  Not used for image creation (uses current az CLI / Az PowerShell session).
@@ -173,7 +173,7 @@ function Write-Log {
 
 #region CONFIG LOADING ----------------------------------------------------------
 if ([string]::IsNullOrEmpty($ConfigPath)) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config not found: $ConfigPath" -Level "ERROR"; throw "Config not found"
@@ -283,7 +283,7 @@ uplink. The script is safe to re-run — existing images are skipped.
 </TabItem>
 <TabItem value="standalone" label="Standalone">
 
-**When to use:** When deploying without `infrastructure.yml` — external sharing, one-off
+**When to use:** When deploying without `variables.yml` — external sharing, one-off
 deployments, or demos. All values are hardcoded in the `#region CONFIGURATION` block.
 
 **Script:**
@@ -304,7 +304,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  Phase 06 — Post-Deployment | Task 06 — VM Image Downloads
 
  Fill in the #region CONFIGURATION block with your environment values.
- No infrastructure.yml or toolkit dependency. Safe to copy and share.
+ No variables.yml or toolkit dependency. Safe to copy and share.
 
 .NOTES
  Requires: az CLI authenticated (az login) and stack-hci-vm extension.

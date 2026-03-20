@@ -12,7 +12,7 @@ import TabItem from '@theme/TabItem';
 
 > **DOCUMENT CATEGORY**: Implementation Guide
 > **SCOPE**: Phase 06 — Post-Deployment | Azure Local
-> **PURPOSE**: Create all logical networks defined in `infrastructure.yml`. Each entry is
+> **PURPOSE**: Create all logical networks defined in `variables.yml`. Each entry is
 > provisioned as an Azure resource on the cluster's Hyper-V vSwitch, providing the network
 > layer for Arc VM deployment — with Static IP pools or Dynamic (DHCP) allocation, VLAN
 > isolation, and optional static routes, exactly as configured.
@@ -38,7 +38,7 @@ during Phase 05. This task creates the Azure resource representations.
 - `az stack-hci-vm` CLI extension installed: `az extension add --name stack-hci-vm`
 - Azure identity authenticated: `az login` or `Connect-AzAccount`
 - `powershell-yaml` module installed: `Install-Module powershell-yaml -Scope CurrentUser`
-- `networking.logical_networks` block populated in `infrastructure.yml`
+- `networking.logical_networks` block populated in `variables.yml`
 
 ---
 
@@ -116,7 +116,7 @@ details, or when CLI access is unavailable.
 <TabItem value="orchestrated" label="Orchestrated">
 
 **When to use:** Automated or repeatable deployment. Reads all logical network definitions
-from `networking.logical_networks[]` in `infrastructure.yml` and creates every enabled
+from `networking.logical_networks[]` in `variables.yml` and creates every enabled
 entry. Entries with `enabled: false` are skipped. Already-existing networks are skipped.
 Run from the management server (toolkit repo root).
 
@@ -132,7 +132,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 #Requires -Version 5.1
 <#
 .SYNOPSIS
- Orchestrated: creates all logical networks defined in infrastructure.yml.
+ Orchestrated: creates all logical networks defined in variables.yml.
 
 .DESCRIPTION
  Phase 06 — Post-Deployment | Task 07 — Logical Network Creation
@@ -148,7 +148,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  first available cluster node via Get-VMSwitch over PSRemoting.
 
 .PARAMETER ConfigPath
- Path to infrastructure YAML. Defaults to configs\infrastructure.yml in CWD.
+ Path to infrastructure YAML. Defaults to config\variables.yml in CWD.
 
 .PARAMETER Credential
  Credential used for PSRemoting vSwitch discovery. If omitted, resolved via
@@ -235,7 +235,7 @@ Write-Log "======================================================="
 
 #region CONFIG LOADING ----------------------------------------------------------
 if ([string]::IsNullOrEmpty($ConfigPath)) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config not found: $ConfigPath" "ERROR"; throw "Config not found"
@@ -245,7 +245,7 @@ Write-Log "Loading config: $ConfigPath"
 Import-Module powershell-yaml -ErrorAction Stop
 $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-# Subscription / RG / Location — support both infrastructure.yml and infrastructure-azl-lab.yml layouts
+# Subscription / RG / Location — support both variables.yml and infrastructure-azl-lab.yml layouts
 $subscriptionId = if ($cfg.azure_platform.subscriptions.demo.id) {
  $cfg.azure_platform.subscriptions.demo.id # azure_platform.subscriptions.demo.id
  } elseif ($cfg.azure_local.subscription) {

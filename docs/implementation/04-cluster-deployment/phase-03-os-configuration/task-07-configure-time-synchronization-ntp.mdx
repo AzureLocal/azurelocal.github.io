@@ -5,7 +5,7 @@ sidebar_position: 7
 description: "Configure the NTP time source on each Azure Local node using w32tm — required for Kerberos authentication and AD domain operations."
 category: Runbook
 scope: Time synchronization
-purpose: Configure w32tm with the NTP server from infrastructure.yml so all cluster nodes synchronize time from the same authoritative source
+purpose: Configure w32tm with the NTP server from variables.yml so all cluster nodes synchronize time from the same authoritative source
 author: Azure Local Cloud Azure Local Cloudnology
 created: 2026-01-31
 updated: 2026-03-04
@@ -26,7 +26,7 @@ import TabItem from '@theme/TabItem';
 
 > **DOCUMENT CATEGORY**: Runbook 
 > **SCOPE**: Time synchronization 
-> **PURPOSE**: Configure w32tm with the NTP server from `infrastructure.yml` so all cluster nodes synchronize to the same authoritative time source — required for Kerberos, Active Directory, and Arc registration 
+> **PURPOSE**: Configure w32tm with the NTP server from `variables.yml` so all cluster nodes synchronize to the same authoritative time source — required for Kerberos, Active Directory, and Arc registration 
 > **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
 
 **Status**: Active 
@@ -56,20 +56,20 @@ immediate resync, and validates the resulting stratum.
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Task 06 complete | DNS client verified and functional | [Task 06: Verify DNS](./task-06-verify-dns-client-configuration.mdx) |
-| NTP server address | FQDN or IP of the authoritative NTP server | `infrastructure.yml`: `active_directory.ntp_servers` |
+| NTP server address | FQDN or IP of the authoritative NTP server | `variables.yml`: `active_directory.ntp_servers` |
 | Local admin rights | Required to restart Windows Time service | Node credentials |
 
 ---
 
 ## Configuration Reference
 
-| `infrastructure.yml` path | Script variable | Example |
+| `variables.yml` path | Script variable | Example |
 |----------------------------|----------------|---------|
 | `active_directory.ntp_servers[0]` | `$NTPServer` | `10.100.10.1` |
 | `cluster_nodes[].management_ip` | PSRemoting target (orchestrated only) | `10.100.200.11` |
 | `cluster_nodes[].hostname` | Node display name (orchestrated only) | `azlocal-node01` |
 
-:::info infrastructure.yml — NTP server list
+:::info variables.yml — NTP server list
 `active_directory.ntp_servers` is a YAML list. The direct script uses the primary (first) entry.
 The orchestrated script joins all entries as a space-separated `manualpeerlist`.
 :::
@@ -85,7 +85,7 @@ Run on each node individually — via RDP, console, or KVM.
 
 **Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Set-NTPConfiguration.ps1`
 
-Set `$NTPServer` to the first entry from `active_directory.ntp_servers` in `infrastructure.yml`.
+Set `$NTPServer` to the first entry from `active_directory.ntp_servers` in `variables.yml`.
 
 ```powershell title="Set-NTPConfiguration.ps1"
 # -- Edit before running -------------------------------------------------
@@ -108,7 +108,7 @@ Run from the management server to configure all nodes in a single pass.
 **Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Invoke-ConfigureNTP-Orchestrated.ps1`
 
 Reads `active_directory.ntp_servers` and all `cluster_nodes` entries from
-`infrastructure.yml`. Connects to each node via PSRemoting and configures w32tm.
+`variables.yml`. Connects to each node via PSRemoting and configures w32tm.
 Produces a per-node summary table with stratum and sync source.
 
 ```powershell title="Invoke-ConfigureNTP-Orchestrated.ps1"
@@ -119,10 +119,10 @@ Produces a per-node summary table with stratum and sync source.
 
 .DESCRIPTION
  Runs from the management server. Reads NTP server list and node IPs from
- infrastructure.yml, connects to each node over PSRemoting, and configures
+ variables.yml, connects to each node over PSRemoting, and configures
  the Windows Time service.
 
- infrastructure.yml paths used:
+ variables.yml paths used:
  active_directory.ntp_servers - List of NTP servers (joined for manualpeerlist)
  cluster_nodes[].management_ip - PSRemoting connection target per node
  cluster_nodes[].hostname - Node hostname (display only)
@@ -138,7 +138,7 @@ Produces a per-node summary table with stratum and sync source.
 
 .EXAMPLE
  .\Invoke-ConfigureNTP-Orchestrated.ps1
- .\Invoke-ConfigureNTP-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure.yml"
+ .\Invoke-ConfigureNTP-Orchestrated.ps1 -ConfigPath "C:\config\variables.yml"
 #>
 
 [CmdletBinding()]
@@ -167,14 +167,14 @@ function Resolve-ConfigPath {
  param([string]$Provided)
  if ($Provided -ne "" -and (Test-Path $Provided)) { return $Provided }
  $candidates = @(
- "$env:USERPROFILE\infrastructure.yml",
- "C:\configs\infrastructure.yml",
- "$PSScriptRoot\..\..\..\..\..\configs\infrastructure.yml"
+ "$env:USERPROFILE\variables.yml",
+ "C:\config\variables.yml",
+ "$PSScriptRoot\..\..\..\..\..\config\variables.yml"
  )
  foreach ($c in $candidates) {
  if (Test-Path $c) { return (Resolve-Path $c).Path }
  }
- throw "infrastructure.yml not found. Pass -ConfigPath or place it in a standard location."
+ throw "variables.yml not found. Pass -ConfigPath or place it in a standard location."
 }
 
 function Get-YamlList {
@@ -245,8 +245,8 @@ Write-Log "Config: $configFile"
 $ntpList = Get-YamlList -FilePath $configFile -KeyPath @("active_directory", "ntp_servers")
 $nodes = Get-ClusterNodes -FilePath $configFile
 
-if ($ntpList.Count -eq 0) { throw "active_directory.ntp_servers not found or empty in infrastructure.yml" }
-if ($nodes.Count -eq 0) { throw "cluster_nodes not found or empty in infrastructure.yml" }
+if ($ntpList.Count -eq 0) { throw "active_directory.ntp_servers not found or empty in variables.yml" }
+if ($nodes.Count -eq 0) { throw "cluster_nodes not found or empty in variables.yml" }
 
 $ntpPeerList = $ntpList -join " "
 Write-Log "NTP servers : $ntpPeerList"
@@ -342,10 +342,10 @@ if ($failCount -eq 0) {
 
 | Issue | Root Cause | Remediation |
 |-------|------------|-------------|
-| Script hard-fails on startup | `REPLACE` placeholder value remains | Edit `#region CONFIGURATION` with the NTP server from `infrastructure.yml` |
+| Script hard-fails on startup | `REPLACE` placeholder value remains | Edit `#region CONFIGURATION` with the NTP server from `variables.yml` |
 | Stratum 16 after resync | NTP server unreachable or DNS not resolving | Verify NTP server IP; confirm Task 06 (DNS) passed; check firewall rules |
 | `w32tm /resync` exits non-zero | Time service not yet fully started | Wait 10 seconds and re-run `w32tm /resync /force` manually |
-| Orchestrated: `ntp_servers not found` | Key missing or wrong path in `infrastructure.yml` | Confirm `active_directory.ntp_servers:` list exists in yml |
+| Orchestrated: `ntp_servers not found` | Key missing or wrong path in `variables.yml` | Confirm `active_directory.ntp_servers:` list exists in yml |
 | Orchestrated: node unreachable | WinRM not enabled or firewall blocking | Verify WinRM configured (Task 01); check firewall allows port 5985/5986 |
 | Time keeps drifting back | VM host overriding guest time | Disable Hyper-V Time Synchronization integration service if applicable |
 

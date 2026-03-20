@@ -20,7 +20,7 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-Rename each node to its target hostname from `infrastructure.yml`. Nodes must restart to apply the change.
+Rename each node to its target hostname from `variables.yml`. Nodes must restart to apply the change.
 
 ---
 
@@ -29,7 +29,7 @@ Rename each node to its target hostname from `infrastructure.yml`. Nodes must re
 | Requirement | Details |
 |---|---|
 | Tasks 01–09 complete | Unused adapters disabled |
-| Hostnames from infrastructure.yml | `cluster_nodes[].hostname` |
+| Hostnames from variables.yml | `cluster_nodes[].hostname` |
 
 ---
 
@@ -51,7 +51,7 @@ Run on each node via console, KVM, or RDP. SConfig is the simplest method.
 
 1. At the PowerShell prompt, type `SConfig` and press Enter
 2. Select **option 2** — Computer Name
-3. Type the hostname from `infrastructure.yml` (`cluster_nodes[].hostname`)
+3. Type the hostname from `variables.yml` (`cluster_nodes[].hostname`)
 4. Press Enter and confirm
 5. Select **Yes** to restart now
 
@@ -80,17 +80,17 @@ Restart-Computer -Force
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated (Mgmt Server)">
 
-Run from the management server. Reads all node IPs and hostnames from `infrastructure.yml`, renames each node, restarts it, and waits for it to come back online.
+Run from the management server. Reads all node IPs and hostnames from `variables.yml`, renames each node, restarts it, and waits for it to come back online.
 
 **Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname/powershell/Invoke-ConfigureHostname-Orchestrated.ps1`
 
 ```powershell
 # Task 10 - Configure Hostname (orchestrated, all nodes)
-# infrastructure.yml variables:
+# variables.yml variables:
 # cluster_nodes[].management_ip -> connection IP per node
 # cluster_nodes[].hostname -> target hostname per node
 
-$ConfigPath = "$env:USERPROFILE\infrastructure.yml"
+$ConfigPath = "$env:USERPROFILE\variables.yml"
 $lines = Get-Content $ConfigPath
 $nodes = @()
 $current = $null
@@ -138,7 +138,7 @@ Invoke-Command -ComputerName <ip> -ScriptBlock { $env:COMPUTERNAME }
 
 - [ ] Each node reports the correct hostname
 - [ ] All nodes accessible after restart
-- [ ] Hostnames match `cluster_nodes[].hostname` in infrastructure.yml
+- [ ] Hostnames match `cluster_nodes[].hostname` in variables.yml
 
 ---
 

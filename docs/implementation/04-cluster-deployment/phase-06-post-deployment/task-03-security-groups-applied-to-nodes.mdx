@@ -43,7 +43,7 @@ This task is **optional but strongly recommended** for production environments. 
 
 ## Security Group Requirements
 
-The following groups must exist in Active Directory before running this task (created in [Phase 01 Task 02](../../03-onprem-readiness/phase-01-active-directory/task-02-security-groups.mdx)). Groups are sourced from `active_directory.security_groups` in `infrastructure.yml`. Only the 5 groups with non-empty `local_groups` arrays are applied to cluster nodes — WAC groups are applied on the WAC server only.
+The following groups must exist in Active Directory before running this task (created in [Phase 01 Task 02](../../03-onprem-readiness/phase-01-active-directory/task-02-security-groups.mdx)). Groups are sourced from `active_directory.security_groups` in `variables.yml`. Only the 5 groups with non-empty `local_groups` arrays are applied to cluster nodes — WAC groups are applied on the WAC server only.
 
 | YAML Key | Example AD Group | Local Group(s) Assigned | Access Level |
 |---|---|---|---|
@@ -110,7 +110,7 @@ Repeat the following steps on **every cluster node**:
 
 ### Orchestrated Script (Mgmt Server)
 
-> **When to use**: Config-driven automation from a management server or jump box — reads `infrastructure.yml`, iterates all cluster nodes via PSRemoting
+> **When to use**: Config-driven automation from a management server or jump box — reads `variables.yml`, iterates all cluster nodes via PSRemoting
 
 #### Script
 
@@ -123,16 +123,16 @@ Repeat the following steps on **every cluster node**:
 # Script : Invoke-ApplySecurityGroups-Orchestrated.ps1
 # Purpose: Add AD security groups to local groups on every cluster node,
 # driven by active_directory.security_groups[*].local_groups in
-# infrastructure.yml. Skips entries where local_groups is empty
+# variables.yml. Skips entries where local_groups is empty
 # (wac_admins, wac_users — those are applied on the WAC server only).
-# Run : From management server — reads infrastructure.yml, uses PSRemoting
-# Prereqs: PSRemoting enabled on all nodes, infrastructure.yml accessible,
+# Run : From management server — reads variables.yml, uses PSRemoting
+# Prereqs: PSRemoting enabled on all nodes, variables.yml accessible,
 # powershell-yaml module installed
 # ==============================================================================
 
 [CmdletBinding()]
 param(
- [string]$ConfigPath = "", # Path to infrastructure.yml; defaults to .\configs\infrastructure.yml
+ [string]$ConfigPath = "", # Path to variables.yml; defaults to .\config\variables.yml
  [PSCredential]$Credential, # Override credential resolution
  [string[]]$TargetNode = @(), # Limit to specific nodes; empty = all nodes from config
  [switch]$WhatIf, # Dry-run — validate only, no changes
@@ -166,7 +166,7 @@ Write-Log "Log: $logFile"
 
 # ── Config loading ────────────────────────────────────────────────────────────
 if (-not $ConfigPath) {
- $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
 }
 if (-not (Test-Path $ConfigPath)) {
  Write-Log "Config file not found: $ConfigPath" 'ERROR'
@@ -320,18 +320,18 @@ return $results
 #### Usage Examples
 
 ```powershell title="Example: Apply to all nodes (config-driven)"
-# Reads all values — group assignments driven by local_groups in infrastructure.yml
+# Reads all values — group assignments driven by local_groups in variables.yml
 .\Invoke-ApplySecurityGroups-Orchestrated.ps1 `
- -ConfigPath "configs\infrastructure.yml"
+ -ConfigPath "config\variables.yml"
 
 # Dry-run first
 .\Invoke-ApplySecurityGroups-Orchestrated.ps1 `
- -ConfigPath "configs\infrastructure.yml" `
+ -ConfigPath "config\variables.yml" `
  -WhatIf
 
 # Target a single node
 .\Invoke-ApplySecurityGroups-Orchestrated.ps1 `
- -ConfigPath "configs\infrastructure.yml" `
+ -ConfigPath "config\variables.yml" `
  -TargetNode "iic-01-n01"
 ```
 
@@ -360,7 +360,7 @@ Invoke-Command -ComputerName $nodes -ScriptBlock {
 
 ### Standalone Script
 
-> **When to use**: Copy-paste ready — no `infrastructure.yml`, no helpers, no external dependencies. Run from a management server or jump box. All values are defined in the `#region CONFIGURATION` block.
+> **When to use**: Copy-paste ready — no `variables.yml`, no helpers, no external dependencies. Run from a management server or jump box. All values are defined in the `#region CONFIGURATION` block.
 
 #### Code
 
@@ -368,7 +368,7 @@ Invoke-Command -ComputerName $nodes -ScriptBlock {
 # ==============================================================================
 # Script : Invoke-ApplySecurityGroups-Standalone.ps1
 # Purpose: Add AD security groups to local groups on each cluster node for all
-# 5 node-applied roles — fully self-contained, no infrastructure.yml
+# 5 node-applied roles — fully self-contained, no variables.yml
 # Run : From any management server with PSRemoting access to cluster nodes
 # Prereqs: PSRemoting enabled on all target nodes
 # ==============================================================================

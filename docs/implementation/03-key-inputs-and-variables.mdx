@@ -2,7 +2,7 @@
 title: "Key Inputs and Variables"
 sidebar_label: "Key Inputs and Variables"
 sidebar_position: 3
-description: "Configuration management system for Azure Local deployments using master-registry.yaml and infrastructure.yml."
+description: "Configuration management system for Azure Local deployments using config/variables.yml and JSON Schema validation."
 category: "RUNBOOK"
 scope: "Configuration management system"
 purpose: "Define variable registry and infrastructure configuration"
@@ -14,12 +14,12 @@ tags:
  - azure-local
  - configuration
  - variables
- - infrastructure-yml
+ - variables-yml
 keywords:
  - key inputs
  - variables
- - infrastructure.yml
- - master-registry.yaml
+ - variables.yml
+ - variables.example.yml
 status: "approved"
 ---
 
@@ -39,10 +39,11 @@ status: "approved"
 
 ## Overview
 
-Azure Local deployments use a **standardized configuration management system** based on two core files:
+Azure Local deployments use a **standardized configuration management system** based on:
 
-1. **master-registry.yaml** - Variable DEFINITIONS (names, types, constraints, validation rules)
-2. **infrastructure.yml** - Environment-specific VALUES (actual configuration data)
+1. **`config/variables.example.yml`** — Template with placeholder values (copy to `variables.yml`)
+2. **`config/variables.yml`** — Environment-specific VALUES (actual configuration data, **never committed**)
+3. **`config/schema/variables.schema.json`** — JSON Schema for CI validation
 
 This system ensures consistency, validation, and automation compatibility across all deployments.
 
@@ -52,7 +53,7 @@ This system ensures consistency, validation, and automation compatibility across
 
 ## Planning Phase Integration
 
-The `infrastructure.yml` file is populated during the planning and discovery phase. Key planning documents provide the source values:
+The `variables.yml` file is populated during the planning and discovery phase. Key planning documents provide the source values:
 
 - **[Naming Standards](../planning/01-naming-standards.mdx)** - Defines resource naming patterns and conventions
 - **[Discovery Checklist](../planning/02-discovery-checklist.mdx)** - Comprehensive checklist for gathering all required configuration values
@@ -63,8 +64,8 @@ The `infrastructure.yml` file is populated during the planning and discovery pha
 1. Complete discovery checklist to gather all required values
 2. Apply naming standards to generate resource names
 3. Choose landing zone deployment model (Full CAF vs Simplified)
-4. Populate `infrastructure.yml` with discovered values
-5. Validate against `master-registry.yaml` constraints
+4. Populate `variables.yml` with discovered values
+5. Validate against `config/schema/variables.schema.json` constraints
 
 ---
 
@@ -82,24 +83,24 @@ The `infrastructure.yml` file is populated during the planning and discovery pha
  │ Populates ↓
  │
 ┌─────────────────────────────────────────────────────────────────┐
-│ MASTER VARIABLE REGISTRY (Definitions) │
+│ VARIABLE SCHEMA (config/schema/variables.schema.json) │
 │ Defines: Variable names, types, constraints, patterns │
-│ Version: 2.1.0 (910+ variables) │
+│ Validation: JSON Schema for CI and local checks │
 └─────────────────────────────────────────────────────────────────┘
  │
  │ Validates ↓
  │
 ┌─────────────────────────────────────────────────────────────────┐
-│ infrastructure.yml (Environment Values) │
+│ config/variables.yml (Environment Values) │
 │ Contains: Actual configuration for your specific deployment │
 │ Examples: Cluster names, IP addresses, Azure tenant IDs │
 └─────────────────────────────────────────────────────────────────┘
 
 ---
 
-## How Scripts Use infrastructure.yml
+## How Scripts Use variables.yml
 
-All deployment and automation scripts read configuration from `infrastructure.yml` using **fixed variable paths**. This ensures scripts are environment-agnostic and portable across all deployments.
+All deployment and automation scripts read configuration from `variables.yml` using **fixed variable paths**. This ensures scripts are environment-agnostic and portable across all deployments.
 
 ### Script Execution Pattern
 
@@ -124,7 +125,7 @@ All deployment and automation scripts read configuration from `infrastructure.ym
 
 3. **Read values using fixed paths**
  ```powershell
- # These paths are guaranteed to exist in every infrastructure.yml
+ # These paths are guaranteed to exist in every variables.yml
  $tenantId = $config.azure.tenant.id
  $subscriptionId = $config.azure.subscriptions.demo.id
  $kvName = $config.platform.kv_platform_name
@@ -142,7 +143,7 @@ All deployment and automation scripts read configuration from `infrastructure.ym
 
 ### Guaranteed Variable Paths
 
-These paths are standardized across all `infrastructure.yml` files:
+These paths are standardized across all `variables.yml` files:
 
 | Path | Type | Description |
 |------|------|-------------|
@@ -177,7 +178,7 @@ az keyvault secret set --vault-name $kvName --name "$spName-secret" --value $sp.
 
 **Key points:**
 - Script works across all environments (azurelocalcloud, ProjectIIC, demos, etc.)
-- Only the values in `infrastructure.yml` differ—script logic stays the same
+- Only the values in `variables.yml` differ—script logic stays the same
 - No hardcoded tenant IDs, subscription IDs, or resource names
 
 **Related Documentation:**
@@ -189,7 +190,7 @@ az keyvault secret set --vault-name $kvName --name "$spName-secret" --value $sp.
 
 ## Required Configuration Files
 
-### 1. infrastructure.yml
+### 1. variables.yml
 
 **Location:** Root of your environment repository
 
@@ -250,7 +251,7 @@ cluster_nodes:
 ```
 
 :::tip Variable Placeholders in Examples
-Values wrapped in `{{...}}` (e.g., `{{platform.kv_platform_name}}`) are **variable path references** from your `infrastructure.yml`. Replace them with the actual values from your deployment configuration. For example, using the fictional **Infinite azurelocal Corp**:
+Values wrapped in `{{...}}` (e.g., `{{platform.kv_platform_name}}`) are **variable path references** from your `variables.yml`. Replace them with the actual values from your deployment configuration. For example, using the fictional **Infinite azurelocal Corp**:
 
 | Placeholder | IIC Example Value |
 |-------------|-------------------|
@@ -261,19 +262,19 @@ Values wrapped in `{{...}}` (e.g., `{{platform.kv_platform_name}}`) are **variab
 So `keyvault://{{platform.kv_platform_name}}/local-admin-password` becomes `keyvault://kv-iic-platform/local-admin-password`.
 :::
 
-### 2. master-registry.yaml
+### 2. variables.schema.json
 
-**Location:** Copied to your environment repository's `variables/` folder
+**Location:** `config/schema/variables.schema.json`
 
-**Purpose:** Defines all variable names, types, constraints, and validation rules
+**Purpose:** JSON Schema that validates the structure of `variables.yml`. CI workflows run this on every PR.
 
-**You typically don't edit this file** - it's the source of truth maintained centrally and copied to each environment for validation purposes.
+**You typically don't edit this file** — it's the source of truth for variable structure maintained centrally.
 
 ---
 
 ## Key Planning Inputs
 
-The following table shows how planning phase outputs map to `infrastructure.yml` variables:
+The following table shows how planning phase outputs map to `variables.yml` variables:
 
 | Planning Document | Key Variables | Description |
 |-------------------|---------------|-------------|
@@ -519,11 +520,11 @@ See complete naming standards in Naming Standards
 
 ### Pre-Deployment Validation
 
-**ALWAYS validate your infrastructure.yml before deployment:**
+**ALWAYS validate your variables.yml before deployment:**
 
 ```powershell
 # Validate configuration against schema
-.\tools\Test-Infrastructure.ps1 -ConfigFile .\infrastructure.yml
+.\tools\Test-Infrastructure.ps1 -ConfigFile .\variables.yml
 ```
 
 **Validation checks:**
@@ -538,7 +539,7 @@ See complete naming standards in Naming Standards
 **Example validation output:**
 
 ```
-✅ Validation successful: infrastructure.yml conforms to schema
+✅ Validation successful: variables.yml conforms to schema
 
 Summary:
 - Variables validated: 127
@@ -570,13 +571,13 @@ Summary:
 ```
 ❌ Required variable 'azure_tenant_id' is missing
 ```
-**Fix:** Add missing variable to infrastructure.yml
+**Fix:** Add missing variable to variables.yml
 
 ---
 
 ## Secrets Management
 
-:::danger NEVER commit secrets to infrastructure.yml
+:::danger NEVER commit secrets to variables.yml
 Passwords, keys, and certificates must NEVER be hardcoded in configuration files
 :::
 
@@ -654,7 +655,7 @@ Before deployment, ensure you have:
  - [ ] Secrets stored in Key Vault (not in config files)
 
 - [ ] **Validation**
- - [ ] infrastructure.yml created
+ - [ ] variables.yml created
  - [ ] Configuration validated against schema
  - [ ] All required variables populated
 
@@ -666,14 +667,14 @@ Before deployment, ensure you have:
 
 ```powershell
 # Load configuration
-$config = Get-Content -Path ".\infrastructure.yml" -Raw | ConvertFrom-Yaml
+$config = Get-Content -Path ".\config\variables.yml" -Raw | ConvertFrom-Yaml
 
 # Use values
 $clusterName = $config.azure_local.cluster_name
 $nodeCount = $config.azure_local.cluster_node_count
 
 # Deploy
-.\Deploy-Infrastructure.ps1 -ConfigFile ".\infrastructure.yml"
+.\Deploy-Infrastructure.ps1 -ConfigFile ".\config\variables.yml"
 ```
 
 ### Terraform
@@ -681,7 +682,7 @@ $nodeCount = $config.azure_local.cluster_node_count
 ```hcl
 # Load configuration
 locals {
- config = yamldecode(file("infrastructure.yml"))
+ config = yamldecode(file("config/variables.yml"))
 }
 
 # Use values
@@ -695,7 +696,7 @@ resource "azurerm_resource_group" "main" {
 
 ```bicep
 // Load configuration using deployment script
-param configFile string = 'infrastructure.yml'
+param configFile string = 'config/variables.yml'
 
 // Configuration loaded via PowerShell deployment script
 ```
@@ -714,21 +715,21 @@ param configFile string = 'infrastructure.yml'
 
 ## Next Steps
 
-After gathering all required inputs and creating your infrastructure.yml:
+After gathering all required inputs and creating your variables.yml:
 
 1. **Validate configuration:**
  ```powershell
- .\tools\Test-Infrastructure.ps1 -ConfigFile .\infrastructure.yml
+ .\tools\Test-Infrastructure.ps1 -ConfigFile .\variables.yml
  ```
 
 2. **Test deployment (WhatIf):**
  ```powershell
- .\Deploy-Infrastructure.ps1 -ConfigFile .\infrastructure.yml -WhatIf
+ .\Deploy-Infrastructure.ps1 -ConfigFile .\variables.yml -WhatIf
  ```
 
 3. **Deploy:**
  ```powershell
- .\Deploy-Infrastructure.ps1 -ConfigFile .\infrastructure.yml
+ .\Deploy-Infrastructure.ps1 -ConfigFile .\variables.yml
  ```
 
 4. **Proceed to:** [Prerequisites and Assumptions](04-prerequisites-and-assumptions.mdx)
@@ -755,6 +756,6 @@ The **[Variable Management Standard](./04-variable-management-standard.mdx)** do
 - Created: 2026-01-15 by Azure Local Cloudnology Team
 - Last Updated: 2026-03-02 by Azure Local Cloudnology Team
 - Version: 2.0.0
-- Tags: azure-local, configuration, variables, infrastructure-yml
-- Keywords: key inputs, variables, infrastructure.yml, master-registry.yaml
+- Tags: azure-local, configuration, variables, variables-yml
+- Keywords: key inputs, variables, variables.yml, variables.example.yml
 - Author: Azure Local Cloudnology Team
