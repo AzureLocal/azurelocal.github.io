@@ -2,14 +2,14 @@
 title: "Full CAF/WAF Deployment Overview"
 sidebar_label: "Overview"
 sidebar_position: 0
-description: "Overview of the full CAF/WAF landing zone deployment — enterprise-scale management group hierarchy, dedicated subscriptions, and multi-resource-group organization."
+description: "Overview of the full CAF/WAF landing zone deployment — enterprise-scale management group hierarchy, dedicated subscriptions, and multi-resource-group organization following Azure Landing Zone architecture."
 category: "RUNBOOK"
 scope: "Full Azure Landing Zone deployment"
 purpose: "Deploy complete CAF/WAF Enterprise-Scale architecture"
-author: "Azure Local Cloudnology Team"
+author: "Hybrid Cloud Solutions"
 created: 2026-01-15
-updated: 2026-03-02
-version: "2.0.0"
+updated: 2026-03-19
+version: "3.0.0"
 tags:
  - azure-local
  - phase-01
@@ -20,6 +20,7 @@ keywords:
  - CAF
  - WAF
  - enterprise-scale
+ - azure landing zones
 status: "approved"
 ---
 
@@ -28,24 +29,26 @@ status: "approved"
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
-> **DOCUMENT CATEGORY**: Runbook 
-> **SCOPE**: Full Azure Landing Zone deployment 
-> **PURPOSE**: Deploy complete CAF/WAF Enterprise-Scale architecture 
-> **MASTER REFERENCE**: [Microsoft Learn — Landing Zones](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)
+> **DOCUMENT CATEGORY**: Runbook  
+> **SCOPE**: Full Azure Landing Zone deployment  
+> **PURPOSE**: Deploy complete CAF/WAF Enterprise-Scale architecture  
+> **MASTER REFERENCE**: [Azure Landing Zones — Enterprise-Scale](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/enterprise-scale/architecture)
 
 **Status**: Active
 
 ---
 
-The **Full CAF/WAF Deployment** model creates a comprehensive management group hierarchy with dedicated subscriptions per landing zone, following Microsoft Cloud Adoption Framework (CAF) and Well-Architected Framework (WAF) Enterprise-Scale guidelines. This provides maximum governance, policy control, and RBAC isolation.
+The **Full CAF/WAF Deployment** model implements the [Azure Landing Zone conceptual architecture](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/#azure-landing-zone-conceptual-architecture) — a comprehensive management group hierarchy with dedicated subscriptions per function, following Microsoft Cloud Adoption Framework (CAF) and Well-Architected Framework (WAF) Enterprise-Scale guidelines. This provides maximum governance, policy control, and RBAC isolation for your Azure Local environment.
+
+This is the same architecture Microsoft recommends for production Azure environments. For Azure Local specifically, it ensures that platform services (identity, connectivity, monitoring) are cleanly separated from your landing zone workloads (Azure Local clusters, Arc-enabled servers).
 
 :::tip When to Use This Model
-Choose Full CAF/WAF Deployment for:
-- Enterprise customers with strict governance requirements
-- Multi-environment production deployments (dev, test, staging, prod, DR)
-- Regulated industries (healthcare, finance, government)
-- Multi-team environments with separation of duties
-- Long-term strategic deployments planned for growth
+Choose Full CAF/WAF Deployment when your organization:
+- Deploys multiple Azure Local clusters across sites or environments
+- Has strict compliance or regulatory requirements (healthcare, finance, government)
+- Needs separation of duties between platform, identity, connectivity, and workload teams
+- Plans to scale Azure Local alongside other Azure workloads
+- Wants full alignment with the [Azure Landing Zone design areas](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/design-areas)
 :::
 
 ## Architecture Overview
@@ -54,21 +57,27 @@ The example below uses Infinite azurelocal Corp (IIC). Replace names with values
 
 ```
 Tenant Root Group
-└── cmp-iic-root # Root MG
- ├── cmp-platform-iic # Platform Services
- │ ├── cmp-platform-identity-iic # Identity (Entra ID Connect, etc.)
- │ ├── cmp-platform-management-iic # Monitoring, logging, automation
- │ └── cmp-platform-connectivity-iic # Hub networking, ExpressRoute, VPN
- ├── cmp-landing-zones-iic # Landing Zones
- │ ├── cmp-lz-corp-iic # Corporate workloads
- │ └── cmp-lz-online-iic # Internet-facing workloads
- ├── cmp-sandbox-iic # Non-production experimentation
- └── cmp-decommissioned-iic # Resources pending deletion
+└── cmp-iic-root                         # Organization Root MG
+    ├── cmp-platform-iic                  # Platform Services
+    │   ├── cmp-platform-identity-iic     #   Identity (Entra ID Connect, etc.)
+    │   ├── cmp-platform-management-iic   #   Monitoring, logging, automation
+    │   └── cmp-platform-connectivity-iic #   Hub networking, ExpressRoute, VPN
+    ├── cmp-landing-zones-iic             # Landing Zones
+    │   ├── cmp-lz-corp-iic              #   Corporate / Azure Local workloads
+    │   └── cmp-lz-online-iic            #   Internet-facing workloads
+    ├── cmp-sandbox-iic                   # Non-production experimentation
+    └── cmp-decommissioned-iic            # Resources pending deletion
 ```
+
+This mirrors the [CAF Enterprise-Scale reference architecture](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/enterprise-scale/architecture):
+- **Platform MGs** host shared services (identity, monitoring, hub networking) that all landing zones consume
+- **Landing Zone MGs** host workload subscriptions — your Azure Local clusters live here under `cmp-lz-corp-iic`
+- **Sandbox** provides a safe space for experimentation without affecting production governance
+- **Decommissioned** holds resources in a grace period before deletion
 
 ### Subscriptions
 
-Each management group at the leaf level hosts one or more dedicated subscriptions:
+Each leaf-level management group hosts one or more dedicated subscriptions:
 
 | Management Group | Example Subscription | Purpose |
 |------------------|----------------------|---------|
@@ -80,7 +89,7 @@ Each management group at the leaf level hosts one or more dedicated subscription
 
 ### Resource Groups
 
-Each subscription contains resource groups organized by function. Landing zone subscriptions follow the same per-cluster RG pattern:
+Each subscription contains resource groups organized by function. Landing zone subscriptions use a per-cluster RG pattern:
 
 | Subscription | Example Resource Group | Purpose |
 |---|---|---|
@@ -103,26 +112,24 @@ Each subscription contains resource groups organized by function. Landing zone s
 
 Before starting this deployment path:
 
-- [ ] **Entra ID tenant** established and accessible
-- [ ] **Permissions** — Owner or User Access Administrator at tenant root scope
-- [ ] **EA / MCA / CSP access** for subscription creation
+- [ ] **Entra ID tenant** established — you are the tenant owner or have Global Administrator access
+- [ ] **Tenant root access** — Owner or User Access Administrator at tenant root management group scope
+- [ ] **Billing access** — EA enrollment account owner, MCA billing profile owner, or ability to create subscriptions via Azure portal
 - [ ] **`variables.yml`** configured with management group, subscription, and resource group values
 - [ ] **Authenticated Azure session** — see [Authentication](../../../05-authentication.mdx)
 
 ## Deployment Steps
 
-| Task | Description | Estimated Time |
-|------|-------------|----------------|
-| **Task 01** | [Configure Management Groups](./task-01-configure-management-groups) | 30–60 minutes |
-| **Task 02** | [Create Subscriptions](./task-02-create-subscriptions) | 1–2 hours (CSP process) |
-| **Task 03** | [Create Resource Groups](./task-03-create-resource-groups) | 30–60 minutes |
+| Task | Description |
+|------|-------------|
+| **Task 01** | [Configure Management Groups](./task-01-configure-management-groups) — deploy the full hierarchy |
+| **Task 02** | [Create Subscriptions](./task-02-create-subscriptions) — provision and associate dedicated subscriptions |
+| **Task 03** | [Create Resource Groups](./task-03-create-resource-groups) — create RGs in each subscription |
 
-**Total Estimated Time**: ~2–4 hours
+## Comparison with Single Subscription Deployment
 
-## Comparison with Simplified Deployment
-
-| Feature | Full CAF/WAF | Simplified |
-|---------|--------------|------------|
+| Feature | Full CAF/WAF | Single Subscription |
+|---------|--------------|---------------------|
 | Management Groups | 10+ | 2 (root + landing zone) |
 | Subscriptions | 5+ | 1 |
 | Resource Groups | Multiple per function | 1 per cluster |
@@ -131,24 +138,25 @@ Before starting this deployment path:
 | Cost Tracking | Subscription-based | Tag-based |
 | Best For | Multi-cluster, enterprise | Single cluster, PoC |
 
-## Limitations
+## Considerations
 
-:::warning Full Deployment Considerations
-- **Higher initial complexity** — requires more planning and setup time
-- **CSP coordination** — multiple subscriptions must be provisioned through the CSP
-- **Ongoing governance overhead** — more management groups and subscriptions to maintain
-- **Config schema required** — `variables.yml` must define the full hierarchy (management groups, subscriptions, resource groups per subscription)
+:::info Full Deployment Considerations
+- **Higher initial complexity** — more management groups, subscriptions, and resource groups to deploy and maintain
+- **Multiple subscriptions** — requires EA/MCA billing access or multiple subscription provisioning capability
+- **Ongoing governance** — more policy assignments and RBAC role assignments to manage
+- **Config schema** — `variables.yml` must define the full hierarchy (management groups, subscriptions, resource groups per subscription)
+- **Growth-ready** — this investment pays off when you add clusters, environments, or workloads
 :::
 
 ## Deliverables
 
-At the end of this phase, you will have:
+At the end of this deployment path, you will have:
 
 - [ ] Complete management group hierarchy deployed (root, platform, landing zones, sandbox, decommissioned)
 - [ ] Dedicated subscriptions provisioned per platform function and landing zone
 - [ ] Subscriptions associated with the correct management groups
 - [ ] Resource groups created in each subscription
-- [ ] Governance policies applied at management group scope
+- [ ] Governance structure ready for policy assignment and resource provider registration
 
 ## Next Steps
 
@@ -156,10 +164,11 @@ Start with [Task 01: Configure Management Groups](./task-01-configure-management
 
 ## References
 
+- [Azure Landing Zones — Conceptual Architecture](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/#azure-landing-zone-conceptual-architecture)
+- [CAF Enterprise-Scale Architecture](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/enterprise-scale/architecture)
+- [Azure Landing Zone Design Areas](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/design-areas)
+- [Management Groups Overview](https://learn.microsoft.com/en-us/azure/governance/management-groups/overview)
 - [Azure Local Toolkit — Governance Module](https://github.com/AzureLocal/azurelocal-toolkit)
-- [Microsoft Learn — Azure Landing Zones](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)
-- [Microsoft Learn — Management Groups](https://learn.microsoft.com/en-us/azure/governance/management-groups/overview)
-- [Microsoft Learn — Enterprise-Scale Architecture](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/enterprise-scale/architecture)
 
 ---
 
@@ -172,9 +181,6 @@ Start with [Task 01: Configure Management Groups](./task-01-configure-management
 ---
 
 **Version Control**
-- Created: 2026-01-15 by Azure Local Cloudnology Team
-- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
-- Version: 2.0.0
-- Tags: azure-local, phase-01, full-deployment, caf-waf
-- Keywords: full deployment, CAF, WAF, enterprise-scale
-- Author: Azure Local Cloudnology Team
+- Created: 2026-01-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-19 by Hybrid Cloud Solutions
+- Version: 3.0.0

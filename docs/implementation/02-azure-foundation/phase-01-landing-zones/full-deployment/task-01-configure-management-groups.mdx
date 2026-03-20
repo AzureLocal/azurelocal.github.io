@@ -6,10 +6,10 @@ description: "Create the full CAF/WAF management group hierarchy under the exist
 category: "RUNBOOK"
 scope: "Full CAF/WAF management group hierarchy"
 purpose: "Deploy complete CAF-aligned management group structure under the existing root"
-author: "Azure Local Cloudnology Team"
+author: "Hybrid Cloud Solutions"
 created: 2026-01-15
-updated: 2026-03-02
-version: "2.0.0"
+updated: 2026-03-19
+version: "3.0.0"
 tags:
  - azure-local
  - phase-01
@@ -30,10 +30,10 @@ import TabItem from '@theme/TabItem';
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
-> **DOCUMENT CATEGORY**: Runbook 
-> **SCOPE**: Full CAF/WAF management group hierarchy 
-> **PURPOSE**: Deploy complete CAF-aligned management group structure under the existing root 
-> **MASTER REFERENCE**: [Microsoft Learn — Management Groups](https://learn.microsoft.com/en-us/azure/governance/management-groups/overview)
+> **DOCUMENT CATEGORY**: Runbook  
+> **SCOPE**: Full CAF/WAF management group hierarchy  
+> **PURPOSE**: Deploy complete CAF-aligned management group structure  
+> **MASTER REFERENCE**: [Azure Landing Zones — Enterprise-Scale Architecture](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/enterprise-scale/architecture)
 
 **Status**: Active
 
@@ -41,17 +41,19 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-Create the complete management group hierarchy under the existing root management group, following Azure Cloud Adoption Framework (CAF) and Well-Architected Framework (WAF) best practices. This establishes the enterprise-grade governance structure for multi-subscription Azure Local environments.
+Create the complete management group hierarchy following the [Azure Landing Zone conceptual architecture](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/#azure-landing-zone-conceptual-architecture). This establishes the enterprise-grade governance structure for multi-subscription Azure Local environments, with hierarchical policy inheritance and RBAC boundaries.
+
+The management group hierarchy is the backbone of Azure governance — every policy, role assignment, and budget you define at the MG level cascades to all subscriptions and resources beneath it. Getting this right from the start means your Azure Local clusters inherit consistent security, compliance, and operational controls automatically.
 
 ### What This Accomplishes
 
-- **Governance structure** — complete CAF-aligned management group hierarchy
-- **Policy inheritance** — hierarchical policy and RBAC inheritance from root down
-- **Landing zone organization** — structured landing zones for different workload types
-- **Lifecycle management** — sandbox and decommissioned MGs for non-production and teardown
+- **Governance structure** — complete [CAF Enterprise-Scale](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/enterprise-scale/architecture) management group hierarchy
+- **Policy inheritance** — hierarchical policy and RBAC inheritance from your organization root down through platform and landing zone scopes
+- **Landing zone organization** — structured landing zones for corporate (Azure Local) and online workloads
+- **Lifecycle management** — sandbox and decommissioned MGs for experimentation and teardown
 
-:::info Root Management Group
-The root management group (`azure.management_groups.tenant_root.name`) should already exist in the tenant. This task creates everything **beneath** it — platform, landing zones, sandbox, and decommissioned.
+:::info Tenant Root Group vs. Organization Root
+Every Azure tenant has a built-in **Tenant Root Group** that cannot be renamed or deleted. In this task, you create your **organization root management group** (e.g., `cmp-iic-root`) directly beneath it, then build the full hierarchy under that. This keeps your organization's structure cleanly separated from the tenant default.
 :::
 
 ## Management Group Naming
@@ -96,10 +98,10 @@ Tenant Root Group
 
 ## Prerequisites
 
-- **Root management group** already exists in the tenant
-- **Permissions** — Management Group Contributor (or Owner) on the root management group
+- **Tenant access** — you must have Owner or User Access Administrator role at the tenant root management group scope (see [Elevate access to manage all Azure subscriptions](https://learn.microsoft.com/en-us/azure/role-based-access-control/elevate-access-global-admin))
+- **Permissions** — Management Group Contributor (or Owner) at the scope where you'll create the hierarchy
 - **Authenticated Azure session** — see [Authentication](../../../05-authentication.mdx)
-- **`variables.yml`** configured with the full management group hierarchy
+- **`variables.yml`** — configured with the full management group hierarchy names and display names
 
 ---
 
@@ -348,9 +350,11 @@ Proceed to [Task 02: Create Subscriptions](./task-02-create-subscriptions)
 
 ## References
 
-- [Microsoft Learn — Management Groups Overview](https://learn.microsoft.com/en-us/azure/governance/management-groups/overview)
-- [Microsoft Learn — Create Management Groups](https://learn.microsoft.com/en-us/azure/governance/management-groups/create-management-group-portal)
-- [Microsoft Learn — CAF Ready Methodology](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/)
+- [Azure Landing Zones — Enterprise-Scale Architecture](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/enterprise-scale/architecture)
+- [Management Groups Overview](https://learn.microsoft.com/en-us/azure/governance/management-groups/overview)
+- [Create Management Groups (Portal)](https://learn.microsoft.com/en-us/azure/governance/management-groups/create-management-group-portal)
+- [Elevate Access to Manage All Azure Subscriptions](https://learn.microsoft.com/en-us/azure/role-based-access-control/elevate-access-global-admin)
+- [CAF Ready Methodology](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/)
 
 ---
 
@@ -363,9 +367,6 @@ Proceed to [Task 02: Create Subscriptions](./task-02-create-subscriptions)
 ---
 
 **Version Control**
-- Created: 2026-01-15 by Azure Local Cloudnology Team
-- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
-- Version: 2.0.0
-- Tags: azure-local, phase-01, management-groups, full-deployment
-- Keywords: management groups, CAF hierarchy, governance structure
-- Author: Azure Local Cloudnology Team
+- Created: 2026-01-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-19 by Hybrid Cloud Solutions
+- Version: 3.0.0
