@@ -103,21 +103,65 @@ const config = {
                 label: 'Solutions',
                 position: 'left',
                 items: [
-                  {
-                    label: 'SOFS for FSLogix',
-                    href: 'https://azurelocal.github.io/azurelocal-sofs-fslogix/',
-                  },
+                  { type: 'html', value: '<strong>Workloads</strong>' },
                   {
                     label: 'Azure Virtual Desktop',
                     href: 'https://azurelocal.github.io/azurelocal-avd/',
+                  },
+                  {
+                    label: 'SQL Server HA',
+                    href: 'https://azurelocal.github.io/azurelocal-sql-ha/',
+                  },
+                  {
+                    label: 'AKS on Azure Local',
+                    href: 'https://azurelocal.github.io/azurelocal-aks/',
+                  },
+                  {
+                    label: 'Custom Images',
+                    href: 'https://azurelocal.github.io/azurelocal-custom-images/',
+                  },
+                  { type: 'html', value: '<strong>Migration</strong>' },
+                  {
+                    label: 'VM Conversion Toolkit',
+                    href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
+                  },
+                  {
+                    label: 'VMware Migration',
+                    href: 'https://azurelocal.github.io/azurelocal-vmware-migration/',
+                  },
+                  {
+                    label: 'Hydration',
+                    href: 'https://azurelocal.github.io/azurelocal-hydration/',
+                  },
+                  { type: 'html', value: '<strong>Operations</strong>' },
+                  {
+                    label: 'BCDR',
+                    href: 'https://azurelocal.github.io/azurelocal-bcdr/',
+                  },
+                  {
+                    label: 'Monitoring',
+                    href: 'https://azurelocal.github.io/azurelocal-monitoring/',
+                  },
+                  {
+                    label: 'Governance',
+                    href: 'https://azurelocal.github.io/azurelocal-governance/',
+                  },
+                  {
+                    label: 'Cost Management',
+                    href: 'https://azurelocal.github.io/azurelocal-cost/',
+                  },
+                  { type: 'html', value: '<strong>Platform</strong>' },
+                  {
+                    label: 'SOFS for FSLogix',
+                    href: 'https://azurelocal.github.io/azurelocal-sofs-fslogix/',
                   },
                   {
                     label: 'Load Testing Framework',
                     href: 'https://azurelocal.github.io/azurelocal-loadtools/',
                   },
                   {
-                    label: 'VM Conversion Toolkit',
-                    href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
+                    label: 'IoT on Azure Local',
+                    href: 'https://azurelocal.github.io/azurelocal-iot/',
                   },
                   {
                     label: 'Toolkit',
@@ -182,23 +226,78 @@ const config = {
             ],
           },
           {
-            title: 'Solutions',
+            title: 'Workloads',
+            items: [
+              {
+                label: 'Azure Virtual Desktop',
+                href: 'https://azurelocal.github.io/azurelocal-avd/',
+              },
+              {
+                label: 'SQL Server HA',
+                href: 'https://azurelocal.github.io/azurelocal-sql-ha/',
+              },
+              {
+                label: 'AKS on Azure Local',
+                href: 'https://azurelocal.github.io/azurelocal-aks/',
+              },
+              {
+                label: 'Custom Images',
+                href: 'https://azurelocal.github.io/azurelocal-custom-images/',
+              },
+            ],
+          },
+          {
+            title: 'Migration',
+            items: [
+              {
+                label: 'VM Conversion Toolkit',
+                href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
+              },
+              {
+                label: 'VMware Migration',
+                href: 'https://azurelocal.github.io/azurelocal-vmware-migration/',
+              },
+              {
+                label: 'Hydration',
+                href: 'https://azurelocal.github.io/azurelocal-hydration/',
+              },
+            ],
+          },
+          {
+            title: 'Operations',
+            items: [
+              {
+                label: 'BCDR',
+                href: 'https://azurelocal.github.io/azurelocal-bcdr/',
+              },
+              {
+                label: 'Monitoring',
+                href: 'https://azurelocal.github.io/azurelocal-monitoring/',
+              },
+              {
+                label: 'Governance',
+                href: 'https://azurelocal.github.io/azurelocal-governance/',
+              },
+              {
+                label: 'Cost Management',
+                href: 'https://azurelocal.github.io/azurelocal-cost/',
+              },
+            ],
+          },
+          {
+            title: 'Platform',
             items: [
               {
                 label: 'SOFS for FSLogix',
                 href: 'https://azurelocal.github.io/azurelocal-sofs-fslogix/',
               },
               {
-                label: 'Azure Virtual Desktop',
-                href: 'https://azurelocal.github.io/azurelocal-avd/',
-              },
-              {
                 label: 'Load Testing Framework',
                 href: 'https://azurelocal.github.io/azurelocal-loadtools/',
               },
               {
-                label: 'VM Conversion Toolkit',
-                href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
+                label: 'IoT on Azure Local',
+                href: 'https://azurelocal.github.io/azurelocal-iot/',
               },
               {
                 label: 'Toolkit',
