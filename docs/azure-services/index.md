@@ -13,13 +13,13 @@ This section covers Azure services that run natively on Azure Local infrastructu
 |---------|-------------|-----------------|-----------|
 | [Azure Virtual Desktop (AVD)](./avd-on-azure-local.md) | Cloud-managed virtual desktops and RemoteApp on-premises | [azurelocal-avd](https://github.com/AzureLocal/azurelocal-avd) | [Docs](https://azurelocal.github.io/azurelocal-avd/) |
 | [SOFS / FSLogix Profile Containers](./sofs-fslogix-on-azure-local.md) | Scale-Out File Server for FSLogix profile containers (AVD companion) | [azurelocal-sofs-fslogix](https://github.com/AzureLocal/azurelocal-sofs-fslogix) | [Docs](https://azurelocal.github.io/azurelocal-sofs-fslogix/) |
-| [Azure Kubernetes Service (AKS)](./aks-on-azure-local.md) | Managed Kubernetes on-premises via Azure Arc | — | — |
-| [Azure App Services](./app-services-on-azure-local.md) | PaaS web app and API hosting on AKS via Arc | — | — |
-| [Azure SQL Managed Instance](./sql-managed-instance-on-azure-local.md) | Managed SQL databases on-premises via Arc data services | — | — |
+| [Azure Kubernetes Service (AKS)](./aks-on-azure-local.md) | Managed Kubernetes on-premises via Azure Arc | [azurelocal-aks](https://github.com/AzureLocal/azurelocal-aks) | — |
+| [Azure App Services](./app-services-on-azure-local.md) | PaaS web app and API hosting on AKS via Arc | [azurelocal-app-services](https://github.com/AzureLocal/azurelocal-app-services) | — |
+| [Azure SQL Managed Instance](./sql-managed-instance-on-azure-local.md) | Managed SQL databases on-premises via Arc data services | [azurelocal-sql-mi](https://github.com/AzureLocal/azurelocal-sql-mi) | — |
 | [SQL Server High Availability](./sql-ha-on-azure-local.md) | Always On Availability Groups and FCI for SQL Server on Azure Local | [azurelocal-sql-ha](https://github.com/AzureLocal/azurelocal-sql-ha) | — |
-| [Machine Learning / AI](./ml-ai-on-azure-local.md) | ML inference and AI workloads at the edge | — | — |
-| [IoT Operations](./iot-operations-on-azure-local.md) | Edge IoT data processing, MQTT broker, and device management | — | — |
-| [VMs and Containers](./vms-and-containers-on-azure-local.md) | Arc-managed VMs and AKS containers side-by-side | — | — |
+| [Machine Learning / AI](./ml-ai-on-azure-local.md) | ML inference and AI workloads at the edge | [azurelocal-ml-ai](https://github.com/AzureLocal/azurelocal-ml-ai) | — |
+| [IoT Operations](./iot-operations-on-azure-local.md) | Edge IoT data processing, MQTT broker, and device management | [azurelocal-iot](https://github.com/AzureLocal/azurelocal-iot) | — |
+| [VMs and Containers](./vms-and-containers-on-azure-local.md) | Arc-managed VMs and AKS containers side-by-side | [azurelocal-vms](https://github.com/AzureLocal/azurelocal-vms) | — |
 | [VM Gen1 to Gen2 Conversion](./vm-conversion-on-azure-local.md) | Convert Hyper-V Gen1 VMs to Gen2 with Arc enrollment preserved | [azurelocal-vm-conversion-toolkit](https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit) | [Docs](https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/) |
 | [VMware to Azure Local Migration](./vmware-migration-on-azure-local.md) | Migrate VMware vSphere VMs to Azure Local (VMDK → VHDX) | [azurelocal-vmware-migration](https://github.com/AzureLocal/azurelocal-vmware-migration) | — |
 | [Load Testing and Benchmarking](./load-testing-on-azure-local.md) | FIO, HammerDB, iPerf, stress-ng, and VMFleet benchmarking framework | [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools) | [Docs](https://azurelocal.github.io/azurelocal-loadtools/) |
@@ -30,7 +30,7 @@ This section covers Azure services that run natively on Azure Local infrastructu
 | [Server Hydration](./hydration-on-azure-local.md) | Bare-metal to Arc-registered cluster automated provisioning | [azurelocal-hydration](https://github.com/AzureLocal/azurelocal-hydration) | — |
 | [Custom VM Images](./custom-images-on-azure-local.md) | Hardened golden image build pipeline for Azure Local VMs | [azurelocal-custom-images](https://github.com/AzureLocal/azurelocal-custom-images) | — |
 | [Platform Automation Toolkit](./toolkit-on-azure-local.md) | Cross-cutting platform automation, variable registry, and IaC lifecycle | [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | [Docs](https://azurelocal.github.io/azurelocal-toolkit/) |
-| [Disconnected Operations](./disconnected-operations-on-azure-local.md) | Air-gapped and intermittently connected cluster operations | — | — |
+| [Disconnected Operations](./disconnected-operations-on-azure-local.md) | Air-gapped and intermittently connected cluster operations | [azurelocal-disconnected](https://github.com/AzureLocal/azurelocal-disconnected) | — |
 
 ## Supporting Repositories
 
@@ -43,14 +43,21 @@ In addition to service-specific repos, the AzureLocal organization maintains cro
 | [azurelocal-sofs-fslogix](https://github.com/AzureLocal/azurelocal-sofs-fslogix) | Scale-Out File Server for FSLogix profile containers (AVD companion) | [Docs](https://azurelocal.github.io/azurelocal-sofs-fslogix/) |
 | [azurelocal-vm-conversion-toolkit](https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit) | Hyper-V Gen 1 → Gen 2 VM conversion with Arc enrollment preservation | [Docs](https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/) |
 | [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools) | Load testing and benchmarking framework for Azure Local clusters | [Docs](https://azurelocal.github.io/azurelocal-loadtools/) |
+| [azurelocal-aks](https://github.com/AzureLocal/azurelocal-aks) | AKS on Azure Local cluster deployment and Arc-enabled Kubernetes | — |
 | [azurelocal-monitoring](https://github.com/AzureLocal/azurelocal-monitoring) | Azure Monitor, Prometheus/Grafana, dashboards, and alerting | — |
 | [azurelocal-sql-ha](https://github.com/AzureLocal/azurelocal-sql-ha) | SQL Server Always On AG and FCI deployment automation | — |
+| [azurelocal-sql-mi](https://github.com/AzureLocal/azurelocal-sql-mi) | Azure SQL Managed Instance via Arc data services on Azure Local | — |
 | [azurelocal-bcdr](https://github.com/AzureLocal/azurelocal-bcdr) | Azure Site Recovery, Azure Backup, and BCDR runbooks | — |
 | [azurelocal-cost](https://github.com/AzureLocal/azurelocal-cost) | Cost management, chargeback, and showback reporting | — |
 | [azurelocal-governance](https://github.com/AzureLocal/azurelocal-governance) | Azure Policy, Defender for Cloud, compliance, and RBAC automation | — |
 | [azurelocal-hydration](https://github.com/AzureLocal/azurelocal-hydration) | Bare-metal to Arc-registered cluster automated provisioning | — |
 | [azurelocal-vmware-migration](https://github.com/AzureLocal/azurelocal-vmware-migration) | VMware vSphere to Azure Local VM migration runbooks and tooling | — |
 | [azurelocal-custom-images](https://github.com/AzureLocal/azurelocal-custom-images) | Hardened golden VM image build pipeline for Azure Local | — |
+| [azurelocal-iot](https://github.com/AzureLocal/azurelocal-iot) | Azure IoT Operations deployment and MQTT broker configuration | — |
+| [azurelocal-app-services](https://github.com/AzureLocal/azurelocal-app-services) | Azure App Services on Kubernetes (Arc) for Azure Local | — |
+| [azurelocal-ml-ai](https://github.com/AzureLocal/azurelocal-ml-ai) | Machine Learning and AI inference workloads on Azure Local | — |
+| [azurelocal-vms](https://github.com/AzureLocal/azurelocal-vms) | Arc-managed VM lifecycle automation and container co-location | — |
+| [azurelocal-disconnected](https://github.com/AzureLocal/azurelocal-disconnected) | Disconnected and air-gapped Azure Local cluster operations | — |
 
 ## How Services Run on Azure Local
 
