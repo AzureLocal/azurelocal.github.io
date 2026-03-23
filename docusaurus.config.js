@@ -103,37 +103,28 @@ const config = {
                 label: 'Solutions',
                 position: 'left',
                 items: [
-                  { type: 'html', value: '<strong>Workloads</strong>' },
+                  { type: 'html', value: '<strong>Azure Services</strong>' },
                   {
                     label: 'Azure Virtual Desktop',
                     href: 'https://azurelocal.github.io/azurelocal-avd/',
-                  },
-                  {
-                    label: 'SQL Server HA',
-                    href: 'https://azurelocal.github.io/azurelocal-sql-ha/',
                   },
                   {
                     label: 'AKS on Azure Local',
                     href: 'https://azurelocal.github.io/azurelocal-aks/',
                   },
                   {
-                    label: 'Custom Images',
-                    href: 'https://azurelocal.github.io/azurelocal-custom-images/',
-                  },
-                  { type: 'html', value: '<strong>Migration</strong>' },
-                  {
-                    label: 'VM Conversion Toolkit',
-                    href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
-                  },
-                  {
-                    label: 'VMware Migration',
-                    href: 'https://azurelocal.github.io/azurelocal-vmware-migration/',
-                  },
-                  {
-                    label: 'Hydration',
-                    href: 'https://azurelocal.github.io/azurelocal-hydration/',
+                    label: 'IoT on Azure Local',
+                    href: 'https://azurelocal.github.io/azurelocal-iot/',
                   },
                   { type: 'html', value: '<strong>Operations</strong>' },
+                  {
+                    label: 'SOFS / FSLogix',
+                    href: 'https://azurelocal.github.io/azurelocal-sofs-fslogix/',
+                  },
+                  {
+                    label: 'Load Testing Framework',
+                    href: 'https://azurelocal.github.io/azurelocal-loadtools/',
+                  },
                   {
                     label: 'BCDR',
                     href: 'https://azurelocal.github.io/azurelocal-bcdr/',
@@ -152,20 +143,12 @@ const config = {
                   },
                   { type: 'html', value: '<strong>Platform</strong>' },
                   {
-                    label: 'SOFS for FSLogix',
-                    href: 'https://azurelocal.github.io/azurelocal-sofs-fslogix/',
-                  },
-                  {
-                    label: 'Load Testing Framework',
-                    href: 'https://azurelocal.github.io/azurelocal-loadtools/',
-                  },
-                  {
-                    label: 'IoT on Azure Local',
-                    href: 'https://azurelocal.github.io/azurelocal-iot/',
-                  },
-                  {
                     label: 'Toolkit',
                     href: 'https://azurelocal.github.io/azurelocal-toolkit/',
+                  },
+                  {
+                    label: 'Custom Images',
+                    href: 'https://azurelocal.github.io/azurelocal-custom-images/',
                   },
                 ],
           },
@@ -220,88 +203,16 @@ const config = {
             title: 'Docs',
             items: [
               {
-                label: 'Azure Local Docs',
+                label: 'Introduction',
                 to: '/docs/intro',
               },
-            ],
-          },
-          {
-            title: 'Workloads',
-            items: [
               {
-                label: 'Azure Virtual Desktop',
-                href: 'https://azurelocal.github.io/azurelocal-avd/',
+                label: 'Azure Services',
+                to: '/docs/azure-services',
               },
               {
-                label: 'SQL Server HA',
-                href: 'https://azurelocal.github.io/azurelocal-sql-ha/',
-              },
-              {
-                label: 'AKS on Azure Local',
-                href: 'https://azurelocal.github.io/azurelocal-aks/',
-              },
-              {
-                label: 'Custom Images',
-                href: 'https://azurelocal.github.io/azurelocal-custom-images/',
-              },
-            ],
-          },
-          {
-            title: 'Migration',
-            items: [
-              {
-                label: 'VM Conversion Toolkit',
-                href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
-              },
-              {
-                label: 'VMware Migration',
-                href: 'https://azurelocal.github.io/azurelocal-vmware-migration/',
-              },
-              {
-                label: 'Hydration',
-                href: 'https://azurelocal.github.io/azurelocal-hydration/',
-              },
-            ],
-          },
-          {
-            title: 'Operations',
-            items: [
-              {
-                label: 'BCDR',
-                href: 'https://azurelocal.github.io/azurelocal-bcdr/',
-              },
-              {
-                label: 'Monitoring',
-                href: 'https://azurelocal.github.io/azurelocal-monitoring/',
-              },
-              {
-                label: 'Governance',
-                href: 'https://azurelocal.github.io/azurelocal-governance/',
-              },
-              {
-                label: 'Cost Management',
-                href: 'https://azurelocal.github.io/azurelocal-cost/',
-              },
-            ],
-          },
-          {
-            title: 'Platform',
-            items: [
-              {
-                label: 'SOFS for FSLogix',
-                href: 'https://azurelocal.github.io/azurelocal-sofs-fslogix/',
-              },
-              {
-                label: 'Load Testing Framework',
-                href: 'https://azurelocal.github.io/azurelocal-loadtools/',
-              },
-              {
-                label: 'IoT on Azure Local',
-                href: 'https://azurelocal.github.io/azurelocal-iot/',
-              },
-              {
-                label: 'Toolkit',
-                href: 'https://azurelocal.github.io/azurelocal-toolkit/',
+                label: 'Operations',
+                to: '/docs/operations',
               },
             ],
           },
