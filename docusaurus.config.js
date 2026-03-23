@@ -206,14 +206,6 @@ const config = {
                 label: 'Introduction',
                 to: '/docs/intro',
               },
-              {
-                label: 'Azure Services',
-                to: '/docs/azure-services',
-              },
-              {
-                label: 'Operations',
-                to: '/docs/operations',
-              },
             ],
           },
           {
