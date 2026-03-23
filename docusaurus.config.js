@@ -141,6 +141,15 @@ const config = {
                     label: 'Cost Management',
                     href: 'https://azurelocal.github.io/azurelocal-cost/',
                   },
+                  { type: 'html', value: '<strong>Migration</strong>' },
+                  {
+                    label: 'VMware Migration',
+                    href: 'https://azurelocal.github.io/azurelocal-vmware-migration/',
+                  },
+                  {
+                    label: 'VM Conversion Toolkit',
+                    href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
+                  },
                   { type: 'html', value: '<strong>Platform</strong>' },
                   {
                     label: 'Toolkit',
