@@ -116,6 +116,18 @@ const config = {
                     label: 'IoT on Azure Local',
                     href: 'https://azurelocal.github.io/azurelocal-iot/',
                   },
+                  {
+                    label: 'Azure App Services',
+                    href: '/docs/next/azure-services/app-services-on-azure-local',
+                  },
+                  {
+                    label: 'Machine Learning and AI',
+                    href: '/docs/next/azure-services/ml-ai-on-azure-local',
+                  },
+                  {
+                    label: 'SQL Managed Instance',
+                    href: '/docs/next/azure-services/sql-managed-instance-on-azure-local',
+                  },
                   { type: 'html', value: '<strong>Operations</strong>' },
                   {
                     label: 'SOFS / FSLogix',
@@ -151,10 +163,6 @@ const config = {
                     href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
                   },
                   { type: 'html', value: '<strong>Platform</strong>' },
-                  {
-                    label: 'Toolkit',
-                    href: 'https://azurelocal.github.io/azurelocal-toolkit/',
-                  },
                   {
                     label: 'Custom Images',
                     href: 'https://azurelocal.github.io/azurelocal-custom-images/',
