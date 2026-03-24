@@ -337,3 +337,7 @@
 | 2026-03-24 | 2.1 | Part 3 Variables + Troubleshooting | 12 files (P01×5, P02×3, P03×4) |
 | 2026-03-24 | 2.2 | Part 4 Variables tables | 28 files (P01×3, P02×4, P03×7, P04×4, P05×4, P06×6) |
 | 2026-03-25 | 2.3 | Part 2 Variables tables | 26 files (P01×6, P02×2, P03×2, P04-manual×11, P04-vmconfig×5) |
+| 2026-03-25 | 2.4 | Part 5 Variables tables | 18 files (P01×1, P02×6, P03×3, P04×5, P05×3) |
+| 2026-03-25 | 2.5 | Part 1 Variables tables | 2 files (task-01, task-05) |
+| 2026-03-25 | 2.6 | Part 6 Variables tables | 3 files (task-03, task-05, task-06) |
+| 2026-03-25 | 2.7 | Parts 7-8 audited — no changes needed | 10 files (all checklists/guides, no config vars) |
