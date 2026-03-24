@@ -54,6 +54,16 @@ Verify that firewall rules permit outbound access to required Azure and Dell end
 
 ---
 
+## Variables from variables.yml
+
+| Variable Path | Type | Description |
+|---|---|---|
+| `networking.onprem.vlans.management` | Object | Management VLAN for test source network |
+| `networking.network_devices.fortigate_primary` | Object | Firewall hostname and management IP |
+| `compute.nodes[].management_ip` | String | Node IPs that require endpoint access |
+
+---
+
 ## Azure Public Endpoints
 
 The following Azure endpoints must be accessible from Azure Local cluster nodes:
@@ -275,6 +285,17 @@ Write-Host "`n=== Validation Complete ===" -ForegroundColor Cyan
 - [ ] NTP connectivity verified (`time.windows.com`)
 - [ ] No HTTPS inspection configured for these endpoints
 - [ ] Customer network team confirms rules implemented
+
+---
+
+## Troubleshooting
+
+| Issue | Possible Cause | Resolution |
+|---|---|---|
+| Endpoint test times out | Firewall rule not applied or wrong source subnet | Confirm rule source matches management VLAN CIDR, verify rule is enabled and committed |
+| HTTPS inspection blocking traffic | SSL/TLS deep inspection active for Azure endpoints | Add Azure and Dell endpoints to HTTPS inspection bypass list |
+| DNS resolution fails for endpoints | DNS forwarder not configured or upstream DNS blocked | Verify DNS server can resolve public names, check firewall allows DNS (UDP/TCP 53) outbound |
+| Partial endpoint failures | Geo-specific endpoint variants or CDN issues | Test from multiple nodes, verify all FQDN wildcards are included in allow rules |
 
 ---
 

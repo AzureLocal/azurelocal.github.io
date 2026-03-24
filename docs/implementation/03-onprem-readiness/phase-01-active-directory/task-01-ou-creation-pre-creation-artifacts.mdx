@@ -54,6 +54,21 @@ AD structure should be defined during the [planning phase](../../../planning/). 
 
 ---
 
+## Variables from variables.yml
+
+| Variable Path | Type | Description |
+|--------------|------|-------------|
+| `identity.active_directory.ad_clusters_ou_path` | string | OU path for Azure Local cluster computer objects |
+| `identity.active_directory.ad_domain_fqdn` | string | Active Directory domain FQDN |
+| `identity.accounts.account_lcm_username` | string | Lifecycle Manager deployment account username |
+| `identity.accounts.account_lcm_password` | string | LCM account password (keyvault:// URI) |
+| `platform.kv_platform_name` | string | Key Vault name for secret retrieval |
+| `azure_vms.dc01.resource_group` | string | Resource group of the domain controller VM |
+| `azure_vms.dc01.name` | string | Domain controller VM name (for AzVM execution) |
+| `azure_vms.dc01.hostname` | string | Domain controller hostname (for Arc execution) |
+
+---
+
 ## Execution
 
 <Tabs groupId="deployment-method">
@@ -646,6 +661,17 @@ if (-not $SkipCleanup) {
 - [ ] OU created with Block Inheritance enabled
 - [ ] LCM user created in OU
 - [ ] Credentials stored securely
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `New-ADOrganizationalUnit` fails with access denied | Insufficient permissions to create OUs | Run as Domain Admin or delegate OU creation rights on the parent container |
+| KDS Root Key not effective immediately | Key needs 10-hour replication delay | Use `-EffectiveImmediately` in lab or wait 10 hours in production |
+| AsHciADArtifactsPreCreationTool module not found | Module not installed or wrong PS version | Install via `Install-Module AsHciADArtifactsPreCreationTool` on PowerShell 5.1+ |
+| LCM user creation fails with duplicate | Account already exists from prior attempt | Verify existing account properties match requirements or remove and recreate |
 
 ---
 

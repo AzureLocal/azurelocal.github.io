@@ -49,6 +49,18 @@ Configure Dell PowerSwitch TOR switches with Data Center Bridging (DCB) for RDMA
 
 ---
 
+## Variables from variables.yml
+
+| Variable Path | Type | Description |
+|---|---|---|
+| `networking.network_devices.switch_primary` | Object | Primary ToR switch hostname, management IP, model |
+| `networking.network_devices.switch_secondary` | Object | Secondary ToR switch hostname, management IP, model |
+| `networking.onprem.vlans.management` | Object | Management VLAN ID, CIDR, gateway |
+| `networking.onprem.storage.vlans` | Object | Storage VLAN IDs (711-714) for trunk port configuration |
+| `compute.nodes[].hostname` | String | Node hostnames for port description labels |
+
+---
+
 ## Configuration Areas Overview
 
 | Configuration Area | Purpose | Key Settings |
@@ -448,6 +460,18 @@ show interface status
 - [ ] LLDP enabled
 - [ ] SSH enabled
 - [ ] Configuration saved to startup
+
+---
+
+## Troubleshooting
+
+| Issue | Possible Cause | Resolution |
+|---|---|---|
+| VLT peer link down | Incorrect port-channel member assignment or cable fault | Verify VLT configuration, check cables between switches, confirm port-channel membership |
+| PFC not negotiating | DCBX mode mismatch between switch and NIC | Set DCBX to IEEE on both ends, verify NIC firmware supports RoCEv2 |
+| Storage VLAN unreachable | VLAN not added to trunk port or VLAN not created | Verify VLAN exists (`show vlan`), confirm trunk port has VLAN tagged |
+| Jumbo frames not working | MTU mismatch along path | Confirm MTU 9216 on all switch ports, VLANs, and host NICs in the storage path |
+| SSH access denied | SSH service not enabled or management ACL blocking | Run `show ip ssh`, verify SSH enabled, check management ACL entries |
 
 ---
 
