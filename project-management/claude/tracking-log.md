@@ -125,29 +125,29 @@
 
 | Phase | Task | FM | Meta | Badge | Tabs | Vars | TS | Val | Nav | VC | Script | Action | Status |
 |-------|------|-----|------|-------|------|------|-----|-----|-----|-----|--------|--------|--------|
-| P01 | task-01-ou-creation | Full | ✅ | ✅ | ✅ std | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | Fmt | ⬜ |
-| P01 | task-02-security-groups | Full | ✅ | ✅ | ✅ std | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | Fmt+Script | ⬜ |
-| P01 | task-03-dns-records | Full | ✅ | ✅ | ✅ std | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | Fmt+Script | ⬜ |
-| P01 | task-04-service-accounts | Full | ✅ | ✅ | ✅ std | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | Fmt+Script | ⬜ |
-| P01 | task-05-group-assignments | Full | ✅ | ✅ | ✅ std | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | Fmt+Script | ⬜ |
+| P01 | task-01-ou-creation | Full | ✅ | ✅ | ✅ std | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ✅ |
+| P01 | task-02-security-groups | Full | ✅ | ✅ | ✅ std | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | Fmt+Script | ✅ |
+| P01 | task-03-dns-records | Full | ✅ | ✅ | ✅ std | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | Fmt+Script | ✅ |
+| P01 | task-04-service-accounts | Full | ✅ | ✅ | ✅ std | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | Fmt+Script | ✅ |
+| P01 | task-05-group-assignments | Full | ✅ | ✅ | ✅ std | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | Fmt+Script | ✅ |
 
 ### Phase 02 — Enterprise Readiness (4 tasks)
 
 | Phase | Task | FM | Meta | Badge | Tabs | Vars | TS | Val | Nav | VC | Script | Action | Status |
 |-------|------|-----|------|-------|------|------|-----|-----|-----|-----|--------|--------|--------|
-| P02 | task-01-hardware-inspection | Full | ✅ | ✅ | ✅ std | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | Fmt | ⬜ |
-| P02 | task-02-network-verification | Full | ✅ | ✅ | ✅ std | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ⬜ |
-| P02 | task-03-opengear | Full | ✅ | ✅ | ✅ std | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ⬜ |
+| P02 | task-01-hardware-inspection | Full | ✅ | ✅ | ✅ std | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ✅ |
+| P02 | task-02-network-verification | Full | ✅ | ✅ | ✅ std | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ✅ |
+| P02 | task-03-opengear | Full | ✅ | ✅ | ✅ std | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ✅ |
 | P02 | task-04-validation-signoff | Full | ✅ | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ | Fmt | ⬜ |
 
 ### Phase 03 — Network Infrastructure (4 tasks)
 
 | Phase | Task | FM | Meta | Badge | Tabs | Vars | TS | Val | Nav | VC | Script | Action | Status |
 |-------|------|-----|------|-------|------|------|-----|-----|-----|-----|--------|--------|--------|
-| P03 | task-01-opengear | Full | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ⬜ |
-| P03 | task-02-powerswitch | Full | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | Fmt | ⬜ |
-| P03 | task-03-firewall | Full | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | Fmt | ⬜ |
-| P03 | task-04-network-validation | Full | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ⬜ |
+| P03 | task-01-opengear | Full | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ✅ |
+| P03 | task-02-powerswitch | Full | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ✅ |
+| P03 | task-03-firewall | Full | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ✅ |
+| P03 | task-04-network-validation | Full | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Fmt | ✅ |
 
 **Part 3 Summary**: Best standardized part. All files have Full FM, ✅ Meta, ✅ Nav, ✅ VC. Consistently missing: Vars. P01 tasks 02-05 need scripts. P02-task-04 needs badges. P03 has no tabs (network infra tasks — may be appropriate).
 
@@ -334,3 +334,4 @@
 | 2026-03-24 | 0.1 | Created backup branches | Both repos |
 | 2026-03-24 | 0.2 | Created project-management/claude/ | Plan, tracking, discovery, standards |
 | 2026-03-24 | 1.1 | Full audit completed — all parts | tracking-log.md updated |
+| 2026-03-24 | 2.1 | Part 3 Variables + Troubleshooting | 12 files (P01×5, P02×3, P03×4) |
