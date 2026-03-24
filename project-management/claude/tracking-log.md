@@ -335,3 +335,5 @@
 | 2026-03-24 | 0.2 | Created project-management/claude/ | Plan, tracking, discovery, standards |
 | 2026-03-24 | 1.1 | Full audit completed — all parts | tracking-log.md updated |
 | 2026-03-24 | 2.1 | Part 3 Variables + Troubleshooting | 12 files (P01×5, P02×3, P03×4) |
+| 2026-03-24 | 2.2 | Part 4 Variables tables | 28 files (P01×3, P02×4, P03×7, P04×4, P05×4, P06×6) |
+| 2026-03-25 | 2.3 | Part 2 Variables tables | 26 files (P01×6, P02×2, P03×2, P04-manual×11, P04-vmconfig×5) |
