@@ -1492,6 +1492,17 @@ All values are defined in the `#region CONFIGURATION` block at the top. No `vari
 
 ---
 
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `Add-EceFeature` fails with action plan error | OS build mismatch or missing prerequisites | Verify OS build is `10.0.26100` with `systeminfo`; ensure all nodes are Arc-registered and cluster is healthy |
+| Network Controller cluster group shows `Offline` | NC VMs failed to start or quorum lost | Check NC VM status: `Get-ClusterGroup \| Where-Object Name -match "Network Controller"`; restart the group: `Start-ClusterGroup <NCGroupName>` |
+| DNS resolution fails for NC FQDN | DNS record not created or propagated | Create the DNS record manually: `Add-DnsServerResourceRecordA -Name "<SDNPrefix>-NC" -ZoneName "<domain>" -IPv4Address "<NC-IP>"` |
+| SDN feature not visible in Azure portal | Arc resource bridge not synced | Wait 10-15 minutes for sync; verify bridge health: `az arcappliance show --resource-group <rg> --name <appliance>` |
+
+---
+
 ## Navigation
 
 | Previous | Up | Next |

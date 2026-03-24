@@ -767,6 +767,16 @@ HybridConnectivity tunnel — not who can authenticate to sshd itself.
 
 ---
 
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| SSH connection refused on port 22 | `sshd` service not running or Windows Firewall blocking | Start service: `Start-Service sshd; Set-Service sshd -StartupType Automatic`; verify firewall: `Get-NetFirewallRule -Name *ssh*` |
+| Arc SSH tunnel fails with RBAC error | User lacks `Virtual Machine Local User Login` role | Assign the role: `az role assignment create --role "Virtual Machine Local User Login" --assignee <objectId> --scope <resourceScope>` |
+| Authentication fails with valid credentials | `sshd_config` not configured for password or key auth | Edit `C:\ProgramData\ssh\sshd_config` to enable `PasswordAuthentication yes` or configure authorized keys; restart: `Restart-Service sshd` |
+
+---
+
 ## Navigation
 
 | Previous | Up | Next |

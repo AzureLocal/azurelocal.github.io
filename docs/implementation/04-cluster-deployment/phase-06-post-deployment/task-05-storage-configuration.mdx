@@ -935,6 +935,16 @@ az stack-hci-vm storagepath list `
 
 ---
 
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Storage pool `HealthStatus` shows `Degraded` | One or more physical disks are unhealthy or missing | Check disk health: `Get-PhysicalDisk \| Where-Object HealthStatus -ne Healthy`; replace failed disks and initiate repair: `Repair-VirtualDisk` |
+| CSV volume shows `Offline` or `Redirected` | Node owning the volume is offline or network partition | Verify cluster node status: `Get-ClusterNode`; move CSV ownership: `Move-ClusterSharedVolume -Name <csv> -Node <healthy-node>` |
+| Storage path registration fails in Azure | Arc resource bridge unhealthy or missing permissions | Verify bridge: `az arcappliance show`; ensure the SPN has Contributor on the resource group |
+
+---
+
 ## Navigation
 
 | Previous | Up | Next |

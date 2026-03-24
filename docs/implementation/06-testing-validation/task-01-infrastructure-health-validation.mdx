@@ -357,6 +357,16 @@ azcmagent connect --resource-group <RG> --tenant-id <TenantID> --subscription-id
 
 ---
 
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Cluster validation reports node unreachable | WinRM disabled or network partition | Verify connectivity: `Test-Connection <node-ip>`; enable WinRM: `Enable-PSRemoting -Force` on the failing node |
+| Storage pool health shows `Degraded` | Physical disk failure or missing | Run `Get-PhysicalDisk \| Where-Object HealthStatus -ne Healthy` to identify failed disks; replace and repair |
+| Arc agent shows `Disconnected` status | Agent service stopped or token expired | Restart agent: `Restart-Service himds`; if persists, reconnect: `azcmagent connect` with fresh credentials |
+
+---
+
 ## Next Step
 
 Proceed to [Task 2: VMFleet Storage Testing](task-02-vmfleet-storage-testing.mdx) once infrastructure validation passes.

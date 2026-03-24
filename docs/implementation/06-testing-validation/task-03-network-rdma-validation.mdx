@@ -465,6 +465,16 @@ w32tm /query /source
 
 ---
 
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| RDMA validation shows `Not Operational` | Network adapter driver missing RDMA support or disabled | Verify driver: `Get-NetAdapterRdma`; enable: `Enable-NetAdapterRdma -Name <adapter>`; update NIC firmware if needed |
+| DCB/PFC misconfiguration detected | QoS policies conflicting or missing | Reset DCB: `Get-NetQosPolicy \| Remove-NetQosPolicy -Confirm:$false`; recreate SMB Direct policy with correct priority class |
+| RDMA throughput below expected baseline | Incorrect MTU or flow control settings | Verify jumbo frames: `Get-NetAdapterAdvancedProperty -Name <adapter> -RegistryKeyword *JumboPacket`; set MTU to 9014 |
+
+---
+
 ## Next Step
 
 Proceed to [Task 4: High Availability Testing](task-04-high-availability-testing.mdx) once network validation is complete.

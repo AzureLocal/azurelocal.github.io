@@ -209,6 +209,17 @@ foreach ($node in $nodes) {
 
 ---
 
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Script fails on one node but succeeds on others | WinRM connectivity issue or credential mismatch | Verify `Enter-PSSession -ComputerName <node>` works; re-run `Enable-PSRemoting -Force` on the failing node |
+| Hostname not changed after reboot | `Rename-Computer` requires a restart to take effect | Confirm the script includes `-Restart` flag; manually reboot if needed: `Restart-Computer -Force` |
+| Static IP not applied | DHCP still enabled on the management adapter | Run `Set-NetIPInterface -InterfaceAlias "Management" -Dhcp Disabled` before assigning the static IP |
+| DNS resolution fails after configuration | DNS server addresses not set or wrong order | Verify with `Get-DnsClientServerAddress`; re-run the DNS configuration step with correct IPs from `variables.yml` |
+
+---
+
 ## Navigation
 
 [← Task 11: Clear Storage](./task-11-clear-previous-storage-configuration-conditional.mdx) · [↑ Phase 03](./index.mdx)
