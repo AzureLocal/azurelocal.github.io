@@ -13,9 +13,9 @@ description: "Alternative script implementations (Azure CLI, Bash, PowerShell) f
 > **DOCUMENT CATEGORY**: Reference
 > **SCOPE**: Alternative script implementations per phase
 > **PURPOSE**: Provide equivalent Azure CLI, Bash, and PowerShell scripts for tasks documented in the main runbook
-> **MASTER REFERENCE**: [Azure Local Toolkit](https://github.com/AzureLocal/docs/azurelocal-toolkit)
+> **MASTER REFERENCE**: [Azure Local Toolkit](https://github.com/AzureLocal/azurelocal-toolkit)
 
-**Status**: Coming Soon
+**Status**: PowerShell scripts implemented for all phases. Azure CLI and Bash variants planned.
 
 ---
 
@@ -32,11 +32,11 @@ The main implementation guide documents the **recommended method** for each task
 | **Azure CLI in Bash** | Bash | Linux/macOS/WSL environments |
 | **Terraform** | Any | Infrastructure-as-code, repeatable deployments |
 
-**Script Repository:** All scripts are stored in the [Azure Local Toolkit](https://github.com/AzureLocal/docs/azurelocal-toolkit):
+**Script Repository:** All scripts are stored in the [Azure Local Toolkit](https://github.com/AzureLocal/azurelocal-toolkit):
 
-- `src/scripts/deployment/PowerShell/` — Azure PowerShell scripts
-- `src/scripts/deployment/azure-cli/` — Azure CLI scripts (PowerShell and Bash variants)
-- `src/terraform/` — Terraform configurations
+- `scripts/deploy/<stage>/<phase>/<task>/powershell/` — Azure PowerShell scripts
+- `scripts/deploy/<stage>/<phase>/<task>/azurecli/` — Azure CLI scripts (scaffolded)
+- `scripts/deploy/<stage>/<phase>/<task>/bash/` — Bash scripts (scaffolded)
 
 :::tip How to Use
 Each section below maps to an implementation phase. Find the phase you're working on, then pick your preferred toolchain. The main runbook shows the recommended path; scripts here are functionally equivalent alternatives.
@@ -57,66 +57,107 @@ Each section below maps to an implementation phase. Find the phase you're workin
 
 | Sub-Phase | Task | Az PS | Az CLI PS | Az CLI Bash | Terraform | Status |
 |-----------|------|:-----:|:---------:|:-----------:|:---------:|--------|
-| 01 - Landing Zones | Management group hierarchy | 📋 | — | 📋 | 📋 | Planned |
-| 01 - Landing Zones | Subscription provisioning | 📋 | — | 📋 | 📋 | Planned |
-| 01 - Landing Zones | Resource group creation | 📋 | — | 📋 | 📋 | Planned |
-| 02 - Resource Providers | Register required resource providers | 📋 | — | 📋 | — | Planned |
-| 03 - RBAC Permissions | User account role assignments | 📋 | — | 📋 | — | Planned |
-| 03 - RBAC Permissions | Service principal role assignments | 📋 | — | 📋 | — | Planned |
-| 04 - Management Infra | Key Vault deployment | 📋 | — | 📋 | 📋 | Planned |
-| 04 - Management Infra | Log Analytics workspace | 📋 | — | 📋 | 📋 | Planned |
-| 04 - Management Infra | Storage account (witness, diagnostics) | 📋 | — | 📋 | 📋 | Planned |
-| 05 - Identity & Security | Service principal creation | 📋 | — | 📋 | — | Planned |
-| 05 - Identity & Security | Managed identity configuration | 📋 | — | 📋 | — | Planned |
-| 05 - Identity & Security | Azure Policy assignments | 📋 | — | 📋 | 📋 | Planned |
+| 01 - Landing Zones | Resource group creation | ✅ | — | 📋 | 📋 | PS Implemented |
+| 02 - Resource Providers | Register required resource providers | ✅ | — | 📋 | — | PS Implemented |
+| 02 - Resource Providers | Verify provider registration | ✅ | — | 📋 | — | PS Implemented |
+| 03 - RBAC Permissions | Create deployment service principal | ✅ | — | 📋 | — | PS Implemented |
+| 03 - RBAC Permissions | Assign RBAC roles | ✅ | — | 📋 | — | PS Implemented |
+| 04 - Management Infra | Virtual network | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Management Infra | VPN gateway | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Management Infra | S2S VPN connection | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Management Infra | Azure Bastion | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Management Infra | Network security groups | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Management Infra | NAT gateway | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Management Infra | Arc gateway | ✅ | — | 📋 | — | PS Implemented |
+| 04 - Management Infra | Log Analytics workspace | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Management Infra | Key Vault | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Management Infra | Domain controller | ✅ | — | — | — | PS Implemented |
+| 04 - Management Infra | Utility server | ✅ | — | — | — | PS Implemented |
+| 04 - Management Infra | NDM server | ✅ | — | — | — | PS Implemented |
+| 04 - Management Infra | Lighthouse | ✅ | — | 📋 | 📋 | PS Implemented |
+| 05 - Identity & Security | PIM / Conditional Access | ✅ | — | 📋 | — | PS Implemented |
 
 ### Phase 03 — On-Premises Readiness
 
 | Sub-Phase | Task | Az PS | Az CLI PS | Az CLI Bash | Terraform | Status |
 |-----------|------|:-----:|:---------:|:-----------:|:---------:|--------|
-| 01 - Active Directory | OU hierarchy creation | 📋 | — | — | — | Planned |
-| 01 - Active Directory | Security group creation | 📋 | — | — | — | Planned |
-| 01 - Active Directory | Service account provisioning | 📋 | — | — | — | Planned |
-| 02 - Enterprise Readiness | DNS configuration | 📋 | — | — | — | Planned |
-| 02 - Enterprise Readiness | DHCP reservations | 📋 | — | 📋 | — | Planned |
-| 03 - Network Infrastructure | Switch configuration validation | — | — | 📋 | — | Planned |
-| 03 - Network Infrastructure | Firewall rule deployment | — | — | 📋 | — | Planned |
+| 01 - Active Directory | OU creation & pre-creation artifacts | ✅ | — | — | — | PS Implemented |
+| 01 - Active Directory | Security group creation | ✅ | — | — | — | PS Implemented |
+| 01 - Active Directory | DNS forwarding configuration | ✅ | — | — | — | PS Implemented |
+| 01 - Active Directory | AD account creation | ✅ | — | — | — | PS Implemented |
+| 01 - Active Directory | Security group memberships | ✅ | — | — | — | PS Implemented |
+| 02 - Enterprise Readiness | Hardware inspection | ✅ | — | — | — | PS Implemented |
+| 02 - Enterprise Readiness | Network service verification | ✅ | — | — | — | PS Implemented |
+| 02 - Enterprise Readiness | Opengear verification | ✅ | — | — | — | PS Implemented |
+| 02 - Enterprise Readiness | Validation signoff | ✅ | — | — | — | PS Implemented |
+| 03 - Network Infrastructure | Opengear console server | ✅ | — | — | — | PS Implemented |
+| 03 - Network Infrastructure | Dell PowerSwitch configuration | ✅ | — | — | — | PS Implemented |
+| 03 - Network Infrastructure | Firewall endpoint verification | ✅ | — | — | — | PS Implemented |
+| 03 - Network Infrastructure | Network validation | ✅ | — | — | — | PS Implemented |
 
 ### Phase 04 — Cluster Deployment
 
 | Sub-Phase | Task | Az PS | Az CLI PS | Az CLI Bash | Terraform | Status |
 |-----------|------|:-----:|:---------:|:-----------:|:---------:|--------|
-| 01 - Hardware Provisioning | iDRAC inventory collection (Redfish) | 📋 | — | 📋 | — | Planned |
-| 01 - Hardware Provisioning | BIOS compliance validation | 📋 | — | — | — | Planned |
-| 02 - OS Installation | OS deployment automation | 📋 | — | — | — | Planned |
-| 03 - OS Configuration | Node configuration (hostname, NTP, NIC) | 📋 | — | — | — | Planned |
-| 04 - Arc Registration | Interactive (device code) registration | 📋 | 📋 | 📋 | — | Planned |
-| 04 - Arc Registration | Service principal (automated) registration | 📋 | 📋 | 📋 | — | Planned |
-| 04 - Arc Registration | Registration verification | 📋 | 📋 | 📋 | — | Planned |
-| 05 - Cluster Deployment | Cluster creation via ARM/Bicep | — | — | — | 📋 | Planned |
-| 06 - Post-Deployment | Storage path creation | 📋 | — | 📋 | — | Planned |
-| 06 - Post-Deployment | Logical network creation | 📋 | — | 📋 | — | Planned |
+| 01 - Hardware Provisioning | DHCP reservations (iDRAC) | ✅ | — | 📋 | — | PS Implemented |
+| 01 - Hardware Provisioning | Hardware discovery (Redfish) | ✅ | — | 📋 | — | PS Implemented |
+| 01 - Hardware Provisioning | DHCP reservations (management) | ✅ | — | 📋 | — | PS Implemented |
+| 01 - Hardware Provisioning | BIOS/iDRAC validation | ✅ | — | — | — | PS Implemented |
+| 01 - Hardware Provisioning | BIOS/iDRAC remediation | ✅ | — | — | — | PS Implemented |
+| 02 - OS Installation | Verify OS deployment | ✅ | — | — | — | PS Implemented |
+| 03 - OS Configuration | WinRM, RDP, IP, DNS, NTP, hostname, etc. | ✅ | — | — | — | PS Implemented |
+| 04 - Arc Registration | Pre-registration validation | ✅ | 📋 | 📋 | — | PS Implemented |
+| 04 - Arc Registration | Register nodes with Azure Arc | ✅ | 📋 | 📋 | — | PS Implemented |
+| 04 - Arc Registration | Monitor bootstrap process | ✅ | 📋 | 📋 | — | PS Implemented |
+| 04 - Arc Registration | Verify Arc registration | ✅ | 📋 | 📋 | — | PS Implemented |
+| 05 - Cluster Deployment | Initiate deployment via ARM | ✅ | — | — | 📋 | PS Implemented |
+| 05 - Cluster Deployment | Verify deployment completion | ✅ | — | — | — | PS Implemented |
+| 06 - Post-Deployment | Windows Admin Center | ✅ | — | — | — | PS Implemented |
+| 06 - Post-Deployment | SDN deployment | ✅ | — | — | — | PS Implemented |
+| 06 - Post-Deployment | Cluster quorum configuration | ✅ | — | — | — | PS Implemented |
+| 06 - Post-Deployment | Security groups on nodes | ✅ | — | — | — | PS Implemented |
+| 06 - Post-Deployment | SSH connectivity | ✅ | — | — | — | PS Implemented |
+| 06 - Post-Deployment | Storage configuration | ✅ | — | 📋 | — | PS Implemented |
+| 06 - Post-Deployment | Image downloads | ✅ | — | 📋 | — | PS Implemented |
+| 06 - Post-Deployment | Logical network creation | ✅ | — | 📋 | — | PS Implemented |
+| 06 - Post-Deployment | Post-deployment verification | ✅ | — | — | — | PS Implemented |
 
 ### Phase 05 — Operational Foundations
 
 | Sub-Phase | Task | Az PS | Az CLI PS | Az CLI Bash | Terraform | Status |
 |-----------|------|:-----:|:---------:|:-----------:|:---------:|--------|
-| 01 - SDN Deployment | Network Controller deployment | 📋 | — | — | — | Planned |
-| 02 - Monitoring | Azure Monitor agent deployment | 📋 | — | 📋 | 📋 | Planned |
-| 02 - Monitoring | Data Collection Rules | 📋 | — | 📋 | 📋 | Planned |
-| 02 - Monitoring | Alert rule creation | 📋 | — | 📋 | 📋 | Planned |
-| 03 - Backup & DR | Azure Backup / Azure Backup configuration | 📋 | — | 📋 | — | Planned |
-| 04 - Security & Governance | Defender for Cloud enablement | 📋 | — | 📋 | 📋 | Planned |
-| 04 - Security & Governance | Update Manager configuration | 📋 | — | 📋 | — | Planned |
+| 01 - SDN Deployment | Validate SDN prerequisites | ✅ | — | — | — | PS Implemented |
+| 01 - SDN Deployment | Enable SDN integration | ✅ | — | — | — | PS Implemented |
+| 01 - SDN Deployment | Configure network security groups | ✅ | — | — | — | PS Implemented |
+| 02 - Monitoring | Configure Log Analytics workspace | ✅ | — | 📋 | 📋 | PS Implemented |
+| 02 - Monitoring | Configure Azure Monitor Agent | ✅ | — | 📋 | 📋 | PS Implemented |
+| 02 - Monitoring | Enable HCI Insights | ✅ | — | 📋 | — | PS Implemented |
+| 02 - Monitoring | Setup alerting | ✅ | — | 📋 | 📋 | PS Implemented |
+| 02 - Monitoring | Deploy OMIMSWAC monitoring | ✅ | — | — | — | PS Implemented |
+| 02 - Monitoring | Configure network device logging | ✅ | — | — | — | PS Implemented |
+| 02 - Monitoring | Configure Datadog integration | ✅ | — | 📋 | — | PS Implemented |
+| 03 - Backup & DR | Configure Azure Backup | ✅ | — | 📋 | — | PS Implemented |
+| 03 - Backup & DR | Configure Site Recovery | ✅ | — | 📋 | — | PS Implemented |
+| 03 - Backup & DR | Test DR procedures | ✅ | — | — | — | PS Implemented |
+| 04 - Security & Governance | Enable Defender for Cloud | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Security & Governance | Apply Azure Policy initiatives | ✅ | — | 📋 | 📋 | PS Implemented |
+| 04 - Security & Governance | Configure security baselines | ✅ | — | — | — | PS Implemented |
+| 04 - Security & Governance | Enable security logging | ✅ | — | — | — | PS Implemented |
+| 04 - Security & Governance | Configure Azure Update Manager | ✅ | — | 📋 | — | PS Implemented |
+| 05 - Licensing & Telemetry | Enable Azure Hybrid Benefit | ✅ | — | 📋 | — | PS Implemented |
+| 05 - Licensing & Telemetry | Activate Windows Server subscription | ✅ | — | — | — | PS Implemented |
+| 05 - Licensing & Telemetry | Configure enhanced telemetry | ✅ | — | — | — | PS Implemented |
 
 ### Phase 06 — Cluster Testing & Validation
 
 | Sub-Phase | Task | Az PS | Az CLI PS | Az CLI Bash | Terraform | Status |
 |-----------|------|:-----:|:---------:|:-----------:|:---------:|--------|
-| Testing | Infrastructure health validation | 📋 | — | — | — | Planned |
-| Testing | VMFleet storage testing | 📋 | — | — | — | Planned |
-| Testing | Network/RDMA validation | 📋 | — | — | — | Planned |
-| Testing | HA failover testing | 📋 | — | — | — | Planned |
+| Testing | Infrastructure health validation | ✅ | — | — | — | PS Implemented |
+| Testing | VMFleet storage testing | ✅ | — | — | — | PS Implemented |
+| Testing | Network/RDMA validation | ✅ | — | — | — | PS Implemented |
+| Testing | HA failover testing | ✅ | — | — | — | PS Implemented |
+| Testing | Security compliance validation | ✅ | — | — | — | PS Implemented |
+| Testing | Backup & DR validation | ✅ | — | — | — | PS Implemented |
 
 ### Phase 07 — Validation & Handover
 
