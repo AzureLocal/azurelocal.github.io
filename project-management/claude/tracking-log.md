@@ -1,7 +1,7 @@
 # Implementation Standardization — Tracking Log
 
-> Last updated: 2026-03-24  
-> Phase: 1 — Audit Complete
+> Last updated: 2026-03-25  
+> Phase: 4 — Toolkit Scripts + Docs Appendix Complete
 
 ## Legend
 
@@ -325,7 +325,7 @@
 | Files with H2 Validation | ~40 |
 | Files needing "Full" overhaul | ~50 |
 | Files needing "Fmt" only | ~50 |
-| Script gaps | ~35 tasks |
+| Script gaps | ~15 tasks (azurecli/bash variants pending for all 96) |
 
 ## Change Log
 
@@ -341,3 +341,14 @@
 | 2026-03-25 | 2.5 | Part 1 Variables tables | 2 files (task-01, task-05) |
 | 2026-03-25 | 2.6 | Part 6 Variables tables | 3 files (task-03, task-05, task-06) |
 | 2026-03-25 | 2.7 | Parts 7-8 audited — no changes needed | 10 files (all checklists/guides, no config vars) |
+| 2026-03-25 | 3.1 | Parts 4/5/6 Troubleshooting tables | 21 files (P4×12, P5×4, P6×5) — commit e21c8e4b |
+| 2026-03-25 | 3.2 | Parts 2/5/6/7/8 Nav+VC sections | 47 files — commit 1afd2f3f |
+| 2026-03-25 | 3.3 | Part 6 Variables sections | 3 files — commit 29ec2e65 |
+| 2026-03-25 | 3.4 | Appendix D script index update | 1 file (87 ins, 46 del) — commit b3fdf79f |
+| 2026-03-25 | 4.1 | Toolkit: Phase 05 scripts (6 gaps) | Enable-HciInsights, Set-SiteRecoveryConfiguration, Enable-DefenderForCloud, Set-SecurityLogging, Set-UpdateManagerConfiguration, Enable-AzureHybridBenefit |
+| 2026-03-25 | 4.2 | Toolkit: Phase 03 AD scripts (4 new) | New-ADSecurityGroups, Set-DnsForwarding, New-ADAccounts, Set-ADGroupMemberships |
+| 2026-03-25 | 4.3 | Toolkit: Phase 04 hardware scripts (4 new) | New-DhcpReservationsIdrac, New-DhcpReservationsMgmt, Test-BiosIdracSettings, Set-BiosIdracSettings |
+| 2026-03-25 | 4.4 | Toolkit: Phase 06 validation scripts (6 new) | Test-InfrastructureHealth, Invoke-VmFleetStorageTest, Test-NetworkRdmaValidation, Test-HighAvailability, Test-SecurityCompliance, Test-BackupDrValidation |
+| 2026-03-25 | 4.5 | Toolkit: azurecli/bash scaffolding | 180 .gitkeep files across 96 task folders |
+| 2026-03-25 | 4.6 | Toolkit: GitHub issue template | project_management/github-issue-script-variants.md (489 lines, 96 tasks) |
+| 2026-03-25 | 4.7 | Toolkit: commit + push | 201 files, 4937 insertions — commit 343cd2b |
