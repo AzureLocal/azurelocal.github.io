@@ -1,7 +1,7 @@
 # Plan: Implementation Docs & Toolkit Standardization
 
 > Project start: 2026-03-24  
-> Status: **In Progress**
+> Status: **Phase 2 Complete — Phases 3, 5, 6 Remaining**
 
 ## TL;DR
 
@@ -33,17 +33,17 @@ Standardize ~137 task pages across the implementation docs (azurelocal.github.io
 
 ### Phase 1: Audit & Gap Analysis
 
-- [ ] 1.1 Generate complete alignment matrix (doc vs toolkit per task)
-- [ ] 1.2 Identify formatting deviations from standard across Parts 1-5
-- [ ] 1.3 Identify content gaps in Parts 6-8
+- [x] 1.1 Generate complete alignment matrix (doc vs toolkit per task)
+- [x] 1.2 Identify formatting deviations from standard across Parts 1-5
+- [x] 1.3 Identify content gaps in Parts 6-8
 
 ### Phase 2: Parts 1-5 Format Standardization
 
-- [ ] 2.1 Part 1: CI/CD Infrastructure (6 tasks)
-- [ ] 2.2 Part 2: Azure Foundation (30+ tasks, 5 phases)
-- [ ] 2.3 Part 3: On-Prem Readiness (12 tasks, 3 phases)
-- [ ] 2.4 Part 4: Cluster Deployment (37 tasks, 6 phases)
-- [ ] 2.5 Part 5: Operational Foundations (21 tasks, 5 phases)
+- [x] 2.1 Part 1: CI/CD Infrastructure (6 tasks)
+- [x] 2.2 Part 2: Azure Foundation (30+ tasks, 5 phases)
+- [x] 2.3 Part 3: On-Prem Readiness (12 tasks, 3 phases)
+- [x] 2.4 Part 4: Cluster Deployment (37 tasks, 6 phases)
+- [x] 2.5 Part 5: Operational Foundations (21 tasks, 5 phases)
 
 ### Phase 3: Parts 6-8 Content Creation
 
@@ -53,12 +53,12 @@ Standardize ~137 task pages across the implementation docs (azurelocal.github.io
 
 ### Phase 4: Appendices Update
 
-- [ ] 4.1 Update appendix-d-script-index.mdx
+- [x] 4.1 Update appendix-d-script-index.mdx
 - [ ] 4.2 Review other appendices for format consistency
 
 ### Phase 5: Toolkit Script Creation
 
-- [ ] 5.1 Create missing scripts for documented tasks (see gap analysis)
+- [x] 5.1 Create missing scripts for documented tasks (20 scripts created)
 - [ ] 5.2 Relocate misplaced scripts (04/phase-06 post-deployment)
 
 ### Phase 6: Content Verification
