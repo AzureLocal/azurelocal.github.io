@@ -190,7 +190,7 @@ This is the core content section. All executable tasks must provide tabbed execu
 
 ```jsx
 <Tabs groupId="deployment-method">
-  <TabItem value="portal" label="Azure Portal" default>
+  <TabItem value="manual" label="Azure Portal" default>
     {/* Portal/UI instructions */}
   </TabItem>
   <TabItem value="orchestrated" label="Orchestrated Script">
@@ -241,7 +241,7 @@ Each tab MUST follow this internal structure:
 | Rule | Detail |
 |------|--------|
 | `groupId` | Always `"deployment-method"` unless approved override |
-| `value` | Use `portal`, `manual`, `orchestrated`, `standalone` |
+| `value` | Use `manual`, `orchestrated`, `standalone` |
 | `default` | First tab is always `default` |
 | "When to use" | Required blockquote in every tab |
 | Code blocks | Use `powershell` language, include `title="filename.ps1"` metadata |

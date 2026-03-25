@@ -22,6 +22,61 @@ Standardize ~137 task pages across the implementation docs (azurelocal.github.io
 | Example company | Infinite Azure Local Corp (IIC), eastus region |
 | Author | Azure Local Cloudnology Team |
 
+---
+
+## Standards (Mandatory)
+
+### Tab Naming Standard
+
+All task pages MUST use these exact tab labels — no variations with parenthetical context:
+
+| Tab Position | Azure Tasks | On-Prem Tasks | value= |
+|--------------|-------------|---------------|--------|
+| Tab 1 (default) | `Azure Portal` | `Manual (RDP/Console)` | `manual` |
+| Tab 2 | `Orchestrated Script` | `Orchestrated Script` | `orchestrated` |
+| Tab 3 | `Standalone Script` | `Standalone Script` | `standalone` |
+
+**Approved Override — CI/CD Tasks (Part 1):**
+
+| Tab 1 | Tab 2 | Tab 3 | groupId |
+|-------|-------|-------|---------|
+| `GitHub` | `GitLab` | `Azure DevOps` | `scm-platform` |
+
+**FORBIDDEN Labels (replaced 2026-03-25):**
+
+- ~~`Azure CLI / PowerShell`~~ → use `Orchestrated Script`
+- ~~`Orchestrated Script (Mgmt Server)`~~ → use `Orchestrated Script`
+- ~~`Orchestrated (Mgmt Server)`~~ → use `Orchestrated Script`
+- ~~`Config-Driven Script`~~ → use `Orchestrated Script`
+- ~~`Orchestrated`~~ → use `Orchestrated Script`
+- ~~`Invoke- Orchestrated`~~ → use `Orchestrated Script`
+- ~~`Orchestrated (all nodes)`~~ → use `Orchestrated Script`
+- ~~`Orchestrated Install (Push)`~~ → use `Orchestrated Script`
+- ~~`Orchestrated Script (Azure Policy)`~~ → use `Orchestrated Script`
+- ~~`Standalone`~~ → use `Standalone Script`
+- ~~`Standalone Script (On Node)`~~ → use `Standalone Script`
+
+### Document Info Block Standard
+
+The metadata blockquote MUST have **two trailing spaces** at the end of each line for proper markdown line breaks:
+
+```markdown
+> **DOCUMENT CATEGORY**: Runbook  
+> **SCOPE**: [scope text]  
+> **PURPOSE**: [purpose text]  
+> **MASTER REFERENCE**: [Link](url)
+
+**Status**: Active
+```
+
+**Rules:**
+- Each line ends with TWO SPACES before the newline
+- All four fields are required
+- MASTER REFERENCE links to authoritative external docs (Microsoft Learn, vendor docs)
+- Status line is OUTSIDE the blockquote, bolded
+
+---
+
 ## Phases
 
 ### Phase 0: Setup & Standards
