@@ -95,7 +95,7 @@ const config = {
           },
           { to: '/working', label: 'Blog', position: 'left' },
           { to: '/working', label: 'Demos', position: 'left' },
-          { to: '/working', label: 'Training', position: 'left' },
+          { href: 'https://azurelocal.cloud/azurelocal-training/', label: 'Training', position: 'left' },
           { to: '/working', label: 'News', position: 'left' },
           { to: '/working', label: 'Events', position: 'left' },
           {
