@@ -157,7 +157,8 @@ details, or when CLI access is unavailable.
 **When to use:** Automated or repeatable deployment. Reads all logical network definitions
 from `networking.logical_networks[]` in `variables.yml` and creates every enabled
 entry. Entries with `enabled: false` are skipped. Already-existing networks are skipped.
-Run from the management server (toolkit repo root).
+Run from the management server (toolkit repo root). Add `-AssociateNsg` to attach
+NSGs during creation (requires SDN enabled and NSGs from Task 07).
 
 **Script:**
 [`Invoke-LogicalNetworks-Orchestrated.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/Invoke-LogicalNetworks-Orchestrated.ps1)
@@ -201,6 +202,11 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
 .PARAMETER WhatIf
  Dry-run mode: logs all planned operations without making any changes.
 
+.PARAMETER AssociateNsg
+ When specified, associates NSGs with logical networks during creation.
+ Each logical network entry must have an nsg_name field in the config.
+ Requires SDN enabled on the cluster and NSGs created in Task 07.
+
 .PARAMETER LogPath
  Override log file path. Default: logs\task-08-logical-network-creation\
  <YYYY-MM-DD_HHmmss>_LogicalNetworks.log (relative to CWD).
@@ -217,6 +223,10 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  # Specific config file:
  .\...\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath "configs/infrastructure-azl-demo.yml"
 
+.EXAMPLE
+ # With NSG association (requires SDN enabled + NSGs from Task 07):
+ .\...\Invoke-LogicalNetworks-Orchestrated.ps1 -AssociateNsg
+
 .NOTES
  Requires: powershell-yaml module (Install-Module powershell-yaml -Scope CurrentUser)
  Requires: az CLI authenticated (az login)
@@ -229,6 +239,7 @@ param(
  [PSCredential]$Credential,
  [string[]] $TargetNode = @(),
  [switch] $WhatIf,
+ [switch] $AssociateNsg,
  [string] $LogPath = ""
 )
 
@@ -535,8 +546,8 @@ foreach ($lnet in $logicalNetworks) {
  $createArgs += @("--tags", "displayName=$($lnet.display_name)")
  }
 
- # Associate NSG if specified (created in Task 07)
- if ($lnet.nsg_name) {
+ # Associate NSG if -AssociateNsg switch is set and nsg_name is defined
+ if ($AssociateNsg -and $lnet.nsg_name) {
  $createArgs += @("--network-security-group", $lnet.nsg_name)
  Write-Log "  NSG association: $($lnet.nsg_name)"
  }
@@ -619,7 +630,10 @@ $custom_location_id = "/subscriptions/a1b2c3d4-e5f6-7890-abcd-ef1234567890/resou
 
 # Hyper-V virtual switch name (from Get-VMSwitch on a cluster node)
 $vm_switch_name = "ConvergedSwitch(hci)"
-
+# ─── NSG Association ─────────────────────────────────────────────────────────────
+# Set to $true to associate NSGs with logical networks during creation.
+# Requires SDN enabled on the cluster and NSGs created in Task 07.
+$associate_nsg      = $false
 # ─── Logical Networks ────────────────────────────────────────────────────────────
 # ip_allocation_method: "Static" or "Dynamic"
 # Static — requires address_prefix, default_gateway, ip_pools
@@ -638,7 +652,7 @@ $logical_networks = @(
  ip_pools = @(
  @{ name = "pool-mgmt-vms"; start = "10.100.0.50"; end = "10.100.0.200"; type = "vm" }
  )
- nsg_name = "nsg-iic-management"
+ nsg_name = "nsg-iic-management"   # only used when $associate_nsg = $true
  routes = @()
  },
 
@@ -654,7 +668,7 @@ $logical_networks = @(
  ip_pools = @(
  @{ name = "pool-prod-vms"; start = "10.200.0.50"; end = "10.200.0.250"; type = "vm" }
  )
- nsg_name = "nsg-iic-production"
+ nsg_name = "nsg-iic-production"   # only used when $associate_nsg = $true
  routes = @()
  },
 
@@ -668,7 +682,7 @@ $logical_networks = @(
  dns_servers = @("10.100.0.10", "10.100.0.11")
  domain_name = "azurelocal.cloud"
  }
- nsg_name = "nsg-iic-avd"
+ nsg_name = "nsg-iic-avd"           # only used when $associate_nsg = $true
  routes = @()
  }
 )
