@@ -1,21 +1,21 @@
 ---
-title: "Task 2: Configure Network Security Groups"
-sidebar_label: "Task 02: Configure NSGs"
+title: "Task 2: Manage Network Security Groups"
+sidebar_label: "Task 02: Manage NSGs"
 sidebar_position: 2
-description: "Create and apply Network Security Groups to logical networks and VM NICs on Azure Local"
+description: "Day 2 management of Network Security Groups — add/remove rules, associate/dissociate, and troubleshoot"
 category: "Runbook"
-scope: "Create and apply Network Security Groups to logical networks and VM NICs on A..."
-purpose: "Create and apply Network Security Groups to logical networks and VM NICs on Azure Local"
+scope: "Day 2 management of Network Security Groups on Azure Local"
+purpose: "Day 2 management of Network Security Groups on Azure Local"
 author: "AzureLocal"
 created: 2025-03-25
-updated: 2026-04-01
-version: "1.1.0"
+updated: 2025-07-25
+version: "2.0.0"
 tags:
   - azure-local
   - operational-foundations
   - sdn
 keywords:
-  - Configure
+  - Manage
   - Network
   - Security
   - Groups
@@ -25,15 +25,15 @@ status: "Active"
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Task 02: Configure Network Security Groups
+# Task 02: Manage Network Security Groups
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
-> **DOCUMENT CATEGORY**: Runbook   
-> **SCOPE**: NSG configuration   
-> **PURPOSE**: Configure micro-segmentation for Azure Local VMs   
-> **MASTER REFERENCE**: [Microsoft Learn - SDN Overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/sdn-overview)
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Day 2 NSG management
+> **PURPOSE**: Manage NSG rules, associations, and troubleshooting for Azure Local VMs
+> **INITIAL SETUP**: See [Phase 06 — Task 07: Configure NSGs](../../04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs.mdx)
 
 **Status**: Active
 
@@ -41,282 +41,15 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-With SDN enabled by Azure Arc, you can create and apply Network Security Groups (NSGs) to:
-- **Logical Networks** - Apply rules to all VMs on a network
-- **VM NICs** - Apply rules to specific VM network interfaces
+This document covers **Day 2 operations** for NSGs that were initially created during
+[Phase 06 — Post-Deployment Task 07](../../04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs.mdx)
+and associated with logical networks during
+[Task 08 — Logical Network Creation](../../04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation.mdx).
 
-:::note Scope Limitation
-NSGs only apply to **Azure Local VMs** deployed from Azure interfaces (Azure Portal, Azure CLI, ARM Templates).
-
-NSGs do **NOT** apply to:
-- Hyper-V VMs deployed locally
-- VMs managed by SCVMM
-- AKS workloads
-:::
-
-## NSG Concepts
-
-### Rule Components
-
-| Component | Description |
-|-----------|-------------|
-| Priority | 100-4096 (lower = higher priority) |
-| Direction | Inbound or Outbound |
-| Source | IP address, CIDR, Service Tag, or * |
-| Destination | IP address, CIDR, Service Tag, or * |
-| Protocol | TCP, UDP, ICMP, or * |
-| Port | Single port, range, or * |
-| Action | Allow or Deny |
-
-### Default Rules
-
-NSGs include implicit default rules:
-- **AllowVnetInBound** (Priority 65000) - Allow intra-VNet traffic
-- **AllowAzureLoadBalancerInBound** (Priority 65001) - Allow health probes
-- **DenyAllInBound** (Priority 65500) - Deny all other inbound
-- **AllowVnetOutBound** (Priority 65000) - Allow outbound to VNet
-- **AllowInternetOutBound** (Priority 65001) - Allow outbound to Internet
-- **DenyAllOutBound** (Priority 65500) - Deny all other outbound
-
-## Variables from variables.yml
-
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azlocal-prod-eus-001` |
-| `AZURE_REGION` | `azure.resource_group.location` | `eastus2` |
-
----
-
-## Execution Options
-
-<Tabs groupId="deployment-method">
-<TabItem value="manual" label="Azure Portal" default>
-
-### Create a Network Security Group
-
-1. Navigate to **Azure Portal** → **Network Security Groups**
-2. Click **+ Create**
-3. Configure:
- - **Subscription**: Select your subscription
- - **Resource Group**: Select the cluster's resource group
- - **Name**: e.g., `nsg-azlocal-prod-web`
- - **Region**: Select the cluster's region
-4. Click **Review + Create** → **Create**
-
-### Add Security Rules
-
-1. Open the NSG resource
-2. Go to **Settings** → **Inbound security rules**
-3. Click **+ Add**
-4. Configure the rule:
- - **Source**: IP Addresses, CIDR, or Service Tag
- - **Source port ranges**: * (or specific)
- - **Destination**: IP Addresses, CIDR, or Service Tag
- - **Destination port ranges**: e.g., 443
- - **Protocol**: TCP
- - **Action**: Allow
- - **Priority**: 100-4096
- - **Name**: e.g., `Allow-HTTPS-Inbound`
-5. Click **Add**
-
-### Associate NSG with Logical Network
-
-1. Navigate to **Azure Arc** → **Azure Local** → your cluster
-2. Go to **Networking** → **Logical Networks**
-3. Select the target logical network
-4. Under **Settings**, select **Network Security Group**
-5. Choose the NSG to associate
-6. Click **Save**
-
-### Associate NSG with VM NIC
-
-1. Navigate to **Azure Arc** → **Azure Local** → **Virtual Machines**
-2. Select the target VM
-3. Go to **Networking**
-4. Select the target NIC
-5. Click **Network Security Group**
-6. Choose the NSG to associate
-7. Click **Save**
-
-</TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
-
-:::note Azure-Based Management
-NSG creation and management is performed via Azure APIs, not locally on the node. Use Azure CLI or ARM templates from any machine with Azure connectivity.
-:::
-
-```powershell title="Configure-NSG-AzureCLI.ps1 (Run from any machine with Azure CLI)"
-# Requires: Azure CLI installed and logged in (az login)
-
-<#
-.SYNOPSIS
- Creates and configures Network Security Groups for Azure Local VMs.
-.DESCRIPTION
- This script uses Azure CLI to create NSGs and associate them with
- Azure Local logical networks or VM NICs.
-#>
-
-param(
- [Parameter(Mandatory = $true)]
- [string]$ResourceGroupName,
- 
- [Parameter(Mandatory = $true)]
- [string]$Location,
- 
- [Parameter(Mandatory = $true)]
- [string]$NsgName,
- 
- [Parameter(Mandatory = $false)]
- [string]$SubscriptionId
-)
-
-$ErrorActionPreference = 'Stop'
-
-# Set subscription if provided
-if ($SubscriptionId) {
- az account set --subscription $SubscriptionId
-}
-
-Write-Host "Creating Network Security Group: $NsgName" -ForegroundColor Cyan
-
-# Create NSG
-az network nsg create `
- --resource-group $ResourceGroupName `
- --name $NsgName `
- --location $Location
-
-Write-Host "NSG created successfully" -ForegroundColor Green
-
-# Add common security rules
-Write-Host "`nAdding security rules..." -ForegroundColor Yellow
-
-# Allow HTTPS inbound
-az network nsg rule create `
- --resource-group $ResourceGroupName `
- --nsg-name $NsgName `
- --name "Allow-HTTPS-Inbound" `
- --priority 100 `
- --direction Inbound `
- --access Allow `
- --protocol Tcp `
- --source-address-prefixes "*" `
- --source-port-ranges "*" `
- --destination-address-prefixes "*" `
- --destination-port-ranges 443
-
-Write-Host " ✓ Allow-HTTPS-Inbound (priority 100)" -ForegroundColor Green
-
-# Allow RDP from management subnet only
-az network nsg rule create `
- --resource-group $ResourceGroupName `
- --nsg-name $NsgName `
- --name "Allow-RDP-Management" `
- --priority 110 `
- --direction Inbound `
- --access Allow `
- --protocol Tcp `
- --source-address-prefixes "10.0.0.0/24" `
- --source-port-ranges "*" `
- --destination-address-prefixes "*" `
- --destination-port-ranges 3389
-
-Write-Host " ✓ Allow-RDP-Management (priority 110)" -ForegroundColor Green
-
-# Deny all other inbound (explicit rule)
-az network nsg rule create `
- --resource-group $ResourceGroupName `
- --nsg-name $NsgName `
- --name "Deny-All-Inbound-Custom" `
- --priority 4000 `
- --direction Inbound `
- --access Deny `
- --protocol "*" `
- --source-address-prefixes "*" `
- --source-port-ranges "*" `
- --destination-address-prefixes "*" `
- --destination-port-ranges "*"
-
-Write-Host " ✓ Deny-All-Inbound-Custom (priority 4000)" -ForegroundColor Green
-
-Write-Host "`nNSG configuration complete" -ForegroundColor Cyan
-Write-Host "Next: Associate NSG with logical network or VM NIC via Azure Portal" -ForegroundColor Yellow
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-Copy-paste ready NSG creation script — no config file, no helpers, no dependencies.
-
-```powershell title="Configure-NSG-Standalone.ps1"
-# ============================================================================
-# Script: Configure-NSG-Standalone.ps1
-# Execution: Run anywhere with Azure CLI installed — fully self-contained
-# Prerequisites: Azure CLI (az login), contributor access to resource group
-# ============================================================================
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-$ResourceGroupName = "rg-azlocal-prod-eus-001" # Target resource group
-$Location = "eastus2" # Azure region
-$NsgName = "nsg-azlocal-prod-web" # NSG name
-$ManagementSubnet = "10.0.0.0/24" # Management subnet for RDP access
-#endregion CONFIGURATION
-
-Write-Host "Creating Network Security Group: $NsgName" -ForegroundColor Cyan
-
-# Create NSG
-az network nsg create `
- --resource-group $ResourceGroupName `
- --name $NsgName `
- --location $Location
-
-Write-Host " ✓ NSG created" -ForegroundColor Green
-
-# Allow HTTPS inbound
-az network nsg rule create `
- --resource-group $ResourceGroupName `
- --nsg-name $NsgName `
- --name "Allow-HTTPS-Inbound" `
- --priority 100 `
- --direction Inbound --access Allow --protocol Tcp `
- --source-address-prefixes "*" --source-port-ranges "*" `
- --destination-address-prefixes "*" --destination-port-ranges 443
-
-Write-Host " ✓ Allow-HTTPS-Inbound (priority 100)" -ForegroundColor Green
-
-# Allow RDP from management subnet only
-az network nsg rule create `
- --resource-group $ResourceGroupName `
- --nsg-name $NsgName `
- --name "Allow-RDP-Management" `
- --priority 110 `
- --direction Inbound --access Allow --protocol Tcp `
- --source-address-prefixes $ManagementSubnet --source-port-ranges "*" `
- --destination-address-prefixes "*" --destination-port-ranges 3389
-
-Write-Host " ✓ Allow-RDP-Management (priority 110)" -ForegroundColor Green
-
-# Deny all other inbound
-az network nsg rule create `
- --resource-group $ResourceGroupName `
- --nsg-name $NsgName `
- --name "Deny-All-Inbound-Custom" `
- --priority 4000 `
- --direction Inbound --access Deny --protocol "*" `
- --source-address-prefixes "*" --source-port-ranges "*" `
- --destination-address-prefixes "*" --destination-port-ranges "*"
-
-Write-Host " ✓ Deny-All-Inbound-Custom (priority 4000)" -ForegroundColor Green
-Write-Host "`n✅ NSG '$NsgName' configured. Associate with logical network or VM NIC via Azure Portal." -ForegroundColor Cyan
-```
-
-:::info No External Dependencies
-This script is completely self-contained. Edit the values in the `#region CONFIGURATION` block and run. No `variables.yml`, no config-loader, no helpers required.
-:::
-
-</TabItem>
-</Tabs>
+Day 2 operations include:
+- Adding or removing security rules
+- Associating or dissociating NSGs from logical networks and VM NICs
+- Troubleshooting connectivity issues related to NSG rules
 
 ---
 
@@ -367,13 +100,80 @@ Remove-NetRoute -InterfaceAlias "Ethernet 2" -DestinationPrefix "0.0.0.0/0" -Con
 
 ---
 
+## Day 2 Operations
+
+### Add a Rule to an Existing NSG
+
+```bash
+az stack-hci-vm network nsg rule create \
+  --nsg-name nsg-iic-production \
+  --resource-group rg-iic-platform-01 \
+  --subscription <subscription-id> \
+  --name "Allow-SQL-AppTier" \
+  --priority 300 \
+  --direction Inbound \
+  --access Allow \
+  --protocol Tcp \
+  --source-address-prefixes "10.200.0.0/24" \
+  --source-port-ranges "*" \
+  --destination-address-prefixes "*" \
+  --destination-port-ranges "1433"
+```
+
+### Remove a Rule
+
+```bash
+az stack-hci-vm network nsg rule delete \
+  --nsg-name nsg-iic-production \
+  --resource-group rg-iic-platform-01 \
+  --subscription <subscription-id> \
+  --name "Allow-SQL-AppTier"
+```
+
+### Associate NSG with VM NIC
+
+1. Navigate to **Azure Arc** → **Azure Local** → **Virtual Machines**
+2. Select the target VM
+3. Go to **Networking**
+4. Select the target NIC
+5. Click **Network Security Group**
+6. Choose the NSG to associate
+7. Click **Save**
+
+### Dissociate NSG from a Logical Network
+
+To change or remove an NSG from a logical network, the network must be recreated. NSG association
+is set at logical network creation time.
+
+---
+
+## NIC Configuration Note
+
+:::warning Multiple NICs on Azure Local VMs
+If you provision multiple static NICs on an Azure Local VM, all NICs receive the default gateway by default.
+
+**Resolution**: Remove the default gateway from secondary NICs to prevent:
+- Asymmetric networking
+- Packet loss
+- Unpredictable network behavior
+
+```powershell
+# Inside the VM - remove default gateway from secondary NIC
+Remove-NetRoute -InterfaceAlias "Ethernet 2" -DestinationPrefix "0.0.0.0/0" -Confirm:$false
+```
+:::
+
+---
+
 ## Verification
 
 ### List NSG Rules
 
 ```bash
-# Azure CLI
-az network nsg rule list --resource-group rg-azlocal-prod-eus-001 --nsg-name nsg-azlocal-prod-web -o table
+az stack-hci-vm network nsg rule list \
+  --nsg-name nsg-iic-management \
+  --resource-group rg-iic-platform-01 \
+  --subscription <subscription-id> -o table
 ```
 
 ### Verify NSG Association
@@ -401,6 +201,8 @@ Test-NetConnection -ComputerName <target-vm-ip> -Port 3389
 
 ## Related Documentation
 
+- [Phase 06 — Task 07: Configure NSGs (Initial Setup)](../../04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs.mdx)
+- [Phase 06 — Task 08: Logical Network Creation](../../04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation.mdx)
 - [NSG Overview - Azure](https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview)
 - [SDN Overview - Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/sdn-overview)
 
@@ -414,16 +216,10 @@ Test-NetConnection -ComputerName <target-vm-ip> -Port 3389
 
 ---
 
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0.0 | 2026-03-24 | AzureLocal | Initial release |
-| 1.1.0 | 2026-04-01 | AzureLocal | Align naming conventions, remove consulting language |
-
----
-
 ## Version Control
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | AzureLocal | Initial release |
 | 1.1.0 | 2026-04-01 | AzureLocal | Align naming conventions, remove consulting language |
+| 2.0.0 | 2025-07-25 | AzureLocal | Repurpose as Day 2 management — initial creation moved to Phase 06 Task 07 |

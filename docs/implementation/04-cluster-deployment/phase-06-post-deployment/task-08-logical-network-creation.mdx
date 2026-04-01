@@ -1,7 +1,7 @@
 ---
-title: "Task 07: Logical Network Creation"
-sidebar_label: "Task 07: Logical Networks"
-sidebar_position: 8
+title: "Task 08: Logical Network Creation"
+sidebar_label: "Task 08: Logical Networks"
+sidebar_position: 9
 description: "Create Azure Local logical networks for Arc VM network connectivity"
 category: "Runbook"
 scope: "Create Azure Local logical networks for Arc VM network connectivity"
@@ -24,7 +24,7 @@ status: "Active"
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Task 07 — Logical Network Creation
+# Task 08 — Logical Network Creation
 
 > **DOCUMENT CATEGORY**: Implementation Guide  
 > **SCOPE**: Phase 06 — Post-Deployment | Azure Local  
@@ -69,6 +69,7 @@ during Phase 05. This task creates the Azure resource representations.
 | `networking.logical_networks[].dns_servers` | array | DNS servers |
 | `networking.logical_networks[].default_gateway` | string | Gateway |
 | `networking.logical_networks[].ip_pools[]*` | array | IP pool ranges |
+| `networking.logical_networks[].nsg_name` | string | NSG to associate (from Task 07) |
 | `compute.azure_local.vm_switch_name` | string | vSwitch name |
 | `azure_platform.resource_groups.cluster.name` | string | Resource group |
 | `compute.azure_local.custom_location` | string | Custom location |
@@ -133,17 +134,22 @@ details, or when CLI access is unavailable.
 
  - Click **Add**
 
-7. Click **Review + create** → **Create**
+7. Under **Network Security Group**, select the NSG created in [Task 07](./task-07-configure-nsgs.mdx):
+   - `ln-iic01-management-100` → `nsg-iic-management`
+   - `ln-iic01-production-200` → `nsg-iic-production`
+   - `ln-iic01-avd-300` → `nsg-iic-avd`
 
-8. Repeat for each additional logical network in `networking.logical_networks[]`.
+8. Click **Review + create** → **Create**
+
+9. Repeat for each additional logical network in `networking.logical_networks[]`.
 
 **Standard IIC logical networks — example portal values:**
 
-| Network name | VLAN | Subnet | Gateway | IP pool range | Alloc |
-|---|---|---|---|---|---|
-| `ln-iic01-management-100` | 100 | `10.100.0.0/24` | `10.100.0.1` | `10.100.0.50–200` | Static |
-| `ln-iic01-production-200` | 200 | `10.200.0.0/24` | `10.200.0.1` | `10.200.0.50–250` | Static |
-| `ln-iic01-avd-300` | 300 | *(DHCP)* | *(DHCP)* | *(DHCP)* | Dynamic |
+| Network name | VLAN | Subnet | Gateway | IP pool range | Alloc | NSG |
+|---|---|---|---|---|---|---|
+| `ln-iic01-management-100` | 100 | `10.100.0.0/24` | `10.100.0.1` | `10.100.0.50–200` | Static | `nsg-iic-management` |
+| `ln-iic01-production-200` | 200 | `10.200.0.0/24` | `10.200.0.1` | `10.200.0.50–250` | Static | `nsg-iic-production` |
+| `ln-iic01-avd-300` | 300 | *(DHCP)* | *(DHCP)* | *(DHCP)* | Dynamic | `nsg-iic-avd` |
 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
@@ -154,11 +160,11 @@ entry. Entries with `enabled: false` are skipped. Already-existing networks are 
 Run from the management server (toolkit repo root).
 
 **Script:**
-[`Invoke-LogicalNetworks-Orchestrated.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-logical-network-creation/powershell/Invoke-LogicalNetworks-Orchestrated.ps1)
+[`Invoke-LogicalNetworks-Orchestrated.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/Invoke-LogicalNetworks-Orchestrated.ps1)
 
 ```
 scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
- task-07-logical-network-creation/powershell/Invoke-LogicalNetworks-Orchestrated.ps1
+ task-08-logical-network-creation/powershell/Invoke-LogicalNetworks-Orchestrated.ps1
 ```
 
 ```powershell title="Invoke-LogicalNetworks-Orchestrated.ps1"
@@ -168,7 +174,7 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  Orchestrated: creates all logical networks defined in variables.yml.
 
 .DESCRIPTION
- Phase 06 — Post-Deployment | Task 07 — Logical Network Creation
+ Phase 06 — Post-Deployment | Task 08 — Logical Network Creation
 
  Reads every entry from networking.logical_networks[] in the infrastructure YAML
  and calls az stack-hci-vm network lnet create for each one. Entries with
@@ -196,12 +202,12 @@ scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
  Dry-run mode: logs all planned operations without making any changes.
 
 .PARAMETER LogPath
- Override log file path. Default: logs\task-07-logical-network-creation\
+ Override log file path. Default: logs\task-08-logical-network-creation\
  <YYYY-MM-DD_HHmmss>_LogicalNetworks.log (relative to CWD).
 
 .EXAMPLE
  # Run from repo root with default config:
- .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1
+ .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-08-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1
 
 .EXAMPLE
  # Dry-run:
@@ -230,7 +236,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 #region LOGGING -----------------------------------------------------------------
-$taskFolderName = "task-07-logical-network-creation"
+$taskFolderName = "task-08-logical-network-creation"
 $timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
 
 if ([string]::IsNullOrEmpty($LogPath)) {
@@ -260,7 +266,7 @@ function Write-Log {
 }
 
 Write-Log "======================================================="
-Write-Log " Task 07 — Logical Network Creation (Orchestrated)"
+Write-Log " Task 08 — Logical Network Creation (Orchestrated)"
 Write-Log " Log: $LogPath"
 if ($WhatIf) { Write-Log " [WhatIf] Dry-run mode — no changes will be made" "WARN" }
 Write-Log "======================================================="
@@ -529,6 +535,12 @@ foreach ($lnet in $logicalNetworks) {
  $createArgs += @("--tags", "displayName=$($lnet.display_name)")
  }
 
+ # Associate NSG if specified (created in Task 07)
+ if ($lnet.nsg_name) {
+ $createArgs += @("--network-security-group", $lnet.nsg_name)
+ Write-Log "  NSG association: $($lnet.nsg_name)"
+ }
+
  if ($WhatIf) {
  Write-Log "[WhatIf] Would create: $lnetName" "WARN"
  Write-Log "[WhatIf] VLAN $vlanId | $allocMethod | prefix: $($lnet.address_prefix) | switch: $vmSwitchName" "WARN"
@@ -569,7 +581,7 @@ if ($failed -gt 0) {
 **Run from the toolkit repo root:**
 
 ```powershell title="Run Orchestrated script"
-.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-08-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1
 
 # Dry-run first:
 .\...\Invoke-LogicalNetworks-Orchestrated.ps1 -WhatIf
@@ -586,11 +598,11 @@ running outside the toolkit. All values are hardcoded in the `#region CONFIGURAT
 No YAML file or toolkit clone required.
 
 **Script:**
-[`New-LogicalNetworks-Standalone.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-logical-network-creation/powershell/New-LogicalNetworks-Standalone.ps1)
+[`New-LogicalNetworks-Standalone.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetworks-Standalone.ps1)
 
 ```
 scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
- task-07-logical-network-creation/powershell/New-LogicalNetworks-Standalone.ps1
+ task-08-logical-network-creation/powershell/New-LogicalNetworks-Standalone.ps1
 ```
 
 ```powershell title="New-LogicalNetworks-Standalone.ps1 — CONFIGURATION region"
@@ -626,6 +638,7 @@ $logical_networks = @(
  ip_pools = @(
  @{ name = "pool-mgmt-vms"; start = "10.100.0.50"; end = "10.100.0.200"; type = "vm" }
  )
+ nsg_name = "nsg-iic-management"
  routes = @()
  },
 
@@ -641,6 +654,7 @@ $logical_networks = @(
  ip_pools = @(
  @{ name = "pool-prod-vms"; start = "10.200.0.50"; end = "10.200.0.250"; type = "vm" }
  )
+ nsg_name = "nsg-iic-production"
  routes = @()
  },
 
@@ -654,6 +668,7 @@ $logical_networks = @(
  dns_servers = @("10.100.0.10", "10.100.0.11")
  domain_name = "azurelocal.cloud"
  }
+ nsg_name = "nsg-iic-avd"
  routes = @()
  }
 )
@@ -729,9 +744,9 @@ If a logical network enters `Failed` state or stays in `Updating` for more than 
 
 | | |
 |---|---|
-| ← Previous | [Task 06 — VM Image Downloads](./task-06-image-downloads.mdx) |
+| ← Previous | [Task 07 — Configure NSGs](./task-07-configure-nsgs.mdx) |
 | ↑ Phase Index | [Phase 06 — Post-Deployment Index](./index.mdx) |
-| → Next | [Task 08 — Post-Deployment Verification](./task-08-post-deployment-verification.mdx) |
+| → Next | [Task 09 — Post-Deployment Verification](./task-09-post-deployment-verification.mdx) |
 
 ---
 

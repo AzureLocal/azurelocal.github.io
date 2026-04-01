@@ -776,23 +776,23 @@ Azure Firewall subnet **must** be named exactly `AzureFirewallSubnet`. Minimum s
 
 #### Network Security Groups (NSG)
 
-**CAF Pattern**: `nsg-<purpose>-<environment>`
+**CAF Pattern**: `nsg-<org>-<purpose>`
 
-NSGs control inbound and outbound network traffic for subnets and network interfaces.
+NSGs control inbound and outbound network traffic for subnets and network interfaces. On Azure Local, NSGs are created via Azure Local SDN and can be associated with logical networks at creation time using the `--network-security-group` parameter.
 
 **Examples**:
-- `nsg-management-prod` (Management subnet NSG)
-- `nsg-gateway-prod` (Gateway subnet NSG)
-- `nsg-workloads-prod` (Workloads subnet NSG)
-- `nsg-azlocal-prod` (Azure Local subnet NSG)
+- `nsg-iic-management` (Management logical network NSG)
+- `nsg-iic-production` (Production workload NSG)
+- `nsg-iic-avd` (AVD session host NSG)
+- `nsg-iic-sql` (Database server NSG)
 
 **Variable Mapping**:
 ```yaml
-network_security_groups:
- management: "nsg-management-{{environment}}"
- gateway: "nsg-gateway-{{environment}}"
- workloads: "nsg-workloads-{{environment}}"
- azlocal: "nsg-azlocal-{{environment}}"
+networking:
+  nsgs:
+    management: "nsg-{{site_code}}-management"
+    production: "nsg-{{site_code}}-production"
+    avd: "nsg-{{site_code}}-avd"
 ```
 
 :::tip NSG Best Practices
@@ -1542,7 +1542,7 @@ Azure Local Cloud follows Microsoft's recommended abbreviations for Azure resour
 | Resource Group | `rg` | rg-azlocal-prod-eus-001 |
 | Virtual Network | `vnet` | vnet-azlocal-prod-eus-hub |
 | Subnet | `snet` | snet-management-prod |
-| Network Security Group | `nsg` | nsg-management-prod |
+| Network Security Group | `nsg` | nsg-iic-management |
 | Virtual Network Gateway | `vgw` | vgw-azlocal-prod-eus-001 |
 | Local Network Gateway | `lgw` | lgw-onprem-prod-001 |
 | VPN Connection | `cn` | cn-azlocal-to-onprem |
