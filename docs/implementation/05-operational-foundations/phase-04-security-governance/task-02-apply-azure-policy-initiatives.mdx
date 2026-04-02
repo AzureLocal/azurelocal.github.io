@@ -125,56 +125,7 @@ Azure Policy enforces organizational standards and assesses compliance at scale.
  - This installs the Guest Configuration extension on VMs
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```powershell
-# Variables
-$subscriptionId = "<your-subscription-id>"
-$resourceGroup = "rg-azurelocal-prod-eastus2"
-$location = "eastus2"
-
-# Set subscription context
-az account set --subscription $subscriptionId
-
-# Get Azure Security Benchmark initiative definition
-$securityBenchmarkId = az policy set-definition show `
- --name "1f3afdf9-d0c9-4c3d-847f-89da613e70a8" `
- --query id -o tsv
-
-# Assign Azure Security Benchmark at subscription level
-az policy assignment create `
- --name "AzureSecurityBenchmark-AzureLocal" `
- --display-name "Azure Security Benchmark - Azure Local" `
- --policy-set-definition $securityBenchmarkId `
- --scope "/subscriptions/$subscriptionId" `
- --enforcement-mode Default
-
-Write-Host "✅ Azure Security Benchmark assigned" -ForegroundColor Green
-
-# Assign tagging policy - Require tag on resources
-az policy assignment create `
- --name "RequireEnvironmentTag" `
- --display-name "Require Environment Tag on Resources" `
- --policy "/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99" `
- --scope "/subscriptions/$subscriptionId" `
- --params '{"tagName": {"value": "Environment"}}' `
- --enforcement-mode Default
-
-Write-Host "✅ Tagging policy assigned" -ForegroundColor Green
-
-# Assign Guest Configuration prerequisites
-az policy assignment create `
- --name "DeployGuestConfigPrereqs" `
- --display-name "Deploy Guest Configuration Prerequisites" `
- --policy "/providers/Microsoft.Authorization/policyDefinitions/12794019-7a00-42cf-95c2-882ebb9fa717" `
- --scope "/subscriptions/$subscriptionId" `
- --mi-system-assigned `
- --location $location
-
-Write-Host "✅ Guest Configuration prerequisites assigned" -ForegroundColor Green
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -242,6 +193,17 @@ Write-Host "`n✅ Policy initiatives assigned successfully" -ForegroundColor Gre
 ```
 
 </TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
+:::
+
+</TabItem>
 </Tabs>
 
 ## Validation
@@ -300,6 +262,22 @@ Unknown 2
 Proceed to [Task 4: Configure Security Baselines](./task-03-configure-security-baselines.mdx) to review and remediate Defender recommendations.
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

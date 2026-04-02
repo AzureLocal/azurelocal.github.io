@@ -122,59 +122,7 @@ For Azure Local deployments, **Defender for Servers Plan 2** is recommended to p
  - Click **Save**
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```powershell
-# Variables
-$subscriptionId = "<your-subscription-id>"
-$workspaceResourceId = "/subscriptions/$subscriptionId/resourceGroups/rg-management-prod-eastus2/providers/Microsoft.OperationalInsights/workspaces/law-azlmgmt-prod-eus2"
-$emailAddress = "security-team@Infinite azurelocal Corp.com"
-
-# Set subscription context
-az account set --subscription $subscriptionId
-
-# Enable Defender for Servers Plan 2
-az security pricing create `
- --name VirtualMachines `
- --tier Standard `
- --subplan P2
-
-# Enable Defender for Key Vault
-az security pricing create `
- --name KeyVaults `
- --tier Standard
-
-# Enable Defender for Resource Manager
-az security pricing create `
- --name Arm `
- --tier Standard
-
-# Enable Defender for DNS (optional)
-az security pricing create `
- --name Dns `
- --tier Standard
-
-# Configure auto-provisioning for Log Analytics agent
-az security auto-provisioning-setting update `
- --name default `
- --auto-provision On
-
-# Configure workspace settings
-az security workspace-setting create `
- --name default `
- --target-workspace $workspaceResourceId
-
-# Configure email notifications
-az security contact create `
- --name default1 `
- --email $emailAddress `
- --alert-notifications On `
- --alerts-admins On
-
-Write-Host "✅ Defender for Cloud enabled with recommended plans"
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -226,6 +174,17 @@ Write-Host "✅ Security contact configured" -ForegroundColor Green
 
 Write-Host "`n✅ Defender for Cloud configuration complete" -ForegroundColor Green
 ```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
+:::
 
 </TabItem>
 </Tabs>
@@ -289,6 +248,22 @@ Costs vary based on usage. Use [Azure Pricing Calculator](https://azure.microsof
 Proceed to [Task 3: Apply Azure Policy Initiatives](./task-02-apply-azure-policy-initiatives.mdx) to enforce compliance policies.
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

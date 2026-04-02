@@ -1,5 +1,5 @@
 ---
-title: "Task 1: Enable Azure Hybrid Benefit"
+title: "Task 01: Enable Azure Hybrid Benefit"
 sidebar_label: "Task 01: Azure Hybrid Benefit"
 sidebar_position: 1
 description: "Enable Azure Hybrid Benefit on Azure Local cluster to reduce Windows VM compute costs"
@@ -26,6 +26,13 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 # Task 01: Enable Azure Hybrid Benefit
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Enable Azure Hybrid Benefit on Azure Local cluster to reduce Windows VM compu...
+> **PURPOSE**: Enable Azure Hybrid Benefit on Azure Local cluster to reduce Windows VM compute costs
+> **MASTER REFERENCE**: [Azure Hybrid Benefit for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/azure-hybrid-benefit)
+
+**Status**: Active
 
 :::danger[⚠️ LICENSING REQUIREMENT - NOT A DEFAULT ENTITLEMENT]
 
@@ -95,50 +102,7 @@ Azure Hybrid Benefit provides:
 2. Confirm **Azure Hybrid Benefit** shows as **Enabled**
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-Run this script directly on any Azure Local cluster node.
-
-```powershell title="Enable-AzureHybridBenefit.ps1 (Run ON Node)"
-#Requires -RunAsAdministrator
-#Requires -Modules Az.StackHCI
-
-<#
-.SYNOPSIS
- Enables Azure Hybrid Benefit on the local Azure Local cluster.
-.DESCRIPTION
- This script enables Azure Hybrid Benefit to reduce Windows VM compute costs
- by leveraging existing Windows Server licenses with Software Assurance.
-#>
-
-[CmdletBinding()]
-param()
-
-$ErrorActionPreference = 'Stop'
-
-# Get cluster information
-$clusterName = (Get-Cluster).Name
-Write-Host "Enabling Azure Hybrid Benefit for cluster: $clusterName" -ForegroundColor Cyan
-
-# Get the Azure Local registration
-$registration = Get-AzStackHCI
-
-if ($registration.ConnectionStatus -ne 'Connected') {
- throw "Cluster is not connected to Azure. Current status: $($registration.ConnectionStatus)"
-}
-
-# Enable Azure Hybrid Benefit
-# Note: This requires the cluster to be registered and connected
-Set-AzStackHCI -EnableAzureHybridBenefit $true
-
-Write-Host "Azure Hybrid Benefit enabled successfully" -ForegroundColor Green
-
-# Verify the setting
-$updatedRegistration = Get-AzStackHCI
-Write-Host "Azure Hybrid Benefit Status: $($updatedRegistration.AzureHybridBenefit)" -ForegroundColor Cyan
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
 Run this script from the management server to configure Azure Hybrid Benefit remotely.
@@ -296,6 +260,22 @@ $cluster.Properties.softwareAssuranceProperties
 - [Software Assurance Benefits](https://www.microsoft.com/en-us/licensing/licensing-programs/software-assurance-default)
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

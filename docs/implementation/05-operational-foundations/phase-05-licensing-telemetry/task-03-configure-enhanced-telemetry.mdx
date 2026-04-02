@@ -1,5 +1,5 @@
 ---
-title: "Task 3: Configure Enhanced Telemetry"
+title: "Task 03: Configure Enhanced Telemetry"
 sidebar_label: "Task 03: Enhanced Telemetry"
 sidebar_position: 3
 description: "Configure diagnostic level, streaming data client, and EU location settings for Azure Local telemetry"
@@ -25,6 +25,13 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 # Task 03: Configure Enhanced Telemetry
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Configure diagnostic level, streaming data client, and EU location settings f...
+> **PURPOSE**: Configure diagnostic level, streaming data client, and EU location settings for Azure Local telemetry
+> **MASTER REFERENCE**: [Azure Local Telemetry and Diagnostics](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-cluster)
+
+**Status**: Active
 
 Enhanced telemetry settings enable comprehensive diagnostics, proactive support, and real-time monitoring for Azure Local clusters.
 
@@ -78,85 +85,7 @@ Telemetry configuration includes three key settings:
 | Full | Complete diagnostics for troubleshooting |
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-Run this script directly on any Azure Local cluster node.
-
-```powershell title="Configure-EnhancedTelemetry.ps1 (Run ON Node)"
-#Requires -RunAsAdministrator
-#Requires -Modules Az.StackHCI
-
-<#
-.SYNOPSIS
- Configures enhanced telemetry settings on the local Azure Local cluster.
-.DESCRIPTION
- This script configures diagnostic level, streaming data client, and
- EU location settings for comprehensive cluster telemetry.
-.PARAMETER DiagnosticLevel
- The diagnostic level to set. Valid values: Basic, Enhanced, Full
-.PARAMETER EnableStreamingData
- Whether to enable the streaming data client for real-time telemetry.
-.PARAMETER IsEULocation
- Whether the cluster is in an EU location for data residency compliance.
-#>
-
-[CmdletBinding()]
-param(
- [Parameter(Mandatory = $false)]
- [ValidateSet('Basic', 'Enhanced', 'Full')]
- [string]$DiagnosticLevel = 'Enhanced',
- 
- [Parameter(Mandatory = $false)]
- [bool]$EnableStreamingData = $true,
- 
- [Parameter(Mandatory = $false)]
- [bool]$IsEULocation = $false
-)
-
-$ErrorActionPreference = 'Stop'
-
-# Get cluster information
-$clusterName = (Get-Cluster).Name
-Write-Host "Configuring telemetry for cluster: $clusterName" -ForegroundColor Cyan
-
-# Get the Azure Local registration
-$registration = Get-AzStackHCI
-
-if ($registration.ConnectionStatus -ne 'Connected') {
- throw "Cluster is not connected to Azure. Current status: $($registration.ConnectionStatus)"
-}
-
-Write-Host "`nConfiguring telemetry settings:" -ForegroundColor Yellow
-Write-Host " Diagnostic Level: $DiagnosticLevel" -ForegroundColor Gray
-Write-Host " Streaming Data: $EnableStreamingData" -ForegroundColor Gray
-Write-Host " EU Location: $IsEULocation" -ForegroundColor Gray
-
-# Configure diagnostic level
-Set-AzStackHCI -DiagnosticLevel $DiagnosticLevel
-
-# Configure streaming data client
-if ($EnableStreamingData) {
- # Enable streaming data for real-time telemetry
- Enable-AzStackHCIRemoteSupport -EnableStreamingData
- Write-Host "Streaming data client enabled" -ForegroundColor Green
-}
-
-# Configure EU data residency if applicable
-if ($IsEULocation) {
- # Set EU boundary flag for data residency compliance
- Set-AzStackHCI -IsEULocation $true
- Write-Host "EU data boundary configured" -ForegroundColor Green
-}
-
-Write-Host "`nTelemetry configuration completed" -ForegroundColor Green
-
-# Display current settings
-$currentSettings = Get-AzStackHCI
-Write-Host "`nCurrent Telemetry Settings:" -ForegroundColor Cyan
-Write-Host " Diagnostic Level: $($currentSettings.DiagnosticLevel)" -ForegroundColor Gray
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
 Run this script from the management server to configure telemetry remotely.
@@ -395,6 +324,22 @@ Ensure firewall allows outbound HTTPS (443) to:
 - [EU Data Boundary](https://learn.microsoft.com/en-us/privacy/eudb/eu-data-boundary-learn)
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

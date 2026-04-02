@@ -117,18 +117,7 @@ Enable automatic update assessment to continuously check for available updates:
 7. Click **Save**
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-# Enable periodic assessment for Arc-enabled server
-az connectedmachine machine-extension update \
- --resource-group "{{AZURE_RESOURCE_GROUP}}" \
- --machine-name "{{MACHINE_NAME}}" \
- --name "WindowsPatchExtension" \
- --settings '{"patchMode": "AutomaticByPlatform", "assessmentMode": "AutomaticByPlatform"}'
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -142,6 +131,18 @@ New-AzPolicyAssignment `
  -PolicyDefinition $policyDefinition `
  -Scope "/subscriptions/{{AZURE_SUBSCRIPTION_ID}}/resourceGroups/{{AZURE_RESOURCE_GROUP}}"
 ```
+
+</TabItem>
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
+:::
 
 </TabItem>
 </Tabs>
@@ -166,15 +167,7 @@ Perform immediate update assessment:
 5. Monitor progress in **History** tab
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-# Trigger update assessment for Arc-enabled server
-az rest --method post \
- --uri "https://management.azure.com/subscriptions/{{AZURE_SUBSCRIPTION_ID}}/resourceGroups/{{AZURE_RESOURCE_GROUP}}/providers/Microsoft.HybridCompute/machines/{{MACHINE_NAME}}/assessPatches?api-version=2024-03-01-preview"
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -223,26 +216,7 @@ Define scheduled maintenance windows for automated patching:
 7. Click **Review + create**
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-# Create maintenance configuration
-az maintenance configuration create \
- --resource-group "{{AZURE_RESOURCE_GROUP}}" \
- --name "{{MAINTENANCE_CONFIG_NAME}}" \
- --location "{{AZURE_REGION}}" \
- --maintenance-scope "InGuestPatch" \
- --install-patches-linux-classifications "Critical" "Security" \
- --install-patches-windows-classifications "Critical" "Security" "UpdateRollup" \
- --reboot-setting "IfRequired" \
- --start-date-time "{{MAINTENANCE_START_DATETIME}}" \
- --duration "02:00" \
- --time-zone "{{TIME_ZONE}}" \
- --recurrence "Week" \
- --day-of-week "Saturday"
-```
-
-</TabItem>
 </Tabs>
 
 ### Step 5.4: Assign Machines to Maintenance Configuration
@@ -268,20 +242,7 @@ Associate machines with maintenance schedules:
 3. Click **Save**
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-# Assign Arc-enabled server to maintenance configuration
-az maintenance assignment create \
- --resource-group "{{AZURE_RESOURCE_GROUP}}" \
- --name "assignment-{{MACHINE_NAME}}" \
- --maintenance-configuration-id "/subscriptions/{{AZURE_SUBSCRIPTION_ID}}/resourceGroups/{{AZURE_RESOURCE_GROUP}}/providers/Microsoft.Maintenance/maintenanceConfigurations/{{MAINTENANCE_CONFIG_NAME}}" \
- --provider-name "Microsoft.HybridCompute" \
- --resource-type "machines" \
- --resource-name "{{MACHINE_NAME}}"
-```
-
-</TabItem>
 </Tabs>
 
 :::tip Dynamic Scopes
@@ -519,6 +480,22 @@ After configuring Azure Update Manager:
 5. Schedule monthly patch review meetings
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

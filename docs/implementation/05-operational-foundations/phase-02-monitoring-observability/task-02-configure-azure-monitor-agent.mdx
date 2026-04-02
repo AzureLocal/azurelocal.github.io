@@ -274,55 +274,16 @@ Write-Host " Use Azure Portal or ARM template to complete DCR creation"
 ```
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-# Variables
-SUBSCRIPTION_ID="{{AZURE_SUBSCRIPTION_ID}}"
-RESOURCE_GROUP="{{AZURE_RESOURCE_GROUP}}"
-LOCATION="{{AZURE_REGION}}"
-WORKSPACE_NAME="{{LOG_ANALYTICS_WORKSPACE_NAME}}"
-SITE_CODE="{{SITE_CODE}}"
+<TabItem value="orchestrated" label="Orchestrated Script">
 
-# Set subscription
-az account set --subscription "$SUBSCRIPTION_ID"
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
 
-# Get workspace resource ID
-WORKSPACE_ID=$(az monitor log-analytics workspace show \
- --resource-group "$RESOURCE_GROUP" \
- --workspace-name "$WORKSPACE_NAME" \
- --query id -o tsv)
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
 
-# Install AMA on each Arc-enabled server
-NODES=("{{CLUSTER_NODE_01_NAME}}" "{{CLUSTER_NODE_02_NAME}}" "{{CLUSTER_NODE_03_NAME}}" "{{CLUSTER_NODE_04_NAME}}")
-
-for NODE in "${NODES[@]}"; do
- echo "Installing AMA on $NODE..."
- 
- az connectedmachine extension create \
- --resource-group "$RESOURCE_GROUP" \
- --machine-name "$NODE" \
- --name "AzureMonitorWindowsAgent" \
- --publisher "Microsoft.Azure.Monitor" \
- --type "AzureMonitorWindowsAgent" \
- --location "$LOCATION" \
- --enable-auto-upgrade true
- 
- echo " ✅ AMA installed on $NODE"
-done
-
-# Create Data Collection Rule
-DCR_NAME="dcr-azl-$SITE_CODE-performance"
-
-az monitor data-collection rule create \
- --resource-group "$RESOURCE_GROUP" \
- --name "$DCR_NAME" \
- --location "$LOCATION" \
- --data-flows '[{"streams":["Microsoft-Perf","Microsoft-WindowsEvent"],"destinations":["LogAnalyticsDest"]}]' \
- --destinations "{\"logAnalytics\":[{\"workspaceResourceId\":\"$WORKSPACE_ID\",\"name\":\"LogAnalyticsDest\"}]}"
-
-echo "✅ Data Collection Rule created: $DCR_NAME"
-```
+:::note Content Pending
+Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
+:::
 
 </TabItem>
 </Tabs>
@@ -429,6 +390,22 @@ After configuring Azure Monitor Agent:
 3. Create baseline queries for operational monitoring
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

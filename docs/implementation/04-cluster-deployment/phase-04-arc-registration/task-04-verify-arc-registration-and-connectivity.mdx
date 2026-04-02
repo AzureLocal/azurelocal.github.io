@@ -26,6 +26,13 @@ import TabItem from '@theme/TabItem';
 
 # Task 04: Verify Arc Registration and Connectivity
 
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Verify that Azure Arc registration is successful and connectivity is establis...
+> **PURPOSE**: Verify that Azure Arc registration is successful and connectivity is established for all cluster nodes
+> **MASTER REFERENCE**: [Register Azure Local with Azure Arc](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions)
+
+**Status**: Active
+
 <span class="badge badge--primary">Runbook</span> <span class="badge badge--info">Phase 04 — Arc Registration</span> <span class="badge badge--success">Azure Local</span>
 
 **Status:** Production-ready
@@ -59,7 +66,7 @@ After Arc registration and bootstrap complete, verify that all cluster nodes are
 
 ## Verification
 
-<Tabs>
+<Tabs groupId="deployment-method">
 <TabItem value="direct" label="Direct (per node)" default>
 
 **Run on each cluster node** to verify the local Arc agent:
@@ -116,6 +123,37 @@ Get-AzConnectedMachine -ResourceGroupName $ResourceGroup |
 - `Invoke-ArcVerification-Orchestrated.ps1` — Standards-compliant script with logging, `-WhatIf`, `-SkipAzureCheck`, parallel execution, and detailed pass/fail summary
 
 </TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option when running a self-contained verification without a config file.
+
+**Script**: [`scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-04/powershell/Confirm-ArcRegistration-Standalone.ps1`](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-04/powershell/Confirm-ArcRegistration-Standalone.ps1)
+
+```powershell title="Confirm-ArcRegistration-Standalone.ps1"
+# === CONFIGURE THESE VALUES ===
+$REPLACE_NodeList        = @("node1", "node2", "node3")
+$REPLACE_SubscriptionId  = "00000000-0000-0000-0000-000000000000"
+$REPLACE_ResourceGroup   = "rg-azurelocal"
+# ==============================
+
+# Verify Arc agent on each node
+foreach ($node in $REPLACE_NodeList) {
+    Invoke-Command -ComputerName $node -ScriptBlock {
+        $svc = Get-Service himds -ErrorAction SilentlyContinue
+        $agent = & "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe" show 2>&1
+        $status = ($agent | Select-String 'Agent Status\s*:\s*(.+)').Matches[0].Groups[1].Value
+        [PSCustomObject]@{ Node = $env:COMPUTERNAME; Service = $svc.Status; AgentStatus = $status }
+    }
+}
+
+# Verify Azure-side Arc resources
+Connect-AzAccount -SubscriptionId $REPLACE_SubscriptionId | Out-Null
+Get-AzConnectedMachine -ResourceGroupName $REPLACE_ResourceGroup |
+    Select-Object Name, Status, AgentVersion, LastStatusChange |
+    Format-Table -AutoSize
+```
+
+</TabItem>
 </Tabs>
 
 ---
@@ -132,6 +170,18 @@ Get-AzConnectedMachine -ResourceGroupName $ResourceGroup |
 
 
 ---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

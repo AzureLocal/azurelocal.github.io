@@ -143,89 +143,7 @@ Azure Monitor Agent (AMA) is the recommended agent for log collection, replacing
  - Click **Create**
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```powershell
-# Variables
-$subscriptionId = "<your-subscription-id>"
-$resourceGroup = "rg-management-prod-eastus2"
-$location = "eastus2"
-$workspaceName = "law-azlmgmt-prod-eus2"
-$dcrName = "dcr-security-events-prod-eus2"
-
-# Set subscription context
-az account set --subscription $subscriptionId
-
-# Get Log Analytics workspace resource ID
-$workspaceId = az monitor log-analytics workspace show `
- --resource-group $resourceGroup `
- --workspace-name $workspaceName `
- --query id -o tsv
-
-# Create Data Collection Rule for Windows Security Events
-$dcrConfig = @"
-{
- "location": "$location",
- "properties": {
- "description": "Security event collection for Azure Local",
- "dataSources": {
- "windowsEventLogs": [
- {
- "name": "SecurityEvents",
- "streams": ["Microsoft-SecurityEvent"],
- "xPathQueries": [
- "Security!*[System[(EventID=4624 or EventID=4625 or EventID=4648 or EventID=4672 or EventID=4688 or EventID=4697 or EventID=4698 or EventID=4719 or EventID=4720 or EventID=4722 or EventID=4723 or EventID=4724 or EventID=4725 or EventID=4726 or EventID=4728 or EventID=4732 or EventID=4735 or EventID=4738 or EventID=4740 or EventID=4756 or EventID=4767 or EventID=4768 or EventID=4769 or EventID=4771 or EventID=4776)]]"
- ]
- },
- {
- "name": "SystemEvents",
- "streams": ["Microsoft-Event"],
- "xPathQueries": [
- "System!*[System[(Level=1 or Level=2 or Level=3)]]",
- "Application!*[System[(Level=1 or Level=2 or Level=3)]]"
- ]
- }
- ]
- },
- "destinations": {
- "logAnalytics": [
- {
- "workspaceResourceId": "$workspaceId",
- "name": "securityWorkspace"
- }
- ]
- },
- "dataFlows": [
- {
- "streams": ["Microsoft-SecurityEvent"],
- "destinations": ["securityWorkspace"]
- },
- {
- "streams": ["Microsoft-Event"],
- "destinations": ["securityWorkspace"]
- }
- ]
- }
-}
-"@
-
-# Save config to file
-$dcrConfig | Out-File -FilePath "dcr-config.json" -Encoding UTF8
-
-# Create DCR
-az monitor data-collection rule create `
- --name $dcrName `
- --resource-group $resourceGroup `
- --location $location `
- --rule-file "dcr-config.json"
-
-Write-Host "✅ Data Collection Rule created: $dcrName" -ForegroundColor Green
-
-# Clean up temp file
-Remove-Item "dcr-config.json"
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -338,6 +256,17 @@ Remove-Item $templatePath
 ```
 
 </TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
+:::
+
+</TabItem>
 </Tabs>
 
 ## Key Security Events to Collect
@@ -432,6 +361,22 @@ New-AzDataCollectionRuleAssociation `
 Proceed to [Task 6: PIM & Conditional Access](./task-05-configure-azure-update-manager.mdx) to configure just-in-time access and identity protection.
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

@@ -3,16 +3,24 @@ title: "Task 01: OU Creation & Pre-Creation Artifacts"
 sidebar_label: "Task 01: OU & AD Artifacts"
 sidebar_position: 1
 description: "Create Azure Local OU and required AD objects using AsHciADArtifactsPreCreationTool"
-category: Runbook
+category: "Runbook"
 scope: Active Directory preparation
 purpose: Create Azure Local OU and LCM user account
 author: Azure Local Cloud Azure Local Cloudnology
 created: 2026-01-31
 updated: 2026-03-03
-version: 1.1
-tags: ["azure-local", "active-directory", "ou-creation", "lcm-account"]
-keywords: ["OU creation", "LCM user", "KDS root key", "AsHciADArtifactsPreCreationTool"]
-status: Active
+version: "1.1.0"
+tags:
+  - azure-local
+  - active-directory
+  - ou-creation
+  - lcm-account
+keywords:
+  - OU creation
+  - LCM user
+  - KDS root key
+  - AsHciADArtifactsPreCreationTool
+status: "Active"
 ---
 
 import Tabs from '@theme/Tabs';
@@ -201,129 +209,15 @@ if ($stderr.Message) { Write-Host "--- Errors ---" -ForegroundColor Red; Write-H
 > **Tip:** If empty output is returned, verify the VM name and resource group, and confirm the VM is running.
 
 </TabItem>
-<TabItem value="arc" label="Azure Arc Run Command">
 
-> **When to use**: Run remotely against an Azure Arc-enabled server. Works for on-premises domain controllers that are Arc-registered — no RDP, VPN, or direct network path required.
 
-#### Script
+<TabItem value="orchestrated" label="Orchestrated Script">
 
-**Primary**: `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Invoke-OUCreation-Arc.ps1`
+> **When to use**: Multi-node deployment from management server using `variables.yml`.
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| Azure CLI | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/azure-cli/Invoke-OUCreation-Arc.ps1` |
-| Bash | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/bash/invoke-ou-creation-arc.sh` |
-
-#### Code
-
-Run remotely against an **Azure Arc-enabled server** using `New-AzConnectedMachineRunCommand`. This works for on-premises domain controllers that are Arc-registered — no RDP, VPN, or direct network path required.
-
-> **Prerequisites**
->
-> - `Az.ConnectedMachine` module installed (`Install-Module Az.ConnectedMachine`)
-> - `powershell-yaml` module installed (`Install-Module powershell-yaml`)
-> - Authenticated to Azure (`Connect-AzAccount`)
-> - Target server must be Arc-enrolled and **Connected**
-> - **Azure Connected Machine Resource Administrator** or **Contributor** role on the Arc resource
-
-```powershell
-param(
- [Parameter(Mandatory = $true)]
- [string]$ConfigFile,
-
- [switch]$SkipCleanup
-)
-
-$ErrorActionPreference = "Stop"
-
-# Load configuration
-Import-Module powershell-yaml -ErrorAction Stop
-$config = Get-Content $ConfigFile -Raw | ConvertFrom-Yaml
-
-# Resolve Arc target from config
-$ResourceGroupName = $config.azure_vms.dc01.resource_group
-$MachineName = $config.azure_vms.dc01.hostname
-$Location = $config.azure_vms.dc01.location
-if (-not $Location) { $Location = "eastus" }
-
-# Extract AD values from config
-$clusterOUPath = $config.active_directory.ad_clusters_ou_path
-if (-not $clusterOUPath) { $clusterOUPath = $config.cluster.arm_deployment.ou_path }
-
-$lcmUsername = $config.accounts.account_lcm_username
-$lcmSamAccount = if ($lcmUsername -match '^([^@]+)@') { $Matches[1] } else { $lcmUsername }
-
-# Retrieve LCM password from Key Vault
-$kvName = $config.platform.kv_platform_name
-$lcmPassword = Get-AzKeyVaultSecret -VaultName $kvName -Name "lcm-password" -AsPlainText -ErrorAction Stop
-
-# Build remote script — config values baked in as literals
-$remoteScript = @"
-`$ErrorActionPreference = 'Stop'
-
-if (-not (Get-Module -ListAvailable -Name AsHciADArtifactsPreCreationTool)) {
- Install-Module AsHciADArtifactsPreCreationTool -Repository PSGallery -Force
-}
-
-if (-not (Get-KdsRootKey -ErrorAction SilentlyContinue)) {
- Add-KdsRootKey -EffectiveTime (Get-Date).AddHours(-10)
- Write-Output 'KDS Root Key created.'
-}
-
-`$password = ConvertTo-SecureString '$lcmPassword' -AsPlainText -Force
-`$credential = New-Object System.Management.Automation.PSCredential ('$lcmSamAccount', `$password)
-
-New-HciAdObjectsPreCreation -AzureStackLCMUserCredential `$credential -AsHciOUName '$clusterOUPath' -Verbose
-Write-Output 'OU creation and LCM user pre-creation complete.'
-"@
-
-# Verify Azure context
-$ctx = Get-AzContext -ErrorAction Stop
-if (-not $ctx) { Write-Host "ERROR: Run Connect-AzAccount first." -ForegroundColor Red; exit 1 }
-
-Import-Module Az.ConnectedMachine -ErrorAction Stop
-
-# Create and execute the run command
-$runCommandName = "CreateOUAndLCM-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-Write-Host "Creating run command on $MachineName..." -ForegroundColor Cyan
-
-$null = New-AzConnectedMachineRunCommand `
- -MachineName $MachineName `
- -ResourceGroupName $ResourceGroupName `
- -RunCommandName $runCommandName `
- -Location $Location `
- -SourceScript $remoteScript `
- -ErrorAction Stop
-
-# Retrieve the result
-$cmd = Get-AzConnectedMachineRunCommand `
- -MachineName $MachineName `
- -ResourceGroupName $ResourceGroupName `
- -RunCommandName $runCommandName
-
-Write-Host "Execution State: $($cmd.InstanceViewExecutionState)" -ForegroundColor Cyan
-if ($cmd.InstanceViewOutput) { Write-Host $cmd.InstanceViewOutput }
-if ($cmd.InstanceViewError) {
- Write-Host "--- Errors ---" -ForegroundColor Red
- Write-Host $cmd.InstanceViewError -ForegroundColor Red
-}
-
-# Cleanup
-if (-not $SkipCleanup) {
- Remove-AzConnectedMachineRunCommand `
- -MachineName $MachineName `
- -ResourceGroupName $ResourceGroupName `
- -RunCommandName $runCommandName `
- -ErrorAction SilentlyContinue
- Write-Host "Run command '$runCommandName' cleaned up." -ForegroundColor Green
-} else {
- Write-Host "Skipping cleanup. Run manually:" -ForegroundColor Yellow
- Write-Host "Remove-AzConnectedMachineRunCommand -MachineName $MachineName -ResourceGroupName $ResourceGroupName -RunCommandName $runCommandName"
-}
-```
-
-> **Tip:** Use `-SkipCleanup` to inspect the run command resource in the Azure portal after execution.
+:::note Content Pending
+See Standalone Script tab for primary implementation.
+:::
 
 </TabItem>
 </Tabs>
@@ -490,166 +384,7 @@ if ($stderr.Message) { Write-Host "--- Errors ---" -ForegroundColor Red; Write-H
 > **Tip:** If empty output is returned, verify the VM name and resource group, and confirm the VM is running.
 
 </TabItem>
-<TabItem value="arc" label="Azure Arc Run Command">
 
-> **When to use**: Run remotely against an Azure Arc-enabled server. Works for on-premises domain controllers that are Arc-registered — no RDP, VPN, or direct network path required.
-
-#### Script
-
-**Primary**: `scripts/validation/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Test-OUCreation-Arc.ps1`
-
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| Azure CLI | `scripts/validation/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/azure-cli/Test-OUCreation-Arc.ps1` |
-| Bash | `scripts/validation/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/bash/test-ou-creation-arc.sh` |
-
-#### Code
-
-Run remotely against an **Azure Arc-enabled server** using `New-AzConnectedMachineRunCommand`. This works for on-premises domain controllers that are Arc-registered — no RDP, VPN, or direct network path required.
-
-> **Prerequisites**
->
-> - `Az.ConnectedMachine` module installed (`Install-Module Az.ConnectedMachine`)
-> - `powershell-yaml` module installed (`Install-Module powershell-yaml`)
-> - Authenticated to Azure (`Connect-AzAccount`)
-> - Target server must be Arc-enrolled and **Connected**
-> - **Azure Connected Machine Resource Administrator** or **Contributor** role on the Arc resource
-
-```powershell
-param(
- [Parameter(Mandatory = $true)]
- [string]$ConfigFile,
-
- [switch]$SkipCleanup
-)
-
-$ErrorActionPreference = "Stop"
-
-# Load configuration
-Import-Module powershell-yaml -ErrorAction Stop
-$config = Get-Content $ConfigFile -Raw | ConvertFrom-Yaml
-
-# Resolve Arc target from config
-$ResourceGroupName = $config.azure_vms.dc01.resource_group
-$MachineName = $config.azure_vms.dc01.hostname
-$Location = $config.azure_vms.dc01.location
-if (-not $Location) { $Location = "eastus" }
-
-# Extract AD values from config
-$adDomainFqdn = $config.active_directory.ad_domain_fqdn
-if (-not $adDomainFqdn) { $adDomainFqdn = $config.active_directory.domain.fqdn }
-
-$clusterOUPath = $config.active_directory.ad_clusters_ou_path
-if (-not $clusterOUPath) { $clusterOUPath = $config.cluster.arm_deployment.ou_path }
-
-$lcmUsername = $config.accounts.account_lcm_username
-$lcmSamAccount = if ($lcmUsername -match '^([^@]+)@') { $Matches[1] } else { $lcmUsername }
-
-# Build remote script — config values baked in as literals
-$remoteScript = @"
-`$ErrorActionPreference = 'Continue'
-Import-Module ActiveDirectory -ErrorAction Stop
-
-`$passed = 0; `$failed = 0; `$warned = 0
-
-function Write-Check(`$Name, `$Status, `$Detail) {
- `$icon = switch (`$Status) { 'PASS' { '✓' } 'FAIL' { '✗' } 'WARN' { '⚠' } 'INFO' { 'ℹ' } }
- `$msg = " `$icon `$Name"
- if (`$Detail) { `$msg += " - `$Detail" }
- Write-Output `$msg
- switch (`$Status) { 'PASS' { `$script:passed++ } 'FAIL' { `$script:failed++ } 'WARN' { `$script:warned++ } }
-}
-
-Write-Output "========================================="
-Write-Output "Task 01: OU & Pre-Creation Validation (Arc Remote)"
-Write-Output "========================================="
-Write-Output " Domain: $adDomainFqdn"
-Write-Output " Cluster OU: $clusterOUPath"
-Write-Output " LCM Account: $lcmSamAccount"
-Write-Output ""
-
-# CHECK: KDS Root Key
-Write-Output "Checking KDS Root Key..."
-try {
- `$kds = Get-KdsRootKey -ErrorAction SilentlyContinue
- if (`$kds) { Write-Check 'KDS Root Key' 'PASS' "Key ID: `$(`$kds[0].KeyId.ToString().Substring(0,8))..." }
- else { Write-Check 'KDS Root Key' 'FAIL' 'Not found' }
-} catch { Write-Check 'KDS Root Key' 'WARN' "Cannot check: `$_" }
-
-# CHECK: OU Structure
-Write-Output ""
-Write-Output "Checking OU structure..."
-try {
- `$ou = Get-ADOrganizationalUnit -Identity "$clusterOUPath" -ErrorAction Stop
- Write-Check 'Cluster OU' 'PASS' "$clusterOUPath"
-} catch {
- Write-Check 'Cluster OU' 'FAIL' "Not found: $clusterOUPath"
-}
-
-# CHECK: LCM User
-Write-Output ""
-Write-Output "Checking LCM user account..."
-try {
- `$user = Get-ADUser -Filter "SamAccountName -eq '$lcmSamAccount'" -Properties Enabled, DistinguishedName
- if (`$user) {
- Write-Check 'LCM user exists' 'PASS' "$lcmSamAccount (`$(`$user.DistinguishedName))"
- if (`$user.Enabled) { Write-Check 'LCM user enabled' 'PASS' }
- else { Write-Check 'LCM user enabled' 'FAIL' 'Account is disabled' }
- } else { Write-Check 'LCM user exists' 'FAIL' "Not found: $lcmSamAccount" }
-} catch { Write-Check 'LCM user exists' 'FAIL' "Query failed: `$_" }
-
-# SUMMARY
-Write-Output ""
-Write-Output "========================================="
-Write-Output "SUMMARY: Passed=`$passed Failed=`$failed Warnings=`$warned"
-Write-Output "========================================="
-if (`$failed -eq 0) { Write-Output '✓ AD configuration validation passed!' }
-else { Write-Output "✗ `$failed check(s) failed. Review above and remediate." }
-"@
-
-# Verify Azure context
-$ctx = Get-AzContext -ErrorAction Stop
-if (-not $ctx) { Write-Host "ERROR: Run Connect-AzAccount first." -ForegroundColor Red; exit 1 }
-
-Import-Module Az.ConnectedMachine -ErrorAction Stop
-
-# Create and execute the run command
-$runCommandName = "ValidateADConfig-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-Write-Host "Creating run command on $MachineName..." -ForegroundColor Cyan
-
-$null = New-AzConnectedMachineRunCommand `
- -MachineName $MachineName `
- -ResourceGroupName $ResourceGroupName `
- -RunCommandName $runCommandName `
- -Location $Location `
- -SourceScript $remoteScript `
- -ErrorAction Stop
-
-# Retrieve the result
-$cmd = Get-AzConnectedMachineRunCommand `
- -MachineName $MachineName `
- -ResourceGroupName $ResourceGroupName `
- -RunCommandName $runCommandName
-
-Write-Host "Execution State: $($cmd.InstanceViewExecutionState)" -ForegroundColor Cyan
-if ($cmd.InstanceViewOutput) { Write-Host $cmd.InstanceViewOutput }
-if ($cmd.InstanceViewError) { Write-Host "--- Errors ---" -ForegroundColor Red; Write-Host $cmd.InstanceViewError -ForegroundColor Red }
-
-# Cleanup
-if (-not $SkipCleanup) {
- Remove-AzConnectedMachineRunCommand `
- -MachineName $MachineName `
- -ResourceGroupName $ResourceGroupName `
- -RunCommandName $runCommandName `
- -ErrorAction SilentlyContinue
- Write-Host "Run command '$runCommandName' cleaned up." -ForegroundColor Green
-} else {
- Write-Host "Skipping cleanup (-SkipCleanup). Manual: Remove-AzConnectedMachineRunCommand -MachineName $MachineName -ResourceGroupName $ResourceGroupName -RunCommandName $runCommandName" -ForegroundColor Yellow
-}
-```
-
-</TabItem>
 </Tabs>
 
 ---
@@ -680,6 +415,18 @@ if (-not $SkipCleanup) {
 Proceed to [Task 2 - Security Groups](./task-02-security-groups.mdx) to create optional security groups.
 
 ---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

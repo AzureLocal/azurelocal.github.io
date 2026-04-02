@@ -3,16 +3,26 @@ title: "Task 02: Enable RDP"
 sidebar_label: "Task 02: Enable RDP"
 sidebar_position: 2
 description: "Enable Remote Desktop Protocol on all Azure Local nodes for graphical remote access during configuration and troubleshooting."
-category: Runbook
+category: "Runbook"
 scope: Remote desktop enablement
 purpose: Enable RDP on all cluster nodes for graphical remote access from the management server and delivery engineer workstation
 author: Azure Local Cloud Azure Local Cloudnology
 created: 2026-01-31
 updated: 2026-03-04
-version: 2.0
-tags: ["azure-local", "os-configuration", "rdp", "remote-desktop", "powershell"]
-keywords: ["RDP", "Remote Desktop", "fDenyTSConnections", "SConfig", "Enable-NetFirewallRule"]
-status: Active
+version: "2.0.0"
+tags:
+  - azure-local
+  - os-configuration
+  - rdp
+  - remote-desktop
+  - powershell
+keywords:
+  - RDP
+  - Remote Desktop
+  - fDenyTSConnections
+  - SConfig
+  - Enable-NetFirewallRule
+status: "Active"
 ---
 
 import Tabs from '@theme/Tabs';
@@ -77,30 +87,7 @@ Run on each node via iDRAC Virtual Console.
 8. Repeat for every node
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-Run on each node via iDRAC Virtual Console.
-
-```powershell
-# Enable Remote Desktop
-Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
- -Name "fDenyTSConnections" -Value 0
-
-# Enable Remote Desktop firewall rule
-Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-
-# Verify
-$rdp = Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
- -Name "fDenyTSConnections"
-
-if ($rdp.fDenyTSConnections -eq 0) {
- Write-Host "RDP enabled successfully" -ForegroundColor Green
-} else {
- Write-Host "RDP not enabled" -ForegroundColor Red
-}
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
 Run from the management server. Reads node names from `variables.yml`.
@@ -197,6 +184,22 @@ Test-NetConnection -ComputerName <node-ip> -Port 3389
 | Authentication failure | Wrong credentials | Verify local Administrator password from Key Vault |
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

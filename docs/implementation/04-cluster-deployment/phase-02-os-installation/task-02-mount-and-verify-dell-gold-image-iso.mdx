@@ -3,16 +3,28 @@ title: "Task 02: Mount and Verify Dell Gold Image ISO"
 sidebar_label: "Task 02: Mount Gold Image"
 sidebar_position: 2
 description: "Mount the Dell Azure Stack HCI OS gold image ISO to all cluster nodes via iDRAC virtual media or USB drive, and verify mount status before BOSS card preparation."
-category: Runbook
+category: "Runbook"
 scope: Azure Local OS installation
 purpose: Prepare installation media on all cluster nodes so nodes boot from the gold image ISO after BOSS virtual disk recreation in Task 02
 author: Azure Local Cloud Azure Local Cloudnology
 created: 2026-01-31
 updated: 2026-03-04
-version: 1.1
-tags: ["azure-local", "os-installation", "idrac", "virtual-media", "gold-image", "boss"]
-keywords: ["Dell gold image ISO", "iDRAC virtual media", "USB drive", "Azure Stack HCI OS", "mount ISO", "Redfish API"]
-status: Active
+version: "1.1.0"
+tags:
+  - azure-local
+  - os-installation
+  - idrac
+  - virtual-media
+  - gold-image
+  - boss
+keywords:
+  - Dell gold image ISO
+  - iDRAC virtual media
+  - USB drive
+  - Azure Stack HCI OS
+  - mount ISO
+  - Redfish API
+status: "Active"
 ---
 
 import Tabs from '@theme/Tabs';
@@ -197,66 +209,7 @@ foreach ($nodeKey in $config.nodes.Keys) {
 ```
 
 </TabItem>
-<TabItem value="usb" label="USB Drive (On-Site)">
 
-> **When to use**: You are physically present at the data centre. USB drives are faster and more reliable than iDRAC virtual media and have no network dependencies.
-
-### Create a Bootable USB Drive
-
-#### Windows — Rufus
-
-1. Download [Rufus](https://rufus.ie/) and run as Administrator
-2. Insert a USB 3.0 flash drive (16 GB minimum, 32 GB recommended) — **all data will be erased**
-3. Configure:
- - **Device**: your USB drive
- - **Boot selection**: Click **SELECT** → choose the Dell gold image ISO
- - **Partition scheme**: GPT
- - **Target system**: UEFI (non CSM)
- - **Volume label**: `DELL-AZL-24H2`
-4. Click **START** and confirm any prompts (~10–15 minutes)
-5. Safely eject the USB drive
-
-:::tip Create Multiple Drives
-Create 2–4 identical USB drives so you can install multiple nodes in parallel.
-:::
-
-#### Linux / macOS — dd
-
-```bash
-# Identify USB device — verify carefully before writing
-lsblk # Linux
-diskutil list # macOS
-
-# Unmount
-sudo umount /dev/sdX* # Linux
-diskutil unmountDisk /dev/diskN # macOS
-
-# Write ISO
-sudo dd if=Dell-AzureStackHCI-24H2-Gold.iso of=/dev/sdX bs=4M status=progress # Linux
-sudo dd if=Dell-AzureStackHCI-24H2-Gold.iso of=/dev/rdiskN bs=4m # macOS
-
-sync
-```
-
-### Insert USB into Nodes
-
-1. Power off the node (iDRAC: **Power** → **Graceful Shutdown**)
-2. Insert USB drive into a front USB 3.0 port (blue connector)
-3. Optional — verify it appears in Boot Manager:
- - Power on and press **F11** during POST
- - Confirm USB drive is listed as `UEFI: <drive name>`
- - Exit Boot Manager; do not boot yet
-4. Proceed to Task 02 — the node will boot from USB after BOSS recreation
-
-### Multi-Node On-Site Workflow
-
-```
-Node 1: Insert USB → start BOSS deletion → move to Node 2
-Node 2: Insert USB → start BOSS deletion → move to Node 3
-Node 3: Insert USB → start BOSS deletion → return to Node 1 (monitor install)
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -346,6 +299,18 @@ Do **not** start Task 02 (BOSS virtual disk recreation) until all nodes show `In
 | USB not appearing in boot manager | USB drive not properly written | Re-create bootable USB with Rufus |
 
 ---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

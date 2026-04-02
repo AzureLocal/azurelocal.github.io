@@ -1,3 +1,66 @@
+# Project Notes — Implementation Docs & Toolkit Alignment
+
+> Last updated: 2026-04-02
+
+## Current Status
+
+Nothing in these notes should imply the implementation docs are complete. Use the actual counts below as the current state.
+
+| Item | Actual State |
+|------|--------------|
+| Navigation section present | 114/114 |
+| Variables section present | 113/114 |
+| Troubleshooting section present | 113/114 |
+| Version Control section present | 113/114 |
+| Document Info Block present | 93/114 |
+| Frontmatter with 13+ fields | 23/114 |
+| Orchestrated Script tab present | 65/114 |
+| Standalone Script tab present | 62/114 |
+| Toolkit path reference in tabs | 53/114 |
+| Alternatives section present | 0/114 |
+| Toolkit scripts verified on disk | 525/525 |
+
+## What This Project Still Needs
+
+For every one of the 114 task files in `docs/implementation/`, the following must be verified and fixed:
+
+1. **Orchestrated Script tab** — label exactly `Orchestrated Script`, `value="orchestrated"`, contains `**Script**: [link]` to `Invoke-*-Orchestrated.ps1` in toolkit + embedded script content
+2. **Standalone Script tab** — label exactly `Standalone Script`, `value="standalone"`, contains `**Script**: [link]` to standalone `.ps1` in toolkit + embedded script content
+3. **Alternatives section** — `## Alternatives` block with table linking to `azurecli/` and `bash/` script variants
+4. **Correct subfolder names** — `azurecli/` not `azure-cli/`, `bash/` not `bash-scripts/`
+5. **Appendix D** — `docs/implementation/appendices/appendix-d-script-index.mdx` updated with complete per-task script entries
+
+Script names for every task come from `project-management/deploy-script-coverage.md`.
+
+## Key Decisions
+
+| Decision | Value |
+|----------|-------|
+| Primary on-prem script | PowerShell 7 |
+| Primary Azure script | Azure PowerShell (Az module) |
+| Tab groupId — Azure/on-prem tasks | `deployment-method` |
+| Tab groupId — CI/CD tasks | `scm-platform` |
+| Script subfolders | `powershell/`, `azurecli/`, `bash/` — no hyphens |
+| Orch script name pattern | `Invoke-<TaskName>-Orchestrated.ps1` |
+| Standalone script name pattern | `<Verb>-<TaskName>.ps1` |
+| AzCLI script name pattern | `az-<task-name>.ps1` |
+| Bash script name pattern | `az-<task-name>.sh` |
+| Toolkit GitHub URL base | `https://github.com/AzureLocal/azurelocal-toolkit/blob/main/` |
+| Toolkit path prefix | `scripts/deploy/<part>/<phase>/<task-folder>/` |
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `project-management/deploy-script-coverage.md` | Source of truth for all script names per task |
+| `project-management/claude/implementation-standardization-plan.md` | Full Phase 7 standards and work items |
+| `project-management/claude/tracking-log.md` | Live status log using actual audited counts |
+| `project-management/scripts/Update-TaskFiles.ps1` | Batch update script — DO NOT RUN without explicit approval |
+
+---
+
+## Original Project Brief
+
 This next project/plan is going to be a very big one and very important.
 
 E:\git\azurelocal.github.io\docs\implementation

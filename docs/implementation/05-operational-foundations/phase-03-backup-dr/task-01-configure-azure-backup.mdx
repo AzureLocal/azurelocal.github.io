@@ -131,22 +131,7 @@ Add-VMHardDiskDrive -VMName $VMName -Path $StorageDisk.Path
 4. During Azure Backup setup, specify the vault credentials file
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-# Get vault credentials
-az backup vault identity show \
- --resource-group "{{AZURE_RESOURCE_GROUP}}" \
- --name "{{RECOVERY_VAULT_NAME}}"
-
-# Download vault credentials (expires in 48 hours)
-az backup vault credential download \
- --resource-group "{{AZURE_RESOURCE_GROUP}}" \
- --name "{{RECOVERY_VAULT_NAME}}" \
- --path "C:\Temp\VaultCredentials.VaultCredentials"
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -199,37 +184,7 @@ If Azure Benefits is enabled with WDAC, temporarily switch to **Audit** mode bef
 6. Complete installation wizard
 
 </TabItem>
-<TabItem value="manual" label="Manual Install" default>
 
-On each cluster node:
-
-```powershell
-# Disable WDAC if enabled
-$env:COMPUTERNAME
-Disable-NetFirewallRule AzsHci-ImdsAttestation-Block-TCP-In
-
-# Copy agent installer from backup server
-$BackupServer = "{{BACKUP_SERVER_NAME}}"
-Copy-Item "\\$BackupServer\C$\Program Files\Azure Backup\DPM\Agents\RA\*.exe" `
- -Destination "C:\Temp\"
-
-# Install agent
-Start-Process -FilePath "C:\Temp\DPMAgentInstaller.exe" `
- -ArgumentList "/q" `
- -Wait
-
-# Configure agent to connect to Azure Backup
-Set-Location "C:\Program Files\Microsoft Data Protection Manager\DPM\bin"
-.\SetDpmServer.exe -dpmServerName $BackupServer
-```
-
-After installation on all nodes, attach agents in backup console:
-
-1. Navigate to **Management** → **Agents**
-2. Click **Install** → **Attach agents**
-3. Select installed agents and confirm
-
-</TabItem>
 </Tabs>
 
 After agent installation, re-enable WDAC if it was disabled.
@@ -316,17 +271,7 @@ Expected output shows all cluster nodes with **Valid** protection state.
 3. Verify VMs appear with recent recovery points
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-az backup item list \
- --resource-group "{{AZURE_RESOURCE_GROUP}}" \
- --vault-name "{{RECOVERY_VAULT_NAME}}" \
- --backup-management-type MAB \
- --output table
-```
-
-</TabItem>
 </Tabs>
 
 ### Validation Checklist
@@ -423,6 +368,22 @@ After configuring Azure Backup:
 
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

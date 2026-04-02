@@ -1,5 +1,5 @@
 ---
-title: "Task 2: Activate Windows Server Subscription"
+title: "Task 02: Activate Windows Server Subscription"
 sidebar_label: "Task 02: Windows Server Subscription"
 sidebar_position: 2
 description: "Activate Windows Server Subscription for Azure Local to enable automatic VM licensing"
@@ -26,6 +26,13 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 # Task 02: Activate Windows Server Subscription
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Activate Windows Server Subscription for Azure Local to enable automatic VM l...
+> **PURPOSE**: Activate Windows Server Subscription for Azure Local to enable automatic VM licensing
+> **MASTER REFERENCE**: [Activate Windows Server VMs on Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/vm-activate)
+
+**Status**: Active
 
 :::danger[⚠️ LICENSING REQUIREMENT - PAID ADD-ON SERVICE]
 
@@ -97,50 +104,7 @@ Windows Server Subscription offers:
 3. Check **Cost Management** for subscription charges
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-Run this script directly on any Azure Local cluster node.
-
-```powershell title="Enable-WindowsServerSubscription.ps1 (Run ON Node)"
-#Requires -RunAsAdministrator
-#Requires -Modules Az.StackHCI
-
-<#
-.SYNOPSIS
- Enables Windows Server Subscription on the local Azure Local cluster.
-.DESCRIPTION
- This script enables Windows Server Subscription to provide automatic
- licensing for Windows Server VMs running on the cluster.
-#>
-
-[CmdletBinding()]
-param()
-
-$ErrorActionPreference = 'Stop'
-
-# Get cluster information
-$clusterName = (Get-Cluster).Name
-Write-Host "Enabling Windows Server Subscription for cluster: $clusterName" -ForegroundColor Cyan
-
-# Get the Azure Local registration
-$registration = Get-AzStackHCI
-
-if ($registration.ConnectionStatus -ne 'Connected') {
- throw "Cluster is not connected to Azure. Current status: $($registration.ConnectionStatus)"
-}
-
-# Enable Windows Server Subscription
-# This enables AVMA (Automatic Virtual Machine Activation) for VMs
-Set-AzStackHCI -EnableWindowsServerSubscription $true
-
-Write-Host "Windows Server Subscription enabled successfully" -ForegroundColor Green
-
-# Verify the setting
-$updatedRegistration = Get-AzStackHCI
-Write-Host "Windows Server Subscription Status: $($updatedRegistration.WindowsServerSubscription)" -ForegroundColor Cyan
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
 Run this script from the management server to configure Windows Server Subscription remotely.
@@ -333,6 +297,22 @@ Windows Server Subscription billing begins immediately when enabled. Ensure budg
 - [Azure Local Pricing](https://azure.microsoft.com/en-us/pricing/details/azure-stack/hci/)
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

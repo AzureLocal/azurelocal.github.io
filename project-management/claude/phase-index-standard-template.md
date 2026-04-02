@@ -1,10 +1,11 @@
 # Phase Index Page Standard Template
 
-> Version: 1.0.0  
+> Version: 1.2.0  
 > Created: 2026-03-24  
-> Purpose: Canonical format for all implementation phase index pages (.mdx)
+> Updated: 2026-04-02  
+> Purpose: Canonical target format for all implementation phase index pages (.mdx)
 
-This document defines the required structure for every `index.mdx` file inside a phase directory (e.g., `phase-01-hardware-provisioning/index.mdx`).
+This document defines the target structure for every `index.mdx` file inside a phase directory (e.g., `phase-01-hardware-provisioning/index.mdx`). It is a standard, not a claim that current phase index pages already comply.
 
 ---
 
@@ -118,6 +119,7 @@ Badge link for "Type" points UP to the Part-level index (`../index.mdx`).
 - Task number is just the integer
 - Duration is an estimate (e.g., "15 min", "30-45 min")
 - Links use relative paths to task files
+- Do not imply task completion in this table unless the linked task pages have actually been updated and verified
 
 ---
 
@@ -264,6 +266,12 @@ After completing [this phase], proceed to [Phase NN+1: Title](../next-phase/inde
 |---------|------|--------|---------|
 | 1.0.0 | YYYY-MM-DD | AzureLocal Cloud Team Team | Initial release |
 ```
+
+### Status Language Rule
+
+- Phase index pages describe the intended phase workflow
+- They must not claim all task pages in the phase are complete unless verified by audit
+- If a phase is partially remediated, note that clearly in prose rather than implying full completion
 
 ---
 

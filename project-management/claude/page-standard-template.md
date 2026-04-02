@@ -1,10 +1,11 @@
 # Task Page Standard Template
 
-> Version: 1.0.0  
+> Version: 1.2.0  
 > Created: 2026-03-24  
-> Purpose: Canonical format for all implementation task pages (.mdx)
+> Updated: 2026-04-02  
+> Purpose: Canonical target format for all implementation task pages (.mdx)
 
-This document defines the required structure, sections, and formatting for every task page in `docs/implementation/`. All task pages MUST follow this standard unless explicitly listed as an approved override.
+This document defines the target structure, sections, and formatting for every task page in `docs/implementation/`. It is a standard, not a claim that the current repo already complies.
 
 ---
 
@@ -253,7 +254,41 @@ Each tab MUST follow this internal structure:
 | Context | GroupId | Tab Labels | Example |
 |---------|---------|------------|---------|
 | Hardware-specific DHCP | `device-type` | FortiGate / Windows DHCP / Customer | 04/phase-01/task-01 |
-| CI/CD pipelines | `platform` | GitHub / GitLab / Azure DevOps | 01-cicd/* |
+| CI/CD pipelines | `scm-platform` | GitHub / GitLab / Azure DevOps | 01-cicd/* |
+
+---
+
+## 8b. Alternatives (Required)
+
+Every task page that has scripted execution options MUST include an alternatives section listing the other available script types.
+
+```markdown
+---
+
+## Alternatives
+
+The procedures above use [Primary Script Type]. Other deployment methods are available in the toolkit:
+
+| Method | Script | Location |
+|--------|--------|----------|
+| Azure CLI (PowerShell) | `az-<task-name>.ps1` | [`scripts/deploy/<path>/azurecli/az-<task-name>.ps1`](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/scripts/deploy/<path>/azurecli/az-<task-name>.ps1) |
+| Bash | `az-<task-name>.sh` | [`scripts/deploy/<path>/bash/az-<task-name>.sh`](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/scripts/deploy/<path>/bash/az-<task-name>.sh) |
+```
+
+### Rules
+
+- Section heading is always `## Alternatives`
+- Link directly to the actual script files on GitHub when they exist
+- List every non-primary script type that exists in the toolkit for this task
+- Only list methods that are actually implemented (scripts verified to exist)
+
+### Required Script Reference Line In Tabs
+
+Both scripted tabs must start with a script reference line before the embedded code block:
+
+```markdown
+**Script**: [`scripts/deploy/<part>/<phase>/<task-folder>/powershell/<script-name>.ps1`](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/scripts/deploy/<part>/<phase>/<task-folder>/powershell/<script-name>.ps1)
+```
 
 ---
 
@@ -360,6 +395,8 @@ For reference, every task page should have sections in this exact order:
 12. --- (horizontal rule)
 13. ## Execution Options (Tabs)
 14. --- (horizontal rule)
+14b. ## Alternatives (table — methods not used in main tabs)
+15. --- (horizontal rule)
 15. ## Validation Checklist (checkboxes)
 16. --- (horizontal rule)
 17. ## Troubleshooting (table)
@@ -388,11 +425,11 @@ For reference, every task page should have sections in this exact order:
 ### PowerShell Code Blocks
 
 ````markdown
-```powershell title="scripts/deploy/02/phase-02/task-01/Register-Providers-Standalone.ps1"
+```powershell title="scripts/deploy/02-azure-foundation/phase-02-azure-governance/task-01-register-resource-providers/powershell/Register-Providers-Standalone.ps1"
 # Description: Register required Azure resource providers
 # Variables: subscription_id
 
-$SubscriptionId = "REPLACE_SUBSCRIPTION_ID"
+$SubscriptionId = "$REPLACE_SUBSCRIPTION_ID"
 ```
 ````
 

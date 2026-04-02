@@ -3,7 +3,7 @@ title: "Task 02: Create Subscriptions"
 sidebar_label: "Task 02: Subscriptions"
 sidebar_position: 2
 description: "Create dedicated subscriptions for the full CAF/WAF deployment and associate them with management groups."
-category: "RUNBOOK"
+category: "Runbook"
 scope: "Full CAF/WAF subscription provisioning"
 purpose: "Create and associate dedicated subscriptions with management groups"
 author: "Hybrid Cloud Solutions"
@@ -19,7 +19,7 @@ keywords:
  - subscriptions
  - management group association
  - billing isolation
-status: "approved"
+status: "Active"
 ---
 
 import Tabs from '@theme/Tabs';
@@ -153,201 +153,31 @@ Work through the mapping table top-to-bottom, creating all Platform subscription
 - [ ] You have Owner access to all subscriptions
 
 </TabItem>
-<TabItem value="ea" label="EA — Azure CLI">
 
-### Enterprise Agreement — Azure CLI
 
-> **When to use**: Your organization has an EA and you want to automate subscription creation
 
-#### Prerequisites
 
-- **Enrollment Account ID** — your EA enrollment account (find it with `az billing enrollment-account list`)
-- **Azure CLI** 2.50+ with the `account` extension
+<TabItem value="orchestrated" label="Orchestrated Script">
 
-#### Find Your Enrollment Account
+> **When to use**: Use this option when deploying from a management server using `variables.yml`.
 
-```bash
-# List enrollment accounts you have access to
-az billing enrollment-account list --query "[].{name:name, principalName:principalName}" -o table
-```
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
 
-Save the `name` value (a GUID) — this is your enrollment account ID.
-
-#### Create Subscriptions
-
-```bash
-# ── Platform Subscriptions ───────────────────────────────────────────────────
-
-# Identity
-az account create \
-  --enrollment-account-name "<enrollment-account-id>" \
-  --display-name "iic-platform-identity-001" \
-  --offer-type "MS-AZR-0017P"
-
-# Management
-az account create \
-  --enrollment-account-name "<enrollment-account-id>" \
-  --display-name "iic-platform-management-001" \
-  --offer-type "MS-AZR-0017P"
-
-# Connectivity
-az account create \
-  --enrollment-account-name "<enrollment-account-id>" \
-  --display-name "iic-platform-connectivity-001" \
-  --offer-type "MS-AZR-0017P"
-
-# ── Landing Zone Subscriptions ───────────────────────────────────────────────
-
-# Corp (Azure Local)
-az account create \
-  --enrollment-account-name "<enrollment-account-id>" \
-  --display-name "iic-lz-azurelocal-corp-001" \
-  --offer-type "MS-AZR-0017P"
-
-# Online
-az account create \
-  --enrollment-account-name "<enrollment-account-id>" \
-  --display-name "iic-lz-azurelocal-online-001" \
-  --offer-type "MS-AZR-0017P"
-```
-
-:::info Offer Types
-- `MS-AZR-0017P` = EA Enterprise (most common)
-- `MS-AZR-0148P` = EA Dev/Test (lower rates, no SLA)
-
-Use Dev/Test for sandbox subscriptions if your EA supports it.
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
 :::
 
-#### Associate with Management Groups
-
-After creation, move each subscription to its target management group:
-
-```bash
-# Get the subscription IDs (they're returned from az account create, or query them)
-IDENTITY_SUB=$(az account list --query "[?name=='iic-platform-identity-001'].id" -o tsv)
-MANAGEMENT_SUB=$(az account list --query "[?name=='iic-platform-management-001'].id" -o tsv)
-CONNECTIVITY_SUB=$(az account list --query "[?name=='iic-platform-connectivity-001'].id" -o tsv)
-CORP_SUB=$(az account list --query "[?name=='iic-lz-azurelocal-corp-001'].id" -o tsv)
-ONLINE_SUB=$(az account list --query "[?name=='iic-lz-azurelocal-online-001'].id" -o tsv)
-
-# Move to management groups
-az account management-group subscription add --name "cmp-platform-identity-iic" --subscription $IDENTITY_SUB
-az account management-group subscription add --name "cmp-platform-management-iic" --subscription $MANAGEMENT_SUB
-az account management-group subscription add --name "cmp-platform-connectivity-iic" --subscription $CONNECTIVITY_SUB
-az account management-group subscription add --name "cmp-lz-corp-iic" --subscription $CORP_SUB
-az account management-group subscription add --name "cmp-lz-online-iic" --subscription $ONLINE_SUB
-```
-
 </TabItem>
-<TabItem value="mca" label="MCA — Azure CLI">
 
-### Microsoft Customer Agreement — Azure CLI
+<TabItem value="standalone" label="Standalone Script">
 
-> **When to use**: Your organization has an MCA and you want to automate subscription creation
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
 
-#### Prerequisites
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
 
-- **Billing account name**, **billing profile name**, and **invoice section name** from your MCA
-
-#### Find Your Billing Info
-
-```bash
-# List billing accounts
-az billing account list --query "[].{name:name, displayName:displayName}" -o table
-
-# List billing profiles (use your billing account name)
-az billing profile list --account-name "<billing-account-name>" \
-  --query "[].{name:name, displayName:displayName}" -o table
-
-# List invoice sections (use your billing profile name)
-az billing invoice section list \
-  --account-name "<billing-account-name>" \
-  --profile-name "<billing-profile-name>" \
-  --query "[].{name:name, displayName:displayName}" -o table
-```
-
-#### Create Subscriptions
-
-```bash
-# Create each subscription under the MCA billing scope
-az account create \
-  --billing-account-name "<billing-account-name>" \
-  --billing-profile-name "<billing-profile-name>" \
-  --invoice-section-name "<invoice-section-name>" \
-  --display-name "iic-platform-identity-001" \
-  --sku-id "0001"
-
-# Repeat for each subscription in the mapping table, changing --display-name
-```
-
-#### Associate with Management Groups
-
-Use the same `az account management-group subscription add` commands shown in the EA tab above.
-
-</TabItem>
-<TabItem value="powershell" label="PowerShell (EA)">
-
-### PowerShell — Enterprise Agreement
-
-> **When to use**: PowerShell-based automation for EA subscriptions
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Deploy-Subscriptions.ps1
-# Prerequisites: Az.Subscription module, EA enrollment account access
-# ============================================================================
-
-#Requires -Modules Az.Subscription, Az.Resources
-
-# Load configuration
-$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
-$subs = $config.azure.subscriptions
-$mg = $config.azure.management_groups
-
-# Get enrollment account
-$enrollmentAccount = Get-AzEnrollmentAccount | Select-Object -First 1
-
-if (-not $enrollmentAccount) {
-    Write-Error "No enrollment account found. Verify EA access."
-    return
-}
-
-Write-Host "Using enrollment account: $($enrollmentAccount.PrincipalName)" -ForegroundColor Cyan
-
-# Define subscription-to-MG mapping
-$subscriptionPlan = @(
-    @{ Name = $subs.platform_identity.name;    MG = $mg.platform_identity.name },
-    @{ Name = $subs.platform_management.name;  MG = $mg.platform_management.name },
-    @{ Name = $subs.platform_connectivity.name; MG = $mg.platform_connectivity.name },
-    @{ Name = $subs.lz_corp.name;              MG = $mg.lz_corp.name },
-    @{ Name = $subs.lz_online.name;            MG = $mg.lz_online.name }
-)
-
-foreach ($sub in $subscriptionPlan) {
-    Write-Host "Creating subscription: $($sub.Name) ..." -ForegroundColor Cyan
-
-    # Create subscription
-    $result = New-AzSubscriptionAlias `
-        -AliasName $sub.Name `
-        -SubscriptionName $sub.Name `
-        -BillingScope $enrollmentAccount.ObjectId `
-        -Workload "Production"
-
-    $subId = $result.Properties.SubscriptionId
-    Write-Host "  Created: $subId" -ForegroundColor Gray
-
-    # Associate with management group
-    New-AzManagementGroupSubscription `
-        -GroupId $sub.MG `
-        -SubscriptionId $subId
-
-    Write-Host "  Associated with MG: $($sub.MG)" -ForegroundColor Gray
-}
-
-Write-Host "All subscriptions created and associated successfully" -ForegroundColor Green
-```
+:::note Content Pending
+Standalone script content references the toolkit repository.
+:::
 
 </TabItem>
 </Tabs>
@@ -427,6 +257,22 @@ Proceed to [Task 03: Create Resource Groups](./task-03-create-resource-groups)
 - [Azure Subscription Limits](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/azure-subscription-service-limits)
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

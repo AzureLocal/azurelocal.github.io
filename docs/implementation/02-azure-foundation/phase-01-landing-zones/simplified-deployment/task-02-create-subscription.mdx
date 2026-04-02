@@ -3,7 +3,7 @@ title: "Task 02: Create Subscription"
 sidebar_label: "Task 02: Create Subscription"
 sidebar_position: 2
 description: "Create a single subscription for the single subscription deployment and associate it with the landing zone management group."
-category: "RUNBOOK"
+category: "Runbook"
 scope: "Single subscription deployment — subscription provisioning"
 purpose: "Create and configure single subscription"
 author: "Hybrid Cloud Solutions"
@@ -19,7 +19,7 @@ keywords:
  - subscription
  - single subscription deployment
  - single subscription
-status: "approved"
+status: "Active"
 ---
 
 import Tabs from '@theme/Tabs';
@@ -148,142 +148,31 @@ The single resource group is created in [Task 03: Create Resource Groups](./task
 - [ ] You have Owner access to the subscription
 
 </TabItem>
-<TabItem value="ea" label="EA — Azure CLI">
 
-### Enterprise Agreement — Azure CLI
 
-> **When to use**: Your organization has an EA and you want to automate subscription creation
 
-#### Find Your Enrollment Account
 
-```bash
-# List enrollment accounts you have access to
-az billing enrollment-account list --query "[].{name:name, principalName:principalName}" -o table
-```
+<TabItem value="orchestrated" label="Orchestrated Script">
 
-Save the `name` value (a GUID) — this is your enrollment account ID.
+> **When to use**: Use this option when deploying from a management server using `variables.yml`.
 
-#### Create the Subscription
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
 
-```bash
-az account create \
-  --enrollment-account-name "<enrollment-account-id>" \
-  --display-name "iic-lz-azurelocal-001" \
-  --offer-type "MS-AZR-0017P"
-```
-
-#### Associate with Management Group
-
-```bash
-# Get the subscription ID
-SUB_ID=$(az account list --query "[?name=='iic-lz-azurelocal-001'].id" -o tsv)
-
-# Move to the landing zone management group
-az account management-group subscription add \
-  --name "cmp-landing-zones-iic" \
-  --subscription $SUB_ID
-```
-
-:::info Offer Types
-- `MS-AZR-0017P` = EA Enterprise (most common)
-- `MS-AZR-0148P` = EA Dev/Test (lower rates, no SLA)
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
 :::
 
 </TabItem>
-<TabItem value="mca" label="MCA — Azure CLI">
 
-### Microsoft Customer Agreement — Azure CLI
+<TabItem value="standalone" label="Standalone Script">
 
-> **When to use**: Your organization has an MCA and you want to automate subscription creation
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
 
-#### Find Your Billing Info
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
 
-```bash
-# List billing accounts
-az billing account list --query "[].{name:name, displayName:displayName}" -o table
-
-# List billing profiles
-az billing profile list --account-name "<billing-account-name>" \
-  --query "[].{name:name, displayName:displayName}" -o table
-
-# List invoice sections
-az billing invoice section list \
-  --account-name "<billing-account-name>" \
-  --profile-name "<billing-profile-name>" \
-  --query "[].{name:name, displayName:displayName}" -o table
-```
-
-#### Create the Subscription
-
-```bash
-az account create \
-  --billing-account-name "<billing-account-name>" \
-  --billing-profile-name "<billing-profile-name>" \
-  --invoice-section-name "<invoice-section-name>" \
-  --display-name "iic-lz-azurelocal-001" \
-  --sku-id "0001"
-```
-
-#### Associate with Management Group
-
-```bash
-SUB_ID=$(az account list --query "[?name=='iic-lz-azurelocal-001'].id" -o tsv)
-
-az account management-group subscription add \
-  --name "cmp-landing-zones-iic" \
-  --subscription $SUB_ID
-```
-
-</TabItem>
-<TabItem value="powershell" label="PowerShell (EA)">
-
-### PowerShell — Enterprise Agreement
-
-> **When to use**: PowerShell-based automation for EA subscriptions
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Deploy-Subscription.ps1
-# Prerequisites: Az.Subscription module, EA enrollment account access
-# ============================================================================
-
-#Requires -Modules Az.Subscription, Az.Resources
-
-# Load configuration
-$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
-
-$SubName = $config.azure.subscriptions.lab.name
-$LandingZoneMg = $config.azure.management_groups.landing_zone.name
-
-# Get enrollment account
-$enrollmentAccount = Get-AzEnrollmentAccount | Select-Object -First 1
-
-if (-not $enrollmentAccount) {
-    Write-Error "No enrollment account found. Verify EA access."
-    return
-}
-
-Write-Host "Creating subscription: $SubName ..." -ForegroundColor Cyan
-
-# Create subscription
-$result = New-AzSubscriptionAlias `
-    -AliasName $SubName `
-    -SubscriptionName $SubName `
-    -BillingScope $enrollmentAccount.ObjectId `
-    -Workload "Production"
-
-$subId = $result.Properties.SubscriptionId
-Write-Host "  Created: $subId" -ForegroundColor Gray
-
-# Associate with management group
-New-AzManagementGroupSubscription `
-    -GroupId $LandingZoneMg `
-    -SubscriptionId $subId
-
-Write-Host "Subscription created and associated with $LandingZoneMg" -ForegroundColor Green
-```
+:::note Content Pending
+Standalone script content references the toolkit repository.
+:::
 
 </TabItem>
 </Tabs>
@@ -355,6 +244,22 @@ Proceed to [Task 03: Create Resource Groups](./task-03-create-resource-groups)
 - [Move Subscriptions Between Management Groups](https://learn.microsoft.com/en-us/azure/governance/management-groups/manage)
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

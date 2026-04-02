@@ -3,16 +3,26 @@ title: "Task 05: Deploy Windows Admin Center"
 sidebar_label: "Task 05: Deploy WAC"
 sidebar_position: 5
 description: "Deploy and configure Windows Admin Center (WAC) on a dedicated management server for Azure Local cluster management, monitoring, and Azure integration."
-category: Runbook
+category: "Runbook"
 scope: Windows Admin Center deployment and configuration
 purpose: Establish web-based management portal for Azure Local cluster operations
 author: "Hybrid Cloud Solutions"
 created: 2026-04-02
 updated: 2026-04-02
-version: 1.0.0
-tags: [azure-local, wac, windows-admin-center, management, monitoring]
-keywords: [WAC, Windows Admin Center, cluster management, Azure integration, extensions]
-status: active
+version: "1.0.0"
+tags:
+  - azure-local
+  - wac
+  - windows-admin-center
+  - management
+  - monitoring
+keywords:
+  - WAC
+  - Windows Admin Center
+  - cluster management
+  - Azure integration
+  - extensions
+status: "Active"
 ---
 
 import Tabs from '@theme/Tabs';
@@ -219,56 +229,7 @@ The WAC server is deployment-agnostic. Set `wac_deployment_target` in your varia
 - [ ] Azure Monitor forwarding data
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On WAC Server)">
 
-### Direct Script (On WAC Server)
-
-> **When to use**: Run directly on the WAC server — silent WAC installation, no variables.yml access
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Deploy-WAC.ps1
-# Execution: Run ON the WAC server — standalone, no config file access
-# Prerequisites: Windows Server 2019+, internet access
-# ============================================================================
-
-#region CONFIGURATION
-$WacPort      = 443
-$WacDownload  = "https://aka.ms/wacdownload"
-$TempPath     = "C:\Temp\WindowsAdminCenter.msi"
-#endregion CONFIGURATION
-
-$ErrorActionPreference = "Stop"
-
-if (!(Test-Path "C:\Temp")) { New-Item -Path "C:\Temp" -ItemType Directory -Force }
-
-Write-Host "Downloading Windows Admin Center..." -ForegroundColor Cyan
-$ProgressPreference = 'SilentlyContinue'
-Invoke-WebRequest -Uri $WacDownload -OutFile $TempPath
-
-Write-Host "Installing WAC on port $WacPort..." -ForegroundColor Cyan
-$msiArgs = @(
-    "/i", $TempPath,
-    "/qn",
-    "/L*v", "C:\Temp\wac-install.log",
-    "SME_PORT=$WacPort",
-    "SSL_CERTIFICATE_OPTION=generate"
-)
-Start-Process msiexec.exe -ArgumentList $msiArgs -Wait
-
-$svc = Get-Service -Name "ServerManagementGateway" -ErrorAction SilentlyContinue
-if ($svc -and $svc.Status -eq "Running") {
-    Write-Host "WAC installed and running on port $WacPort" -ForegroundColor Green
-} else {
-    Write-Host "WAC service not found or not running — check C:\Temp\wac-install.log" -ForegroundColor Red
-}
-
-Remove-Item $TempPath -Force -ErrorAction SilentlyContinue
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
 ### Orchestrated Script (From Jumpbox via PSRemoting)
@@ -427,6 +388,24 @@ Self-contained. Edit `#region CONFIGURATION` (set `$WacIp` and `$AdminUser`) and
 | PSRemoting fails from jumpbox | WinRM not enabled on WAC server | Run `Enable-PSRemoting -Force` on WAC server |
 
 ---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|--------|
+| 1.0.0 | 2026-04-02 | Azure Local Cloudnology Team | Initial version |
 
 ## Navigation
 

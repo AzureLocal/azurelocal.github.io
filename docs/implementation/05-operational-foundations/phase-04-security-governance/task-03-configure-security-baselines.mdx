@@ -139,53 +139,7 @@ Addressing security recommendations **before** deploying Arc-enabled servers and
  - Configure export to Log Analytics or Event Hub
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```powershell
-# Variables
-$subscriptionId = "<your-subscription-id>"
-
-# Set subscription context
-az account set --subscription $subscriptionId
-
-# Get all security recommendations
-$recommendations = az security assessment list --query "[?status.code=='Unhealthy']" | ConvertFrom-Json
-
-# Display high-severity recommendations
-Write-Host "High Severity Recommendations:" -ForegroundColor Red
-$recommendations | Where-Object { $_.metadata.severity -eq "High" } | ForEach-Object {
- Write-Host " - $($_.displayName)" -ForegroundColor Yellow
- Write-Host " Resource: $($_.resourceDetails.Id)"
-}
-
-# Count by severity
-Write-Host "`nRecommendation Summary:" -ForegroundColor Cyan
-$recommendations | Group-Object { $_.metadata.severity } | Format-Table Name, Count
-
-# Enable soft delete on Key Vault (example remediation)
-$keyVaultName = "kv-azlmgmt-prod-eus2"
-$resourceGroup = "rg-management-prod-eastus2"
-
-az keyvault update `
- --name $keyVaultName `
- --resource-group $resourceGroup `
- --enable-soft-delete true `
- --enable-purge-protection true
-
-Write-Host "✅ Key Vault soft delete and purge protection enabled"
-
-# Enable secure transfer on storage account
-$storageAccountName = "stazlmgmtprodeus2"
-
-az storage account update `
- --name $storageAccountName `
- --resource-group $resourceGroup `
- --https-only true
-
-Write-Host "✅ Storage account secure transfer enabled"
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -250,6 +204,17 @@ if ($keyVault.EnableRbacAuthorization) {
 
 Write-Host "`n✅ Security baseline review complete" -ForegroundColor Green
 ```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
+:::
 
 </TabItem>
 </Tabs>
@@ -320,6 +285,22 @@ Secure score may take up to 24 hours to reflect changes after remediation.
 Proceed to [Task 5: Enable Security Logging](./task-04-enable-security-logging.mdx) to configure security event collection.
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

@@ -1,5 +1,5 @@
 ---
-title: "Task 1: Validate SDN Prerequisites"
+title: "Task 01: Validate SDN Prerequisites"
 sidebar_label: "Task 01: Validate Prerequisites"
 sidebar_position: 1
 description: "Verify network intent compatibility and requirements before enabling SDN on Azure Local"
@@ -101,144 +101,7 @@ Document the following from the portal:
 - AKS workload check
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-Run this script directly on any Azure Local cluster node.
-
-```powershell title="Validate-SDNPrerequisites.ps1 (Run ON Node)"
-#Requires -RunAsAdministrator
-
-<#
-.SYNOPSIS
- Validates prerequisites for enabling SDN on Azure Local.
-.DESCRIPTION
- This script checks version requirements, network intent configuration,
- and Arc connectivity before SDN enablement.
-#>
-
-[CmdletBinding()]
-param()
-
-$ErrorActionPreference = 'Stop'
-
-Write-Host "=" * 60 -ForegroundColor Cyan
-Write-Host "SDN Prerequisites Validation" -ForegroundColor Cyan
-Write-Host "=" * 60 -ForegroundColor Cyan
-
-$results = @{
- VersionCheck = $false
- OSBuildCheck = $false
- ArcConnectionCheck = $false
- NetworkIntentCheck = $false
- WorkloadCheck = $false
-}
-
-# Check Azure Local version
-Write-Host "`n[1/5] Checking Azure Local version..." -ForegroundColor Yellow
-$registration = Get-AzStackHCI
-$version = $registration.ClusterVersion
-Write-Host " Cluster Version: $version"
-
-# Version 2601 = 26.1.x.x pattern
-if ($version -match "^2[6-9]\." -or $version -match "^[3-9][0-9]\.") {
- Write-Host " ✓ Version requirement met" -ForegroundColor Green
- $results.VersionCheck = $true
-} else {
- Write-Host " ✗ Version 2601+ required" -ForegroundColor Red
-}
-
-# Check OS Build
-Write-Host "`n[2/5] Checking OS build version..." -ForegroundColor Yellow
-$osBuild = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuild
-$osUBR = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").UBR
-$fullBuild = "$osBuild.$osUBR"
-Write-Host " OS Build: $fullBuild"
-
-if ([int]$osBuild -ge 26100) {
- Write-Host " ✓ OS build requirement met" -ForegroundColor Green
- $results.OSBuildCheck = $true
-} else {
- Write-Host " ✗ OS build 26100+ required" -ForegroundColor Red
-}
-
-# Check Arc connection
-Write-Host "`n[3/5] Checking Arc connection status..." -ForegroundColor Yellow
-$connectionStatus = $registration.ConnectionStatus
-Write-Host " Connection Status: $connectionStatus"
-
-if ($connectionStatus -eq 'Connected') {
- Write-Host " ✓ Arc connection active" -ForegroundColor Green
- $results.ArcConnectionCheck = $true
-} else {
- Write-Host " ✗ Arc connection required" -ForegroundColor Red
-}
-
-# Check Network Intent configuration
-Write-Host "`n[4/5] Checking Network ATC intent configuration..." -ForegroundColor Yellow
-try {
- $intents = Get-NetIntent
- $intentCount = ($intents | Measure-Object).Count
- Write-Host " Intent Count: $intentCount"
- 
- foreach ($intent in $intents) {
- Write-Host " - $($intent.IntentName): $($intent.TrafficType -join ', ')" -ForegroundColor Gray
- }
- 
- # Check for unsupported configurations
- $hasComputeStorageCombined = $intents | Where-Object { 
- $_.TrafficType -contains 'Compute' -and $_.TrafficType -contains 'Storage' -and $_.TrafficType -notcontains 'Management'
- }
- 
- if ($intentCount -le 3 -and -not $hasComputeStorageCombined) {
- Write-Host " ✓ Network intent configuration compatible" -ForegroundColor Green
- $results.NetworkIntentCheck = $true
- } else {
- Write-Host " ✗ Network intent configuration not supported for SDN" -ForegroundColor Red
- }
-} catch {
- Write-Host " ⚠ Could not retrieve network intents: $_" -ForegroundColor Yellow
-}
-
-# Check for AKS workloads
-Write-Host "`n[5/5] Checking for AKS workloads..." -ForegroundColor Yellow
-try {
- $aksVMs = Get-VM | Where-Object { $_.Name -match "^(aks|kubernetes|k8s)" -or $_.Notes -match "AKS" }
- $aksCount = ($aksVMs | Measure-Object).Count
- 
- if ($aksCount -eq 0) {
- Write-Host " ✓ No AKS workloads detected" -ForegroundColor Green
- $results.WorkloadCheck = $true
- } else {
- Write-Host " ✗ AKS workloads detected ($aksCount VMs) - SDN not compatible" -ForegroundColor Red
- }
-} catch {
- Write-Host " ⚠ Could not check for AKS workloads: $_" -ForegroundColor Yellow
- $results.WorkloadCheck = $true # Assume compatible if we can't check
-}
-
-# Summary
-Write-Host "`n" + "=" * 60 -ForegroundColor Cyan
-Write-Host "Validation Summary" -ForegroundColor Cyan
-Write-Host "=" * 60 -ForegroundColor Cyan
-
-$allPassed = $true
-foreach ($check in $results.GetEnumerator()) {
- $status = if ($check.Value) { "✓ PASS" } else { "✗ FAIL"; $allPassed = $false }
- $color = if ($check.Value) { "Green" } else { "Red" }
- Write-Host " $($check.Key): $status" -ForegroundColor $color
-}
-
-Write-Host "`n"
-if ($allPassed) {
- Write-Host "All prerequisites met. You can proceed with SDN enablement." -ForegroundColor Green
-} else {
- Write-Host "Some prerequisites not met. Address the issues above before enabling SDN." -ForegroundColor Red
-}
-
-return $results
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
 Run this script from the management server to validate SDN prerequisites remotely.
@@ -489,6 +352,22 @@ Complete this checklist before proceeding to SDN enablement:
 If all prerequisites are met, proceed to [Post-Deployment: Deploy SDN](../../04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn.mdx).
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

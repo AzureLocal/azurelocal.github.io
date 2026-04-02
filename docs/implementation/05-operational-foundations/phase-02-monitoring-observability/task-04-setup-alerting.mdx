@@ -95,34 +95,7 @@ Action groups define **who** and **how** to notify when alerts fire. Create thes
 6. Click **Review + create** → **Create**
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-# Variables
-SUBSCRIPTION_ID="{{AZURE_SUBSCRIPTION_ID}}"
-RESOURCE_GROUP="{{AZURE_RESOURCE_GROUP}}"
-SITE_CODE="{{SITE_CODE}}"
-NOC_EMAIL="{{NOC_EMAIL}}"
-
-# Create Action Group for Critical Alerts
-az monitor action-group create \
- --resource-group "$RESOURCE_GROUP" \
- --name "ag-azl-$SITE_CODE-critical" \
- --short-name "AZLCrit" \
- --action email noc-email "$NOC_EMAIL" \
- --tags Environment=Production Application=AzureLocal
-
-# Create Action Group for Warning Alerts
-az monitor action-group create \
- --resource-group "$RESOURCE_GROUP" \
- --name "ag-azl-$SITE_CODE-warning" \
- --short-name "AZLWarn" \
- --action email noc-email "$NOC_EMAIL"
-
-echo "✅ Action groups created"
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -163,6 +136,17 @@ $criticalAG = Set-AzActionGroup `
 
 Write-Host "✅ Action Group created: $($criticalAG.Id)" -ForegroundColor Green
 ```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
+:::
 
 </TabItem>
 </Tabs>
@@ -346,6 +330,22 @@ After setting up alerting:
 4. Document escalation procedures for critical alerts
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 

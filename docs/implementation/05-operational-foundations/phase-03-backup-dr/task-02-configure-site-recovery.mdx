@@ -106,17 +106,7 @@ System Center VMM is optional. Azure Local clusters can be registered directly a
 3. Click **Review + create**
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-# Create Recovery Services vault
-az backup vault create \
- --resource-group "{{AZURE_RESOURCE_GROUP}}" \
- --name "{{RECOVERY_VAULT_NAME}}" \
- --location "{{AZURE_REGION}}"
-```
-
-</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
@@ -132,6 +122,18 @@ $vault = Get-AzRecoveryServicesVault `
  -Name "{{RECOVERY_VAULT_NAME}}"
 Set-AzRecoveryServicesAsrVaultContext -Vault $vault
 ```
+
+</TabItem>
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
+:::
 
 </TabItem>
 </Tabs>
@@ -156,28 +158,7 @@ Create target resources for failed-over VMs:
  - Subnet: `{{DR_SUBNET_NAME}}` with appropriate CIDR
 
 </TabItem>
-<TabItem value="direct" label="Direct Script (On Node)">
 
-```bash
-# Create storage account for replication
-az storage account create \
- --resource-group "{{AZURE_RESOURCE_GROUP}}" \
- --name "{{DR_STORAGE_ACCOUNT}}" \
- --location "{{AZURE_REGION}}" \
- --sku Standard_LRS \
- --kind StorageV2
-
-# Create virtual network for DR
-az network vnet create \
- --resource-group "{{AZURE_RESOURCE_GROUP}}" \
- --name "{{DR_VNET_NAME}}" \
- --location "{{AZURE_REGION}}" \
- --address-prefixes "{{DR_VNET_CIDR}}" \
- --subnet-name "{{DR_SUBNET_NAME}}" \
- --subnet-prefixes "{{DR_SUBNET_CIDR}}"
-```
-
-</TabItem>
 </Tabs>
 
 ### Step 2.3: Create Hyper-V Site
@@ -425,6 +406,22 @@ After configuring Site Recovery:
 
 
 ---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
 
 ## Navigation
 
