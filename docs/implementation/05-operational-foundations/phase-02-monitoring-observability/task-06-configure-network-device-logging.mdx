@@ -1,8 +1,8 @@
 ---
-title: "Task 06: Configure Network Device Logging"
-sidebar_label: "Task 06: Network Device Logging"
-sidebar_position: 6
-description: "Configure syslog and SNMP forwarding from network devices to the NDM Linux server"
+title: "Task 07: Configure Network Device Logging"
+sidebar_label: "Task 07: Network Device Logging"
+sidebar_position: 7
+description: "Configure syslog and SNMP forwarding from network devices to the syslog Linux server"
 category: "Runbook"
 scope: "Configure syslog and SNMP forwarding from network devices to the NDM Linux se..."
 purpose: "Configure syslog and SNMP forwarding from network devices to the NDM Linux server"
@@ -25,21 +25,58 @@ status: "Active"
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Task 06: Configure Network Device Logging
+# Task 07: Configure Network Device Logging
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Network device logging infrastructure   
-> **PURPOSE**: Configure syslog and SNMP from switches/firewalls to NDM server   
+> **PURPOSE**: Configure syslog and SNMP from switches/firewalls to syslog server   
 > **MASTER REFERENCE**: [FortiGate Logging](https://docs.fortinet.com/document/fortigate/7.4.0/administration-guide/707995/logging-to-syslog)
 
 **Status**: Draft
 
 ---
 
-This step configures network devices (switches, firewalls) to forward syslog messages and SNMP traps to the NDM Linux server deployed in Stage 06. This provides centralized logging for network infrastructure monitoring and troubleshooting.
+This step configures network devices (switches, firewalls) to forward syslog messages and SNMP traps to a dedicated syslog Linux server. This provides centralized logging for network infrastructure monitoring and troubleshooting.
+
+---
+
+## Syslog Server Requirements
+
+A dedicated syslog/NDM server must exist before configuring network devices to forward to it.
+
+:::info Syslog Server Can Live Anywhere
+The syslog server is deployment-agnostic. Set `syslog_deployment_target` in your variables to `azure`, `azurelocal`, or `onprem`.
+:::
+
+**Syslog server requirements:**
+
+| Requirement | Value |
+|-------------|-------|
+| OS | Linux (Ubuntu 22.04 LTS or later recommended) |
+| Inbound UDP 514 | Syslog receive from network devices |
+| Inbound UDP 161 | SNMP polling |
+| Inbound UDP 162 | SNMP trap receive |
+| Outbound to Azure Monitor | Required for AMA forwarding |
+| Azure Monitor Agent (AMA) | Installed and configured |
+| Deployment target | `azure` \| `azurelocal` \| `onprem` |
+
+**Capture syslog server details in `config/variables.yml`:**
+
+```yaml
+compute:
+  vms:
+    management:
+      syslog:
+        syslog_hostname: "syslog01"
+        syslog_ip: "10.20.1.50"
+        syslog_fqdn: "syslog01.corp.example.com"
+        syslog_deployment_target: "azure"   # azure | azurelocal | onprem
+```
+
+---
 
 ## Overview
 
@@ -65,8 +102,8 @@ This step configures network devices (switches, firewalls) to forward syslog mes
 
 ## Prerequisites
 
-- NDM Linux server deployed (Stage 06, Step 11)
-- Network connectivity between devices and NDM server
+- Syslog Linux server deployed and accessible (see [Server Requirements](#syslog-server-requirements) above; `compute.vms.management.syslog.syslog_ip`)
+- Network connectivity between network devices and syslog server
 - Firewall rules allowing syslog (UDP 514) and SNMP (UDP 161/162)
 - Administrative access to network devices
 
@@ -405,9 +442,9 @@ You have completed **Phase 17: Monitoring & Observability**.
 
 ## Navigation
 
-| Previous | Up | Next |
-|----------|-----|------|
-| [← Task 05: Deploy OMIMSWAC Monitoring](./task-05-deploy-omimswac-monitoring.mdx) | [Phase 02: Monitoring & Observability](./index.mdx) | [Task 07: Configure Datadog Integration ->](./task-07-configure-datadog-integration.mdx) |
+| Previous | Up |
+|----------|----|
+| [← Task 06: Deploy OMIMSWAC Monitoring](./task-05-deploy-omimswac-monitoring.mdx) | [Phase 02: Monitoring & Observability](./index.mdx) |
 
 ---
 

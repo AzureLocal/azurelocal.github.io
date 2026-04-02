@@ -77,6 +77,71 @@ All tools must produce **identical infrastructure** when given the same configur
 
 ---
 
+## Toolkit Repository Structure
+
+The `azurelocal-toolkit` repository is the reference implementation. All other repos follow the same top-level layout where applicable.
+
+```
+azurelocal-toolkit/
+├── config/
+│   ├── azure/                    # ARM templates, discovery, iDRAC, service principals, utilities
+│   └── variables/                # Variable system (see Variable Standards)
+│       ├── variables.example.yml # Template (committed)
+│       ├── variables.yml         # Your config (gitignored)
+│       ├── reports/              # Generated validation reports
+│       ├── schema/               # JSON Schema, master registry, alias/drift policy files
+│       └── scripts/              # Validation and generation scripts
+├── docs/                         # Repo-local documentation
+├── logs/                         # Runtime logs (gitignored)
+├── pipelines/                    # CI/CD pipeline definitions
+├── project_management/           # Planning docs, ADRs, decision logs
+├── scripts/
+│   ├── common/                   # Shared modules: ansible, arm-templates, bicep, terraform
+│   ├── deploy/                   # Task scripts — mirrors docs/implementation structure (see below)
+│   ├── handover/
+│   │   ├── customer-transfer/    # Handover checklists and artifacts
+│   │   └── documentation/        # Generated customer-facing docs
+│   ├── lifecycle/
+│   │   ├── operations/           # Day-2 operational scripts
+│   │   └── updates/              # Patch and update automation
+│   ├── tools/                    # Contributor tooling (script templates, install helpers)
+│   └── validation/               # Health checks and test suites
+│       ├── arc-tests/
+│       ├── cluster-health/
+│       ├── network-tests/
+│       ├── storage-tests/
+│       └── workload-tests/
+├── src/                          # IaC source: ansible, arm-templates, bicep, terraform
+├── styles/                       # Shared style/lint config
+├── tests/                        # Automated test harness
+└── tools/                        # Repo-level tools (Generate-SolutionConfig.ps1, planning/)
+```
+
+### `scripts/deploy/` Task Contract
+
+Every task folder under `scripts/deploy/` mirrors the path of its corresponding doc in `docs/implementation/` and contains exactly three subdirectories:
+
+```
+scripts/deploy/<part>/<phase>/<task>/
+├── azurecli/     # Azure CLI scripts (.ps1 using az commands, or .sh)
+├── bash/         # Pure Bash scripts (.sh)
+└── powershell/   # PowerShell scripts (.ps1)
+```
+
+Top-level parts and their phases:
+
+| Part | Phases |
+|------|--------|
+| `01-cicd-infra` | `phase-01-cicd-setup` |
+| `02-azure-foundation` | `phase-01-landing-zones`, `phase-02-resource-providers`, `phase-03-rbac-permissions`, `phase-04-azure-management-infrastructure`, `phase-05-identity-security` |
+| `03-onprem-readiness` | `phase-01-active-directory`, `phase-02-enterprise-readiness`, `phase-03-network-infrastructure` |
+| `04-cluster-deployment` | `phase-01-hardware-provisioning`, `phase-02-os-installation`, `phase-03-os-configuration`, `phase-04-arc-registration`, `phase-05-cluster-deployment`, `phase-06-post-deployment` |
+| `05-operational-foundations` | `phase-01-sdn-deployment`, `phase-02-monitoring-observability`, `phase-03-backup-dr`, `phase-04-security-governance`, `phase-05-licensing-telemetry` |
+| `06-testing-validation` | *(tasks directly under part)* |
+| `07-validation-handover` | *(tasks directly under part)* |
+
+---
+
 ## Related Standards
 
 - [Infrastructure Generation & Deployment Process](https://azurelocal.cloud/standards/infrastructure/infrastructure-generation-deployment-process)

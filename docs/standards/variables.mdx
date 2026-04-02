@@ -8,7 +8,7 @@
 
 ## How The Variable System Works
 
-Every AzureLocal repo uses a single YAML config file — `config/variables.yml` — as input to all automation (Terraform, Bicep, PowerShell, Ansible). The file is not committed; you copy the template and fill it in.
+Every AzureLocal repo uses a single YAML config file — `config/variables/variables.yml` — as input to all automation (Terraform, Bicep, PowerShell, Ansible). The file is not committed; you copy the template and fill it in.
 
 ```
                   ┌──────────────────────────────┐
@@ -21,7 +21,7 @@ Every AzureLocal repo uses a single YAML config file — `config/variables.yml` 
  variables.schema.json   alias-policy.json   legacy-compatible-roots.json
        │
        ▼
- variables.example.yml ──copy──▶ variables.yml ──consumed by──▶ Scripts
+  variables/variables.example.yml ──copy──▶ variables/variables.yml ──consumed by──▶ Scripts
        │                              │
        ▼                              ▼
   CI validates (PR)         CanonicalVariable.psm1 / canonical_variables.py
@@ -38,12 +38,12 @@ Every AzureLocal repo uses a single YAML config file — `config/variables.yml` 
 
 ```powershell
 # In any AzureLocal repo
-cp config/variables.example.yml config/variables.yml
+cp config/variables/variables.example.yml config/variables/variables.yml
 ```
 
 ### 2. Edit your values
 
-Open `config/variables.yml` and replace the IIC (Infinite Improbability Corp) example values with your environment's actual values. The file is organized by the same sections as the master registry.
+Open `config/variables/variables.yml` and replace the IIC (Infinite Improbability Corp) example values with your environment's actual values. The file is organized by the same sections as the master registry.
 
 ### 3. Validate locally
 
@@ -54,7 +54,7 @@ pwsh config/variables/scripts/validate-variables.ps1 -StrictUnknown
 
 ### 4. Run your automation
 
-Scripts bootstrap automatically — if `variables.yml` is missing, they copy from the template before continuing.
+Scripts bootstrap automatically — if `config/variables/variables.yml` is missing, they copy from the template before continuing.
 
 ---
 
@@ -123,29 +123,29 @@ All located in `azurelocal-toolkit/config/variables/schema/`.
 
 ```
 config/
-├── variables.example.yml        # Template with IIC examples (committed)
-├── variables.yml                # Your actual config (gitignored)
-└── schema/
-    └── variables.schema.json    # JSON Schema for CI validation
+└── variables/
+    ├── variables.example.yml    # Template with IIC examples (committed)
+    ├── variables.yml            # Your actual config (gitignored)
+    └── schema/
+        └── variables.schema.json  # JSON Schema for CI validation
 ```
 
-### Path Compatibility (Migration Window)
+### Path Reference
 
-| Item | Path |
-|------|------|
-| Canonical runtime config | `config/variables.yml` |
-| Transitional nested path | `config/variables/variables.yml` |
-| Primary template | `config/variables.example.yml` |
-| Nested template | `config/variables/variables.example.yml` |
-
-Some repos still use the nested path during migration. Scripts must handle both.
+| Item | Canonical Path |
+|------|---------------|
+| Runtime config | `config/variables/variables.yml` |
+| Template | `config/variables/variables.example.yml` |
+| JSON Schema | `config/variables/schema/variables.schema.json` |
+| Legacy flat path (deprecated) | `config/variables.yml` |
+| Legacy template (deprecated) | `config/variables.example.yml` |
 
 ### Bootstrap Policy
 
 All config-driven entry-point scripts must implement this sequence:
 
-1. Check for runtime config at the repo's expected path.
-2. If missing, locate template: `config/variables.example.yml` → `config/variables/variables.example.yml`.
+1. Check for runtime config at `config/variables/variables.yml`.
+2. If missing, locate template at `config/variables/variables.example.yml`.
 3. Copy template to runtime path (create parent dirs if needed).
 4. Fail only if no template exists.
 
@@ -250,7 +250,7 @@ $aliases = Get-CanonicalAliasMap
 ```
 
 **Key behaviors:**
-- Auto-bootstraps from `variables.example.yml` if `variables.yml` is missing
+- Auto-bootstraps from `config/variables/variables.example.yml` if `config/variables/variables.yml` is missing
 - Resolves aliases from the master registry (old path → canonical path)
 - Supports array indexing: `compute.cluster_nodes[0].hostname`
 - `Test-RequiredCanonicalVariables` throws with the full list of missing paths
@@ -445,7 +445,7 @@ Classifies variables as canonical, legacy alias, or orphaned based on the mappin
 
 ## Tool-Specific Parameter Derivation
 
-All tool-specific parameter files are derived from `config/variables.yml`:
+All tool-specific parameter files are derived from `config/variables/variables.yml`:
 
 | Tool | Parameter File | How |
 |------|---------------|-----|

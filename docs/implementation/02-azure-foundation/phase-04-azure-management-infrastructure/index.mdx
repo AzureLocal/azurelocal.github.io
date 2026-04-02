@@ -78,8 +78,7 @@ Deploy the complete Azure management infrastructure using the automated CI/CD Pi
 The CI/CD module deploys core infrastructure but has the following limitations:
 
 **Not Included in CI/CD Module:**
-- ❌ **OpenGear Lighthouse Server** — Must be deployed via [Manual Task 11](./02-manual-deployment/task-11-deploy-management-vms)
-- ❌ **Windows Admin Center (WAC) Server** — Must be deployed via [Manual Task 11](./02-manual-deployment/task-11-deploy-management-vms)
+- ❌ **Management VM workloads** — OS-level configuration (AD DS, WAC, etc.) is always manual — see [Management Servers](./03-vm-configuration/)
 
 **Fixed Configuration:**
 - 📌 **Landing Zone**: Uses [single subscription model](../phase-01-landing-zones/)
@@ -106,22 +105,21 @@ For deployments requiring these components or custom landing zones, supplement w
 
 ---
 
-## Step 2: Configure VMs
+## Step 2: Management Servers
 
-After infrastructure is deployed (regardless of deployment method), configure the management VM workloads:
+Capture management server details as variables for use across all deployment phases. Configuration tasks run in Part 5 alongside the services that consume each server.
 
-**👉 [Go to VM Configuration](./03-vm-configuration/)**
+**👉 [Go to Management Servers](./03-vm-configuration/)**
 
-| Task | Component | Classification | Purpose |
-|------|-----------|----------------|----------|
-| 1 | [Configure AD DS](./03-vm-configuration/task-01-configure-adds) | **Required** | Promote DCs, create forest, configure DNS |
-| 2 | [Configure Utility Server](./03-vm-configuration/task-02-configure-utility-server) | **Recommended** | Domain join, install admin tools (jump box) |
-| 3 | [Configure NDM Server](./03-vm-configuration/task-03-configure-ndm-server) | **Recommended** | rsyslog, SNMP trap receiver for Azure Monitor |
-| 4 | [Configure Lighthouse Server](./03-vm-configuration/task-04-configure-lighthouse) | **Recommended** | Docker, OpenGear Lighthouse container |
-| 5 | [Configure WAC](./03-vm-configuration/task-05-configure-wac) | **Recommended** | Windows Admin Center gateway |
+| Server | Variable Key | Role | Configuration Phase |
+|--------|-------------|------|---------------------|
+| Domain Controllers (dc1, dc2) | `compute.vms.management.dc1/dc2` | Active Directory, DNS | Environment-specific |
+| Jumpbox / Utility | `compute.vms.management.jumpbox` | Admin jump server | [Part 5, Phase 02, Task 05](../../05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-wac.mdx) |
+| Windows Admin Center | `compute.vms.management.wac` | Cluster management portal | [Part 5, Phase 02, Task 05](../../05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-wac.mdx) |
+| Syslog / NDM | `compute.vms.management.syslog` | Syslog + SNMP receiver | [Part 5, Phase 02, Task 07](../../05-operational-foundations/phase-02-monitoring-observability/task-07-configure-network-device-logging.mdx) |
 
-:::info
-VM Configuration tasks apply to all deployment methods. Whether you used CI/CD or manual deployment for infrastructure, these steps are always required.
+:::info Deployment-Agnostic
+These servers can reside in Azure, Azure Local, or on-premises. Set `deployment_target: azure | azurelocal | onprem` per server in your variables. See [Management Servers](./03-vm-configuration/) for all variable details.
 :::
 
 ---
@@ -132,9 +130,8 @@ After completing VM configuration, verify:
 
 - [ ] VPN connectivity between Azure and on-premises is operational
 - [ ] Domain Controllers are reachable and DNS resolves correctly
-- [ ] Utility server can RDP to Azure Local cluster nodes
-- [ ] NDM server is receiving syslog/SNMP data from network devices
-- [ ] WAC can connect to Azure Local cluster
+- [ ] Jumpbox can reach Azure Local cluster nodes
+- [ ] Management server variables captured in `config/variables.yml`
 - [ ] Log Analytics Workspace is collecting data
 
 ---
@@ -158,17 +155,16 @@ All components deployed across Steps 1 and 2:
 | Arc Gateway | **Optional** | ✅ | ✅ | Azure Arc hybrid connectivity |
 | Log Analytics Workspace | **Recommended** | ✅ | ✅ | Monitoring and HCI Insights |
 | Key Vault | **Required** | ✅ | ✅ | Secrets management (passwords, keys) |
-| Management VMs | **Required** | ⚠️ Optional | ✅ | DC, Utility, NDM, Lighthouse, WAC VMs |
+| Management VMs | **Required** | ⚠️ Optional | ✅ | DC, Utility/Jumpbox, WAC, Syslog VMs |
 
-#### VM Configuration (Step 2)
+#### Management Servers (Step 2)
 
-| Component | Classification | Purpose |
-|-----------|----------------|----------|
-| Active Directory Domain Services | **Required** | Promote DCs, create forest, configure DNS |
-| Utility Server (Jump Box) | **Recommended** | Domain join, admin tools, RDP gateway |
-| NDM Server | **Recommended** | rsyslog + SNMP collection → Azure Monitor |
-| Lighthouse Server | **Recommended** | OpenGear console server management |
-| Windows Admin Center | **Recommended** | Web-based cluster management portal |
+| Server | Variable Key | Role | Configuration |
+|--------|-------------|------|---------------|
+| Domain Controllers | `compute.vms.management.dc1/dc2` | Active Directory, DNS | Environment-specific |
+| Jumpbox / Utility Server | `compute.vms.management.jumpbox` | Jump server, admin tooling | Part 5, Phase 02, Task 05 |
+| Windows Admin Center | `compute.vms.management.wac` | Web-based cluster management | Part 5, Phase 02, Task 05 |
+| Syslog / NDM Server | `compute.vms.management.syslog` | rsyslog + SNMP → Azure Monitor | Part 5, Phase 02, Task 07 |
 
 ### Cluster Mode (Once per Cluster)
 

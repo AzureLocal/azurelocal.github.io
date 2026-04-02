@@ -23,26 +23,23 @@
 
 | Mode | Config File | Dependencies | Use Case |
 |------|-------------|-------------|----------|
-| Config-driven (Options 2-4) | `config/variables.yml` | Config loader, helpers, Key Vault | Multi-environment automation, CI/CD |
+| Config-driven (Options 2-4) | `config/variables/variables.yml` | Config loader, helpers, Key Vault | Multi-environment automation, CI/CD |
 | Standalone (Option 5) | Inline `#region CONFIGURATION` | None | Demos, single-use, external sharing |
 
 ### Config-Driven Rules
 
-- Read all values from `config/variables.yml` — never hardcode
+- Read all values from `config/variables/variables.yml` — never hardcode
 - Accept `-ConfigPath` parameter (auto-discover if not provided)
 - Use helper functions: `ConvertFrom-Yaml`, `Resolve-KeyVaultRef`, logging
-- If runtime config is missing, auto-create it from `variables.example.yml` before parsing
-- During migration, support repo-specific nested path (`config/variables/variables.yml`) where required
+- If runtime config is missing, auto-create it from `config/variables/variables.example.yml` before parsing
 
 ### Required Bootstrap Sequence
 
 For every config-driven entry point:
 
-1. Resolve repository runtime config path.
+1. Resolve repository runtime config path (`config/variables/variables.yml`).
 2. Check for runtime config file.
-3. If missing, locate template:
-	- `config/variables.example.yml`
-	- `config/variables/variables.example.yml`
+3. If missing, locate template at `config/variables/variables.example.yml`.
 4. Create directories as needed and copy template to runtime path.
 5. Continue execution; fail only when no template is present.
 
@@ -89,7 +86,7 @@ All `Invoke-` scripts must use `[CmdletBinding()]` to enable `-Verbose` and `-De
 | Convention | Rule |
 |-----------|------|
 | IaC tools | Terraform, Bicep, ARM, PowerShell, Ansible |
-| Config source | `config/variables.yml` (single source of truth) |
+| Config source | `config/variables/variables.yml` (single source of truth) |
 | Parameter derivation | All tool-specific param files derived from central config |
 | Idempotency | All scripts must be safe to re-run |
 
