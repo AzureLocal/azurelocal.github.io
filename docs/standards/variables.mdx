@@ -2,13 +2,15 @@
 
 > **Canonical reference:** [Variable Management Standard](https://azurelocal.cloud/standards/variable-management/)  
 > **Full variable catalog:** [Variable Reference](variables)  
-> **Last Updated:** 2026-03-17
+> **Last Updated:** 2026-04-02
 
 ---
 
 ## Overview
 
 This repository uses a **single central configuration file** — `config/variables.yml` — as the source of truth for all deployment automation. Copy from `config/variables.example.yml` to get started.
+
+Runtime automation must bootstrap the config file when it is missing by copying from the repository template.
 
 ---
 
@@ -35,6 +37,34 @@ config/
     └── variables.schema.json    # JSON Schema for CI validation
 ```
 
+### Path Compatibility (Migration Window)
+
+Canonical runtime path is `config/variables.yml`.
+
+Some repositories still use a nested runtime path (`config/variables/variables.yml`) during migration. Scripts in those repos must support bootstrap from either template location and create the expected runtime file for that repo.
+
+| Item | Standard |
+|------|----------|
+| Canonical runtime config path | `config/variables.yml` |
+| Transitional nested path (repo-specific) | `config/variables/variables.yml` |
+| Primary template path | `config/variables.example.yml` |
+| Optional nested template path | `config/variables/variables.example.yml` |
+| Required behavior when runtime config is missing | Auto-create runtime config from available template, then continue |
+
+### Bootstrap Policy (Required)
+
+All config-driven entry-point scripts must implement this sequence:
+
+1. Resolve expected runtime config path for the repository.
+2. If runtime config exists, continue.
+3. If missing, locate template in this order:
+   - `config/variables.example.yml`
+   - `config/variables/variables.example.yml`
+4. Create parent directory (if required), copy template to runtime path, then continue.
+5. Fail only if no template exists.
+
+This behavior prevents first-run failures and keeps CI/local execution consistent.
+
 ---
 
 ## Key Vault Resolution
@@ -49,9 +79,97 @@ security:
 
 ---
 
+## Master Variable Registry
+
+All variable definitions across all repositories are governed by a single **master registry**:
+
+```
+azurelocal-toolkit/config/variables/schema/master-registry.yaml
+```
+
+The registry defines every variable's type, description, constraints, defaults, and which infrastructure type(s) it belongs to. It is the authoritative source — schema files, documentation, and validation tooling are all derived from it.
+
+### Infrastructure Types
+
+Each variable in the registry is scoped to one or more infrastructure types. Only these types are valid:
+
+| Type | Description |
+|------|-------------|
+| `azure_local` | Azure Local hyper-converged clusters (formerly Azure Stack HCI) |
+| `avd_azure` | Azure Virtual Desktop in Azure cloud |
+| `avd_azure_local` | Azure Virtual Desktop on Azure Local |
+| `sofs_azure_local` | Scale-Out File Server guest clusters on Azure Local |
+| `aks_azure_local` | Azure Kubernetes Service on Azure Local |
+| `loadtools` | Performance and load testing tools |
+| `vm_conversion` | VM generation conversion toolkit |
+| `copilot` | AI-assisted operations for Azure Local |
+
+:::danger[Removed Types]
+The following infrastructure types were **removed** as fabricated/hallucinated content and must never be used:
+`wsfc_s2d`, `wsfc_san`, `scvmm`, `arc_vms`, `hyperv_host`, `arc_scvmm`, `arc_hybrid_vms`, `azure_only`
+:::
+
+### Top-Level Sections
+
+The registry organizes variables into these top-level sections:
+
+| # | Section | Purpose |
+|---|---------|----------|
+| 1 | `_metadata` | Registry metadata and infrastructure scenarios |
+| 2 | `infrastructure_scenarios` | Infrastructure type definitions and variable group mappings |
+| 3 | `site` | Site-level config (location, environment, naming) |
+| 4 | `environment` | Environment classification |
+| 5 | `tags` | Azure resource tags |
+| 6 | `azure_platform` | Azure subscription, resource groups, platform config |
+| 7 | `identity` | Entra ID, service principals, managed identities |
+| 8 | `networking` | VNets, subnets, VLANs, DNS, logical networks |
+| 9 | `compute` | VMs, clusters (Azure Local, WSFC/SOFS), cluster nodes |
+| 10 | `storage_accounts` | Azure Storage accounts (witness, diagnostics) |
+| 11 | `cluster_shared_volumes` | S2D CSV volume definitions |
+| 12 | `marketplace_images` | Azure Marketplace VM image references |
+| 13 | `security` | Key Vault, certificates, Defender, policies |
+| 14 | `operations` | Monitoring, updates, backup/DR, policies |
+| 15 | `devops` | GitLab, CI/CD pipeline config |
+
+### WSFC/SOFS Variable Names
+
+The `wsfc_sofs_*` variable prefix is **canonical** and must not be renamed. These variables are consumed at runtime by:
+
+- `Deploy-SOFS-Azure.ps1` (reads `$sofsCfg.wsfc_sofs_*`)
+- `solution-sofs.yml` (deployment config)
+- `variables.tf` (Terraform variable descriptions)
+
+---
+
 ## CI Validation
 
 Every PR validates `config/variables.example.yml` against `config/schema/variables.schema.json` using the `validate-config.yml` workflow.
+
+CI validates templates, while runtime scripts consume `variables.yml`. Do not commit generated `variables.yml` files.
+
+### Registry Validator
+
+The master registry has its own validator that checks all variable paths across repos:
+
+```powershell
+pwsh config/variables/scripts/validate-variables.ps1 -StrictUnknown
+```
+
+This verifies:
+- All variable paths used in `variables.example.yml` exist in the registry
+- No unknown canonical paths (strict mode)
+- Schema structure integrity
+
+### Canonical Variable Accessor
+
+PowerShell scripts can use the `CanonicalVariable` module for type-safe access:
+
+```powershell
+Import-Module helpers/CanonicalVariable.psm1
+Initialize-CanonicalVariables
+$val = Get-CanonicalVariable -Path 'compute.clusters.azure_local.azl_name'
+Test-RequiredCanonicalVariables -Paths @('site.environment') -ScriptName $MyInvocation.MyCommand.Name
+```
 
 ---
 

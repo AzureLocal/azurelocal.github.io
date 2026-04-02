@@ -2,7 +2,7 @@
 
 > **Canonical reference:** [Scripting Standards (full)](https://azurelocal.cloud/standards/scripting/scripting-standards)  
 > **Applies to:** All AzureLocal repositories  
-> **Last Updated:** 2026-03-17
+> **Last Updated:** 2026-04-01
 
 ---
 
@@ -31,6 +31,20 @@
 - Read all values from `config/variables.yml` — never hardcode
 - Accept `-ConfigPath` parameter (auto-discover if not provided)
 - Use helper functions: `ConvertFrom-Yaml`, `Resolve-KeyVaultRef`, logging
+- If runtime config is missing, auto-create it from `variables.example.yml` before parsing
+- During migration, support repo-specific nested path (`config/variables/variables.yml`) where required
+
+### Required Bootstrap Sequence
+
+For every config-driven entry point:
+
+1. Resolve repository runtime config path.
+2. Check for runtime config file.
+3. If missing, locate template:
+	- `config/variables.example.yml`
+	- `config/variables/variables.example.yml`
+4. Create directories as needed and copy template to runtime path.
+5. Continue execution; fail only when no template is present.
 
 ### Standalone Rules
 
