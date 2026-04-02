@@ -159,6 +159,10 @@ const config = {
                     href: 'https://azurelocal.github.io/azurelocal-vmware-migration/',
                   },
                   {
+                    label: 'Nutanix Migration',
+                    href: 'https://azurelocal.github.io/azurelocal-nutanix-migration/',
+                  },
+                  {
                     label: 'VM Conversion Toolkit',
                     href: 'https://azurelocal.github.io/azurelocal-vm-conversion-toolkit/',
                   },
