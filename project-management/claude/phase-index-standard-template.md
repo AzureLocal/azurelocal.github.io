@@ -19,7 +19,7 @@ description: "One-sentence description of this phase's purpose."
 category: "Runbook"
 scope: "Brief scope"
 purpose: "What this phase achieves"
-author: "Azure Local Cloudnology Team"
+author: "AzureLocal Cloud Team Team"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 version: "X.Y.Z"
@@ -262,7 +262,7 @@ After completing [this phase], proceed to [Phase NN+1: Title](../next-phase/inde
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0.0 | YYYY-MM-DD | Azure Local Cloudnology Team | Initial release |
+| 1.0.0 | YYYY-MM-DD | AzureLocal Cloud Team Team | Initial release |
 ```
 
 ---

@@ -20,7 +20,7 @@ Standardize ~137 task pages across the implementation docs (azurelocal.github.io
 | Backup branches | `backup/implementation-standardization-20260324` in both repos |
 | Priority | Parts 1-5 format alignment + toolkit sync FIRST, then Parts 6-8 content |
 | Example company | Infinite Azure Local Corp (IIC), eastus region |
-| Author | Azure Local Cloudnology Team |
+| Author | AzureLocal Cloud Team Team |
 
 ---
 

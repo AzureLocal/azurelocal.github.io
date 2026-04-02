@@ -21,7 +21,7 @@ description: "One-sentence description of what this task accomplishes."
 category: "Runbook"
 scope: "Brief scope description"
 purpose: "What this task achieves"
-author: "Azure Local Cloudnology Team"
+author: "AzureLocal Cloud Team Team"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 version: "X.Y.Z"
@@ -47,7 +47,7 @@ status: "Active"
 | `category` | string | ✅ | Always `"Runbook"` for task pages |
 | `scope` | string | ✅ | Brief scope |
 | `purpose` | string | ✅ | What the task achieves |
-| `author` | string | ✅ | Always `"Azure Local Cloudnology Team"` |
+| `author` | string | ✅ | Always `"AzureLocal Cloud Team Team"` |
 | `created` | date | ✅ | ISO 8601 date |
 | `updated` | date | ✅ | ISO 8601 date — update on every change |
 | `version` | string | ✅ | SemVer format |
@@ -328,8 +328,8 @@ Each tab MUST follow this internal structure:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0.0 | YYYY-MM-DD | Azure Local Cloudnology Team | Initial release |
-| 1.1.0 | YYYY-MM-DD | Azure Local Cloudnology Team | [Brief change description] |
+| 1.0.0 | YYYY-MM-DD | AzureLocal Cloud Team Team | Initial release |
+| 1.1.0 | YYYY-MM-DD | AzureLocal Cloud Team Team | [Brief change description] |
 ```
 
 ### Rules
@@ -337,7 +337,7 @@ Each tab MUST follow this internal structure:
 - Table format (not bullet list)
 - Columns: Version | Date | Author | Changes
 - Most recent version first
-- Author is always "Azure Local Cloudnology Team"
+- Author is always "AzureLocal Cloud Team Team"
 
 ---
 
@@ -416,5 +416,5 @@ When providing example values in code or configuration:
 | Region | eastus |
 | Resource group pattern | `rg-azurelocal-<purpose>-001` |
 | Subscription name | `iic-lz-azurelocal-001` |
-| Domain | `iic.local` |
+| Domain | `contoso.local` |
 | Key Vault | `kv-azurelocal-001` |
