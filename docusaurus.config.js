@@ -275,7 +275,7 @@ const config = {
         copyright: `Copyright © ${new Date().getFullYear()} Azure Local. Designed by <a href="https://www.hybridsolutions.cloud" target="_blank">Hybrid Cloud Solutions</a> and built with Docusaurus.`,
       },
       gtag: {
-        trackingID: 'G-XXXXXXXXXX', // Replace with your GA4 Measurement ID
+        trackingID: 'G-2D9XDHSXJW',
         anonymizeIP: true,
       },
       prism: {
