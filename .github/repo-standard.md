@@ -102,16 +102,13 @@ The ownership model should be broadly consistent across the portfolio, but it do
 
 Every repo must have a root-level `repo-management/` folder with a `README.md`.
 
-Use `repo-management/` for:
+Use `repo-management/` to document **how the repo works**:
 
-- plans
-- checklists
-- roadmaps
-- reports
-- repo-management scripts
-- working notes
+- `setup.md` — branch protection, labels, secrets, CODEOWNERS, replication guide
+- `automation.md` — every GitHub Action: what it does, why, triggers, secrets
+- `scripts/` — repo-management helper scripts
 
-Do not use `repo-management/` as the canonical location for cross-repo standards.
+Do not use `repo-management/` for work tracking (use GitHub Projects), standards (use `standards/`), or user-facing docs.
 
 ---
 
