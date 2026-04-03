@@ -46,6 +46,7 @@ const config = {
           numberPrefixParser: false,
           sidebarPath: './sidebars.js',
           editUrl: 'https://github.com/AzureLocal/',
+          exclude: ['**/*.drawio'],
           lastVersion: '1.0.0',
           versions: {
             current: {
