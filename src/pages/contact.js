@@ -28,30 +28,61 @@ const cardStyle = {
 };
 
 const repoIssueLinks = [
-  { name: 'azurelocal.github.io', label: 'Documentation, guides, runbooks', url: 'https://github.com/AzureLocal/azurelocal.github.io/issues' },
-  { name: 'azurelocal-toolkit', label: 'Deployment scripts and templates', url: 'https://github.com/AzureLocal/azurelocal-toolkit/issues' },
-  { name: 'azurelocal-avd', label: 'Azure Virtual Desktop on Azure Local', url: 'https://github.com/AzureLocal/azurelocal-avd/issues' },
-  { name: 'azurelocal-sofs-fslogix', label: 'SOFS and FSLogix configuration', url: 'https://github.com/AzureLocal/azurelocal-sofs-fslogix/issues' },
-  { name: 'azurelocal-vm-conversion-toolkit', label: 'VM migration and conversion', url: 'https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit/issues' },
-  { name: 'azurelocal-training', label: 'Training curriculum and learning paths', url: 'https://github.com/AzureLocal/azurelocal-training/issues' },
+  {
+    name: 'azurelocal.github.io',
+    label: 'Documentation, guides, runbooks',
+    url: 'https://github.com/AzureLocal/azurelocal.github.io/issues',
+  },
+  {
+    name: 'azurelocal-toolkit',
+    label: 'Deployment scripts and templates',
+    url: 'https://github.com/AzureLocal/azurelocal-toolkit/issues',
+  },
+  {
+    name: 'azurelocal-avd',
+    label: 'Azure Virtual Desktop on Azure Local',
+    url: 'https://github.com/AzureLocal/azurelocal-avd/issues',
+  },
+  {
+    name: 'azurelocal-sofs-fslogix',
+    label: 'SOFS and FSLogix configuration',
+    url: 'https://github.com/AzureLocal/azurelocal-sofs-fslogix/issues',
+  },
+  {
+    name: 'azurelocal-vm-conversion-toolkit',
+    label: 'VM migration and conversion',
+    url: 'https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit/issues',
+  },
+  {
+    name: 'azurelocal-training',
+    label: 'Training curriculum and learning paths',
+    url: 'https://github.com/AzureLocal/azurelocal-training/issues',
+  },
 ];
 
 export default function Contact() {
   return (
-    <Layout title="Contact" description="Contact Azure Local Cloud and Hybrid Cloud Solutions.">
+    <Layout
+      title="Contact"
+      description="Contact Azure Local Cloud and Hybrid Cloud Solutions."
+    >
       <div style={pageStyle}>
         <h1>Contact</h1>
 
         <div style={sectionStyle}>
           <h2>GitHub Discussions</h2>
           <p>
-            The best place to ask questions, share ideas, or start a conversation about Azure Local
-            Cloud content is{' '}
-            <a href="https://github.com/AzureLocal/azurelocal.github.io/discussions" target="_blank" rel="noopener noreferrer">
+            The best place to ask questions, share ideas, or start a
+            conversation about Azure Local Cloud content is{' '}
+            <a
+              href="https://github.com/AzureLocal/azurelocal.github.io/discussions"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               GitHub Discussions
             </a>
-            . Discussions are open to everyone and are indexed publicly, making your question useful
-            to others who may have the same query.
+            . Discussions are open to everyone and are indexed publicly, making
+            your question useful to others who may have the same query.
           </p>
           <p>Use Discussions for:</p>
           <ul>
@@ -65,16 +96,27 @@ export default function Contact() {
         <div style={sectionStyle}>
           <h2>Report Issues</h2>
           <p>
-            Found a bug in a guide, an error in a script, or outdated information? Please open a
-            GitHub Issue in the appropriate repository:
+            Found a bug in a guide, an error in a script, or outdated
+            information? Please open a GitHub Issue in the appropriate
+            repository:
           </p>
           <div style={cardGridStyle}>
             {repoIssueLinks.map((repo) => (
               <div key={repo.name} style={cardStyle}>
                 <strong>
-                  <a href={repo.url} target="_blank" rel="noopener noreferrer">{repo.name}</a>
+                  <a href={repo.url} target="_blank" rel="noopener noreferrer">
+                    {repo.name}
+                  </a>
                 </strong>
-                <p style={{ margin: '4px 0 0', fontSize: '14px', color: 'var(--ifm-color-emphasis-700)' }}>{repo.label}</p>
+                <p
+                  style={{
+                    margin: '4px 0 0',
+                    fontSize: '14px',
+                    color: 'var(--ifm-color-emphasis-700)',
+                  }}
+                >
+                  {repo.label}
+                </p>
               </div>
             ))}
           </div>
@@ -83,8 +125,8 @@ export default function Contact() {
         <div style={sectionStyle}>
           <h2>Contributing</h2>
           <p>
-            Want to fix an error, improve a guide, or add a new section? Contributions via Pull Request
-            are welcome. See the{' '}
+            Want to fix an error, improve a guide, or add a new section?
+            Contributions via Pull Request are welcome. See the{' '}
             <a href="/docs/contributing">Contributing guide</a> for standards,
             branching conventions, and review process.
           </p>
@@ -93,21 +135,30 @@ export default function Contact() {
         <div style={sectionStyle}>
           <h2>Hybrid Cloud Solutions</h2>
           <p>
-            Azure Local Cloud is maintained by <strong>Hybrid Cloud Solutions</strong>, a specialist
-            consultancy focused on Microsoft hybrid cloud infrastructure. For professional services
-            enquiries — including Azure Local design, deployment, and managed services — visit:
+            Azure Local Cloud is maintained by{' '}
+            <strong>Hybrid Cloud Solutions</strong>, a specialist consultancy
+            focused on Microsoft hybrid cloud infrastructure. For professional
+            services enquiries — including Azure Local design, deployment, and
+            managed services — visit:
           </p>
           <ul>
             <li>
               <strong>Website:</strong>{' '}
-              <a href="https://www.hybridsolutions.cloud" target="_blank" rel="noopener noreferrer">
+              <a
+                href="https://www.hybridsolutions.cloud"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 hybridsolutions.cloud
               </a>
             </li>
           </ul>
-          <p style={{ fontSize: '14px', color: 'var(--ifm-color-emphasis-600)' }}>
-            Note: Community questions should be directed to GitHub Discussions rather than to Hybrid
-            Cloud Solutions directly. This ensures answers are visible to the whole community.
+          <p
+            style={{ fontSize: '14px', color: 'var(--ifm-color-emphasis-600)' }}
+          >
+            Note: Community questions should be directed to GitHub Discussions
+            rather than to Hybrid Cloud Solutions directly. This ensures answers
+            are visible to the whole community.
           </p>
         </div>
       </div>

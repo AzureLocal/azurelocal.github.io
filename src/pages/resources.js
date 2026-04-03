@@ -148,22 +148,45 @@ const categoryColors = {
 
 export default function Resources() {
   return (
-    <Layout title="Resources" description="Azure Local Cloud resources — guides, tools, repositories, and reference material.">
+    <Layout
+      title="Resources"
+      description="Azure Local Cloud resources — guides, tools, repositories, and reference material."
+    >
       <div style={pageStyle}>
         <h1>Resources</h1>
-        <p style={{ color: 'var(--ifm-color-emphasis-600)', marginBottom: '40px' }}>
-          Guides, automation tools, solution repositories, and reference material from the Azure Local Cloud project.
+        <p
+          style={{
+            color: 'var(--ifm-color-emphasis-600)',
+            marginBottom: '40px',
+          }}
+        >
+          Guides, automation tools, solution repositories, and reference
+          material from the Azure Local Cloud project.
         </p>
 
         <div style={sectionStyle}>
           <div style={cardGridStyle}>
             {resources.map((resource) => (
               <div key={resource.title} style={cardStyle}>
-                <span style={{ ...badgeStyle, background: categoryColors[resource.category] || '#0078d4' }}>
+                <span
+                  style={{
+                    ...badgeStyle,
+                    background: categoryColors[resource.category] || '#0078d4',
+                  }}
+                >
                   {resource.category}
                 </span>
-                <strong style={{ fontSize: '15px', marginBottom: '6px' }}>{resource.title}</strong>
-                <p style={{ fontSize: '14px', color: 'var(--ifm-color-emphasis-700)', flex: 1, margin: '0 0 12px' }}>
+                <strong style={{ fontSize: '15px', marginBottom: '6px' }}>
+                  {resource.title}
+                </strong>
+                <p
+                  style={{
+                    fontSize: '14px',
+                    color: 'var(--ifm-color-emphasis-700)',
+                    flex: 1,
+                    margin: '0 0 12px',
+                  }}
+                >
                   {resource.desc}
                 </p>
                 <a
@@ -182,19 +205,26 @@ export default function Resources() {
         <div style={sectionStyle}>
           <h2>Standards &amp; Conventions</h2>
           <p>
-            All repositories in the Azure Local Cloud org follow shared standards for documentation,
-            scripting, variable management, and examples. These standards are published in the{' '}
-            <a href="/standards">Standards section</a> of this documentation site and in the{' '}
-            <code>standards/</code> directory of each repository.
+            All repositories in the Azure Local Cloud org follow shared
+            standards for documentation, scripting, variable management, and
+            examples. These standards are published in the{' '}
+            <a href="/standards">Standards section</a> of this documentation
+            site and in the <code>standards/</code> directory of each
+            repository.
           </p>
         </div>
 
         <div style={sectionStyle}>
           <h2>Contributing Resources</h2>
           <p>
-            Want to add a tool, guide, or template to the project? Contributions are welcome. Start
-            with the <a href="/docs/contributing">Contributing guide</a> or open a{' '}
-            <a href="https://github.com/AzureLocal/azurelocal.github.io/discussions" target="_blank" rel="noopener noreferrer">
+            Want to add a tool, guide, or template to the project? Contributions
+            are welcome. Start with the{' '}
+            <a href="/docs/contributing">Contributing guide</a> or open a{' '}
+            <a
+              href="https://github.com/AzureLocal/azurelocal.github.io/discussions"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               GitHub Discussion
             </a>
             .

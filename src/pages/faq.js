@@ -30,7 +30,7 @@ const faqs = [
   },
   {
     q: 'Is this documentation official Microsoft content?',
-    a: 'No. This is a community project, not official Microsoft documentation. For Microsoft\'s official Azure Local documentation, visit learn.microsoft.com/azure/azure-local/. Our guides complement the official docs by providing opinionated, step-by-step deployment runbooks based on real-world deployments.',
+    a: "No. This is a community project, not official Microsoft documentation. For Microsoft's official Azure Local documentation, visit learn.microsoft.com/azure/azure-local/. Our guides complement the official docs by providing opinionated, step-by-step deployment runbooks based on real-world deployments.",
   },
   {
     q: 'What version of Azure Local does this documentation cover?',
@@ -72,12 +72,24 @@ const faqs = [
 
 export default function FAQ() {
   return (
-    <Layout title="FAQ" description="Frequently asked questions about Azure Local Cloud documentation.">
+    <Layout
+      title="FAQ"
+      description="Frequently asked questions about Azure Local Cloud documentation."
+    >
       <div style={pageStyle}>
         <h1>Frequently Asked Questions</h1>
-        <p style={{ color: 'var(--ifm-color-emphasis-600)', marginBottom: '40px' }}>
+        <p
+          style={{
+            color: 'var(--ifm-color-emphasis-600)',
+            marginBottom: '40px',
+          }}
+        >
           Can&apos;t find an answer here?{' '}
-          <a href="https://github.com/AzureLocal/azurelocal.github.io/discussions" target="_blank" rel="noopener noreferrer">
+          <a
+            href="https://github.com/AzureLocal/azurelocal.github.io/discussions"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             Open a GitHub Discussion
           </a>
           .
