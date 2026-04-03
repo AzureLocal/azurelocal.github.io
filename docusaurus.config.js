@@ -54,7 +54,6 @@ const config = {
             },
             '1.0.0': {
               label: '1.0.0',
-              path: '/',
               badge: true,
             },
           },
