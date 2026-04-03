@@ -104,7 +104,7 @@ const config = {
           {
             type: 'docsVersion',
             position: 'left',
-            to: '/docs/intro',
+            to: '/docs/',
             label: 'Docs',
           },
           { to: '/working', label: 'Blog', position: 'left' },
@@ -239,7 +239,7 @@ const config = {
             items: [
               {
                 label: 'Introduction',
-                to: '/docs/intro',
+                to: '/docs/',
               },
             ],
           },
