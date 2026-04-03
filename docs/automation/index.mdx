@@ -2,44 +2,48 @@
 title: "Automation Guide"
 sidebar_label: "Automation Guide"
 sidebar_position: 4
-description: "Automation Guide"
+description: "Structured automation guidance for Azure Local CI/CD infrastructure, pipelines, and tooling."
 ---
 
 # Automation Guide
 
-[![Reference](https://img.shields.io/badge/Type-Reference-purple?style=flat-square)](../index.mdx)
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
-> **DOCUMENT CATEGORY**: Reference 
-> **SCOPE**: Infrastructure-as-Code and CI/CD automation 
-> **PURPOSE**: Centralize automation templates and pipeline configurations 
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Infrastructure-as-Code, CI/CD platform setup, and automation tooling
+> **PURPOSE**: Organize Azure Local automation guidance into a reader-friendly structure aligned to the implementation guide
 > **MASTER REFERENCE**: [Microsoft Learn - Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 **Status**: Active
 
----
+This guide centralizes the automation assets used to deliver Azure Local in a repeatable way. It is structured to mirror the implementation guide: start with orientation, move into CI/CD platform setup, then choose the pipeline platform and tooling that match your operating model.
 
-Infrastructure-as-Code templates, modules, and CI/CD pipeline configurations for automated Azure Local deployments. Three deployment paths are supported, each consuming the same `variables.yml` single source of truth.
+## Start Here
+
+| Step | Purpose | Link |
+|---|---|---|
+| 1 | Understand the guide's boundaries and intended reader | [Purpose and Scope](./01-purpose-and-scope.mdx) |
+| 2 | Learn how to navigate between automation and implementation docs | [How to Use This Guide](./02-how-to-use-this-guide.mdx) |
+| 3 | Build the CI/CD foundation | [Part 1: CI/CD Infrastructure](./01-cicd-infra/) |
+| 4 | Choose a delivery platform | [Part 2: CI/CD Pipelines](./02-cicd-pipelines/) |
+| 5 | Use the tool-specific guides | [Part 3: Automation Guides](./03-automation-guides/) |
 
 ## Deployment Paths
 
-| Path | Azure Resources | On-Prem / Guest Config | Best For |
+| Path | Azure Resources | On-Premises / Guest Configuration | Best For |
 |------|:-:|:-:|---|
-| **Terraform + PowerShell** | Terraform | PowerShell scripts | Teams with existing PowerShell expertise |
-| **Terraform + Ansible** | Terraform | Ansible playbooks | Teams wanting cross-platform config management |
-| **Ansible Only** | `azure.azcollection` | Ansible playbooks | Teams standardizing on Ansible |
+| **Terraform + PowerShell** | Terraform | PowerShell scripts | Teams with existing PowerShell operational workflows |
+| **Terraform + Ansible** | Terraform | Ansible playbooks | Teams preferring declarative configuration management |
+| **Ansible Only** | `azure.azcollection` | Ansible playbooks | Teams standardizing on Ansible across cloud and on-premises |
 
-### Why Three Paths?
+## Why the Guide Is Split into Sections
 
-Terraform manages Azure resources (management groups, VNets, Key Vault, VMs, monitoring, policy), but **cannot** manage:
+- **CI/CD Infrastructure** covers the platform you must build first: source control project, environments, variables, and runners.
+- **CI/CD Pipelines** covers the delivery engine you choose to run on that platform: GitLab, GitHub Actions, or Azure DevOps.
+- **Automation Guides** covers the technical assets those pipelines call: Terraform, Ansible, Bicep, and PowerShell.
 
-- On-premises Active Directory (OU creation, security groups, DNS records)
-- Bare-metal OS configuration (hostname, NIC naming, NTP, domain join)
-- Azure Arc agent bootstrapping on physical nodes
-- Guest OS monitoring agent installation
-- Network switch and BIOS/iDRAC configuration
-
-PowerShell or Ansible fills this gap. Choose the path that matches your team's skills.
+This separation keeps platform setup, delivery orchestration, and tool implementation from being mixed together on the same level of the sidebar.
 
 ## Architecture
 
@@ -56,66 +60,30 @@ PowerShell or Ansible fills this gap. Choose the path that matches your team's s
              │                   │
              ▼                   ▼
       ┌─────────────┐   ┌───────────────┐
-      │  Terraform   │   │   Ansible     │
-      │  Modules     │   │   Roles       │
+      │  Terraform  │   │    Ansible    │
+      │  Modules    │   │    Roles      │
       ├─────────────┤   ├───────────────┤
-      │ landing-zone │   │ ad-preparation│
-      │ networking   │   │ os-config     │
-      │ identity     │   │ arc-register  │
-      │ monitoring   │   │ monitoring    │
-      │ security     │   │ domain-ctrl   │
-      │ compute      │   │ wac-server    │
+      │ landing-zone│   │ ad-preparation│
+      │ networking  │   │ os-config     │
+      │ identity    │   │ arc-register  │
+      │ monitoring  │   │ monitoring    │
+      │ security    │   │ domain-ctrl   │
+      │ compute     │   │ wac-server    │
       └──────┬──────┘   │ syslog        │
              │           └───────┬───────┘
              ▼                   ▼
-      Azure Resources    On-Prem Config
+      Azure Resources      On-Prem Config
 ```
 
-## Contents
+## Section Overview
 
-- **[CI/CD Infrastructure Runbook](./01-cicd-infra/)** — Detailed CI/CD setup, project bootstrap, environment configuration, and runner deployment tasks
-- **[Terraform Modules](./terraform.mdx)** — 6 modules for Azure foundation resources
-- **[Ansible Playbooks](./ansible.mdx)** — 7 roles for on-prem and guest OS configuration
-- **[Bicep Templates](./bicep.mdx)** — Azure Resource Manager templates (future)
-- **[GitLab CI/CD](./gitlab-cicd.mdx)** — Primary pipeline with 7 stages
-- **[GitHub Actions](./github-actions.mdx)** — GitHub workflow equivalent
-- **[Azure DevOps Pipelines](./azure-devops-pipelines.mdx)** — Azure Pipelines equivalent
-
-## Quick Start
-
-### Path 1: Terraform + PowerShell
-
-```bash
-# 1. Bootstrap remote state
-cd src/terraform/backend && terraform init && terraform apply
-
-# 2. Deploy Azure foundation
-cd src/terraform/environments/azure-local
-terraform init && terraform plan && terraform apply
-
-# 3. Run post-Terraform PowerShell configuration
-pwsh scripts/deploy/common/Invoke-PostTerraformConfiguration.ps1 \
-  -ConfigPath config/variables/variables.yml
-```
-
-### Path 2: Terraform + Ansible
-
-```bash
-# 1-2. Same as Path 1 (Terraform for Azure resources)
-
-# 3. Run Ansible for on-prem configuration
-cd src/ansible
-ansible-galaxy collection install -r collections/requirements.yml
-ansible-playbook -i inventory/hosts.yml playbooks/site.yml
-```
-
-### Path 3: Ansible Only
-
-```bash
-cd src/ansible
-ansible-galaxy collection install -r collections/requirements.yml
-ansible-playbook -i inventory/hosts.yml playbooks/site.yml
-```
+| Section | What You Get |
+|---|---|
+| [Purpose and Scope](./01-purpose-and-scope.mdx) | Reader expectations, deployment paths, scope boundaries |
+| [How to Use This Guide](./02-how-to-use-this-guide.mdx) | Reading order and how to combine this guide with the implementation guide |
+| [Part 1: CI/CD Infrastructure](./01-cicd-infra/) | Runner deployment, project setup, environments, and variables |
+| [Part 2: CI/CD Pipelines](./02-cicd-pipelines/) | Platform-specific delivery pipeline models |
+| [Part 3: Automation Guides](./03-automation-guides/) | Tool-specific guidance for Terraform, Ansible, Bicep, and PowerShell |
 
 ## Variable System
 
@@ -137,7 +105,7 @@ All automation code lives in the [azurelocal-toolkit](https://github.com/AzureLo
 |---|---|
 | `src/terraform/` | Terraform modules and root environment |
 | `src/ansible/` | Ansible roles, playbooks, and inventory |
-| `pipelines/` | CI/CD pipeline definitions (GitLab, GitHub, Azure DevOps) |
+| `pipelines/` | CI/CD pipeline definitions |
 | `scripts/deploy/` | PowerShell deployment scripts |
 | `config/variables/` | Central variable system |
 

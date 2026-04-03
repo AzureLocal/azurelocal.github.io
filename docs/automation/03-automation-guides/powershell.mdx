@@ -1,0 +1,104 @@
+---
+title: "PowerShell Scripting Guide"
+sidebar_label: "PowerShell"
+sidebar_position: 5
+description: "PowerShell scripting patterns, helper usage, and variable loading for Azure Local automation."
+---
+
+# PowerShell Scripting Guide
+
+[![Reference](https://img.shields.io/badge/Type-Reference-purple?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![PowerShell](https://img.shields.io/badge/Scripting-PowerShell-5391FE?style=flat-square&logo=powershell)](https://learn.microsoft.com/en-us/powershell/)
+
+> **DOCUMENT CATEGORY**: Reference
+> **SCOPE**: PowerShell automation patterns and helper usage
+> **PURPOSE**: Document how Azure Local PowerShell automation is structured and executed
+> **MASTER REFERENCE**: [Microsoft Learn - PowerShell](https://learn.microsoft.com/en-us/powershell/)
+
+**Status**: Active
+
+## Overview
+
+PowerShell provides the orchestration layer for much of the Azure Local automation estate. It is used to load variables, execute helper-driven workflows, run platform-specific deployment tasks, and bridge stages where Infrastructure as Code tools cannot fully automate the outcome.
+
+## Where PowerShell Fits
+
+| Area | Typical Use |
+|---|---|
+| Variable loading | Read and validate `variables.yml` |
+| Script orchestration | Chain multi-step deployment tasks |
+| Azure automation | Execute `Az` module workflows and helper functions |
+| On-premises execution | Configure nodes, trigger validations, and perform operational tasks |
+| Wrapper scripts | Drive Terraform, Ansible, and external tooling consistently |
+
+## Common Script Patterns
+
+| Pattern | Purpose |
+|---|---|
+| **Direct Script** | Run directly on the target node or management host |
+| **Orchestrated Script** | Execute from a management server across multiple systems |
+| **Standalone Script** | Self-contained task logic for sharing, demos, or one-off execution |
+| **Azure CLI Variant** | PowerShell wrapper around `az` commands where needed |
+
+## Variable Loading
+
+Most PowerShell automation starts by loading the shared configuration:
+
+```powershell
+. scripts/common/utilities/helpers/config-loader.ps1
+$config = Get-Config -ConfigPath "config/variables/variables.yml"
+```
+
+This enables the script to resolve environment-specific values from the central source of truth instead of hard-coding them inline.
+
+## Helper Usage
+
+Common helper functions typically cover:
+
+- Configuration loading and validation
+- Variable lookups by path
+- Exporting values for Terraform and Ansible
+- Logging, transcript capture, and structured output
+- Safety checks and preflight validation
+
+## Execution Guidance
+
+Use PowerShell when you need:
+
+- Strong operational control over sequence and retries
+- Local execution on Windows-based management systems
+- Deep integration with Azure PowerShell modules
+- A wrapper layer around Terraform, Ansible, or Azure CLI tasks
+
+For the execution model used by the main delivery runbook, also see [How to Use This Runbook](../../implementation/02-how-to-use-this-runbook.mdx).
+
+## Repository Areas
+
+| Path | Purpose |
+|---|---|
+| `scripts/common/` | Shared helpers and reusable utilities |
+| `scripts/deploy/` | Deployment phase scripts |
+| `scripts/validate/` | Validation and post-deployment checks |
+| `config/variables/` | Shared configuration consumed by the scripts |
+
+## Example Exports
+
+```powershell
+Export-TerraformTfvars -Config $config -OutputPath "src/terraform/environments/azure-local/terraform.tfvars"
+Export-AnsibleVars -Config $config -OutputPath "src/ansible/inventory/group_vars/all.yml"
+```
+
+## Relationship to Other Guides
+
+- Use [Terraform Modules](./terraform.mdx) when PowerShell is orchestrating Terraform workflows
+- Use [Ansible Playbooks](./ansible.mdx) when PowerShell is driving or preparing Ansible execution
+- Use the [Implementation Guide](../../implementation/index.mdx) for the broader deployment sequence
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Ansible Playbooks](./ansible.mdx) | [Part 3: Automation Guides](./index.mdx) | [Implementation Guide](../../implementation/index.mdx) |
