@@ -1,0 +1,535 @@
+---
+title: "Appendix K: Opengear Config"
+sidebar_label: "Appendix K: Opengear Config"
+sidebar_position: 11
+description: "OpenGear console server configuration templates for Azure Local out-of-band management"
+---
+
+# Appendix K: OpenGear Configuration
+
+[![Reference](https://img.shields.io/badge/Type-Reference-green?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference   
+> **SCOPE**: OpenGear console server configuration   
+> **PURPOSE**: OOB management, Lighthouse enrollment, and serial port configuration   
+> **MASTER REFERENCE**: [OpenGear Documentation](https://opengear.com/support/documentation/)
+
+**Status**: Active
+
+## Overview
+
+This appendix provides OpenGear OM1208-8E-L console server configuration templates for Azure Local deployments. These configurations establish secure out-of-band (OOB) management access to infrastructure devices (switches, firewalls, iDRACs) via Lighthouse remote management.
+
+**Key Design Elements:**
+- **NET1**: Internet-routable uplink for Lighthouse enrollment (DHCP or static)
+- **NET2 + br0 bridge**: OOB management network (192.168.100.0/24, isolated from production)
+- **8-port integrated switch**: Untagged access to iDRACs and infrastructure devices
+- **Lighthouse enrollment**: Centralized management and secure remote access
+- **Security hardening**: Password policies, brute force protection, firewall zones
+
+---
+
+## Required Firewall Ports for Lighthouse Connectivity
+
+:::warning Critical
+These ports must be allowed outbound from OpenGear NET1 interface to the Internet for Lighthouse connectivity.
+:::
+
+| Protocol | Port | Direction | Purpose | Required |
+|----------|------|-----------|---------|----------|
+| **TCP** | **443** | **Outbound** | **HTTPS - Lighthouse management communication** | **✅ YES** |
+| **UDP** | **1194** | **Outbound** | **OpenVPN - Lighthouse VPN tunnel** | **✅ YES** |
+| **UDP** | **51820** | **Outbound** | **WireGuard - Smart Management Fabric (SMF)** | **✅ YES** |
+| UDP | 500 | Outbound | ISAKMP - IPsec (optional) | ⚠️ If using IPsec |
+| UDP | 4500 | Outbound | NAT-T - IPsec NAT Traversal (optional) | ⚠️ If using IPsec |
+
+**Firewall Configuration Requirements:**
+1. **On-Premises Firewall (if present)**: Must allow the above ports outbound from OpenGear NET1 subnet to Internet
+2. **OpenGear Internal Firewall**: Configured in this document (Section 7)
+3. **FortiGate/Edge Firewall**: Must allow OpenGear management traffic (see [Appendix J: Fortinet Configuration](./appendix-j-fortinet-config.mdx))
+
+**Lighthouse FQDN**: `lighthouse.opengear.com` (resolve to public IP, subject to change)
+
+---
+
+## Azure Site-to-Site VPN Routing Considerations
+
+When FortiGate establishes Azure Site-to-Site VPN with BGP routing:
+
+### ✅ DO
+- Allow Azure Jump Host to reach OpenGear OOB management interfaces (br0: 192.168.100.5)
+- Advertise OOB subnet (192.168.100.0/24) via BGP to Azure
+- Enable routing from Azure VNet to OpenGear for remote management post-VPN
+
+### ❌ DO NOT
+- Route Lighthouse traffic (NET1) through Azure VPN - must remain internet-bound
+- Configure default route on NET2/br0 - keeps OOB network isolated
+- Block UDP 1194, 51820, or TCP 443 outbound from NET1
+
+### Routing Priority
+1. **Lighthouse traffic** → NET1 → Internet (via Fabric01 or local internet uplink)
+2. **Azure management traffic** → br0 → FortiGate → Azure VPN → Azure Jump Host
+3. **OOB device traffic** → br0 (stays local, no routing)
+
+---
+
+## Site Variables
+
+Customize for each site:
+
+```bash
+# Site Information
+SITE_CODE="ATL01"
+SITE_NAME="Atlanta Manufacturing"
+
+# NET1 Configuration (Lighthouse uplink)
+NET1_METHOD="dhcp" # or "static"
+NET1_STATIC_IP="" # if static: "10.10.10.5"
+NET1_GATEWAY="" # if static: "10.10.10.1"
+NET1_SUBNET="" # if static: "255.255.255.0"
+
+# NET2/OOB Configuration
+OOB_IP="192.168.100.5"
+OOB_SUBNET="255.255.255.0"
+OOB_NETWORK="192.168.100.0/24"
+
+# Lighthouse Enrollment
+LIGHTHOUSE_URL="https://iic-lighthouse.azurelocal.cloud"
+LIGHTHOUSE_TOKEN="your-enrollment-token-here"
+NODE_NAME="OM-${SITE_CODE}"
+NODE_DESC="${SITE_NAME} Console Server"
+
+# Admin Credentials
+ADMIN_USER="admin-${SITE_CODE}"
+ADMIN_PASS="STORE_IN_KEY_VAULT" # Retrieve from Azure Key Vault
+
+# Serial Port Mappings
+# Port 1-2: Azure Local Nodes
+# Port 3-4: Dell Switches
+# Ports 5-8: Reserved/Future
+```
+
+---
+
+## Complete ogcli Configuration Script
+
+This configuration can be applied via SSH using bash automation scripts or manually via ogcli.
+
+### Section 1: System Settings
+
+```bash
+# Set hostname
+ogcli set system.hostname "OM-${SITE_CODE}"
+
+# Set timezone
+ogcli set system.date_time.time_zone "America/New_York"
+
+# Configure NTP
+ogcli set system.date_time.ntp.enabled true
+ogcli set system.date_time.ntp.servers "time.windows.com,pool.ntp.org"
+
+# Apply system settings
+ogcli apply system
+```
+
+### Section 2: Network Configuration
+
+```bash
+# Configure NET1 (Lighthouse uplink - DHCP example, IPv4 only)
+ogcli set network.connections.net1.ipv4.method dhcp
+ogcli set network.connections.net1.ipv4.gateway_ping_check true
+ogcli set network.connections.net1.ipv4.default_route true
+ogcli set network.connections.net1.ipv6.enabled false
+ogcli apply network.connections.net1
+
+# Configure NET2 (OOB network - Static IP, no default route)
+ogcli set network.connections.net2.ipv4.method static
+ogcli set network.connections.net2.ipv4.address "${OOB_IP}/24"
+ogcli set network.connections.net2.ipv4.default_route false
+ogcli apply network.connections.net2
+
+# Create bridge br0 (Management LAN zone)
+ogcli set network.bridges.br0.members "net2,sw0p1,sw0p2,sw0p3,sw0p4,sw0p5,sw0p6,sw0p7,sw0p8"
+ogcli set network.bridges.br0.ipv4.method manual
+ogcli set network.bridges.br0.ipv4.address "${OOB_IP}/24"
+ogcli set network.bridges.br0.stp.enabled false
+ogcli apply network.bridges.br0
+```
+
+### Section 3: Lighthouse Enrollment
+
+```bash
+ogcli set system.lighthouse.server_url "${LIGHTHOUSE_URL}"
+ogcli set system.lighthouse.enrollment_token "${LIGHTHOUSE_TOKEN}"
+ogcli set system.lighthouse.node_name "${NODE_NAME}"
+ogcli set system.lighthouse.node_description "${NODE_DESC}"
+ogcli apply system.lighthouse
+```
+
+### Section 4: User Management
+
+```bash
+# Create site admin user
+ogcli set system.users.${ADMIN_USER}.password "${ADMIN_PASS}"
+ogcli set system.users.${ADMIN_USER}.role admin
+ogcli set system.users.${ADMIN_USER}.ssh.enabled true
+ogcli set system.users.${ADMIN_USER}.webui.enabled true
+ogcli apply system.users.${ADMIN_USER}
+
+# CRITICAL: Disable root account entirely (vendor best practice)
+ogcli update user root enabled=false
+```
+
+### Section 5: Password Policy
+
+```bash
+ogcli set system.security.password_policy.min_length 12
+ogcli set system.security.password_policy.require_uppercase true
+ogcli set system.security.password_policy.require_lowercase true
+ogcli set system.security.password_policy.require_numbers true
+ogcli set system.security.password_policy.require_special true
+ogcli set system.security.password_policy.expiry_days 90
+ogcli apply system.security.password_policy
+```
+
+### Section 6: Session Timeouts
+
+```bash
+# Enforce session timeouts for security (vendor recommended)
+ogcli set system.security.session_timeout.cli 20
+ogcli set system.security.session_timeout.serial_port 30
+ogcli set system.security.session_timeout.webui 20
+ogcli apply system.security.session_timeout
+```
+
+### Section 7: Brute Force Protection
+
+```bash
+ogcli set system.security.brute_force.enabled true
+ogcli set system.security.brute_force.max_attempts 5
+ogcli set system.security.brute_force.lockout_duration 15
+ogcli apply system.security.brute_force
+```
+
+### Section 8: Firewall Zones and Required Ports
+
+```bash
+# WAN zone (NET1 - Lighthouse/Internet)
+ogcli set system.firewall.zones.WAN.interfaces "net1"
+ogcli set system.firewall.zones.WAN.default_policy reject
+ogcli apply system.firewall.zones.WAN
+
+# LAN zone (br0 - OOB management network)
+ogcli set system.firewall.zones.LAN.interfaces "br0"
+ogcli set system.firewall.zones.LAN.default_policy accept
+ogcli apply system.firewall.zones.LAN
+
+# Allow HTTPS (TCP 443) for Lighthouse management communication
+ogcli set system.firewall.rules.allow_lighthouse_https.protocol tcp
+ogcli set system.firewall.rules.allow_lighthouse_https.dest_port 443
+ogcli set system.firewall.rules.allow_lighthouse_https.action accept
+ogcli apply system.firewall.rules.allow_lighthouse_https
+
+# Allow OpenVPN (UDP 1194) for Lighthouse VPN tunnel
+ogcli set system.firewall.rules.allow_lighthouse_openvpn.protocol udp
+ogcli set system.firewall.rules.allow_lighthouse_openvpn.dest_port 1194
+ogcli set system.firewall.rules.allow_lighthouse_openvpn.action accept
+ogcli apply system.firewall.rules.allow_lighthouse_openvpn
+
+# Allow WireGuard (UDP 51820) for Smart Management Fabric (SMF)
+ogcli set system.firewall.rules.allow_smf_wireguard.protocol udp
+ogcli set system.firewall.rules.allow_smf_wireguard.dest_port 51820
+ogcli set system.firewall.rules.allow_smf_wireguard.action accept
+ogcli apply system.firewall.rules.allow_smf_wireguard
+```
+
+### Section 9: Service Configuration
+
+```bash
+# Disable insecure services
+ogcli set system.services.telnet.enabled false
+ogcli set system.services.http.enabled false
+ogcli set system.services.snmpv1.enabled false
+ogcli set system.services.snmpv2.enabled false
+
+# Enable secure services
+ogcli set system.services.ssh.enabled true
+ogcli set system.services.https.enabled true
+ogcli apply system.services
+```
+
+### Section 10: Serial Port Configuration
+
+```bash
+# Port 1: Azure Local Node 1
+ogcli set services.serial_ports.port1.label "AZL-Node1-${SITE_CODE}"
+ogcli set services.serial_ports.port1.mode console_server
+ogcli set services.serial_ports.port1.baud_rate 115200
+ogcli set services.serial_ports.port1.data_bits 8
+ogcli set services.serial_ports.port1.parity none
+ogcli set services.serial_ports.port1.stop_bits 1
+ogcli set services.serial_ports.port1.flow_control none
+ogcli set services.serial_ports.port1.logging.enabled true
+ogcli set services.serial_ports.port1.logging.level "eventsAndReceivedCharacters"
+ogcli apply services.serial_ports.port1
+
+# Port 2: Azure Local Node 2
+ogcli set services.serial_ports.port2.label "AZL-Node2-${SITE_CODE}"
+ogcli set services.serial_ports.port2.mode console_server
+ogcli set services.serial_ports.port2.baud_rate 115200
+ogcli set services.serial_ports.port2.data_bits 8
+ogcli set services.serial_ports.port2.parity none
+ogcli set services.serial_ports.port2.stop_bits 1
+ogcli set services.serial_ports.port2.flow_control none
+ogcli set services.serial_ports.port2.logging.enabled true
+ogcli set services.serial_ports.port2.logging.level "eventsAndReceivedCharacters"
+ogcli apply services.serial_ports.port2
+
+# Port 3: Dell Switch TOR1
+ogcli set services.serial_ports.port3.label "Switch-TOR1-${SITE_CODE}"
+ogcli set services.serial_ports.port3.mode console_server
+ogcli set services.serial_ports.port3.baud_rate 9600
+ogcli set services.serial_ports.port3.data_bits 8
+ogcli set services.serial_ports.port3.parity none
+ogcli set services.serial_ports.port3.stop_bits 1
+ogcli set services.serial_ports.port3.flow_control none
+ogcli set services.serial_ports.port3.logging.enabled true
+ogcli set services.serial_ports.port3.logging.level "eventsAndReceivedCharacters"
+ogcli apply services.serial_ports.port3
+
+# Port 4: Dell Switch TOR2
+ogcli set services.serial_ports.port4.label "Switch-TOR2-${SITE_CODE}"
+ogcli set services.serial_ports.port4.mode console_server
+ogcli set services.serial_ports.port4.baud_rate 9600
+ogcli set services.serial_ports.port4.data_bits 8
+ogcli set services.serial_ports.port4.parity none
+ogcli set services.serial_ports.port4.stop_bits 1
+ogcli set services.serial_ports.port4.flow_control none
+ogcli set services.serial_ports.port4.logging.enabled true
+ogcli set services.serial_ports.port4.logging.level "eventsAndReceivedCharacters"
+ogcli apply services.serial_ports.port4
+
+# Disable unused serial ports (security hardening)
+ogcli set services.serial_ports.port5.mode disabled
+ogcli set services.serial_ports.port6.mode disabled
+ogcli set services.serial_ports.port7.mode disabled
+ogcli set services.serial_ports.port8.mode disabled
+ogcli apply services.serial_ports
+```
+
+---
+
+## Static IP NET1 Configuration
+
+For sites requiring static IP on the Lighthouse uplink (NET1):
+
+```bash
+# Configure NET1 with static IP
+ogcli set network.connections.net1.ipv4.method static
+ogcli set network.connections.net1.ipv4.address "10.10.10.5/24"
+ogcli set network.connections.net1.ipv4.gateway "10.10.10.1"
+ogcli set network.connections.net1.ipv4.dns_servers "8.8.8.8,1.1.1.1"
+ogcli set network.connections.net1.ipv4.default_route true
+ogcli apply network.connections.net1
+```
+
+---
+
+## OOB Device IP Assignments
+
+Standard IP assignment scheme for all sites:
+
+| Device/Port | IP Address | Notes |
+|-------------|------------|-------|
+| OpenGear OM1208 (br0) | 192.168.100.5/24 | OOB management IP |
+| Firewall A OOB | 192.168.100.6/24 | Connected to sw0p5 |
+| Firewall B OOB | 192.168.100.7/24 | Connected to sw0p6 |
+| Switch TOR1 OOB | 192.168.100.8/24 | Connected to sw0p7 |
+| Switch TOR2 OOB | 192.168.100.9/24 | Connected to sw0p8 |
+| Node 1 iDRAC | 192.168.100.11/24 | Connected to sw0p1 |
+| Node 2 iDRAC | 192.168.100.12/24 | Connected to sw0p2 |
+| Node 3 iDRAC | 192.168.100.13/24 | Connected to sw0p3 (if 3-node) |
+| Node 4 iDRAC | 192.168.100.14/24 | Connected to sw0p4 (if 4-node) |
+
+:::note
+All OOB devices should have:
+- IP address in 192.168.100.0/24 subnet
+- Subnet mask: 255.255.255.0
+- **No default gateway configured** (keeps OOB isolated)
+:::
+
+---
+
+## Configuration Verification
+
+After applying configuration, verify the following:
+
+### Network Connectivity
+
+```bash
+# Verify NET1 has Internet connectivity
+ping -c 4 1.1.1.1
+
+# Verify br0 is up and has correct IP
+ip addr show br0
+
+# Test OOB device connectivity
+ping 192.168.100.11 # iDRAC1
+ping 192.168.100.8 # Switch TOR1
+```
+
+### Lighthouse Enrollment
+
+```bash
+# Check Lighthouse connection status
+ogcli show system.lighthouse.status
+
+# Expected output: status=online, enrolled=true
+```
+
+### Serial Port Status
+
+```bash
+# List all serial ports and their configuration
+ogcli show services.serial_ports
+
+# Verify port labels are correct
+ogcli show services.serial_ports.port1.label
+```
+
+### Security Configuration
+
+```bash
+# Verify root is disabled
+ogcli show system.users.root.ssh.enabled
+ogcli show system.users.root.webui.enabled
+
+# Verify password policy
+ogcli show system.security.password_policy
+
+# Verify brute force protection
+ogcli show system.security.brute_force
+```
+
+---
+
+## Export Configuration for Backup
+
+### Method 1: Via ogcli
+
+```bash
+# Export full configuration to stdout
+ogcli show --all > opengear-config-backup-$(date +%Y%m%d).txt
+
+# Export specific sections
+ogcli show network > network-config.txt
+ogcli show system > system-config.txt
+ogcli show services > services-config.txt
+```
+
+### Method 2: Via WebUI
+
+1. Navigate to **CONFIGURE** > **System** > **Backup/Restore**
+2. Click **Create Backup**
+3. Download the `.tar.gz` file
+4. Store in secure location (Azure Storage, Git repository)
+
+### Method 3: Via SCP
+
+```bash
+# Download configuration archive
+scp admin@192.168.100.5:/etc/config/config.tar.gz ./opengear-backup-ATL01.tar.gz
+```
+
+---
+
+## Import Configuration
+
+### Method 1: Apply via bash script
+
+```bash
+# Copy the configuration script to the OpenGear
+scp opengear-config.sh admin@192.168.100.5:/tmp/
+
+# SSH to OpenGear and execute
+ssh admin@192.168.100.5
+bash /tmp/opengear-config.sh
+```
+
+### Method 2: Via WebUI (Restore Backup)
+
+1. Navigate to **CONFIGURE** > **System** > **Backup/Restore**
+2. Click **Restore Backup**
+3. Upload previously exported `.tar.gz` file
+4. Device will restore and reboot
+
+---
+
+## Troubleshooting
+
+### Cannot reach OOB devices from OpenGear
+
+```bash
+# Verify br0 bridge is up
+ip addr show br0
+
+# Verify NET2 is member of br0
+ogcli show network.bridges.br0.members
+
+# Verify switch ports are in bridge
+brctl show br0
+
+# Ping test
+ping 192.168.100.11
+```
+
+### Lighthouse enrollment failed
+
+```bash
+# Verify NET1 has Internet connectivity
+ping 1.1.1.1
+
+# Check Lighthouse URL is correct
+ogcli show system.lighthouse.server_url
+
+# Verify enrollment token is valid
+ogcli show system.lighthouse.enrollment_token
+
+# Check firewall allows HTTPS outbound
+# Re-enroll
+ogcli apply system.lighthouse
+```
+
+### Cannot SSH to OpenGear
+
+```bash
+# Verify SSH service is enabled
+ogcli show system.services.ssh.enabled
+
+# Check firewall zones
+ogcli show system.firewall.zones
+
+# Verify user has SSH access
+ogcli show system.users.<username>.ssh.enabled
+```
+
+---
+
+## Configuration Management Best Practices
+
+1. **Version Control**: Store all site configurations in Git repository
+2. **Naming Convention**: Use consistent naming: `opengear-config-<SITE_CODE>-<DATE>.sh`
+3. **Credentials**: Never store passwords in configuration files - use Azure Key Vault
+4. **Backup Schedule**: Export configuration after every change
+5. **Testing**: Test configurations in lab before production deployment
+6. **Documentation**: Document all site-specific deviations from standard template
+
+---
+
+## Related Documentation
+
+- [Appendix J: Fortinet Configuration](./appendix-j-fortinet-config.mdx)
+- [Appendix I: Dell BIOS & iDRAC Configuration](./appendix-i-dell-config.mdx)
+- [OpenGear Official Documentation](https://opengear.com/support/documentation/)
+

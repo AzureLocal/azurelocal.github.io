@@ -1,0 +1,327 @@
+---
+title: "Task 03: Validate Configuration"
+sidebar_label: "Task 03: Validate Configuration"
+sidebar_position: 3
+description: "Validate Key Vault access, Log Analytics, and monitoring setup"
+category: "Runbook"
+scope: "Validate Key Vault access, Log Analytics, and monitoring setup"
+purpose: "Validate Key Vault access, Log Analytics, and monitoring setup"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - azure-foundation
+  - management-infrastructure
+keywords:
+  - Validate
+  - Configuration
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Validate Configuration
+
+> **Objective**: Confirm Key Vault access, Log Analytics configuration, and monitoring readiness
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Validate Key Vault access, Log Analytics, and monitoring setup
+> **PURPOSE**: Validate Key Vault access, Log Analytics, and monitoring setup
+> **MASTER REFERENCE**: [Azure Local Deployment Overview](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-introduction)
+
+**Status**: Active
+
+## Key Vault Validation
+
+### 1. Test Secret Operations
+
+**Azure CLI:**
+
+```bash
+# Set a test secret
+az keyvault secret set \
+ --vault-name kv-{cid}-{env}-mgmt \
+ --name deployment-validation \
+ --value "Phase04-Complete-$(date +%Y%m%d)"
+
+# Retrieve the secret
+az keyvault secret show \
+ --vault-name kv-{cid}-{env}-mgmt \
+ --name deployment-validation \
+ --query value -o tsv
+```
+
+**PowerShell:**
+
+```powershell
+# Test from Azure PowerShell
+$SecretValue = ConvertTo-SecureString "TestValue123" -AsPlainText -Force
+Set-AzKeyVaultSecret -VaultName "kv-{cid}-{env}-mgmt" -Name "test-secret" -SecretValue $SecretValue
+
+# Retrieve
+Get-AzKeyVaultSecret -VaultName "kv-{cid}-{env}-mgmt" -Name "test-secret" -AsPlainText
+```
+
+### 2. Verify Access Policies
+
+**Azure Portal:**
+1. Key vaults → Select Key Vault → Access policies
+2. Verify these principals have access:
+ - [ ] Azure Local Cloud management group
+ - [ ] CI/CD service principal (Azure Local Cloud-cicd)
+ - [ ] Deployment administrator accounts
+
+### 3. Check Security Settings
+
+**Azure Portal:** Key Vault → Properties
+
+Verify:
+- [ ] **Soft delete**: Enabled (90-day retention)
+- [ ] **Purge protection**: Enabled (production)
+- [ ] **Public network access**: Enabled or Disabled per policy
+- [ ] **Private endpoint**: Created (if configured)
+
+---
+
+## Log Analytics Validation
+
+### 1. Verify Workspace Configuration
+
+**Azure Portal:**
+1. Log Analytics workspaces → Select workspace
+2. Settings → Workspace configuration
+3. Verify:
+ - [ ] Retention: 30-90 days (per requirements)
+ - [ ] Data cap: Configured if required
+ - [ ] Solutions: Installed if configured
+
+### 2. Test Data Ingestion
+
+**Azure Portal:** Log Analytics → Logs
+
+Run query:
+```kql
+// Check for recent Activity Log entries
+AzureActivity
+| where TimeGenerated > ago(1h)
+| summarize count() by ResourceProvider
+| order by count_ desc
+```
+
+Expected: Shows activity from recent deployment.
+
+### 3. Check Diagnostic Settings
+
+Verify resources sending logs to Log Analytics:
+
+**Azure CLI:**
+```bash
+# Check diagnostic settings for VPN Gateway
+az monitor diagnostic-settings list \
+ --resource /subscriptions/{sub-id}/resourceGroups/{rg-name}/providers/Microsoft.Network/virtualNetworkGateways/{vpn-gw-name}
+```
+
+Verify:
+- [ ] VPN Gateway logs enabled
+- [ ] Bastion logs enabled
+- [ ] Key Vault audit logs enabled
+- [ ] NSG flow logs enabled (if configured)
+
+---
+
+## Monitoring Setup
+
+### 1. Verify Optional Monitoring Servers
+
+If NDM server deployed:
+
+**Azure Portal:**
+1. Virtual machines → NDM server VM
+2. Verify:
+ - [ ] VM running
+ - [ ] Monitoring agent installed
+ - [ ] SNMP configured (if applicable)
+
+### 2. Check Resource Tags
+
+Verify all resources have appropriate tags:
+
+**Azure CLI:**
+```bash
+az resource list \
+ --resource-group rg-{cid}-{env}-{region}-management \
+ --query '[].{Name:name, Tags:tags}' \
+ --output table
+```
+
+Expected tags:
+- `Customer`
+- `Environment`
+- `ManagedBy = "Azure Local Cloud CI/CD"`
+- `CostCenter` (if configured)
+
+---
+
+## Final Validation Checklist
+
+### Key Vault
+- [ ] Secret operations working (set/get)
+- [ ] Access policies correctly configured
+- [ ] Azure Local Cloud group can access
+- [ ] CI/CD service principal can access
+- [ ] Soft delete enabled
+- [ ] Purge protection enabled (production)
+
+### Log Analytics
+- [ ] Workspace active and collecting data
+- [ ] Recent activity logs visible
+- [ ] Retention configured correctly
+- [ ] Diagnostic settings enabled for key resources
+
+### Monitoring
+- [ ] Optional servers running (if deployed)
+- [ ] Resource tags applied
+- [ ] Monitoring agents installed (if configured)
+
+### Overall Deployment
+- [ ] All resources in expected state
+- [ ] Connectivity tests passed
+- [ ] Access controls working
+- [ ] Logging and monitoring operational
+- [ ] Documentation updated with actual values
+
+---
+
+## Post-Deployment Tasks
+
+### 1. Document Deployment Details
+
+Create deployment record:
+```
+Deployment Date: YYYY-MM-DD
+Customer: {Customer Name}
+Environment: {env}
+Region: {region}
+VPN Gateway: vpngw-{cid}-{env}-{region}
+Key Vault: kv-{cid}-{env}-mgmt
+Log Analytics: law-{cid}-{env}-{region}
+Bastion: bas-{cid}-{env}-{region}
+```
+
+### 2. Store Credentials in Key Vault
+
+Store important credentials:
+```bash
+# Local admin password (if applicable)
+az keyvault secret set --vault-name kv-{cid}-{env}-mgmt \
+ --name "vm-admin-password" --value "{secure-password}"
+
+# VPN PSK (if not already stored)
+az keyvault secret set --vault-name kv-{cid}-{env}-mgmt \
+ --name "vpn-psk-cluster-c01" --value "{pre-shared-key}"
+```
+
+### 3. Update Network Documentation
+
+Document for network team:
+- Azure VNet CIDR: `10.100.1.0/24`
+- VPN Gateway public IPs
+- BGP ASN and IPs
+- DNS resolver IP
+
+---
+
+## Completion
+
+**Phase 04 deployment complete!** ✅
+
+All management infrastructure deployed, validated, and ready for Azure Local cluster deployment.
+
+---
+
+## Next Steps
+
+1. **Coordinate with on-premises team** to verify VPN connectivity
+2. **Configure monitoring alerts** in Log Analytics
+3. **Store additional secrets** as needed
+4. Proceed to **[Phase 05: Identity & Security](../../../phase-05-identity-security/)**
+
+---
+
+---
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitHub Actions.
+
+See procedure steps above for GitHub-specific guidance.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitLab CI/CD.
+
+See procedure steps for GitLab-specific guidance.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on Azure DevOps Pipelines.
+
+See procedure steps for Azure DevOps-specific guidance.
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 02 - Test Connectivity](./task-02-test-connectivity.mdx) | [Phase 03 - Validation](./index.mdx) | [Phase 05 - Identity & Security](../../../phase-05-identity-security/) |
+
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Configuration Baseline | `azure.validation.config_baseline` | `production-baseline-v1` |
+| Validation Mode | `azure.validation.mode` | `strict` |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Configuration validation fails | Deployed configuration deviates from expected state | Compare deployed state against configuration baseline |
+| Validation script errors | Missing dependencies or permissions | Ensure validation tools are installed and have required access |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |

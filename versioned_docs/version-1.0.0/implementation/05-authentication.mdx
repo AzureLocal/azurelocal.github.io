@@ -1,0 +1,144 @@
+---
+title: "Authentication Methods"
+sidebar_label: "Authentication"
+sidebar_position: 6
+description: "Authentication options for Azure Local deployment — Azure PowerShell and Azure CLI session setup."
+category: "RUNBOOK"
+scope: "Azure authentication for deployment scripts"
+purpose: "Establish an authenticated Azure session before running deployment scripts"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - authentication
+ - azure-cli
+ - azure-powershell
+keywords:
+ - authentication
+ - Connect-AzAccount
+ - az login
+status: "approved"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Authentication Methods
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Azure authentication for deployment scripts   
+> **PURPOSE**: Establish an authenticated Azure session before running deployment scripts   
+> **MASTER REFERENCE**: [Microsoft Learn — Azure Authentication](https://learn.microsoft.com/en-us/powershell/azure/authenticate-azureps)
+
+**Status**: Active
+
+## Authentication
+
+:::note[Manual Execution]
+This documentation assumes all scripts are run manually. For full CI/CD automation, see the automation section of the toolkit repository. For portal-based tasks, sign in with the credentials provided for the target tenant.
+:::
+
+Before running any deployment script, you must establish an authenticated Azure session targeting the correct tenant and subscription. Choose one of the following authentication methods based on your environment.
+
+Replace the placeholder values below with your tenant and subscription IDs from the infrastructure configuration file (`configs/infrastructure-<env>.yml`).
+
+<Tabs groupId="deployment-method">
+<TabItem value="azure-powershell" label="Azure PowerShell" default>
+
+Use this method when running PowerShell deployment scripts with the Az module.
+
+```powershell
+# Requires: Az.Accounts module 2.0+ | PowerShell 7.0+
+
+# --- Set your environment values ---
+$TenantId = "<your-tenant-id>"
+$SubscriptionId = "<your-subscription-id>"
+
+# Connect to Azure
+Connect-AzAccount -TenantId $TenantId
+
+# Set the active subscription
+Set-AzContext -SubscriptionId $SubscriptionId
+
+# Verify
+Get-AzContext | Format-List Account, Subscription, Tenant, Environment
+```
+
+</TabItem>
+<TabItem value="azure-cli-powershell" label="Azure CLI (PowerShell)">
+
+Use this method when running Azure CLI commands from a PowerShell terminal.
+
+```powershell
+# Requires: Azure CLI 2.50+
+
+# --- Set your environment values ---
+$TenantId = "<your-tenant-id>"
+$SubscriptionId = "<your-subscription-id>"
+
+# Connect to Azure
+az login --tenant $TenantId
+
+# Set the active subscription
+az account set --subscription $SubscriptionId
+
+# Verify
+az account show --output table
+```
+
+</TabItem>
+<TabItem value="azure-cli-bash" label="Azure CLI (Bash)">
+
+Use this method when running Azure CLI commands from a Bash terminal on Linux or macOS.
+
+```bash
+# Requires: Azure CLI 2.50+
+
+# --- Set your environment values ---
+TENANT_ID="<your-tenant-id>"
+SUBSCRIPTION_ID="<your-subscription-id>"
+
+# Connect to Azure
+az login --tenant "$TENANT_ID"
+
+# Set the active subscription
+az account set --subscription "$SUBSCRIPTION_ID"
+
+# Verify
+az account show --output table
+```
+
+</TabItem>
+</Tabs>
+
+:::tip[Device Code Flow]
+For headless or remote sessions (SSH, jump boxes), add the device code flag:
+- **Az PowerShell**: `Connect-AzAccount -TenantId $TenantId -UseDeviceAuthentication`
+- **Azure CLI**: `az login --tenant $TENANT_ID --use-device-code`
+:::
+
+---
+
+> **For session verification, troubleshooting, service principal authentication, and permission transition details, see [Appendix C: Authentication & Session Setup](appendices/appendix-c-auth-setup.mdx).**
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Prerequisites and Assumptions](./04-prerequisites-and-assumptions.mdx) | [Implementation Guide](./index.mdx) | [Azure Foundation](./02-azure-foundation/) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, authentication, azure-cli, azure-powershell
+- Keywords: authentication, Connect-AzAccount, az login
+- Author: Azure Local Cloudnology Team

@@ -1,0 +1,296 @@
+---
+title: "Task 03: Create Resource Groups"
+sidebar_label: "Task 03: Resource Groups"
+sidebar_position: 3
+description: "Create the single resource group for the simplified deployment Azure Local cluster."
+category: "Runbook"
+scope: "Simplified deployment — single resource group"
+purpose: "Create the resource group that holds all Azure Local cluster resources"
+author: "Hybrid Cloud Solutions"
+created: 2026-01-15
+updated: 2026-03-19
+version: "3.0.0"
+tags:
+ - azure-local
+ - phase-01
+ - resource-groups
+ - simplified-deployment
+keywords:
+ - resource group
+ - simplified deployment
+ - naming conventions
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Create Resource Groups
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Simplified deployment — single resource group   
+> **PURPOSE**: Create the resource group that holds all Azure Local cluster resources   
+> **MASTER REFERENCE**: [Microsoft Learn — Resource Groups](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal)
+
+**Status**: Active
+
+## Overview
+
+Create the single resource group that will contain all Azure Local cluster resources. In the simplified deployment model, one resource group provides the primary organizational boundary for access control, cost tracking, and lifecycle management.
+
+### What This Accomplishes
+
+- **Resource container** — single resource group for the entire Azure Local cluster
+- **Access control** — resource group-level RBAC boundary
+- **Cost tracking** — scoped cost allocation for the cluster
+- **Lifecycle management** — coordinated resource deployment and cleanup
+
+:::info Single Subscription vs Full Deployment
+The single subscription deployment creates a **single** resource group for all cluster resources. The full deployment model uses multiple resource groups scoped by function. See the [full deployment path](../full-deployment/) for details.
+:::
+
+## Prerequisites
+
+| Prerequisite | Detail |
+|---|---|
+| **Subscription** | Created and accessible ([Task 02](./task-02-create-subscription)) |
+| **Permissions** | Contributor or Owner role on the subscription |
+| **Authenticated Azure session** | See [Authentication](../../../05-authentication.mdx) |
+| **`variables.yml`** | Configured with subscription ID, resource group name, and region |
+
+## Resource Group Reference
+
+| Attribute | Value | Config Path |
+|-----------|-------|-------------|
+| **Subscription** | Per config | `variables.yml → azure.subscriptions.lab.id` |
+| **Resource Group Name** | Per config | `variables.yml → azure_resources.resource_group_name` |
+| **Region** | Per config | `variables.yml → cluster.location` |
+
+### IIC Example Values
+
+| Attribute | IIC Value |
+|-----------|-----------|
+| Subscription | `iic-lz-azurelocal-001` |
+| Resource Group | `rg-c01-azl-eus-01` |
+| Region | `eastus` |
+
+### Target Structure
+
+```
+cmp-iic-root ← root MG (Task 01)
+└── cmp-landing-zones-iic ← landing zone MG (Task 01)
+ └── iic-lz-azurelocal-001 ← subscription (Task 02)
+ └── rg-c01-azl-eus-01 ← resource group (this task)
+ ├── Azure Local cluster resources
+ ├── Arc-enabled servers
+ ├── Key Vault
+ └── Storage accounts
+```
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example (IIC) |
+|----------|-------------|---------------|
+| Subscription ID | `azure.subscriptions.lab.id` | *(per environment)* |
+| Resource Group Name | `azure_resources.resource_group_name` | `rg-c01-azl-eus-01` |
+| Region | `cluster.location` | `eastus` |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Navigate to Resource Groups**:
+ - In Azure Portal, search for **Resource groups**
+ - Click **+ Create**
+
+2. **Configure the resource group**:
+
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Subscription | `<subscription>` | `variables.yml → azure.subscriptions.lab.id` |
+ | Resource group | `<rg-name>` | `variables.yml → azure_resources.resource_group_name` |
+ | Region | `<region>` | `variables.yml → cluster.location` |
+
+3. **Complete creation**:
+ - Click **Review + create** → verify all fields → **Create**
+
+#### Validation
+
+- [ ] Resource group appears in the correct subscription
+- [ ] Resource group name matches `variables.yml`
+- [ ] Region matches `cluster.location`
+
+#### Links
+
+- [Microsoft Learn — Create Resource Groups (Portal)](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal#create-resource-groups)
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted deployment reading values from `variables.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| PowerShell + Azure CLI | `scripts/deploy/02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-03-create-resource-groups/azure-cli/Deploy-ResourceGroups.azcli.ps1` |
+| Bash + Azure CLI | `scripts/deploy/02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-03-create-resource-groups/bash/az-deploy-resource-group.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Deploy-ResourceGroups.ps1
+# Prerequisites: Az.Resources module, authenticated with Contributor on subscription
+# ============================================================================
+
+#Requires -Modules Az.Resources
+
+# Load configuration
+$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
+
+# Extract values
+$SubscriptionId = $config.azure.subscriptions.lab.id
+$ResourceGroupName = $config.azure_resources.resource_group_name
+$Location = $config.cluster.location
+
+# Set subscription context
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Create resource group
+Write-Host "Creating resource group: $ResourceGroupName" -ForegroundColor Cyan
+
+New-AzResourceGroup -Name $ResourceGroupName -Location $Location -Force | Out-Null
+
+Write-Host "Resource group created successfully" -ForegroundColor Green
+```
+
+#### Validation
+
+```powershell
+Get-AzResourceGroup -Name $ResourceGroupName | Format-List ResourceGroupName, Location, ProvisioningState
+```
+
+**Validation Script**: `scripts/validation/landing-zones/powershell/Test-ResourceGroups.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers, no dependencies.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-ResourceGroup-Standalone.ps1
+# Execution: Run anywhere — fully self-contained, no external dependencies
+# Prerequisites: Az.Resources module, authenticated with Contributor on subscription
+# ============================================================================
+
+#Requires -Modules Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Your subscription ID
+$ResourceGroupName = "rg-c01-azl-eus-01" # Resource group name
+$Location = "eastus" # Azure region
+#endregion CONFIGURATION
+
+# Set subscription context
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Create resource group
+Write-Host "Creating resource group: $ResourceGroupName" -ForegroundColor Cyan
+
+New-AzResourceGroup -Name $ResourceGroupName -Location $Location -Force | Out-Null
+
+Write-Host "Resource group '$ResourceGroupName' created successfully" -ForegroundColor Green
+
+# Verify
+Get-AzResourceGroup -Name $ResourceGroupName | Format-List ResourceGroupName, Location, ProvisioningState
+```
+
+:::info No External Dependencies
+This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `variables.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Troubleshooting
+
+| Symptom | Error | Resolution |
+|---------|-------|------------|
+| Permission denied | `AuthorizationFailed` | Verify Contributor or Owner role on the subscription |
+| Duplicate name | `ResourceGroupAlreadyExists` | RG already exists — verify it's in the correct subscription and region, then move on |
+| Invalid location | `LocationNotAllowed` | Check Azure Policy allowed-locations constraints; confirm `cluster.location` in `variables.yml` |
+| Subscription not found | `SubscriptionNotFound` | Verify `azure.subscriptions.lab.id` in `variables.yml` is correct |
+
+## Next Steps
+
+The single subscription landing zone deployment is complete. All three foundational resources are in place:
+
+- Root management group → landing zone management group → subscription → resource group
+
+Proceed to the next phase of the Azure Foundation deployment.
+
+## References
+
+- [Microsoft Learn — Manage Resource Groups](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal)
+- [Microsoft Learn — Resource Naming Conventions](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming)
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 02 — Create Subscription](./task-02-create-subscription.mdx) | [Single Subscription Deployment Overview](./index.mdx) | [Phase 02 — Resource Providers](../../phase-02-resource-providers/) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-19 by Hybrid Cloud Solutions
+- Version: 3.0.0
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

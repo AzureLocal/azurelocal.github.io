@@ -1,0 +1,495 @@
+---
+title: "Site Assessment"
+sidebar_label: "Site Assessment"
+sidebar_position: 5
+description: "Site readiness assessment for Azure Local infrastructure deployment"
+---
+
+# Site Assessment
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Physical infrastructure evaluation 
+> **PURPOSE**: Assess site readiness for Azure Local deployment 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Local Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Site assessment is a critical discovery phase that evaluates the physical site's readiness for Azure Local deployment. This document consolidates assessment activities for:
+
+- **Active Directory Planning** - Domain architecture, DNS zones, OU structure, and service accounts
+- **Enterprise Network Validation** - Connectivity, firewall rules, and infrastructure verification
+- **Site Network Infrastructure** - VLAN planning, IP allocation, and switch configuration
+
+All assessment outputs feed directly into `variables.yml` and the provisioning stages.
+
+:::tip Assessment Approach
+Complete this assessment **per site** before proceeding to hardware provisioning. For multi-site deployments, repeat the site-specific sections for each location.
+:::
+
+---
+
+## Part 1: Active Directory Planning
+
+**Feeds: Stage 08 (Active Directory Preparation)**
+
+### DNS and Active Directory Domain Information
+
+Gather the following domain and DNS information from the IT team:
+
+| Field | Value | Notes |
+|-------|-------|-------|
+| **External DNS Domain** | `________________________` | Public-facing domain |
+| **Internal AD Domain (FQDN)** | `________________________` | e.g., `Infinite azurelocal Corp.local` or `corp.Infinite azurelocal Corp.com` |
+| **AD Domain NetBIOS Name** | `________________________` | e.g., `Infinite azurelocal Corp` |
+| **AD Forest Functional Level** | ☐ 2016 ☐ 2019 ☐ 2022 | Minimum: Windows Server 2016 |
+| **AD Domain Functional Level** | ☐ 2016 ☐ 2019 ☐ 2022 | Minimum: Windows Server 2016 |
+
+### DNS Zone Configuration
+
+| Zone Type | Zone Name | Purpose |
+|-----------|-----------|---------|
+| **Primary Forward Lookup Zone** | `________________________` | Main AD-integrated zone |
+| **Azure Local Cluster Zone** | `________________________` | e.g., `azlocal.Infinite azurelocal Corp.com` |
+| **Management Reverse Lookup** | `________________________` | e.g., `100.10.10.in-addr.arpa` |
+| **Production Reverse Lookup** | `________________________` | e.g., `200.10.10.in-addr.arpa` |
+
+**DNS Delegation Approach:**
+
+| Approach | Description | Use Case |
+|----------|-------------|----------|
+| ☐ **Subdomain Delegation** | Create delegated zone for Azure Local | Preferred for isolation |
+| ☐ **Conditional Forwarding** | Forward queries to Azure Local DNS | When delegation not possible |
+| ☐ **Full Integration** | Add records to existing zones | Simple environments |
+
+### DNS Server Configuration
+
+| Setting | Primary | Secondary | Notes |
+|---------|---------|-----------|-------|
+| **DNS Server IP** | `____________` | `____________` | AD-integrated recommended |
+| **DNS Forwarders** | `____________` | `____________` | External resolution |
+| **Azure DNS Integration** | ☐ Yes ☐ No | | Private DNS zones |
+
+### OU Structure for Azure Local
+
+Define the Organizational Unit hierarchy for Azure Local objects:
+
+```plaintext
+DC=Infinite azurelocal Corp,DC=com
+└── OU=Azure Local # Root OU for Azure Local
+ ├── OU=Clusters # Cluster computer objects (CNOs, VCOs)
+ │ └── OU={SiteCode} # Per-site cluster objects
+ ├── OU=Servers # Cluster node computer objects
+ │ └── OU={SiteCode} # Per-site server objects
+ ├── OU=Service Accounts # Service accounts for Azure Local
+ ├── OU=Groups # Security groups for RBAC
+ └── OU=Workload VMs # Virtual machine computer objects (optional)
+```
+
+**OU Checklist:**
+
+- [ ] Root OU for Azure Local: `OU=________________________,DC=______,DC=______`
+- [ ] Cluster objects OU: `OU=________________________`
+- [ ] Server objects OU: `OU=________________________`
+- [ ] Service accounts OU: `OU=________________________`
+- [ ] Groups OU: `OU=________________________`
+- [ ] GPO application strategy documented: ☐ Yes ☐ No
+- [ ] GPO exclusions needed: `________________________`
+
+### Service Accounts
+
+Create the following service accounts before deployment:
+
+#### Azure Local Deployment Account
+
+| Setting | Value |
+|---------|-------|
+| **Account Name** | `________________________` (e.g., `svc-azlocal-deploy`) |
+| **Description** | Azure Local cluster deployment service account |
+| **Password Policy** | ☐ Never expires (service account) ☐ Expires: `____` days |
+| **Required Permissions** | |
+| - Domain Admin (temporary, for deployment) | ☐ Yes ☐ No |
+| - Enterprise Admin (multi-domain forests) | ☐ Yes ☐ No |
+| - Local Administrator on nodes | ☐ Required |
+| - Create computer objects in target OUs | ☐ Required |
+| - Modify DNS zones | ☐ Required |
+
+#### Azure Local Lifecycle Management Account
+
+| Setting | Value |
+|---------|-------|
+| **Account Name** | `________________________` (e.g., `svc-azlocal-lifecycle`) |
+| **Description** | Ongoing cluster management and maintenance |
+| **Password Policy** | ☐ Never expires ☐ Expires: `____` days |
+| **Required Permissions** | |
+| - Computer object creation/deletion in OUs | ☐ Required |
+| - DNS record creation/deletion | ☐ Required |
+| - Read/write to Cluster Name Object (CNO) | ☐ Required |
+
+#### Azure Arc Service Account (if separate)
+
+| Setting | Value |
+|---------|-------|
+| **Account Name** | `________________________` (e.g., `svc-arc-azlocal`) |
+| **Description** | Azure Arc agent registration and management |
+| **Required Permissions** | |
+| - Local Administrator on nodes | ☐ Required |
+
+### Group Memberships and Delegation
+
+| Service Account | Domain Groups | Local Groups |
+|-----------------|---------------|--------------|
+| Deployment Account | `________________________` | Local Administrators |
+| Lifecycle Account | `________________________` | Local Administrators |
+| Arc Account | `________________________` | Local Administrators |
+
+**AD Delegation Requirements:**
+
+- [ ] Create/delete computer objects in Azure Local OUs
+- [ ] Reset computer passwords in Azure Local OUs
+- [ ] Read/write all properties of computer objects
+- [ ] Create/delete DNS records in cluster zones
+- [ ] Delegation documentation complete: ☐ Yes ☐ No
+
+---
+
+## Part 2: Enterprise Network Infrastructure Validation
+
+**Feeds: Stage 09 (Enterprise Readiness) and Stage 10 (Network Infrastructure)**
+
+### Network Connectivity Requirements
+
+#### Remote Access Configuration
+
+| Setting | Value | Notes |
+|---------|-------|-------|
+| **VPN Access Required** | ☐ Yes ☐ No | For deployment access |
+| **VPN Type** | ☐ Site-to-site ☐ Point-to-site ☐ ExpressRoute ☐ Other | |
+| **VPN Concentrator/Gateway** | `________________________` | IP or hostname |
+| **Authorized VPN Users/Groups** | `________________________` | |
+| **VPN IP Range** | `________________________` | |
+
+#### Outbound Internet Access
+
+| Method | Configuration | Notes |
+|--------|---------------|-------|
+| ☐ **Direct Internet** | No proxy required | Simplest configuration |
+| ☐ **Proxy Server** | Address: `____________` Port: `______` | |
+| | Authentication: ☐ Yes ☐ No | |
+| | Bypass list: `________________________` | |
+| ☐ **Azure Arc Gateway** | Resource ID: `________________________` | For restricted networks |
+| ☐ **Azure Firewall** | Firewall IP: `________________________` | Enterprise egress |
+
+### Firewall Rules for Azure Endpoints
+
+The following endpoints must be accessible from the management VLAN (HTTPS/443 unless noted):
+
+#### Azure Arc and Azure Local Core Endpoints
+
+| Endpoint Category | FQDNs | Status |
+|-------------------|-------|--------|
+| **Azure Resource Manager** | `management.azure.com` | ☐ Configured ☐ Pending |
+| **Microsoft Entra ID** | `login.microsoftonline.com`, `graph.microsoft.com` | ☐ Configured ☐ Pending |
+| **Azure Arc** | `*.arc.azure.com`, `*.arc.azure.net` | ☐ Configured ☐ Pending |
+| **Azure Local** | `*.azurestackhci.azure.com` | ☐ Configured ☐ Pending |
+| **Azure Storage** | `*.blob.core.windows.net`, `*.table.core.windows.net` | ☐ Configured ☐ Pending |
+| **Azure Key Vault** | `*.vault.azure.net` | ☐ Configured ☐ Pending |
+| **Windows Update** | `*.windowsupdate.com`, `*.update.microsoft.com` | ☐ Configured ☐ Pending |
+
+#### Additional Required Endpoints
+
+| Endpoint Category | FQDNs | Status |
+|-------------------|-------|--------|
+| **Azure Monitor** | `*.ods.opinsights.azure.com`, `*.oms.opinsights.azure.com` | ☐ Configured ☐ Pending |
+| **Microsoft Container Registry** | `mcr.microsoft.com`, `*.data.mcr.microsoft.com` | ☐ Configured ☐ Pending |
+| **Azure Resource Bridge** | `ecpacr.azurecr.io`, `*.dp.kubernetesconfiguration.azure.com` | ☐ Configured ☐ Pending |
+| **NTP** | `time.windows.com` (UDP 123) | ☐ Configured ☐ Pending |
+
+**Firewall Rule Request:**
+- [ ] Firewall rule request submitted: ☐ Yes ☐ No
+- [ ] Firewall rule approval status: ☐ Approved ☐ Pending ☐ Rejected
+- [ ] Change control number: `________________________`
+
+:::info Endpoint Reference
+For the complete list of required endpoints, see [Microsoft Learn - Azure Local Firewall Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements).
+:::
+
+### NTP and DNS Reachability
+
+#### NTP Configuration
+
+| Setting | Primary | Secondary |
+|---------|---------|-----------|
+| **NTP Server** | `________________________` | `________________________` |
+| **NTP Source** | ☐ time.windows.com ☐ Internal NTP ☐ Other | |
+| **UDP 123 Accessible** | ☐ Yes ☐ No | |
+| **NTP Sync Test** | ☐ Pass ☐ Fail | |
+
+**NTP Verification Command:**
+```powershell
+# Test NTP connectivity
+w32tm /stripchart /computer:time.windows.com /samples:3 /dataonly
+```
+
+#### DNS Reachability
+
+| Test | Result | Notes |
+|------|--------|-------|
+| **DNS servers reachable from management VLAN** | ☐ Pass ☐ Fail | |
+| **Internal domain resolution** | ☐ Pass ☐ Fail | `nslookup dc01.Infinite azurelocal Corp.com` |
+| **Azure endpoint resolution** | ☐ Pass ☐ Fail | `nslookup management.azure.com` |
+| **Reverse DNS resolution** | ☐ Pass ☐ Fail | |
+
+**DNS Verification Commands:**
+```powershell
+# Test internal DNS
+nslookup Infinite azurelocal Corp.com
+
+# Test Azure endpoints (should resolve to public IPs)
+nslookup management.azure.com
+nslookup login.microsoftonline.com
+
+# Test reverse DNS
+nslookup 10.10.100.10
+```
+
+### Switch Configuration
+
+#### Switch Inventory
+
+| Setting | Switch 1 | Switch 2 | Notes |
+|---------|----------|----------|-------|
+| **Switch Model** | `____________` | `____________` | e.g., Dell S5248F-ON |
+| **Switch OS Version** | `____________` | `____________` | OS10, DNOS, etc. |
+| **Firmware Version** | `____________` | `____________` | |
+| **Management IP** | `____________` | `____________` | |
+
+#### VLAN Configuration
+
+- [ ] VLANs created on switches: ☐ Yes ☐ No
+- [ ] VLAN trunking configured: ☐ Yes ☐ No
+- [ ] VLAN list verified against site requirements: ☐ Yes ☐ No
+
+#### Link Aggregation (LACP)
+
+| Setting | Value |
+|---------|-------|
+| **LACP Configured for Node Uplinks** | ☐ Yes ☐ No |
+| **LACP Mode** | ☐ Active ☐ Passive |
+| **Port Channel IDs** | `________________________` |
+| **Redundant Uplinks per Node** | ☐ Yes ☐ No |
+
+#### RDMA and QoS Configuration
+
+| Setting | Status | Notes |
+|---------|--------|-------|
+| **RDMA/RoCEv2 Enabled** | ☐ Yes ☐ No ☐ N/A | Required for storage traffic |
+| **DCB (Data Center Bridging)** | ☐ Yes ☐ No ☐ N/A | |
+| **PFC (Priority Flow Control)** | ☐ Yes ☐ No ☐ N/A | |
+| **ETS (Enhanced Transmission Selection)** | ☐ Yes ☐ No ☐ N/A | |
+| **QoS Policy for Storage Traffic** | `________________________` | |
+
+#### Switch Interconnects
+
+| Setting | Status |
+|---------|--------|
+| **Switches Stacked** | ☐ Yes ☐ No |
+| **ISL (Inter-Switch Link) Configured** | ☐ Yes ☐ No |
+| **Redundant ISLs** | ☐ Yes ☐ No |
+
+---
+
+## Part 3: Site Network Infrastructure
+
+**Feeds: Stage 10 (Network Infrastructure Provisioning)**
+
+### VLAN Planning (Per-Site)
+
+Define VLANs and IP ranges for this site:
+
+| VLAN ID | Purpose | IP Range | Mask | Gateway | DHCP | Notes |
+|---------|---------|----------|------|---------|------|-------|
+| `____` | Management | `____________` | `/24` | `____________` | ☐ Yes ☐ No | iDRAC, cluster mgmt |
+| `____` | Storage 1 (S2D) | `____________` | `/24` | N/A | ☐ No | RDMA/non-routed |
+| `____` | Storage 2 (S2D) | `____________` | `/24` | N/A | ☐ No | RDMA/non-routed |
+| `____` | Production VMs | `____________` | `/24` | `____________` | ☐ Yes ☐ No | Production workloads |
+| `____` | Dev/Test VMs | `____________` | `/24` | `____________` | ☐ Yes ☐ No | Dev/Test workloads |
+| `____` | Backup | `____________` | `/24` | `____________` | ☐ Yes ☐ No | Backup traffic |
+
+:::warning IP Reservation
+Reserve a **contiguous block of 6+ management IPs** for Azure Local system use:
+- Cluster management virtual IP (VIP)
+- Azure Resource Bridge IP
+- Arc VM management IPs
+:::
+
+**Site-Specific Validation:**
+- [ ] Site name/ID: `________________________`
+- [ ] VLANs documented in table above: ☐ Yes ☐ No
+- [ ] VLAN IDs approved by network team: ☐ Yes ☐ No
+- [ ] IP ranges do not conflict with existing networks: ☐ Verified ☐ Pending
+
+### IP Address Allocation (Per-Site)
+
+#### Management Network IPs
+
+| Purpose | IP Address | Hostname | Notes |
+|---------|------------|----------|-------|
+| **Cluster Management VIP** | `____________` | `____________` | Cluster virtual IP |
+| **Azure Resource Bridge** | `____________` | `____________` | ARB management |
+| **Reserved IP 1** | `____________` | | Arc VM management |
+| **Reserved IP 2** | `____________` | | Arc VM management |
+| **Reserved IP 3** | `____________` | | Future use |
+| **Reserved IP 4** | `____________` | | Future use |
+
+#### Node Management IPs
+
+| Node | Hostname | Management IP | iDRAC IP |
+|------|----------|---------------|----------|
+| Node 1 | `____________` | `____________` | `____________` |
+| Node 2 | `____________` | `____________` | `____________` |
+| Node 3 | `____________` | `____________` | `____________` |
+| Node 4 | `____________` | `____________` | `____________` |
+
+#### Storage Network IPs (Non-routed)
+
+| Node | Storage Adapter 1 | Storage Adapter 2 |
+|------|-------------------|-------------------|
+| Node 1 | `____________` | `____________` |
+| Node 2 | `____________` | `____________` |
+| Node 3 | `____________` | `____________` |
+| Node 4 | `____________` | `____________` |
+
+### DNS and NTP Configuration (Per-Site)
+
+| Setting | Value |
+|---------|-------|
+| **Primary DNS Server** | `________________________` |
+| **Secondary DNS Server** | `________________________` |
+| **DNS Suffix** | `________________________` |
+| **Cluster DNS Name** | `________________________` (e.g., `cluster01.azlocal.Infinite azurelocal Corp.com`) |
+| **Primary NTP Source** | `________________________` |
+| **Secondary NTP Source** | `________________________` |
+| **Time Zone** | `________________________` |
+
+### Switch Port Assignments (Per-Site)
+
+Document physical port mappings for each node:
+
+#### Node 1 Port Mapping
+
+| Interface | Switch | Port(s) | VLAN(s) | Speed | Notes |
+|-----------|--------|---------|---------|-------|-------|
+| Management NIC | `____` | `______` | `____` | 1/10G | |
+| Storage NIC 1 | `____` | `______` | `____` | 25/100G | RDMA |
+| Storage NIC 2 | `____` | `______` | `____` | 25/100G | RDMA |
+| Compute/VM NIC | `____` | `______` | `____` | 25/100G | Trunk |
+
+#### Node 2 Port Mapping
+
+| Interface | Switch | Port(s) | VLAN(s) | Speed | Notes |
+|-----------|--------|---------|---------|-------|-------|
+| Management NIC | `____` | `______` | `____` | 1/10G | |
+| Storage NIC 1 | `____` | `______` | `____` | 25/100G | RDMA |
+| Storage NIC 2 | `____` | `______` | `____` | 25/100G | RDMA |
+| Compute/VM NIC | `____` | `______` | `____` | 25/100G | Trunk |
+
+*(Repeat for additional nodes)*
+
+---
+
+## Part 4: Azure Tenant Discovery (Automation)
+
+For deployments where Azure resources already exist, use automated discovery to document the current state.
+
+### Azure Tenant Discovery Process
+
+**Script:** `Inventory-AzureTenant.ps1` 
+**Output:** `discovery/azure-inventory.json`
+
+```powershell
+# Authenticate to target tenant
+Connect-AzAccount -Tenant "{{CUSTOMER_TENANT_ID}}"
+
+# Run discovery
+.\scripts\discovery\Inventory-AzureTenant.ps1 `
+ -TenantId "{{CUSTOMER_TENANT_ID}}" `
+ -IncludeRBAC `
+ -Verbose
+```
+
+### What Gets Discovered
+
+| Category | Resources | Details Captured |
+|----------|-----------|------------------|
+| **Identity** | Management Groups, Subscriptions | Hierarchy, state, tenant association |
+| **Compute** | VMs, Disks, Availability Sets | Size, OS, network config |
+| **Networking** | VNets, Subnets, NSGs, NICs | Address spaces, peering, rules |
+| **Storage** | Storage Accounts, File Shares | SKU, encryption, endpoints |
+| **Security** | Key Vaults, Managed Identities | Configuration, access policies |
+| **Monitoring** | Log Analytics, App Insights | Workspace details, retention |
+
+### Review and Import
+
+```powershell
+# View discovery summary
+$discovery = Get-Content discovery/azure-inventory.json | ConvertFrom-Json
+Write-Host "Subscriptions: $($discovery.subscriptions.Count)"
+Write-Host "Resource Groups: $($discovery.resource_groups.Count)"
+Write-Host "VNets: $($discovery.vnets.Count)"
+
+# Preview import (safe WhatIf)
+.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -Azure -WhatIf
+
+# Apply import
+.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -Azure
+```
+
+---
+
+## Assessment Deliverables Checklist
+
+### Active Directory Planning (Part 1)
+
+- [ ] AD domain architecture and DNS zone design documented
+- [ ] OU structure for Azure Local objects approved
+- [ ] Service account requirements matrix complete (names, permissions, groups)
+- [ ] GPO application strategy defined
+- [ ] Password rotation schedule established
+
+### Enterprise Network Validation (Part 2)
+
+- [ ] Network connectivity validated (VPN, firewall, proxy)
+- [ ] Azure endpoint firewall rules approved and configured
+- [ ] NTP and DNS reachability confirmed
+- [ ] Switch configuration documented (VLANs, LACP, RDMA/QoS)
+- [ ] Switch firmware baseline established
+
+### Site Network Infrastructure (Part 3)
+
+- [ ] Per-site VLAN table finalized with IP ranges
+- [ ] IP address allocation completed (management, iDRAC, storage)
+- [ ] DNS and NTP configuration per site documented
+- [ ] Switch port mapping completed per node
+
+### Azure Tenant Discovery (Part 4)
+
+- [ ] Azure tenant discovery completed (if existing resources)
+- [ ] Discovery outputs reviewed and categorized
+- [ ] Relevant resources imported to variables.yml
+
+---
+
+## Next Steps
+
+After completing this site assessment:
+
+1. **Proceed to [Hardware Requirements](./05-hardware-requirements.mdx)** to document hardware specifications
+2. **For multi-site deployments**, see [Multi-Site Planning](./04-multi-site-planning.mdx)
+3. **Begin implementation** with [Phase 08 - Active Directory](../implementation/03-onprem-readiness/phase-01-active-directory/index.mdx)

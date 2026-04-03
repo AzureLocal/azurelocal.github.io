@@ -1,0 +1,362 @@
+---
+title: "Task 03: Configure Enhanced Telemetry"
+sidebar_label: "Task 03: Enhanced Telemetry"
+sidebar_position: 3
+description: "Configure diagnostic level, streaming data client, and EU location settings for Azure Local telemetry"
+category: "Runbook"
+scope: "Configure diagnostic level, streaming data client, and EU location settings f..."
+purpose: "Configure diagnostic level, streaming data client, and EU location settings for Azure Local telemetry"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - licensing
+keywords:
+  - Configure
+  - Enhanced
+  - Telemetry
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Configure Enhanced Telemetry
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Configure diagnostic level, streaming data client, and EU location settings f...
+> **PURPOSE**: Configure diagnostic level, streaming data client, and EU location settings for Azure Local telemetry
+> **MASTER REFERENCE**: [Azure Local Telemetry and Diagnostics](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-cluster)
+
+**Status**: Active
+
+Enhanced telemetry settings enable comprehensive diagnostics, proactive support, and real-time monitoring for Azure Local clusters.
+
+## Overview
+
+Telemetry configuration includes three key settings:
+- **diagnosticLevel**: Controls the amount of diagnostic data sent to Microsoft
+- **streamingDataClient**: Enables real-time streaming of telemetry data
+- **isEULocation**: Configures EU data residency compliance
+
+## Prerequisites
+
+- [ ] Azure Local cluster registered with Azure Arc
+- [ ] Owner or Contributor role on the cluster resource
+- [ ] Understanding of data privacy requirements
+- [ ] Knowledge of data residency requirements (EU vs non-EU)
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
+| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
+| `CLUSTER_NAME` | `cluster.name` | `azl-dal-cl01` |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Steps
+
+1. Navigate to the **Azure portal** → **Azure Arc** → **Azure Local**
+2. Select your cluster resource
+3. Go to **Settings** → **Configuration**
+4. Locate the **Diagnostics** section
+5. Configure the following settings:
+ - **Diagnostic Level**: Select `Enhanced` or `Full`
+ - **Streaming Data**: Toggle to **Enabled**
+ - **EU Data Boundary**: Set based on cluster location
+6. Click **Save**
+
+### Diagnostic Levels
+
+| Level | Data Sent |
+|-------|-----------|
+| Required | Minimum data for cluster health |
+| Enhanced | Additional data for proactive support |
+| Full | Complete diagnostics for troubleshooting |
+
+</TabItem>
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run this script from the management server to configure telemetry remotely.
+
+```powershell title="Configure-EnhancedTelemetry-Orchestrated.ps1 (Run FROM Management Server)"
+#Requires -Modules Az.Accounts, Az.Resources, Az.StackHCI
+
+<#
+.SYNOPSIS
+ Configures enhanced telemetry on an Azure Local cluster from a management server.
+.DESCRIPTION
+ This script connects to Azure and configures telemetry settings including
+ diagnostic level, streaming data, and EU location settings.
+.PARAMETER ClusterResourceId
+ The Azure Resource ID of the Azure Local cluster.
+.PARAMETER SubscriptionId
+ The Azure subscription ID containing the cluster.
+.PARAMETER ResourceGroupName
+ The resource group containing the cluster.
+.PARAMETER ClusterName
+ The name of the Azure Local cluster resource.
+.PARAMETER DiagnosticLevel
+ The diagnostic level to set. Valid values: Basic, Enhanced, Full
+.PARAMETER EnableStreamingData
+ Whether to enable the streaming data client.
+.PARAMETER IsEULocation
+ Whether the cluster is in an EU location.
+#>
+
+[CmdletBinding()]
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ClusterResourceId,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$SubscriptionId,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$ResourceGroupName,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$ClusterName,
+ 
+ [Parameter(Mandatory = $false)]
+ [ValidateSet('Basic', 'Enhanced', 'Full')]
+ [string]$DiagnosticLevel = 'Enhanced',
+ 
+ [Parameter(Mandatory = $false)]
+ [bool]$EnableStreamingData = $true,
+ 
+ [Parameter(Mandatory = $false)]
+ [bool]$IsEULocation = $false
+)
+
+$ErrorActionPreference = 'Stop'
+
+# Connect to Azure if not already connected
+$context = Get-AzContext
+if (-not $context) {
+ Write-Host "Connecting to Azure..." -ForegroundColor Yellow
+ Connect-AzAccount
+}
+
+# Build resource ID if not provided
+if (-not $ClusterResourceId) {
+ if (-not $SubscriptionId -or -not $ResourceGroupName -or -not $ClusterName) {
+ throw "Either ClusterResourceId or (SubscriptionId, ResourceGroupName, ClusterName) must be provided"
+ }
+ $ClusterResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.AzureStackHCI/clusters/$ClusterName"
+}
+
+Write-Host "Configuring telemetry for: $ClusterResourceId" -ForegroundColor Cyan
+
+Write-Host "`nTelemetry settings to apply:" -ForegroundColor Yellow
+Write-Host " Diagnostic Level: $DiagnosticLevel" -ForegroundColor Gray
+Write-Host " Streaming Data: $EnableStreamingData" -ForegroundColor Gray
+Write-Host " EU Location: $IsEULocation" -ForegroundColor Gray
+
+# Get current cluster configuration
+$cluster = Get-AzResource -ResourceId $ClusterResourceId -ExpandProperties
+
+# Update telemetry properties
+$cluster.Properties.reportedProperties = @{
+ diagnosticLevel = $DiagnosticLevel.ToLower()
+ streamingDataClient = if ($EnableStreamingData) { "Enabled" } else { "Disabled" }
+ isEULocation = $IsEULocation
+}
+
+$cluster | Set-AzResource -Force
+
+Write-Host "`nTelemetry configuration applied successfully" -ForegroundColor Green
+
+# Verify settings
+$updatedCluster = Get-AzResource -ResourceId $ClusterResourceId -ExpandProperties
+Write-Host "`nVerified Settings:" -ForegroundColor Cyan
+Write-Host " Diagnostic Level: $($updatedCluster.Properties.reportedProperties.diagnosticLevel)" -ForegroundColor Gray
+Write-Host " Streaming Data: $($updatedCluster.Properties.reportedProperties.streamingDataClient)" -ForegroundColor Gray
+Write-Host " EU Location: $($updatedCluster.Properties.reportedProperties.isEULocation)" -ForegroundColor Gray
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+Copy-paste ready telemetry configuration script — no config file, no helpers.
+
+```powershell title="Configure-EnhancedTelemetry-Standalone.ps1"
+# ============================================================================
+# Script: Configure-EnhancedTelemetry-Standalone.ps1
+# Execution: Run anywhere with Az modules — fully self-contained
+# Prerequisites: Az.Accounts, Az.Resources modules; authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Accounts, Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Azure subscription ID
+$ResourceGroupName = "rg-azurelocal-prod" # Resource group with cluster
+$ClusterName = "azl-cluster-01" # Azure Local cluster name
+$DiagnosticLevel = "Enhanced" # Basic | Enhanced | Full
+$StreamingData = $true # Enable streaming data client
+$IsEULocation = $false # EU data residency compliance
+#endregion CONFIGURATION
+
+$ErrorActionPreference = 'Stop'
+
+# Connect to Azure
+$ctx = Get-AzContext
+if (-not $ctx) { Connect-AzAccount }
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+$ClusterResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.AzureStackHCI/clusters/$ClusterName"
+
+Write-Host "Configuring telemetry for: $ClusterName" -ForegroundColor Cyan
+Write-Host " Diagnostic Level: $DiagnosticLevel" -ForegroundColor Gray
+Write-Host " Streaming Data: $StreamingData" -ForegroundColor Gray
+Write-Host " EU Location: $IsEULocation" -ForegroundColor Gray
+
+$cluster = Get-AzResource -ResourceId $ClusterResourceId -ExpandProperties
+$cluster.Properties.reportedProperties = @{
+ diagnosticLevel = $DiagnosticLevel.ToLower()
+ streamingDataClient = if ($StreamingData) { "Enabled" } else { "Disabled" }
+ isEULocation = $IsEULocation
+}
+$cluster | Set-AzResource -Force
+
+Write-Host "`n✅ Telemetry configuration applied" -ForegroundColor Green
+
+# Verify
+$updated = Get-AzResource -ResourceId $ClusterResourceId -ExpandProperties
+Write-Host "`nVerified Settings:" -ForegroundColor Cyan
+Write-Host " Diagnostic Level: $($updated.Properties.reportedProperties.diagnosticLevel)" -ForegroundColor Gray
+Write-Host " Streaming Data: $($updated.Properties.reportedProperties.streamingDataClient)" -ForegroundColor Gray
+Write-Host " EU Location: $($updated.Properties.reportedProperties.isEULocation)" -ForegroundColor Gray
+```
+
+:::info No External Dependencies
+This script is completely self-contained. Edit the values in the `#region CONFIGURATION` block and run. No `variables.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Diagnostic Level Details
+
+### Basic (Required)
+- Cluster health status
+- Node connectivity information
+- Critical error reporting
+- Minimum data for Azure billing
+
+### Enhanced (Recommended)
+- All Basic data plus:
+- Performance metrics
+- Feature usage statistics
+- Proactive issue detection
+- Support case acceleration
+
+### Full (Troubleshooting)
+- All Enhanced data plus:
+- Detailed diagnostic logs
+- Memory dumps (on request)
+- Complete event logs
+- Deep troubleshooting capability
+
+## EU Data Boundary
+
+For clusters deployed in European Union member states:
+
+```powershell
+# Enable EU data boundary on the cluster
+Set-AzStackHCI -IsEULocation $true
+
+# This ensures:
+# - Telemetry data stays within EU boundaries
+# - Compliance with GDPR requirements
+# - Data processed in EU Azure regions
+```
+
+## Verification
+
+```powershell
+# On the cluster node
+Get-AzStackHCI | Select-Object DiagnosticLevel, StreamingDataClient
+
+# Verify telemetry service
+Get-Service -Name "HciClusterAgentService" | Select-Object Status, StartType
+
+# Check telemetry connectivity
+Test-NetConnection -ComputerName "dc.services.visualstudio.com" -Port 443
+```
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| Telemetry not sending | Verify firewall allows HTTPS to telemetry endpoints |
+| Streaming data failing | Check HciClusterAgentService is running |
+| EU setting not applying | Verify cluster region is set correctly |
+| Diagnostic level reset | Re-apply after cluster updates |
+
+## Telemetry Endpoints
+
+Ensure firewall allows outbound HTTPS (443) to:
+- `dc.services.visualstudio.com`
+- `*.applicationinsights.azure.com`
+- `*.monitor.azure.com`
+- `*.blob.core.windows.net`
+
+## Related Documentation
+
+- [Telemetry and Diagnostics Overview](https://learn.microsoft.com/en-us/azure-stack/hci/concepts/telemetry-and-diagnostics-overview)
+- [Configure Diagnostic Data](https://learn.microsoft.com/en-us/azure-stack/hci/manage/configure-diagnostic-data)
+- [EU Data Boundary](https://learn.microsoft.com/en-us/privacy/eudb/eu-data-boundary-learn)
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 02: Windows Server Subscription](./task-02-activate-windows-server-subscription.mdx) | [Phase 05: Licensing & Telemetry](./index.mdx) | [Part 06: Testing & Validation →](../../06-testing-validation/index.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

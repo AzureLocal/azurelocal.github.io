@@ -1,0 +1,279 @@
+---
+title: "Appendix C: Authentication & Session Setup"
+sidebar_label: "Appendix C: Auth Setup"
+sidebar_position: 3
+description: "Azure authentication options for Azure PowerShell, Azure CLI, and service principal authentication"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Appendix C: Authentication & Session Setup
+
+[![Reference](https://img.shields.io/badge/Type-Reference-green?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference   
+> **SCOPE**: Authentication setup   
+> **PURPOSE**: Azure authentication options   
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Auth](https://learn.microsoft.com/en-us/powershell/azure/authenticate-azureps)
+
+**Status**: Active
+
+This appendix consolidates the authentication options used throughout the runbook so you can quickly establish a valid Azure session in your preferred shell.
+
+:::tip Before You Begin
+Ensure you have the appropriate Azure permissions for the stage you're executing. Most Azure Foundation stages require **Contributor** or **Owner** role at the subscription level.
+:::
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="azure-powershell--windows-powershell" label="Azure PowerShell (Windows/PowerShell)" default>
+Use this method when running PowerShell scripts on Windows or in PowerShell Core with the Az module.
+
+```powershell title="Connect-AzureSession.ps1"
+# Variables - Update these to match your environment
+$TenantId = "your-tenant-id-here" # Azure AD Tenant ID
+$SubscriptionId = "your-subscription-id" # Target Azure Subscription ID
+
+# Connect to Azure (interactive login)
+Connect-AzAccount -TenantId $TenantId
+
+# Set the subscription context
+Set-AzContext -SubscriptionId $SubscriptionId
+
+# Verify connection
+Write-Host "Connected to Azure:" -ForegroundColor Green
+Get-AzContext | Select-Object Name, Account, Environment, Subscription, Tenant
+```
+
+### Device Code Authentication (Headless/Remote Sessions)
+
+Use device code authentication when running from a remote session without browser access:
+
+```powershell title="Connect with Device Code"
+Connect-AzAccount -TenantId $TenantId -SubscriptionId $SubscriptionId -DeviceCode
+```
+
+</TabItem>
+<TabItem value="azcli-powershell" label="Azure CLI in PowerShell">
+Use this method when running Azure CLI commands from a PowerShell terminal.
+
+```powershell title="connect-azure-session-cli.ps1"
+# Variables - Update these to match your environment
+$TenantId = "your-tenant-id-here" # Azure AD Tenant ID
+$SubscriptionId = "your-subscription-id" # Target Azure Subscription ID
+
+# Connect to Azure
+az login --tenant $TenantId
+
+# Set the subscription context
+az account set --subscription $SubscriptionId
+
+# Verify connection
+Write-Host "Connected to Azure:" -ForegroundColor Green
+az account show --output table
+```
+
+</TabItem>
+<TabItem value="azcli-bash" label="Azure CLI (Bash)">
+Use this method when running Azure CLI commands from a Bash terminal on Linux or macOS.
+
+```bash title="connect-azure-session.sh"
+#!/bin/bash
+
+# Variables - Update these to match your environment
+TENANT_ID="your-tenant-id-here" # Azure AD Tenant ID
+SUBSCRIPTION_ID="your-subscription-id" # Target Azure Subscription ID
+
+# Connect to Azure
+az login --tenant "$TENANT_ID"
+
+# Set the subscription context
+az account set --subscription "$SUBSCRIPTION_ID"
+
+# Verify connection
+echo "Connected to Azure:"
+az account show --output table
+```
+
+</TabItem>
+<TabItem value="service-principal-authentication" label="Service Principal Authentication">
+Use service principal authentication for automation, CI/CD pipelines, and non-interactive scenarios.
+
+### Azure PowerShell with Service Principal
+
+```powershell title="Connect with Service Principal (Az Module)"
+# Variables
+$TenantId = "your-tenant-id-here"
+$SubscriptionId = "your-subscription-id"
+$SpnAppId = "your-spn-app-id"
+$SpnSecret = "your-spn-secret" # Retrieve from Key Vault in production!
+
+# Create credential object
+$SecurePassword = ConvertTo-SecureString $SpnSecret -AsPlainText -Force
+$Credential = New-Object System.Management.Automation.PSCredential($SpnAppId, $SecurePassword)
+
+# Connect using service principal
+Connect-AzAccount -ServicePrincipal -TenantId $TenantId -Credential $Credential -SubscriptionId $SubscriptionId
+
+# Verify connection
+Get-AzContext
+```
+
+### Azure CLI with Service Principal
+
+```bash title="Connect with Service Principal (Azure CLI)"
+# Variables
+TENANT_ID="your-tenant-id-here"
+SUBSCRIPTION_ID="your-subscription-id"
+SPN_APP_ID="your-spn-app-id"
+SPN_SECRET="your-spn-secret" # Retrieve from Key Vault in production!
+
+# Connect using service principal
+az login --service-principal \
+ --username "$SPN_APP_ID" \
+ --password "$SPN_SECRET" \
+ --tenant "$TENANT_ID"
+
+# Set subscription
+az account set --subscription "$SUBSCRIPTION_ID"
+
+# Verify connection
+az account show --output table
+```
+
+</TabItem>
+</Tabs>
+---
+
+## Variable Reference
+
+All variables used in these authentication scripts should match the values documented in:
+
+| Variable | Source | Example |
+|----------|--------|---------|
+| `TenantId` | `infrastructure.yaml` → `azure.tenant_id` | `12345678-1234-1234-1234-123456789012` |
+| `SubscriptionId` | `infrastructure.yaml` → `azure.subscription_id` | `00000000-1111-2222-3333-444444444444` |
+| `SpnAppId` | Azure Key Vault | (Retrieved from Key Vault) |
+| `SpnSecret` | Azure Key Vault | (Retrieved from Key Vault) |
+
+---
+
+## Security Best Practices
+
+:::danger Never Hard-Code Credentials
+Never hard-code credentials in scripts or commit secrets to source control.
+:::
+
+| Practice | Description |
+|----------|-------------|
+| **Use Key Vault** | Store service principal secrets in Azure Key Vault |
+| **Managed Identities** | Prefer managed identities for Azure-hosted automation |
+| **Least Privilege** | Grant only the permissions required for each task |
+| **Rotate Secrets** | Rotate service principal secrets regularly (90 days recommended) |
+| **Audit Access** | Enable audit logging on Key Vault and review access logs |
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `AADSTS50076` | MFA required by Conditional Access | Complete the MFA prompt; use device code flow for headless sessions; or configure MFA exclusion for SPN |
+| `AADSTS700016` | Application not found | Verify SPN App ID is correct |
+| `AADSTS7000215` | Invalid client secret | Secret expired or incorrect — regenerate in Entra ID |
+| `The subscription could not be found` | Wrong subscription ID or no access | Verify subscription ID and RBAC assignments |
+| Browser doesn't open | Headless/remote session (SSH, jump box) | Use `-UseDeviceAuthentication` (Az), `-UseDeviceCode` (CLI PS), or `--use-device-code` (Bash) |
+| `az: command not found` | Azure CLI not installed or not in PATH | Install from [Microsoft Learn](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) |
+| `Az.Accounts module not found` | Module not installed | Run `Install-Module Az.Accounts -Scope CurrentUser` |
+
+### Verify Current Session
+
+```powershell title="Check Azure PowerShell Session"
+# Show current context
+Get-AzContext
+
+# List all available contexts
+Get-AzContext -ListAvailable
+
+# Clear and re-authenticate
+Disconnect-AzAccount
+Connect-AzAccount -TenantId $TenantId
+```
+
+```bash title="Check Azure CLI Session"
+# Show current account
+az account show
+
+# List all subscriptions
+az account list --output table
+
+# Clear and re-authenticate
+az logout
+az login --tenant "$TENANT_ID"
+```
+
+---
+
+## Execution Context: Permission Transitions
+
+The Azure Local deployment process has a **permission transition point** at Stage 05 Step 2. Before this point, you must use elevated administrator credentials. After this point, the deployment SPN or deployment user can be used.
+
+### Permission Timeline
+
+```
+Part 02: Management Infrastructure ──┐
+Part 03: Azure Foundation │
+ ├─ Phase 03: Landing Zones │ ⚡ ELEVATED ADMIN REQUIRED
+ ├─ Phase 04: Resource Providers │
+ └─ Phase 05: RBAC │
+ ├─ Task 1: Create Roles │
+ └─ Task 2: Assign Roles ──────┴─ 🔄 PERMISSION TRANSITION POINT
+ └─ Step 3+: Verify ───────── ✅ DEPLOYMENT SPN/USER NOW VALID
+Part 04: On-Prem Prerequisites ──────── ✅ Can use Deployment SPN
+Part 05: Cluster Deployment ─────────── ✅ Can use Deployment SPN
+```
+
+### Execution Context by Stage
+
+| Stage Range | Executor | Reason |
+|-------------|----------|--------|
+| **00-04** (through Stage 05 Step 1) | ⚡ **Elevated Admin** | SPN doesn't have RBAC assignments yet |
+| **Stage 05 Step 2** | ⚡ **Elevated Admin** | This step ASSIGNS RBAC to SPN/deployment user |
+| **Stage 05 Step 3+** onwards | ✅ **Deployment SPN** or **Deployment User** | RBAC now assigned |
+
+### Who Is the Elevated Admin?
+
+| Identity | Required Roles | Scope |
+|----------|----------------|-------|
+| Azure Local Cloud Engineer | Owner or User Access Administrator | Subscription or Tenant Root |
+| Customer Admin (if self-deploy) | Owner or User Access Administrator | Subscription |
+
+### Who Is the Deployment SPN/User?
+
+| Identity | Assigned In | Roles Granted |
+|----------|-------------|---------------|
+| `Azure Local Cloud-cicd` Service Principal | Stage 05 Step 2 | Contributor, User Access Administrator |
+| Deployment User Account | Stage 05 Step 2 | Contributor, User Access Administrator |
+
+:::tip Transition Confirmation
+After completing Stage 05 Step 2, verify the SPN can authenticate and access resources before proceeding. See [Phase 05: RBAC Permissions](../02-azure-foundation/phase-03-rbac-permissions/) for verification steps.
+:::
+
+---
+
+## Quick Reference
+
+| Method | Command | Best For |
+|--------|---------|----------|
+| **Interactive (Az)** | `Connect-AzAccount` | Development, manual execution |
+| **Interactive (CLI)** | `az login` | Development, cross-platform |
+| **Device Code** | `Connect-AzAccount -DeviceCode` | Remote/headless sessions |
+| **Service Principal** | `Connect-AzAccount -ServicePrincipal` | Automation, CI/CD |
+| **Managed Identity** | `Connect-AzAccount -Identity` | Azure-hosted resources |

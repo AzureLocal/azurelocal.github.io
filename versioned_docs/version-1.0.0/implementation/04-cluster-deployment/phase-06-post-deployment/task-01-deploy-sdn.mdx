@@ -1,0 +1,1557 @@
+---
+title: "Task 01: Deploy SDN"
+sidebar_label: "Task 01: Deploy SDN"
+sidebar_position: 1
+description: "Enable Software Defined Networking (SDN) on Azure Local via Arc integration — Network Controller as Failover Cluster service, enabling logical network NSG management"
+category: "Runbook"
+scope: "Enable Software Defined Networking (SDN) on Azure Local via Arc integration —..."
+purpose: "Enable Software Defined Networking (SDN) on Azure Local via Arc integration — Network Controller as Failover Cluster service, enabling logical network NSG management"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - post-deployment
+keywords:
+  - Deploy
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Deploy SDN
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../../../index.mdx)
+[![Cluster Deployment](https://img.shields.io/badge/Stage-04%20Cluster%20Deployment-orange?style=flat-square)](../../index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook  
+> **SCOPE**: Azure Local clusters — post-deployment SDN enablement (Arc-integrated)  
+> **PURPOSE**: Enable SDN integration on Azure Local by deploying Network Controller as a Failover Cluster service, supporting NSG management on logical networks and Azure Local VMs
+> **MASTER REFERENCE**: [Azure Local SDN Overview](https://learn.microsoft.com/en-us/azure/azure-local/manage/sdn-overview)
+
+**Status**: Active
+
+:::danger OPTIONAL — IRREVERSIBLE — READ BEFORE PROCEEDING
+
+**SDN deployment is entirely optional.** Only enable SDN if your workloads require one or more of the following:
+
+- Network Security Groups (NSGs) applied to logical networks or VM NICs
+- Centralized network policy enforcement across Azure Local VMs
+- Azure portal / Azure CLI–driven network access control
+
+**Once SDN is enabled, it cannot be rolled back or disabled.** There is no supported procedure to remove Network Controller after it is integrated. Do not proceed unless you are certain SDN is required for this cluster.
+
+Additionally:
+- This method (SDN enabled by Arc) is **mutually exclusive** with on-premises SDN tools (Windows Admin Center, SDN Express). If Network Controller was previously deployed using on-premises tools, do not use this procedure.
+- If logical networks and VMs already exist, enabling SDN will cause a **brief network disruption** on all workloads while Virtual Filtering Platform (VFP) policies are applied. Plan a maintenance window.
+
+:::
+
+---
+
+## When To Use SDN
+
+| Capability | Without SDN | With SDN Enabled by Arc |
+|------------|-------------|------------------------|
+| Create logical networks | ✅ Supported | ✅ Supported |
+| Apply NSGs to logical networks | ❌ Not available | ✅ Supported |
+| Apply NSGs to Azure Local VM NICs | ❌ Not available | ✅ Supported |
+| Software Load Balancer (SLB) | ❌ Not available | ❌ Not available (on-premises tools only) |
+| VPN / L3 / GRE Gateways | ❌ Not available | ❌ Not available (on-premises tools only) |
+| Manage via Azure portal / CLI | ✅ (logical networks only) | ✅ (logical networks + NSGs) |
+
+If you only need logical networks without NSG enforcement, **do not enable SDN**.
+
+---
+
+## Deployment Ordering
+
+**SDN should be deployed before logical networks are created** to avoid workload disruption. However, enabling SDN on a cluster that already has logical networks and VMs is supported — the existing logical networks and network interfaces are automatically hydrated into the Network Controller. Plan a maintenance window in that case as VFP policy application causes a brief network outage.
+
+```
+Recommended order:
+ Phase 05: Cluster Deployment
+ ↓
+ Task 01: Deploy SDN ← this task (if SDN is required)
+ ↓
+ Task 02: Cluster Quorum
+ ↓
+ Phase 07: Logical Networks / VM Deployment
+```
+
+---
+
+## Supported Network Intent Patterns
+
+SDN enabled by Arc supports the following host networking configurations. Verify your cluster's intent pattern before proceeding.
+
+| Pattern | Intents | Switched Storage | Description |
+|---------|---------|-----------------|-------------|
+| **Group all traffic** | 1 | Required (switched only) | Single virtual switch — management, compute, and storage on one intent |
+| **Management+Compute / Storage** | 2 | Switched or switchless (up to 4 nodes); switched only for 5+ nodes | Management and compute share one intent; storage is separate |
+| **Custom disaggregated** | 3 | Switched or switchless (up to 4 nodes); switched only for 5+ nodes | Fully separate management, compute, and storage intents |
+
+:::warning Unsupported Intent Configurations
+The following are **not supported** for SDN enabled by Arc:
+- More than three intents on any deployment size
+- Combined compute and storage intent (with or without a management intent)
+- Standalone compute intent on a single-node cluster
+- Three-intent configuration on two-node or three-node switchless deployments
+:::
+
+---
+
+## SDN Prefix Requirements
+
+The SDN prefix is used to construct the Network Controller REST URL:
+**`https://<SDNPrefix>-NC.<domain>/`**
+
+The prefix must satisfy all of the following:
+
+| Rule | Requirement |
+|------|-------------|
+| Length | 1–8 characters |
+| Characters | Lowercase letters, uppercase letters, digits only |
+| Hyphens | Allowed, but no two consecutive hyphens (`--`), and must not end with a hyphen |
+| Uniqueness | Must be unique across all Azure Local instances on the same domain |
+
+**Example**: prefix `iic01` → NC REST URL `https://iic01-NC.azurelocal.cloud/`
+
+If the prefix does not meet these requirements, `Add-EceFeature` will fail immediately.
+
+---
+
+## Configuration Variables
+
+| Config Path | Required | Description | Example |
+|-------------|----------|-------------|---------|
+| `networking.azure.sdn.sdn_enabled` | Yes | Must be `true` to proceed | `true` |
+| `networking.azure.sdn.sdn_prefix` | Yes | SDN prefix (≤8 chars) | `iic01` |
+| `networking.azure.sdn.sdn_dns_mode` | Yes | `dynamic` or `static` | `dynamic` |
+| `networking.azure.sdn.sdn_nc_reserved_ip` | If static DNS | 5th IP in management pool | `192.168.211.14` |
+| `networking.azure.sdn.sdn_intent_pattern` | Yes | `1`, `2`, or `3` | `2` |
+| `compute.azure_local.vm_switch_name` | Yes | External vSwitch name — discovered in Step 1 | `ConvergedSwitch(hci)` |
+
+---
+
+## Prerequisites
+
+- [ ] Azure Local cluster deployed (Phase 05 complete)
+- [ ] OS build 26100.x or later — verify with `systeminfo.exe` on a node
+- [ ] Azure Stack HCI Administrator role on the Azure subscription
+- [ ] Azure Stack HCI Administrator role on the cluster node
+- [ ] DNS A record pre-created (static DNS environments only)
+- [ ] Maintenance window scheduled if existing logical networks or VMs are present
+- [ ] Network Controller was NOT previously deployed using Windows Admin Center or SDN Express
+
+---
+
+## Execution Options
+
+### Step 1 — Verify vSwitch Name
+
+The SDN deployment requires the external vSwitch name to be populated at `compute.azure_local.vm_switch_name` in `variables.yml` before proceeding.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Direct Script (On Node)" default>
+
+> **When to use**: Single-node discovery — RDP directly to a cluster node, no management server or config file required
+
+#### Script
+
+**Primary**: `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Get-VirtualSwitchName-Standalone.ps1`
+
+#### Code
+
+RDP or console to any cluster node, copy `Get-VirtualSwitchName-Standalone.ps1` to the node, and run it:
+
+```powershell title="Get-VirtualSwitchName-Standalone.ps1"
+# ==============================================================================
+# Script : Get-VirtualSwitchName-Standalone.ps1
+# Purpose: Discover the external vSwitch name on this cluster node and display
+# the value to copy into variables.yml
+# Run : RDP or console directly on any cluster node — no external dependencies
+# ==============================================================================
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host " Discover External vSwitch Name" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host ""
+
+$switches = Get-VMSwitch | Where-Object { $_.SwitchType -eq 'External' }
+
+if (-not $switches) {
+ Write-Host "ERROR: No external vSwitch found on this node." -ForegroundColor Red
+ Write-Host " Verify cluster networking is configured before proceeding." -ForegroundColor Red
+ exit 1
+}
+
+Write-Host "External vSwitch(es) found:" -ForegroundColor Green
+Write-Host ""
+$switches | Format-Table Name, SwitchType, NetAdapterInterfaceDescription -AutoSize
+
+$primary = $switches | Select-Object -First 1
+Write-Host "================================================================" -ForegroundColor Green
+Write-Host " Copy this value into config/variables.yml:" -ForegroundColor Green
+Write-Host ""
+Write-Host " compute:" -ForegroundColor White
+Write-Host " azure_local:" -ForegroundColor White
+Write-Host " vm_switch_name: `"$($primary.Name)`"" -ForegroundColor Yellow
+Write-Host ""
+Write-Host " YAML path: compute.azure_local.vm_switch_name" -ForegroundColor Gray
+Write-Host "================================================================" -ForegroundColor Green
+```
+
+Copy the highlighted `vm_switch_name` value from the output into `config/variables.yml` on the management server:
+
+```yaml title="config/variables.yml"
+compute:
+ azure_local:
+ vm_switch_name: "ConvergedSwitch(hci)" # compute.azure_local.vm_switch_name
+```
+
+#### Validation
+
+- [ ] `compute.azure_local.vm_switch_name` is populated in `variables.yml`
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Managing from management server or jump box — config-driven via `variables.yml` and PSRemoting
+
+#### Script
+
+**Primary**: `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Get-VirtualSwitchName.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | N/A |
+| Bash | N/A |
+
+#### Code
+
+```powershell title="Get-VirtualSwitchName.ps1"
+# ==============================================================================
+# Script : Get-VirtualSwitchName.ps1
+# Purpose: Discover the external vSwitch name on the first cluster node and
+# write it back to variables.yml at compute.azure_local.vm_switch_name
+# Run : From the repo root before running Invoke-DeploySDN-Orchestrated.ps1
+# ==============================================================================
+
+[CmdletBinding()]
+param(
+ [string]$ConfigPath = "", # Path to variables.yml; CWD-relative default
+ [PSCredential]$Credential, # Override credential resolution
+ [switch]$WhatIf # Show what would be written — no config changes made
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+$taskFolderName = "task-01-deploy-sdn"
+$logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
+$logFile = Join-Path $logDir ("{0}_{1}_GetVirtualSwitchName.log" -f (Get-Date -Format 'yyyy-MM-dd'), (Get-Date -Format 'HHmmss'))
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+function Write-Log {
+ param([string]$Message, [string]$Level = 'INFO')
+ $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+ $line = "[$ts][$Level] $Message"
+ Write-Host $line -ForegroundColor $(switch ($Level) { 'WARN' { 'Yellow' } 'ERROR' { 'Red' } default { 'Cyan' } })
+ Add-Content -Path $logFile -Value $line
+}
+
+Write-Log "Get-VirtualSwitchName started"
+Write-Log "Log: $logFile"
+
+# ── Config loading ────────────────────────────────────────────────────────────
+if (-not $ConfigPath) {
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
+}
+if (-not (Test-Path $ConfigPath)) {
+ Write-Log "Config file not found: $ConfigPath" 'ERROR'
+ throw "Config file not found: $ConfigPath"
+}
+
+Write-Log "Loading config: $ConfigPath"
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+# ── Check if already populated ────────────────────────────────────────────────
+$existing = $cfg.compute.azure_local.vm_switch_name # compute.azure_local.vm_switch_name
+if ($existing -and $existing -ne "") {
+ Write-Log "vm_switch_name is already set: '$existing'"
+ Write-Host "`n vm_switch_name: `"$existing`"`n" -ForegroundColor Green
+ Write-Log "Nothing to do — use -WhatIf to preview or update config manually to override"
+ return
+}
+
+# ── Determine target node ─────────────────────────────────────────────────────
+$nodeKey = $cfg.compute.cluster_nodes.Keys | Sort-Object | Select-Object -First 1 # compute.cluster_nodes
+$nodeObj = $cfg.compute.cluster_nodes[$nodeKey]
+$hostname = $nodeObj.hostname # compute.cluster_nodes.<key>.hostname (display only)
+$ip = $nodeObj.management_ip # compute.cluster_nodes.<key>.management_ip
+
+if (-not $ip) {
+ Write-Log "management_ip missing for first cluster node — cannot PSRemote" 'ERROR'
+ throw "compute.cluster_nodes.$nodeKey.management_ip is required"
+}
+Write-Log "Target node: $hostname ($ip)"
+
+# ── Credential resolution ─────────────────────────────────────────────────────
+function Resolve-KeyVaultRef {
+ param([string]$KvUri)
+ if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { Write-Log " Not a Key Vault URI: $KvUri" 'WARN'; return $null }
+ $vaultName = $Matches[1]
+ $secretName = $Matches[2]
+ if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
+ try {
+ Write-Log " Retrieving '$secretName' from '$vaultName' (Az.KeyVault)..."
+ $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
+ if ($secret) { Write-Log " Secret retrieved."; return $secret }
+ Write-Log " Az.KeyVault returned no secret." 'WARN'
+ } catch { Write-Log " Az.KeyVault failed: $_" 'WARN' }
+ Write-Log " Falling back to Azure CLI..." 'WARN'
+ } else { Write-Log " Az.KeyVault not found — trying Azure CLI..." 'WARN' }
+ try {
+ $azCmd = Get-Command az -ErrorAction SilentlyContinue
+ if (-not $azCmd) { Write-Log " Azure CLI not found." 'WARN'; return $null }
+ $tmpErr = [System.IO.Path]::GetTempFileName()
+ $val = (& az keyvault secret show --vault-name $vaultName --name $secretName --query value --output tsv --only-show-errors 2>$tmpErr)
+ $azErr = (Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue).Trim()
+ Remove-Item $tmpErr -ErrorAction SilentlyContinue
+ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($val)) {
+ Write-Log " az CLI failed$(if ($azErr) { ": $azErr" } else { " (exit $LASTEXITCODE)" })." 'WARN'
+ return $null
+ }
+ Write-Log " Secret retrieved (az CLI)."
+ return $val
+ } catch { Write-Log " az CLI failed: $_" 'WARN'; return $null }
+}
+
+if ($Credential) {
+ $localAdminCred = $Credential
+ $lcmCred = $null
+ Write-Log "Using supplied -Credential: $($Credential.UserName)"
+} else {
+ $adminUser = $cfg.identity.accounts.account_local_admin_username # identity.accounts.account_local_admin_username
+ $adminPassUri = $cfg.identity.accounts.account_local_admin_password # identity.accounts.account_local_admin_password
+ $lcmUser = $cfg.identity.accounts.account_lcm_username # identity.accounts.account_lcm_username
+ $lcmPassUri = $cfg.identity.accounts.account_lcm_password # identity.accounts.account_lcm_password
+ $netbiosName = $cfg.identity.active_directory.ad_netbios_name # identity.active_directory.ad_netbios_name
+
+ Write-Log "Resolving local admin credentials from Key Vault..."
+ $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
+ $adminUserFull = if ($adminUser -notmatch '\\|@') { ".\$adminUser" } else { $adminUser }
+ if ($adminPass) {
+ $localAdminCred = New-Object PSCredential($adminUserFull, (ConvertTo-SecureString $adminPass -AsPlainText -Force))
+ Write-Log " Local admin resolved for '$adminUserFull'."
+ } else {
+ Write-Log " Key Vault unavailable — prompting for local admin credentials." 'WARN'
+ $localAdminCred = Get-Credential -Message "Enter local Administrator credentials for cluster nodes" -UserName $adminUserFull
+ }
+
+ Write-Log "Resolving LCM credentials from Key Vault..."
+ $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri
+ $lcmUserFull = if ($lcmUser -notmatch '\\|@') { "$netbiosName\$lcmUser" } else { $lcmUser }
+ if ($lcmPass) {
+ $lcmCred = New-Object PSCredential($lcmUserFull, (ConvertTo-SecureString $lcmPass -AsPlainText -Force))
+ Write-Log " LCM resolved for '$lcmUserFull'."
+ } else {
+ Write-Log " LCM secret unavailable — LCM fallback will not be available." 'WARN'
+ $lcmCred = $null
+ }
+}
+
+function Invoke-NodeCommand {
+ param(
+ [string]$ComputerName,
+ [PSCredential]$LocalAdminCred,
+ [PSCredential]$LcmCred,
+ [scriptblock]$ScriptBlock,
+ [object[]]$ArgumentList = $null
+ )
+ $params = @{ ComputerName = $ComputerName; Credential = $LocalAdminCred; ScriptBlock = $ScriptBlock; ErrorAction = 'Stop' }
+ if ($ArgumentList) { $params['ArgumentList'] = $ArgumentList }
+ try {
+ Write-Log " Trying local admin ($($LocalAdminCred.UserName))..."
+ return Invoke-Command @params
+ } catch {
+ if ($_ -match 'Access is denied|LogonFailure|logon failure') {
+ if ($LcmCred) {
+ Write-Log " Local admin denied — retrying with LCM account ($($LcmCred.UserName))..." 'WARN'
+ $params['Credential'] = $LcmCred
+ return Invoke-Command @params
+ }
+ Write-Log " Local admin denied and no LCM credential available." 'ERROR'
+ }
+ throw
+ }
+}
+
+# ── Discover vSwitch via PSRemoting ───────────────────────────────────────────
+Write-Log "PSRemoting to '$hostname' ($ip) to discover external vSwitch..."
+
+try {
+ $discoveredName = Invoke-NodeCommand -ComputerName $ip -LocalAdminCred $localAdminCred -LcmCred $lcmCred -ScriptBlock {
+ $sw = Get-VMSwitch | Where-Object { $_.SwitchType -eq 'External' } | Select-Object -First 1
+ if (-not $sw) { throw "No external vSwitch found on this node" }
+ $sw.Name
+ }
+} catch {
+ Write-Log "Failed to discover vSwitch on '$hostname' ($ip): $_" 'ERROR'
+ throw
+}
+
+if (-not $discoveredName -or $discoveredName -eq "") {
+ Write-Log "No external vSwitch returned from '$hostname' ($ip)" 'ERROR'
+ throw "vSwitch discovery returned empty result"
+}
+
+Write-Log "Discovered vSwitch: '$discoveredName'"
+Write-Host "`n vm_switch_name: `"$discoveredName`"`n" -ForegroundColor Green
+
+# ── Write back to config ──────────────────────────────────────────────────────
+if ($WhatIf) {
+ Write-Log "[WhatIf] Would write vm_switch_name: `"$discoveredName`" to $ConfigPath"
+ Write-Host "[WhatIf] No changes made." -ForegroundColor Yellow
+ return
+}
+
+Write-Log "Writing vm_switch_name back to config: $ConfigPath"
+$raw = Get-Content $ConfigPath -Raw
+
+if ($raw -match 'vm_switch_name:\s*""') {
+ $updated = $raw -replace 'vm_switch_name:\s*""', "vm_switch_name: `"$discoveredName`""
+ Set-Content -Path $ConfigPath -Value $updated -NoNewline
+ Write-Log "Config updated successfully: vm_switch_name = `"$discoveredName`""
+ Write-Host "Config updated: $ConfigPath" -ForegroundColor Green
+} else {
+ Write-Log "Could not find 'vm_switch_name: `"`"' in config — update manually" 'WARN'
+ Write-Host "[WARN] Could not auto-update config. Set this manually:" -ForegroundColor Yellow
+ Write-Host " vm_switch_name: `"$discoveredName`"" -ForegroundColor Yellow
+}
+
+Write-Log "Get-VirtualSwitchName completed"
+```
+
+**Invocation examples:**
+
+```powershell title="Discover vSwitch and write to config"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Get-VirtualSwitchName.ps1 `
+ -ConfigPath .\config\variables.yml
+```
+
+```powershell title="WhatIf — discover and report without writing to config"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Get-VirtualSwitchName.ps1 `
+ -ConfigPath .\config\variables.yml `
+ -WhatIf
+```
+
+#### Validation
+
+- [ ] `compute.azure_local.vm_switch_name` is populated in `variables.yml`
+
+</TabItem>
+</Tabs>
+
+---
+
+### Step 2 — Prepare DNS
+
+Prepare DNS based on your environment type before enabling SDN. Skip this step if your environment uses dynamic DNS and your zone already allows secure updates.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Direct Script (On Node)" default>
+
+> **When to use**: Running directly on the DC via RDP — no management server, no toolkit dependencies
+
+#### Script
+
+**Primary**: `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Set-SDNDns-Standalone.ps1`
+
+#### Code
+
+RDP to the domain controller and run `Set-SDNDns-Standalone.ps1`. Edit the `#region CONFIGURATION` block at the top with your values before running.
+
+```powershell title="Set-SDNDns-Standalone.ps1"
+# ==============================================================================
+# Script : Set-SDNDns-Standalone.ps1
+# Purpose: Configure DNS for SDN deployment — validates dynamic DNS zone update
+# settings or creates/validates a static A record for the Network
+# Controller REST endpoint.
+# Run this script directly on the DNS server (domain controller).
+# No external dependencies — no variables.yml, no helpers.
+# Run : RDP to the domain controller and execute
+# ==============================================================================
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+
+# DNS zone name (your AD domain FQDN)
+$ZoneName = "azurelocal.cloud"
+
+# SDN prefix — used to form the NC REST URL: https://<Prefix>-NC.<domain>/
+$SdnPrefix = "iic01"
+
+# DNS mode: "dynamic" (AD-integrated, auto-creates record) or "static" (pre-create A record manually)
+$SdnDnsMode = "dynamic"
+
+# Reserved IP for Network Controller DNS record — 5th IP in your management pool
+# Required only when $SdnDnsMode = "static"
+$SdnNcReservedIp = "192.168.211.14"
+
+# WhatIf: report only, do not create records
+$WhatIf = $false
+
+#endregion CONFIGURATION
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$ncRecordName = "$SdnPrefix-NC"
+
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host " Prepare SDN DNS" -ForegroundColor Cyan
+Write-Host " Zone : $ZoneName" -ForegroundColor Cyan
+Write-Host " Record : $ncRecordName" -ForegroundColor Cyan
+Write-Host " DNS Mode : $SdnDnsMode" -ForegroundColor Cyan
+if ($SdnDnsMode -eq 'static') {
+Write-Host " Reserved IP: $SdnNcReservedIp" -ForegroundColor Cyan
+}
+Write-Host " WhatIf : $WhatIf" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host ""
+
+Import-Module DnsServer -ErrorAction Stop
+
+# ── Check zone ────────────────────────────────────────────────────────────────
+Write-Host "-- Checking DNS zone '$ZoneName'..."
+$zone = Get-DnsServerZone -Name $ZoneName -ErrorAction SilentlyContinue
+if (-not $zone) {
+ Write-Host "ERROR: DNS zone '$ZoneName' not found on this server" -ForegroundColor Red
+ exit 1
+}
+Write-Host " Zone found: $ZoneName"
+
+# ── Dynamic DNS ───────────────────────────────────────────────────────────────
+if ($SdnDnsMode -eq 'dynamic') {
+ Write-Host ""
+ Write-Host "-- Checking dynamic update setting..."
+ $dynUpdate = $zone.DynamicUpdate
+ Write-Host " DynamicUpdate: $dynUpdate"
+
+ if ($dynUpdate -eq 'None') {
+ Write-Host " ERROR: Zone '$ZoneName' has DynamicUpdate = None" -ForegroundColor Red
+ Write-Host " Fix: Set-DnsServerPrimaryZone -Name '$ZoneName' -DynamicUpdate Secure" -ForegroundColor Yellow
+ exit 1
+ }
+ if ($dynUpdate -eq 'Secure') {
+ Write-Host " PASS: DynamicUpdate = Secure (recommended)" -ForegroundColor Green
+ } else {
+ Write-Host " WARN: DynamicUpdate = $dynUpdate — Secure is recommended" -ForegroundColor Yellow
+ }
+
+ Write-Host ""
+ Write-Host "-- Checking for pre-existing '$ncRecordName' record..."
+ $existing = Get-DnsServerResourceRecord -ZoneName $ZoneName -Name $ncRecordName -RRType A -ErrorAction SilentlyContinue
+ if ($existing) {
+ Write-Host " WARN: Record '$ncRecordName' already exists — IP: $($existing.RecordData.IPv4Address)" -ForegroundColor Yellow
+ Write-Host " Review this record — if stale from a previous deployment, remove it before proceeding." -ForegroundColor Yellow
+ } else {
+ Write-Host " PASS: No pre-existing record — dynamic DNS will create it automatically." -ForegroundColor Green
+ }
+}
+
+# ── Static DNS ────────────────────────────────────────────────────────────────
+if ($SdnDnsMode -eq 'static') {
+ if (-not $SdnNcReservedIp) {
+ Write-Host "ERROR: SdnNcReservedIp is required for static DNS mode" -ForegroundColor Red
+ exit 1
+ }
+
+ Write-Host ""
+ Write-Host "-- Checking for existing '$ncRecordName' record..."
+ $existing = Get-DnsServerResourceRecord -ZoneName $ZoneName -Name $ncRecordName -RRType A -ErrorAction SilentlyContinue
+
+ if ($existing) {
+ $existingIp = $existing.RecordData.IPv4Address.ToString()
+ if ($existingIp -eq $SdnNcReservedIp) {
+ Write-Host " PASS: Record '$ncRecordName' already exists with correct IP $SdnNcReservedIp — nothing to do." -ForegroundColor Green
+ } else {
+ Write-Host " WARN: Record '$ncRecordName' exists but points to $existingIp — expected $SdnNcReservedIp" -ForegroundColor Yellow
+ Write-Host " Remove the stale record and re-run, or update it manually." -ForegroundColor Yellow
+ }
+ } else {
+ if ($WhatIf) {
+ Write-Host " [WhatIf] Would create DNS A record '$ncRecordName' -> $SdnNcReservedIp" -ForegroundColor Yellow
+ } else {
+ Write-Host "-- Creating DNS A record '$ncRecordName' -> $SdnNcReservedIp..."
+ try {
+ Add-DnsServerResourceRecordA -ZoneName $ZoneName -Name $ncRecordName -IPv4Address $SdnNcReservedIp -ErrorAction Stop
+ Write-Host " PASS: Created DNS A record '$ncRecordName' -> $SdnNcReservedIp" -ForegroundColor Green
+ } catch {
+ Write-Host " ERROR: Failed to create DNS record: $_" -ForegroundColor Red
+ exit 1
+ }
+
+ Write-Host ""
+ Write-Host "-- Verifying DNS resolution for '$ncRecordName.$ZoneName'..."
+ try {
+ $resolved = Resolve-DnsName "$ncRecordName.$ZoneName" -ErrorAction Stop
+ $resolvedIp = ($resolved | Where-Object QueryType -eq 'A' | Select-Object -First 1).IPAddress
+ if ($resolvedIp -eq $SdnNcReservedIp) {
+ Write-Host " PASS: '$ncRecordName.$ZoneName' resolves to $resolvedIp" -ForegroundColor Green
+ } else {
+ Write-Host " WARN: '$ncRecordName.$ZoneName' resolves to $resolvedIp — expected $SdnNcReservedIp" -ForegroundColor Yellow
+ }
+ } catch {
+ Write-Host " WARN: Resolution check failed (replication lag?) — retry in a few seconds: $_" -ForegroundColor Yellow
+ }
+ }
+ }
+}
+
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Green
+Write-Host " DNS preparation complete — proceed to Step 3" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
+```
+
+:::info No External Dependencies
+All values are defined in the `#region CONFIGURATION` block at the top. No `variables.yml`, no config-loader, no helpers required. Run directly on the domain controller via RDP or console.
+:::
+
+#### Validation
+
+- [ ] **Dynamic**: `Get-DnsServerZone <ZoneName>` → `DynamicUpdate` is `Secure` or `NonsecureAndSecure`
+- [ ] **Static**: `Resolve-DnsName <SdnPrefix>-NC.<ZoneName>` resolves to `$SdnNcReservedIp`
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Managing from management server — executes on the DC via Azure VM Run Command, no domain credentials required
+
+#### Script
+
+**Primary**: `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Invoke-ConfigureSDNDns-Orchestrated.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | N/A |
+| Bash | N/A |
+
+#### Code
+
+```powershell title="Invoke-ConfigureSDNDns-Orchestrated.ps1"
+# ==============================================================================
+# Script : Invoke-ConfigureSDNDns-Orchestrated.ps1
+# Purpose: Configure DNS for SDN deployment — validates dynamic DNS zone update
+# settings or creates/validates a static A record for the Network
+# Controller REST endpoint.
+# Executes on the domain controller VM via Invoke-AzVMRunCommand
+# (no PSRemoting, no domain credentials required).
+# Run : From the repo root before running Invoke-DeploySDN-Orchestrated.ps1
+# ==============================================================================
+
+[CmdletBinding()]
+param(
+ [string]$ConfigPath = "", # Path to variables.yml; CWD-relative default
+ [string]$ResourceGroupName = "", # Override DC VM resource group (default: from config)
+ [string]$VMName = "", # Override DC VM name (default: from config)
+ [switch]$WhatIf # Validate and report — do not create DNS records
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+$taskFolderName = "task-01-deploy-sdn"
+$logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
+$logFile = Join-Path $logDir ("{0}_{1}_ConfigureSDNDns.log" -f (Get-Date -Format 'yyyy-MM-dd'), (Get-Date -Format 'HHmmss'))
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+function Write-Log {
+ param([string]$Message, [string]$Level = 'INFO')
+ $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+ $line = "[$ts][$Level] $Message"
+ Write-Host $line -ForegroundColor $(switch ($Level) { 'WARN' { 'Yellow' } 'ERROR' { 'Red' } default { 'Cyan' } })
+ Add-Content -Path $logFile -Value $line
+}
+
+Write-Log "Invoke-ConfigureSDNDns-Orchestrated started"
+Write-Log "Log: $logFile"
+
+# ── Config loading ────────────────────────────────────────────────────────────
+if (-not $ConfigPath) {
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
+}
+if (-not (Test-Path $ConfigPath)) {
+ Write-Log "Config file not found: $ConfigPath" 'ERROR'
+ throw "Config file not found: $ConfigPath"
+}
+
+Write-Log "Loading config: $ConfigPath"
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+# ── Read SDN config ───────────────────────────────────────────────────────────
+$sdnEnabled = $cfg.networking.azure.sdn.sdn_enabled # networking.azure.sdn.sdn_enabled
+$sdnPrefix = $cfg.networking.azure.sdn.sdn_prefix # networking.azure.sdn.sdn_prefix
+$sdnDnsMode = $cfg.networking.azure.sdn.sdn_dns_mode # networking.azure.sdn.sdn_dns_mode
+$sdnNcReservedIp = $cfg.networking.azure.sdn.sdn_nc_reserved_ip # networking.azure.sdn.sdn_nc_reserved_ip
+$domainFqdn = $cfg.identity.active_directory.ad_domain_fqdn # identity.active_directory.ad_domain_fqdn
+
+if (-not $sdnEnabled) {
+ Write-Log "sdn_enabled is false — nothing to do." 'WARN'
+ return
+}
+if (-not $sdnPrefix) {
+ Write-Log "sdn_prefix is empty — set networking.azure.sdn.sdn_prefix before proceeding." 'ERROR'
+ throw "sdn_prefix is required"
+}
+if (-not $sdnDnsMode) {
+ Write-Log "sdn_dns_mode is empty — set networking.azure.sdn.sdn_dns_mode to 'dynamic' or 'static'." 'ERROR'
+ throw "sdn_dns_mode is required"
+}
+
+$ncRecordName = "$sdnPrefix-NC"
+Write-Log "SDN prefix : $sdnPrefix"
+Write-Log "DNS mode : $sdnDnsMode"
+Write-Log "NC record : $ncRecordName"
+Write-Log "Domain FQDN : $domainFqdn"
+if ($sdnDnsMode -eq 'static') { Write-Log "NC reserved IP: $sdnNcReservedIp" }
+
+# ── Resolve DC VM target ──────────────────────────────────────────────────────
+if (-not $ResourceGroupName) { $ResourceGroupName = $cfg.compute.azure_vms.dc01.resource_group } # compute.azure_vms.dc01.resource_group
+if (-not $VMName) { $VMName = $cfg.compute.azure_vms.dc01.name } # compute.azure_vms.dc01.name
+if (-not $ResourceGroupName -or -not $VMName) {
+ Write-Log "DC VM not found in config — set compute.azure_vms.dc01.resource_group and compute.azure_vms.dc01.name" 'ERROR'
+ throw "DC VM resource group and name are required"
+}
+Write-Log "Target DC VM : $VMName (RG: $ResourceGroupName)"
+
+# ── Verify Az.Compute ────────────────────────────────────────────────────────
+if (-not (Get-Module -Name Az.Compute -ListAvailable -ErrorAction SilentlyContinue)) {
+ Write-Log "Az.Compute module not found — run: Install-Module Az.Compute" 'ERROR'
+ throw "Az.Compute module is required"
+}
+
+# ── Build remote script ───────────────────────────────────────────────────────
+if ($sdnDnsMode -eq 'dynamic') {
+ $remoteScript = @"
+`$ErrorActionPreference = 'Continue'
+Import-Module DnsServer -ErrorAction Stop
+`$zoneName = '$domainFqdn'
+`$recordName = '$ncRecordName'
+Write-Output "=== SDN DNS Preparation — Dynamic Mode ==="
+Write-Output "Zone : `$zoneName"
+Write-Output "Record : `$recordName"
+Write-Output ""
+`$zone = Get-DnsServerZone -Name `$zoneName -ErrorAction SilentlyContinue
+if (-not `$zone) { Write-Output "ERROR: DNS zone '`$zoneName' not found"; exit 1 }
+Write-Output "Zone found: `$zoneName"
+`$dynUpdate = `$zone.DynamicUpdate
+Write-Output "DynamicUpdate : `$dynUpdate"
+if (`$dynUpdate -eq 'None') {
+ Write-Output "ERROR: DynamicUpdate = None — fix: Set-DnsServerPrimaryZone -Name '`$zoneName' -DynamicUpdate Secure"
+ exit 1
+}
+if (`$dynUpdate -eq 'Secure') { Write-Output "PASS: DynamicUpdate = Secure" }
+else { Write-Output "WARN: DynamicUpdate = `$dynUpdate — Secure is recommended" }
+`$existing = Get-DnsServerResourceRecord -ZoneName `$zoneName -Name `$recordName -RRType A -ErrorAction SilentlyContinue
+if (`$existing) { Write-Output "WARN: Record '`$recordName' already exists — IP: `$(`$existing.RecordData.IPv4Address)" }
+else { Write-Output "PASS: No pre-existing record — dynamic DNS will create it automatically" }
+Write-Output ""
+Write-Output "=== Dynamic DNS check complete ==="
+"@
+} else {
+ if (-not $sdnNcReservedIp) {
+ Write-Log "sdn_nc_reserved_ip is required for static DNS mode" 'ERROR'
+ throw "sdn_nc_reserved_ip is required when sdn_dns_mode = 'static'"
+ }
+ $createRecord = if ($WhatIf) { '$false' } else { '$true' }
+ $remoteScript = @"
+`$ErrorActionPreference = 'Continue'
+Import-Module DnsServer -ErrorAction Stop
+`$zoneName = '$domainFqdn'
+`$recordName = '$ncRecordName'
+`$reservedIp = '$sdnNcReservedIp'
+`$createRecord = $createRecord
+Write-Output "=== SDN DNS Preparation — Static Mode ==="
+Write-Output "Zone : `$zoneName"
+Write-Output "Record : `$recordName"
+Write-Output "Reserved IP: `$reservedIp"
+Write-Output "WhatIf : `$(-not `$createRecord)"
+Write-Output ""
+`$zone = Get-DnsServerZone -Name `$zoneName -ErrorAction SilentlyContinue
+if (-not `$zone) { Write-Output "ERROR: DNS zone '`$zoneName' not found"; exit 1 }
+Write-Output "Zone found: `$zoneName"
+`$existing = Get-DnsServerResourceRecord -ZoneName `$zoneName -Name `$recordName -RRType A -ErrorAction SilentlyContinue
+if (`$existing) {
+ `$existingIp = `$existing.RecordData.IPv4Address.ToString()
+ if (`$existingIp -eq `$reservedIp) { Write-Output "PASS: Record already exists with correct IP `$reservedIp" }
+ else { Write-Output "WARN: Record exists but points to `$existingIp — expected `$reservedIp" }
+} else {
+ if (`$createRecord) {
+ try {
+ Add-DnsServerResourceRecordA -ZoneName `$zoneName -Name `$recordName -IPv4Address `$reservedIp -ErrorAction Stop
+ Write-Output "PASS: Created DNS A record '`$recordName' -> `$reservedIp"
+ } catch { Write-Output "ERROR: Failed to create DNS record: `$_"; exit 1 }
+ try {
+ `$resolved = Resolve-DnsName "`$recordName.`$zoneName" -ErrorAction Stop
+ `$resolvedIp = (`$resolved | Where-Object QueryType -eq 'A' | Select-Object -First 1).IPAddress
+ if (`$resolvedIp -eq `$reservedIp) { Write-Output "PASS: '`$recordName.`$zoneName' resolves to `$resolvedIp" }
+ else { Write-Output "WARN: Resolves to `$resolvedIp — expected `$reservedIp" }
+ } catch { Write-Output "WARN: Resolution check failed (replication lag?) — retry shortly" }
+ } else { Write-Output "[WhatIf] Would create DNS A record '`$recordName' -> `$reservedIp" }
+}
+Write-Output ""
+Write-Output "=== Static DNS check complete ==="
+"@
+}
+
+# ── Execute via Invoke-AzVMRunCommand ─────────────────────────────────────────
+if ($WhatIf -and $sdnDnsMode -eq 'dynamic') {
+ Write-Log "[WhatIf] Would run DNS zone check on VM '$VMName' via Invoke-AzVMRunCommand"
+ Write-Host "[WhatIf] No changes made — remove -WhatIf to run the check." -ForegroundColor Yellow
+ return
+}
+
+Write-Log "Running DNS check on '$VMName' via Invoke-AzVMRunCommand..."
+try {
+ $result = Invoke-AzVMRunCommand `
+ -ResourceGroupName $ResourceGroupName `
+ -VMName $VMName `
+ -CommandId 'RunPowerShellScript' `
+ -ScriptString $remoteScript `
+ -ErrorAction Stop
+
+ $output = $result.Value | Where-Object { $_.Code -match 'StdOut' } | Select-Object -ExpandProperty Message
+ $errOut = $result.Value | Where-Object { $_.Code -match 'StdErr' } | Select-Object -ExpandProperty Message
+
+ if ($output) { $output -split "`n" | ForEach-Object { Write-Log $_.Trim() } }
+ if ($errOut -and $errOut.Trim()) { $errOut -split "`n" | ForEach-Object { Write-Log $_.Trim() 'WARN' } }
+
+ if ($output -match 'ERROR:' -or ($errOut -and $errOut -match 'ParserError|FullyQualifiedErrorId|CategoryInfo')) {
+ Write-Log "DNS preparation failed — review output above" 'ERROR'
+ throw "DNS preparation reported errors"
+ }
+
+ Write-Log "DNS preparation complete"
+ Write-Host "`nDNS is ready for SDN deployment. Proceed to Step 3." -ForegroundColor Green
+} catch {
+ Write-Log "Invoke-AzVMRunCommand failed: $_" 'ERROR'
+ throw
+}
+```
+
+**Invocation: Dynamic mode (default)**
+
+```powershell title="Run from repo root — dynamic mode"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-ConfigureSDNDns-Orchestrated.ps1 `
+ -ConfigPath "config\variables.yml"
+```
+
+**Invocation: WhatIf (validate only — no changes)**
+
+```powershell title="Run from repo root — dry run"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-ConfigureSDNDns-Orchestrated.ps1 `
+ -ConfigPath "config\variables.yml" `
+ -WhatIf
+```
+
+**Invocation: Override DC VM target**
+
+```powershell title="Run from repo root — explicit VM target"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-ConfigureSDNDns-Orchestrated.ps1 `
+ -ConfigPath "config\variables.yml" `
+ -ResourceGroupName "iic-rg-infra" `
+ -VMName "iic-dc01"
+```
+
+#### Validation
+
+- [ ] **Dynamic**: Script output shows `PASS: DynamicUpdate = Secure` and `PASS: No pre-existing record`
+- [ ] **Static**: Script output shows `PASS: Created DNS A record` or `PASS: Record already exists with correct IP`
+- [ ] Log written to `logs/task-01-deploy-sdn/<date>_<time>_ConfigureSDNDns.log`
+
+</TabItem>
+</Tabs>
+
+---
+
+### Step 3 — Enable SDN
+
+:::danger IRREVERSIBLE
+SDN enablement cannot be undone. `Add-EceFeature` deploys Network Controller as a Failover Cluster service. Once complete, Network Controller cannot be removed. Confirm Steps 1 and 2 are complete before proceeding.
+:::
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Direct Script (On Node)" default>
+
+> **When to use**: Running directly on the node — no management server, no toolkit dependencies
+
+#### Script
+
+**Primary**: `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-SDN-Standalone.ps1`
+
+#### Code
+
+RDP or console into any cluster node and run `Enable-SDN-Standalone.ps1`. Edit the `#region CONFIGURATION` block at the top with your values before running.
+
+```powershell title="Enable-SDN-Standalone.ps1"
+# ==============================================================================
+# Script : Enable-SDN-Standalone.ps1
+# Purpose: Enable SDN integration on Azure Local — Network Controller as
+# Failover Cluster service (SDN enabled by Arc) — fully self-contained
+# Run : From management server or jump box with PSRemoting to a cluster node
+# WARNING: SDN enablement is IRREVERSIBLE. Once enabled, it cannot be disabled.
+# ==============================================================================
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ────────────────────────────────────────────
+
+# Target cluster node (any node; run Add-EceFeature on one node only)
+$TargetNode = "iic-01-n01"
+
+# SDN prefix — used to form the NC REST URL: https://<Prefix>-NC.<domain>/
+# Rules: max 8 chars, alphanumeric + hyphens, no consecutive hyphens, no trailing hyphen
+$SdnPrefix = "iic01"
+
+# DNS mode: "dynamic" (AD-integrated, auto-creates record) or "static" (pre-create A record manually)
+$SdnDnsMode = "dynamic"
+
+# Reserved IP for Network Controller DNS record — 5th IP in your management pool
+# Required only when $SdnDnsMode = "static"
+$SdnNcReservedIp = "192.168.211.14"
+
+# Network intent pattern on this cluster: 1 = single intent, 2 = mgmt+compute / storage, 3 = disaggregated
+$SdnIntentPattern = 2
+
+# Suppress interactive prompts (set $true when running unattended)
+$AcknowledgeMaintenanceWindow = $false
+$AcknowledgeDNSRecordCreation = $false
+
+# Credentials for PSRemoting (leave $null to use current session credentials)
+$Credential = $null
+
+#endregion CONFIGURATION
+```
+
+:::info No External Dependencies
+All values are defined in the `#region CONFIGURATION` block at the top. No `variables.yml`, no config-loader, no helpers required. Requires PSRemoting access to a cluster node with the Azure Stack HCI Administrator role.
+:::
+
+#### Validation
+
+```powershell title="Validate Network Controller cluster group (run on node after completion)"
+Get-ClusterGroup | Where-Object { $_.Name -match 'Network Controller' }
+# Expected: State = Online
+
+Get-ClusterResource | Where-Object { $_.ResourceType -match 'Network' }
+# Expected: All resources State = Online
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Managing from management server or jump box — config-driven via `variables.yml` and PSRemoting
+
+#### Script
+
+**Primary**: `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Invoke-DeploySDN-Orchestrated.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | N/A |
+| Bash | N/A |
+
+#### Code
+
+```powershell title="Invoke-DeploySDN-Orchestrated.ps1"
+# ==============================================================================
+# Script : Invoke-DeploySDN-Orchestrated.ps1
+# Purpose: Enable SDN integration on Azure Local by deploying Network Controller
+# as a Failover Cluster service (SDN enabled by Arc)
+# Run : From management server — reads variables.yml, uses PSRemoting
+# Prereqs: FailoverClusters module accessible; Azure Stack HCI Admin role on node
+# WARNING: SDN enablement is IRREVERSIBLE. Once enabled, it cannot be disabled.
+# ==============================================================================
+
+[CmdletBinding()]
+param(
+ [string]$ConfigPath = "", # Path to variables.yml; CWD-relative default
+ [PSCredential]$Credential, # Override credential resolution
+ [string[]]$TargetNode = @(), # Specific node to run Add-EceFeature on; empty = first node
+ [switch]$WhatIf, # Dry-run — validate only, no changes
+ [string]$LogPath = "", # Override log file path
+
+ # YAML-overridable parameters
+ [string]$SdnPrefix = $null, # Override: networking.azure.sdn.sdn_prefix
+ [string]$SdnDnsMode = $null, # Override: networking.azure.sdn.sdn_dns_mode (dynamic|static)
+ [string]$SdnNcReservedIp = $null, # Override: networking.azure.sdn.sdn_nc_reserved_ip
+ [int]$SdnIntentPattern = 0, # Override: networking.azure.sdn.sdn_intent_pattern (1|2|3)
+ [string]$VirtualSwitchName = "", # Override: compute.azure_local.vm_switch_name
+ [switch]$AcknowledgeMaintenanceWindow, # Skip maintenance window confirmation prompt
+ [switch]$AcknowledgeDNSRecordCreation # Skip DNS record creation confirmation (dynamic DNS)
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── Logging ────────────────────────────────────────────────────────────────────────────────
+$taskFolderName = "task-01-deploy-sdn"
+if (-not $LogPath) {
+ $logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
+ $logFile = Join-Path $logDir ("{0}_{1}_DeploySDN.log" -f (Get-Date -Format 'yyyy-MM-dd'), (Get-Date -Format 'HHmmss'))
+} else {
+ $logDir = Split-Path $LogPath
+ $logFile = $LogPath
+}
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+function Write-Log {
+ param([string]$Message, [string]$Level = 'INFO')
+ $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+ $line = "[$ts][$Level] $Message"
+ Write-Host $line -ForegroundColor $(switch ($Level) { 'WARN' { 'Yellow' } 'ERROR' { 'Red' } default { 'Cyan' } })
+ Add-Content -Path $logFile -Value $line
+}
+
+Write-Log "Invoke-DeploySDN-Orchestrated started"
+Write-Log "Log: $logFile"
+
+# ── Config loading ────────────────────────────────────────────────────────────────────────────
+if (-not $ConfigPath) {
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
+}
+if (-not (Test-Path $ConfigPath)) {
+ Write-Log "Config file not found: $ConfigPath" 'ERROR'
+ throw "Config file not found: $ConfigPath"
+}
+
+Write-Log "Loading config: $ConfigPath"
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+# ── Extract values from config (with parameter overrides) ─────────────────────────
+$sdnEnabled = $cfg.networking.azure.sdn.sdn_enabled # networking.azure.sdn.sdn_enabled
+$sdnPrefix = if ($SdnPrefix) { $SdnPrefix } else { $cfg.networking.azure.sdn.sdn_prefix } # networking.azure.sdn.sdn_prefix
+$sdnDnsMode = if ($SdnDnsMode) { $SdnDnsMode } else { $cfg.networking.azure.sdn.sdn_dns_mode } # networking.azure.sdn.sdn_dns_mode
+$sdnNcIp = if ($SdnNcReservedIp) { $SdnNcReservedIp } else { $cfg.networking.azure.sdn.sdn_nc_reserved_ip } # networking.azure.sdn.sdn_nc_reserved_ip
+$intentPattern = if ($SdnIntentPattern -gt 0) { $SdnIntentPattern } else { [int]$cfg.networking.azure.sdn.sdn_intent_pattern } # networking.azure.sdn.sdn_intent_pattern
+$vmSwitchName = if ($VirtualSwitchName -ne "") { $VirtualSwitchName } else { $cfg.compute.azure_local.vm_switch_name } # compute.azure_local.vm_switch_name
+
+if (-not $sdnEnabled) {
+ Write-Log "networking.azure.sdn.sdn_enabled is false — SDN deployment skipped" 'WARN'
+ return
+}
+
+# ── Determine target node ─────────────────────────────────────────────────────────────────────────
+if ($TargetNode.Count) {
+ $matchedKey = $cfg.compute.cluster_nodes.Keys | Where-Object { $cfg.compute.cluster_nodes[$_].hostname -eq $TargetNode[0] } | Select-Object -First 1
+ $nodeHostname = if ($matchedKey) { $cfg.compute.cluster_nodes[$matchedKey].hostname } else { $TargetNode[0] } # compute.cluster_nodes.<key>.hostname
+ $nodeIp = if ($matchedKey) { $cfg.compute.cluster_nodes[$matchedKey].management_ip } else { $TargetNode[0] } # compute.cluster_nodes.<key>.management_ip
+} else {
+ $firstKey = $cfg.compute.cluster_nodes.Keys | Sort-Object | Select-Object -First 1
+ $nodeHostname = $cfg.compute.cluster_nodes[$firstKey].hostname # compute.cluster_nodes.<first-key>.hostname
+ $nodeIp = $cfg.compute.cluster_nodes[$firstKey].management_ip # compute.cluster_nodes.<first-key>.management_ip
+}
+if (-not $nodeIp) { Write-Log "management_ip missing for node '$nodeHostname'" 'ERROR'; throw "management_ip required" }
+
+# ── Credential resolution ─────────────────────────────────────────────────────
+function Resolve-KeyVaultRef {
+ param([string]$KvUri)
+ if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { Write-Log " Not a Key Vault URI: $KvUri" 'WARN'; return $null }
+ $vaultName = $Matches[1]
+ $secretName = $Matches[2]
+ if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
+ try {
+ Write-Log " Retrieving '$secretName' from '$vaultName' (Az.KeyVault)..."
+ $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
+ if ($secret) { Write-Log " Secret retrieved."; return $secret }
+ Write-Log " Az.KeyVault returned no secret." 'WARN'
+ } catch { Write-Log " Az.KeyVault failed: $_" 'WARN' }
+ Write-Log " Falling back to Azure CLI..." 'WARN'
+ } else { Write-Log " Az.KeyVault not found — trying Azure CLI..." 'WARN' }
+ try {
+ $azCmd = Get-Command az -ErrorAction SilentlyContinue
+ if (-not $azCmd) { Write-Log " Azure CLI not found." 'WARN'; return $null }
+ $tmpErr = [System.IO.Path]::GetTempFileName()
+ $val = (& az keyvault secret show --vault-name $vaultName --name $secretName --query value --output tsv --only-show-errors 2>$tmpErr)
+ $azErr = (Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue).Trim()
+ Remove-Item $tmpErr -ErrorAction SilentlyContinue
+ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($val)) {
+ Write-Log " az CLI failed$(if ($azErr) { ": $azErr" } else { " (exit $LASTEXITCODE)" })." 'WARN'
+ return $null
+ }
+ Write-Log " Secret retrieved (az CLI)."
+ return $val
+ } catch { Write-Log " az CLI failed: $_" 'WARN'; return $null }
+}
+
+if (-not $Credential) {
+ $adminUser = $cfg.identity.accounts.account_local_admin_username # identity.accounts.account_local_admin_username
+ $adminPassUri = $cfg.identity.accounts.account_local_admin_password # identity.accounts.account_local_admin_password
+ $lcmUser = $cfg.identity.accounts.account_lcm_username # identity.accounts.account_lcm_username
+ $lcmPassUri = $cfg.identity.accounts.account_lcm_password # identity.accounts.account_lcm_password
+ $netbiosName = $cfg.identity.active_directory.ad_netbios_name # identity.active_directory.ad_netbios_name
+
+ Write-Log "Resolving local admin credentials from Key Vault..."
+ $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
+ $adminUserFull = if ($adminUser -notmatch '\\|@') { ".\$adminUser" } else { $adminUser }
+ if ($adminPass) {
+ $localAdminCred = New-Object PSCredential($adminUserFull, (ConvertTo-SecureString $adminPass -AsPlainText -Force))
+ Write-Log " Local admin resolved for '$adminUserFull'."
+ } else {
+ Write-Log " Key Vault unavailable — prompting for local admin credentials." 'WARN'
+ $localAdminCred = Get-Credential -Message "Enter local Administrator credentials for cluster nodes" -UserName $adminUserFull
+ }
+
+ Write-Log "Resolving LCM credentials from Key Vault..."
+ $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri
+ $lcmUserFull = if ($lcmUser -notmatch '\\|@') { "$netbiosName\$lcmUser" } else { $lcmUser }
+ if ($lcmPass) {
+ $lcmCred = New-Object PSCredential($lcmUserFull, (ConvertTo-SecureString $lcmPass -AsPlainText -Force))
+ Write-Log " LCM resolved for '$lcmUserFull'."
+ } else {
+ Write-Log " LCM secret unavailable — LCM fallback will not be available." 'WARN'
+ $lcmCred = $null
+ }
+} else {
+ $localAdminCred = $Credential
+ $lcmCred = $null
+}
+
+function Invoke-NodeCommand {
+ param(
+ [string]$ComputerName,
+ [PSCredential]$LocalAdminCred,
+ [PSCredential]$LcmCred,
+ [scriptblock]$ScriptBlock,
+ [object[]]$ArgumentList = $null
+ )
+ $params = @{ ComputerName = $ComputerName; Credential = $LocalAdminCred; ScriptBlock = $ScriptBlock; ErrorAction = 'Stop' }
+ if ($ArgumentList) { $params['ArgumentList'] = $ArgumentList }
+ try {
+ Write-Log " Trying local admin ($($LocalAdminCred.UserName))..."
+ return Invoke-Command @params
+ } catch {
+ if ($_ -match 'Access is denied|LogonFailure|logon failure') {
+ if ($LcmCred) {
+ Write-Log " Local admin denied — retrying with LCM account ($($LcmCred.UserName))..." 'WARN'
+ $params['Credential'] = $LcmCred
+ return Invoke-Command @params
+ }
+ Write-Log " Local admin denied and no LCM credential available." 'ERROR'
+ }
+ throw
+ }
+}
+
+# ── Auto-discover vSwitch if not in config ────────────────────────────────────
+if ([string]::IsNullOrWhiteSpace($vmSwitchName)) {
+ Write-Log "vm_switch_name not set — auto-discovering from node '$nodeHostname'..."
+ try {
+ $discovered = Invoke-NodeCommand -ComputerName $nodeIp -LocalAdminCred $localAdminCred -LcmCred $lcmCred -ScriptBlock {
+ Get-VMSwitch | Where-Object { $_.SwitchType -eq 'External' } | Select-Object -First 1 -ExpandProperty Name
+ }
+ if ([string]::IsNullOrWhiteSpace($discovered)) {
+ throw "No external VMSwitch found on node '$nodeHostname'. Verify cluster networking is configured."
+ }
+ $vmSwitchName = $discovered
+ Write-Log "Discovered vSwitch: '$vmSwitchName'"
+ if (-not $WhatIf) {
+ $raw = Get-Content $ConfigPath -Raw
+ if ($raw -match 'vm_switch_name:\s*""') {
+ $raw = $raw -replace 'vm_switch_name:\s*""', "vm_switch_name: `"$vmSwitchName`""
+ Set-Content $ConfigPath -Value $raw -NoNewline
+ Write-Log "Config updated: vm_switch_name set to '$vmSwitchName'"
+ } else {
+ Write-Log "vm_switch_name not in expected format — skipping config write" 'WARN'
+ }
+ } else {
+ Write-Log "[WhatIf] Would write vm_switch_name '$vmSwitchName' back to config" 'WARN'
+ }
+ } catch {
+ Write-Log "vSwitch auto-discovery failed: $($_.Exception.Message)" 'ERROR'
+ throw
+ }
+} else {
+ Write-Log "vSwitch from config: '$vmSwitchName'"
+}
+
+Write-Log "SDN Prefix : $sdnPrefix"
+Write-Log "DNS Mode : $sdnDnsMode"
+Write-Log "Intent Pattern : $intentPattern"
+Write-Log "vSwitch Name : $vmSwitchName"
+Write-Log "Target Node : $nodeHostname ($nodeIp)"
+
+# ── Validate SDN prefix ───────────────────────────────────────────────────────
+if ([string]::IsNullOrWhiteSpace($sdnPrefix)) { throw "SDN prefix is required" }
+if ($sdnPrefix.Length -gt 8) { throw "SDN prefix must be 8 characters or fewer" }
+if ($sdnPrefix -notmatch '^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$' -or $sdnPrefix -match '--') {
+ throw "SDN prefix must be alphanumeric + hyphens only (no consecutive/trailing hyphens)"
+}
+Write-Log "SDN prefix validation passed: '$sdnPrefix'"
+
+# ── Validate intent pattern ───────────────────────────────────────────────────
+if ($intentPattern -notin 1, 2, 3) { throw "Invalid sdn_intent_pattern: $intentPattern (must be 1, 2, or 3)" }
+Write-Log "Intent pattern: $intentPattern"
+
+# ── DNS validation (static mode) ─────────────────────────────────────────────
+$ncRecordName = "$sdnPrefix-NC"
+if ($sdnDnsMode -eq 'static') {
+ Write-Log "Static DNS mode — validating DNS record: $ncRecordName"
+ if (-not $sdnNcIp) { throw "sdn_nc_reserved_ip is required when sdn_dns_mode is 'static'" }
+ try {
+ $resolved = Resolve-DnsName $ncRecordName -ErrorAction Stop
+ $resolvedIp = ($resolved | Where-Object QueryType -eq 'A' | Select-Object -First 1).IPAddress
+ if ($resolvedIp -ne $sdnNcIp) {
+ Write-Log "DNS '$ncRecordName' resolves to '$resolvedIp', expected '$sdnNcIp'" 'WARN'
+ } else {
+ Write-Log "DNS '$ncRecordName' resolves correctly to '$resolvedIp'"
+ }
+ } catch {
+ throw "DNS A record '$ncRecordName' not found. Create it pointing to '$sdnNcIp' before enabling SDN."
+ }
+} else {
+ Write-Log "Dynamic DNS mode — no pre-created DNS record required"
+}
+
+# ── WhatIf guard ──────────────────────────────────────────────────────────────
+if ($WhatIf) {
+ Write-Log "[WhatIf] Would run Add-EceFeature -Name NC -SDNPrefix '$sdnPrefix' -VirtualSwitchName '$vmSwitchName' on '$nodeHostname' ($nodeIp)" 'WARN'
+ Write-Log "WhatIf complete — no changes made" 'WARN'
+ return
+}
+
+# ── IRREVERSIBILITY WARNING ───────────────────────────────────────────────────
+Write-Log "-------------------------------------------------------------------" 'WARN'
+Write-Log "WARNING: SDN enablement is IRREVERSIBLE. Network Controller cannot" 'WARN'
+Write-Log " be removed after this operation completes." 'WARN'
+Write-Log " This will cause a brief network disruption on existing workloads." 'WARN'
+Write-Log "-------------------------------------------------------------------" 'WARN'
+
+# ── Run Add-EceFeature via PSRemoting ─────────────────────────────────────────
+Write-Log "Enabling SDN on '$nodeHostname' ($nodeIp) — this may take up to 20 minutes..."
+$featureParams = @{ Name = 'NC'; SDNPrefix = $sdnPrefix }
+if ($vmSwitchName -ne "") { $featureParams['VirtualSwitchName'] = $vmSwitchName }
+if ($AcknowledgeMaintenanceWindow) { $featureParams['AcknowledgeMaintenanceWindow'] = $true }
+if ($AcknowledgeDNSRecordCreation) { $featureParams['AcknowledgeDNSRecordCreation'] = $true }
+
+$result = Invoke-NodeCommand -ComputerName $nodeIp -LocalAdminCred $localAdminCred -LcmCred $lcmCred -ScriptBlock {
+ param($fp)
+ try { $o = Add-EceFeature @fp; return [PSCustomObject]@{ Success = $true; Outcome = $o } }
+ catch { return [PSCustomObject]@{ Success = $false; Error = $_.Exception.Message } }
+} -ArgumentList $featureParams
+
+# ── Results / validation ──────────────────────────────────────────────────────
+if ($result.Success) {
+ Write-Log "Add-EceFeature completed successfully"
+ $ncGroup = Invoke-NodeCommand -ComputerName $nodeIp -LocalAdminCred $localAdminCred -LcmCred $lcmCred -ScriptBlock {
+ Get-ClusterGroup | Where-Object { $_.Name -match 'Network Controller' }
+ }
+ if ($ncGroup) {
+ Write-Log " NC Cluster Group : $($ncGroup.Name) State: $($ncGroup.State)"
+ if ($ncGroup.State -ne 'Online') { Write-Log " NC group state '$($ncGroup.State)' — expected Online" 'WARN' }
+ } else {
+ Write-Log " NC cluster group not found — review Add-EceFeature output" 'WARN'
+ }
+ Write-Log "SDN deployment complete"
+} else {
+ Write-Log "Add-EceFeature failed: $($result.Error)" 'ERROR'
+ throw $result.Error
+}
+
+Write-Log "Invoke-DeploySDN-Orchestrated complete"
+return [PSCustomObject]@{ Node = $nodeHostname; NodeIp = $nodeIp; SdnPrefix = $sdnPrefix; NcRecord = $ncRecordName; Success = $result.Success }
+```
+
+**Invocation examples:**
+
+```powershell title="Enable SDN — dynamic DNS, acknowledge maintenance window"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-DeploySDN-Orchestrated.ps1 `
+ -ConfigPath .\config\variables.yml `
+ -AcknowledgeMaintenanceWindow
+```
+
+```powershell title="Enable SDN — static DNS, skip all prompts"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-DeploySDN-Orchestrated.ps1 `
+ -ConfigPath .\config\variables.yml `
+ -AcknowledgeMaintenanceWindow `
+ -AcknowledgeDNSRecordCreation
+```
+
+```powershell title="WhatIf — validate config and report, no changes"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-01-deploy-sdn\powershell\Invoke-DeploySDN-Orchestrated.ps1 `
+ -ConfigPath .\config\variables.yml `
+ -WhatIf
+```
+
+#### Validation
+
+After `Add-EceFeature` completes, the script validates the NC cluster group remotely. To validate manually from the management server:
+
+```powershell title="Remote validation from management server"
+Invoke-Command -ComputerName <node> -ScriptBlock {
+ Get-ClusterGroup | Where-Object { $_.Name -match 'Network Controller' } | Format-List
+ Get-ClusterResource | Where-Object { $_.ResourceType -match 'Network' } | Format-Table Name, State
+}
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Copy-paste ready — no config file, no helpers, no external dependencies. Run from anywhere with PSRemoting to a cluster node.
+
+#### Script
+
+**Primary**: `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-SDN-Standalone.ps1`
+
+#### Code
+
+```powershell title="Enable-SDN-Standalone.ps1"
+# ==============================================================================
+# Script : Enable-SDN-Standalone.ps1
+# Purpose: Enable SDN integration on Azure Local — Network Controller as
+# Failover Cluster service (SDN enabled by Arc) — fully self-contained
+# Run : From management server or jump box with PSRemoting to a cluster node
+# WARNING: SDN enablement is IRREVERSIBLE. Once enabled, it cannot be disabled.
+# ==============================================================================
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ────────────────────────────────────────────
+
+# Target cluster node (any node; run Add-EceFeature on one node only)
+$TargetNode = "iic-01-n01"
+
+# SDN prefix — used to form the NC REST URL: https://<Prefix>-NC.<domain>/
+# Rules: max 8 chars, alphanumeric + hyphens, no consecutive hyphens, no trailing hyphen
+$SdnPrefix = "iic01"
+
+# DNS mode: "dynamic" (AD-integrated, auto-creates record) or "static" (pre-create A record manually)
+$SdnDnsMode = "dynamic"
+
+# Reserved IP for Network Controller DNS record — 5th IP in your management pool
+# Required only when $SdnDnsMode = "static"
+$SdnNcReservedIp = "192.168.211.14"
+
+# Network intent pattern on this cluster: 1 = single intent, 2 = mgmt+compute / storage, 3 = disaggregated
+$SdnIntentPattern = 2
+
+# Suppress interactive prompts (set $true when running unattended)
+$AcknowledgeMaintenanceWindow = $false
+$AcknowledgeDNSRecordCreation = $false
+
+# Credentials for PSRemoting (leave $null to use current session credentials)
+$Credential = $null
+
+#endregion CONFIGURATION
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host " Deploy SDN — Standalone" -ForegroundColor Cyan
+Write-Host " Target Node : $TargetNode" -ForegroundColor Cyan
+Write-Host " SDN Prefix : $SdnPrefix" -ForegroundColor Cyan
+Write-Host " DNS Mode : $SdnDnsMode" -ForegroundColor Cyan
+Write-Host " Intent Pattern : $SdnIntentPattern" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "WARNING: SDN enablement is IRREVERSIBLE." -ForegroundColor Yellow
+Write-Host " Once Network Controller is deployed it cannot be removed." -ForegroundColor Yellow
+Write-Host ""
+
+# ── Validate SDN prefix ───────────────────────────────────────────────────────────────────────────────
+Write-Host "-- Validating SDN prefix: '$SdnPrefix'"
+if ([string]::IsNullOrWhiteSpace($SdnPrefix)) {
+ Write-Host "ERROR: SdnPrefix is empty" -ForegroundColor Red; exit 1
+}
+if ($SdnPrefix.Length -gt 8) {
+ Write-Host "ERROR: SdnPrefix '$SdnPrefix' exceeds 8 characters" -ForegroundColor Red; exit 1
+}
+if ($SdnPrefix -notmatch '^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$' -or $SdnPrefix -match '--') {
+ Write-Host "ERROR: SdnPrefix contains invalid characters or consecutive hyphens" -ForegroundColor Red; exit 1
+}
+Write-Host " Prefix OK: '$SdnPrefix'"
+
+# ── Validate intent pattern ───────────────────────────────────────────────────────────────────────────────
+Write-Host "-- Validating intent pattern: $SdnIntentPattern"
+if ($SdnIntentPattern -notin 1, 2, 3) {
+ Write-Host "ERROR: SdnIntentPattern must be 1, 2, or 3" -ForegroundColor Red; exit 1
+}
+Write-Host " Intent pattern OK: $SdnIntentPattern"
+
+# ── DNS validation (static) ──────────────────────────────────────────────────────────────────────────────
+$ncRecordName = "$SdnPrefix-NC"
+if ($SdnDnsMode -eq 'static') {
+ Write-Host "-- Validating static DNS record: $ncRecordName"
+ if (-not $SdnNcReservedIp) {
+ Write-Host "ERROR: SdnNcReservedIp is required for static DNS mode" -ForegroundColor Red; exit 1
+ }
+ try {
+ $resolved = Resolve-DnsName $ncRecordName -ErrorAction Stop
+ $resolvedIp = ($resolved | Where-Object QueryType -eq 'A' | Select-Object -First 1).IPAddress
+ if ($resolvedIp -ne $SdnNcReservedIp) {
+ Write-Host " WARN: '$ncRecordName' resolves to '$resolvedIp', expected '$SdnNcReservedIp'" -ForegroundColor Yellow
+ } else {
+ Write-Host " DNS record OK: '$ncRecordName' -> '$resolvedIp'"
+ }
+ } catch {
+ Write-Host "ERROR: DNS record '$ncRecordName' not found. Create A record -> '$SdnNcReservedIp' before proceeding." -ForegroundColor Red
+ exit 1
+ }
+} else {
+ Write-Host " Dynamic DNS — no pre-created record required"
+}
+
+# ── Enable SDN ────────────────────────────────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "-- Enabling SDN on node '$TargetNode'..."
+Write-Host " This may take up to 20 minutes. Do not interrupt."
+Write-Host ""
+
+$credParam = @{}
+if ($Credential) { $credParam['Credential'] = $Credential }
+
+$featureParams = @{
+ Name = 'NC'
+ SDNPrefix = $SdnPrefix
+}
+if ($AcknowledgeMaintenanceWindow) { $featureParams['AcknowledgeMaintenanceWindow'] = $true }
+if ($AcknowledgeDNSRecordCreation) { $featureParams['AcknowledgeDNSRecordCreation'] = $true }
+
+$result = Invoke-Command -ComputerName $TargetNode @credParam -ScriptBlock {
+ param($FP)
+ try {
+ $outcome = Add-EceFeature @FP
+ return [PSCustomObject]@{ Success = $true; Outcome = $outcome }
+ } catch {
+ return [PSCustomObject]@{ Success = $false; Error = $_.Exception.Message }
+ }
+} -ArgumentList $featureParams
+
+# ── Results ───────────────────────────────────────────────────────────────────────────────────
+Write-Host ""
+if ($result.Success) {
+ Write-Host "-- Validating Network Controller cluster group..."
+ $ncGroup = Invoke-Command -ComputerName $TargetNode @credParam -ScriptBlock {
+ Get-ClusterGroup | Where-Object { $_.Name -match 'Network Controller' }
+ }
+
+ Write-Host ""
+ Write-Host "================================================================" -ForegroundColor Green
+ Write-Host " SDN Deployment Complete" -ForegroundColor Green
+ if ($ncGroup) {
+ Write-Host " NC Cluster Group : $($ncGroup.Name)" -ForegroundColor Green
+ Write-Host " State : $($ncGroup.State)" -ForegroundColor Green
+ }
+ Write-Host " NC REST URL : https://$ncRecordName.<yourdomain>/" -ForegroundColor Green
+ Write-Host "================================================================" -ForegroundColor Green
+
+ if ($ncGroup -and $ncGroup.State -ne 'Online') {
+ Write-Host "WARNING: NC group state is '$($ncGroup.State)' — expected Online" -ForegroundColor Yellow
+ }
+} else {
+ Write-Host "ERROR: Add-EceFeature failed: $($result.Error)" -ForegroundColor Red
+ exit 1
+}
+```
+
+:::info No External Dependencies
+All values are defined in the `#region CONFIGURATION` block at the top. No `variables.yml`, no config-loader, no helpers required. Requires PSRemoting access to a cluster node with the Azure Stack HCI Administrator role.
+:::
+
+#### Validation
+
+- [ ] `Get-ClusterGroup | Where-Object Name -match "Network Controller"` — state `Online`
+- [ ] `Get-ClusterResource | Where-Object ResourceType -match "Network"` — all resources `Online`
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Summary
+
+| Check | Command | Expected Result |
+|-------|---------|-----------------|
+| OS build | `systeminfo.exe \| Select-String "OS Version"` | `10.0.26100` |
+| vSwitch name set | `variables.yml` → `compute.azure_local.vm_switch_name` | Non-empty string |
+| NC cluster group | `Get-ClusterGroup \| Where-Object Name -match "Network Controller"` | `State: Online` |
+| NC cluster resources | `Get-ClusterResource \| Where-Object ResourceType -match "Network"` | All `State: Online` |
+| DNS resolution | `Resolve-DnsName "<SDNPrefix>-NC.<domain>"` | Resolves to reserved IP |
+| Azure portal | Navigate to Azure Local instance → **Networking** | Network Controller listed |
+
+### Validation Checklist
+
+- [ ] `compute.azure_local.vm_switch_name` populated in `variables.yml`
+- [ ] DNS record resolves correctly (`Resolve-DnsName <SDNPrefix>-NC.<domain>`)
+- [ ] `Add-EceFeature` completes with a successful action plan outcome
+- [ ] `Get-ClusterGroup | Where-Object Name -match "Network Controller"` — state `Online`
+- [ ] Azure portal: Azure Local instance → **Networking** → Network Controller is listed
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| SDN Network Controller | `cluster.sdn.network_controller` | `nc-01.contoso.local` |
+| SDN VNET | `cluster.sdn.vnet_name` | `sdn-provider-network` |
+| SDN Subnet | `cluster.sdn.subnet` | `10.10.0.0/24` |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `Add-EceFeature` fails with action plan error | OS build mismatch or missing prerequisites | Verify OS build is `10.0.26100` with `systeminfo`; ensure all nodes are Arc-registered and cluster is healthy |
+| Network Controller cluster group shows `Offline` | NC VMs failed to start or quorum lost | Check NC VM status: `Get-ClusterGroup \| Where-Object Name -match "Network Controller"`; restart the group: `Start-ClusterGroup <NCGroupName>` |
+| DNS resolution fails for NC FQDN | DNS record not created or propagated | Create the DNS record manually: `Add-DnsServerResourceRecordA -Name "<SDNPrefix>-NC" -ZoneName "<domain>" -IPv4Address "<NC-IP>"` |
+| SDN feature not visible in Azure portal | Arc resource bridge not synced | Wait 10-15 minutes for sync; verify bridge health: `az arcappliance show --resource-group <rg> --name <appliance>` |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 05: Cluster Deployment](../phase-05-cluster-deployment/) | [Phase 06 Index](./index.mdx) | [Task 02: Cluster Quorum](./task-02-cluster-quorum-configuration.mdx) |
+
+---
+
+*Document maintained by Azure Local Cloud Azure Local Cloudnology Team.*
+*Part of the [Azure Local Implementation Guide](../../index.mdx).*
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

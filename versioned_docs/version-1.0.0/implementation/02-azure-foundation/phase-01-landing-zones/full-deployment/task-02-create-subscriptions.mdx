@@ -1,0 +1,294 @@
+---
+title: "Task 02: Create Subscriptions"
+sidebar_label: "Task 02: Subscriptions"
+sidebar_position: 2
+description: "Create dedicated subscriptions for the full CAF/WAF deployment and associate them with management groups."
+category: "Runbook"
+scope: "Full CAF/WAF subscription provisioning"
+purpose: "Create and associate dedicated subscriptions with management groups"
+author: "Hybrid Cloud Solutions"
+created: 2026-01-15
+updated: 2026-03-19
+version: "3.0.0"
+tags:
+ - azure-local
+ - phase-01
+ - subscriptions
+ - full-deployment
+keywords:
+ - subscriptions
+ - management group association
+ - billing isolation
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Create Subscriptions
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook  
+> **SCOPE**: Full CAF/WAF subscription provisioning  
+> **PURPOSE**: Create and associate dedicated subscriptions with management groups  
+> **MASTER REFERENCE**: [Create Azure subscriptions programmatically](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/programmatically-create-subscription)
+
+**Status**: Active
+
+## Overview
+
+Provision dedicated Azure subscriptions and associate each with its corresponding management group. The full CAF/WAF deployment uses separate subscriptions for platform services and landing zones, providing maximum billing isolation, RBAC boundaries, and governance flexibility.
+
+### How You Create Subscriptions
+
+How you create subscriptions depends on your organization's billing arrangement:
+
+| Billing Type | Creation Method | Programmatic Support |
+|---|---|---|
+| **Enterprise Agreement (EA)** | EA Portal, Azure CLI, or REST API | ✅ Full — `az account create` with enrollment account |
+| **Microsoft Customer Agreement (MCA)** | Azure Portal, Azure CLI, or REST API | ✅ Full — `az account create` with billing profile + invoice section |
+| **Pay-As-You-Go / MOSP** | Azure Portal only | ❌ Manual only — use the portal |
+
+:::tip Programmatic Subscription Creation
+If you have an EA or MCA, you can create subscriptions programmatically using `az account create` or `New-AzSubscriptionAlias`. This is the recommended approach for the full deployment model where you need 5+ subscriptions. See the [Execution Options](#execution-options) below.
+:::
+
+### What This Accomplishes
+
+- **Billing isolation** — separate cost tracking per platform function and landing zone
+- **Access control** — subscription-level RBAC boundaries
+- **Resource organization** — dedicated containers aligned with management group hierarchy
+- **Governance scope** — policy and compliance boundaries per subscription
+
+## Prerequisites
+
+| Prerequisite | Detail |
+|---|---|
+| **Management Groups** | Full hierarchy deployed ([Task 01](./task-01-configure-management-groups)) |
+| **Billing Access** | EA enrollment account owner, MCA billing profile owner, or Azure Portal access to create subscriptions |
+| **Subscription Quota** | Available subscription quota in your tenant (default: 5000 per EA, varies by agreement) |
+| **Permissions** | Management Group Contributor on target MGs (to associate subscriptions after creation) |
+
+## Subscription Architecture
+
+Each leaf-level management group hosts a dedicated subscription:
+
+### Subscription Mapping (IIC Example)
+
+| Management Group | Subscription Name | Config Path | Purpose |
+|---|---|---|---|
+| `cmp-platform-identity-iic` | `iic-platform-identity-001` | `azure.subscriptions.platform_identity.name` | Entra ID Connect, identity services |
+| `cmp-platform-management-iic` | `iic-platform-management-001` | `azure.subscriptions.platform_management.name` | Azure Monitor, Log Analytics, Automation |
+| `cmp-platform-connectivity-iic` | `iic-platform-connectivity-001` | `azure.subscriptions.platform_connectivity.name` | Hub VNet, VPN, ExpressRoute |
+| `cmp-lz-corp-iic` | `iic-lz-azurelocal-corp-001` | `azure.subscriptions.lz_corp.name` | Azure Local clusters (corporate) |
+| `cmp-lz-online-iic` | `iic-lz-azurelocal-online-001` | `azure.subscriptions.lz_online.name` | Internet-facing workloads |
+
+### Target Structure
+
+```
+cmp-iic-root                              ← organization root MG
+├── cmp-platform-iic
+│   ├── cmp-platform-identity-iic
+│   │   └── iic-platform-identity-001     ← subscription
+│   ├── cmp-platform-management-iic
+│   │   └── iic-platform-management-001   ← subscription
+│   └── cmp-platform-connectivity-iic
+│       └── iic-platform-connectivity-001 ← subscription
+├── cmp-landing-zones-iic
+│   ├── cmp-lz-corp-iic
+│   │   └── iic-lz-azurelocal-corp-001    ← subscription
+│   └── cmp-lz-online-iic
+│       └── iic-lz-azurelocal-online-001  ← subscription
+├── cmp-sandbox-iic (no subscription yet)
+└── cmp-decommissioned-iic (no subscription yet)
+```
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example (IIC) |
+|----------|-------------|---------------|
+| Platform Identity Sub | `azure.subscriptions.platform_identity.name` | `iic-platform-identity-001` |
+| Platform Management Sub | `azure.subscriptions.platform_management.name` | `iic-platform-management-001` |
+| Platform Connectivity Sub | `azure.subscriptions.platform_connectivity.name` | `iic-platform-connectivity-001` |
+| Corp Landing Zone Sub | `azure.subscriptions.lz_corp.name` | `iic-lz-azurelocal-corp-001` |
+| Online Landing Zone Sub | `azure.subscriptions.lz_online.name` | `iic-lz-azurelocal-online-001` |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Pay-As-You-Go billing, or you prefer the visual interface
+
+#### Procedure
+
+1. **Navigate to Subscriptions**:
+   - In Azure Portal, search for **Subscriptions**
+   - Click **+ Add**
+
+2. **Create each subscription** from the mapping table above:
+   - **Subscription name**: Enter the name from the mapping table (e.g., `iic-platform-identity-001`)
+   - **Billing**: Select your billing account / enrollment
+   - **Management group**: Select the corresponding management group from the mapping table
+   - Click **Create**
+
+3. **Verify** each subscription appears under the correct management group in **Management groups** view
+
+:::tip Creating Multiple Subscriptions
+Work through the mapping table top-to-bottom, creating all Platform subscriptions first, then Landing Zone subscriptions. The Azure Portal allows you to set the management group at creation time, saving the manual association step.
+:::
+
+#### Validation
+
+- [ ] All 5 subscriptions created with names matching `variables.yml`
+- [ ] Each subscription is under the correct management group
+- [ ] You have Owner access to all subscriptions
+
+</TabItem>
+
+
+
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
+:::
+
+</TabItem>
+
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Using Existing Subscriptions
+
+If your organization already has subscriptions provisioned (e.g., through a volume licensing agreement or prior setup), you can skip creation and just associate them with the correct management groups.
+
+### Move Existing Subscriptions
+
+```bash
+# Move a subscription to a management group
+az account management-group subscription add \
+  --name "<management-group-id>" \
+  --subscription "<subscription-id-or-name>"
+```
+
+```powershell
+# PowerShell equivalent
+New-AzManagementGroupSubscription `
+    -GroupId "<management-group-id>" `
+    -SubscriptionId "<subscription-id>"
+```
+
+:::warning Subscription Move Impact
+Moving a subscription to a different management group changes which Azure Policies and RBAC role assignments it inherits. Review inherited policies before moving production subscriptions.
+:::
+
+---
+
+## Validation
+
+- [ ] All subscriptions exist with names from `variables.yml`
+- [ ] Each subscription is associated with the correct management group per the mapping table
+- [ ] Subscriptions are visible under their respective MGs in the Azure Portal
+- [ ] You have Owner or Contributor access to all subscriptions
+
+### Verify via CLI
+
+```bash
+# List subscriptions and their management group parents
+az account management-group show --name "cmp-iic-root" --expand --recurse \
+  --query "children[].{Name:name, DisplayName:displayName, Children:children[].{Name:name, DisplayName:displayName, Subs:children[?type=='Microsoft.Management/managementGroups/subscriptions'].{Name:name, DisplayName:displayName}}}" \
+  -o json
+```
+
+```powershell
+# PowerShell: verify all subscriptions under root
+Get-AzManagementGroup -GroupName "cmp-iic-root" -Expand -Recurse |
+    Select-Object -ExpandProperty Children |
+    Format-Table Name, DisplayName, Type -AutoSize
+```
+
+## Troubleshooting
+
+| Symptom | Error | Resolution |
+|---------|-------|------------|
+| No enrollment account found | Empty result from `az billing enrollment-account list` | You need EA enrollment account owner role — contact your organization's EA admin |
+| Subscription creation fails | `AuthorizationFailed` or `BillingAccountNotFound` | Verify your billing access — EA enrollment owner, MCA billing profile contributor, etc. |
+| Cannot associate with MG | `AuthorizationFailed` | Verify Management Group Contributor role on the target MG |
+| Subscription under wrong MG | Shows under root or Tenant Root Group | Move the subscription: `az account management-group subscription add --name <target-mg> --subscription <sub-id>` |
+| Subscription quota exceeded | `SubscriptionLimitReached` | Request quota increase from Microsoft support |
+| Subscription not visible | Not listed in Azure Portal | Verify you're signed into the correct tenant — check with `az account show` |
+
+## Next Steps
+
+Proceed to [Task 03: Create Resource Groups](./task-03-create-resource-groups)
+
+## References
+
+- [Create Azure Subscriptions Programmatically](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/programmatically-create-subscription)
+- [Create EA Subscriptions](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/programmatically-create-subscription-enterprise-agreement)
+- [Create MCA Subscriptions](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/programmatically-create-subscription-microsoft-customer-agreement)
+- [Move Subscriptions Between Management Groups](https://learn.microsoft.com/en-us/azure/governance/management-groups/manage)
+- [Azure Subscription Limits](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/azure-subscription-service-limits)
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01 — Management Groups](./task-01-configure-management-groups.mdx) | [Full Deployment Overview](./index.mdx) | [Task 03 — Create Resource Groups](./task-03-create-resource-groups.mdx) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-19 by Hybrid Cloud Solutions
+- Version: 3.0.0
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

@@ -1,0 +1,276 @@
+---
+title: "Task 12: Complete Combined Script (All Steps)"
+sidebar_label: "Task 12: Combined Script"
+sidebar_position: 12
+description: "Optional combined script that runs Tasks 02–10 in a single execution for faster deployment"
+category: "Runbook"
+scope: "Optional combined script that runs Tasks 02–10 in a single execution for fast..."
+purpose: "Optional combined script that runs Tasks 02–10 in a single execution for faster deployment"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - os-configuration
+keywords:
+  - Complete
+  - Combined
+  - Script
+  - Steps
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 12: Complete Combined Script (All Steps)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Optional combined script that runs Tasks 02–10 in a single execution for fast...
+> **PURPOSE**: Optional combined script that runs Tasks 02–10 in a single execution for faster deployment
+> **MASTER REFERENCE**: [Azure Local Pre-deployment Checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-checklist)
+
+**Status**: Active
+
+## Overview
+
+Optional combined script that runs Tasks 02–10 in a single execution. Use this instead of running each task individually if preferred.
+
+:::info
+Task 11 (Clear Previous Storage Configuration) is not included — it is conditional and must be run separately if needed.
+:::
+
+:::warning WinRM Prerequisite
+Task 01 (Enable WinRM) must be completed on each node **before** running the orchestrated script. Run it manually via console or SConfig first.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Task 01 complete on all nodes | WinRM enabled via console/SConfig |
+| `variables.yml` populated | All node IPs, hostnames, network values set |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `cluster_nodes[].management_ip` | string | Static IP per node |
+| `cluster_nodes[].hostname` | string | Target hostname per node |
+| `network.management.gateway` | string | Default gateway |
+| `network.management.prefix_length` | integer | Subnet prefix |
+| `dns.primary` | string | Primary DNS server |
+| `dns.secondary` | string | Secondary DNS server |
+| `cluster.management_nic_name` | string | Management adapter name |
+| `active_directory.ntp_servers` | array | NTP server addresses |
+
+---
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run locally on each node. Set all `REPLACE_` variables before running.
+
+```powershell
+# Task 12 - Complete Combined Script (direct, run on each node)
+# Set all REPLACE_ variables before running
+
+$StaticIP = "REPLACE_WITH_STATIC_IP" # cluster_nodes[].management_ip
+$Gateway = "REPLACE_WITH_GATEWAY" # network.management.gateway
+$PrefixLength = 24 # network.management.prefix
+$DNSPrimary = "REPLACE_WITH_DNS_PRIMARY" # dns.primary
+$DNSSecondary = "REPLACE_WITH_DNS_SECONDARY" # dns.secondary
+$NTPServer = "REPLACE_WITH_NTP_SERVER" # ntp.server
+$NewHostname = "REPLACE_WITH_HOSTNAME" # cluster_nodes[].hostname
+
+if ($StaticIP -match "^REPLACE_" -or $NewHostname -match "^REPLACE_") {
+ Write-Host "Set all REPLACE_ variables before running" -ForegroundColor Red; exit 1
+}
+
+# Task 02 - Enable RDP
+Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
+Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+# Tasks 03-04 - Static IP / Disable DHCP
+$adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
+Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -Dhcp Disabled
+Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false
+New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress $StaticIP -PrefixLength $PrefixLength -DefaultGateway $Gateway
+
+# Task 05 - DNS
+Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses @($DNSPrimary, $DNSSecondary)
+
+# Task 07 - NTP
+w32tm /config /manualpeerlist:$NTPServer /syncfromflags:manual /update | Out-Null
+Restart-Service w32time
+w32tm /resync | Out-Null
+
+# Task 08 - ICMP
+Enable-NetFirewallRule -DisplayName "File and Printer Sharing (Echo Request - ICMPv4-In)"
+
+# Task 09 - Disable unused adapters
+Get-NetAdapter | Where-Object { $_.Status -eq "Disconnected" } | Disable-NetAdapter -Confirm:$false
+Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
+
+# Task 10 - Hostname
+Rename-Computer -NewName $NewHostname -Force
+
+Write-Host "Restart required to apply hostname change."
+Write-Host -NoNewline "Restart now? [Y/N]: "; if ((Read-Host) -match "^[Yy]") { Restart-Computer -Force }
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run from the management server. Reads all values from `variables.yml`.
+
+```powershell
+# Task 12 - Complete Combined Script (orchestrated, all nodes)
+# variables.yml variables:
+# cluster_nodes[].management_ip -> connection IP per node
+# cluster_nodes[].hostname -> target hostname per node
+# network.management.gateway -> $Gateway
+# network.management.prefix -> $PrefixLength
+# dns.primary -> $DNSPrimary
+# dns.secondary -> $DNSSecondary
+# ntp.server -> $NTPServer
+
+$ConfigPath = "$env:USERPROFILE\variables.yml"
+$lines = Get-Content $ConfigPath
+
+# Parse per-node values
+$nodes = @()
+$current = $null
+foreach ($line in $lines) {
+ if ($line -match '^\s*-\s*hostname:\s*"?([^"]+)"?') { $current = @{ hostname = $Matches[1].Trim(); ip = "" } }
+ elseif ($line -match '^\s+management_ip:\s*"?([^"'' ]+)"?' -and $current) { $current.ip = $Matches[1].Trim() }
+ if ($current -and $current.ip -and $current.hostname) { $nodes += [PSCustomObject]$current; $current = $null }
+}
+
+# Parse shared network values
+$Gateway = ($lines | Select-String 'gateway:\s+"?([^"'' ]+)').Matches[0].Groups[1].Value.Trim()
+$PrefixLength = [int]($lines | Select-String 'prefix:\s+(\d+)').Matches[0].Groups[1].Value.Trim()
+$DNSPrimary = ($lines | Select-String 'primary:\s+"?([^"'' ]+)').Matches[0].Groups[1].Value.Trim()
+$DNSSecondary = ($lines | Select-String 'secondary:\s+"?([^"'' ]+)').Matches[0].Groups[1].Value.Trim()
+$NTPServer = ($lines | Select-String 'server:\s+"?([^"'' ]+)').Matches[0].Groups[1].Value.Trim()
+
+foreach ($node in $nodes) {
+ Invoke-Command -ComputerName $node.ip -ArgumentList $node.ip, $node.hostname, $Gateway, $PrefixLength, $DNSPrimary, $DNSSecondary, $NTPServer -ScriptBlock {
+ param($ip, $hostname, $gateway, $prefix, $dns1, $dns2, $ntp)
+
+ # Task 02 - RDP
+ Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
+ Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+ # Tasks 03-05 - Static IP / DHCP / DNS
+ $adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
+ Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -Dhcp Disabled
+ Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false
+ New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress $ip -PrefixLength $prefix -DefaultGateway $gateway
+ Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses @($dns1, $dns2)
+
+ # Task 07 - NTP
+ w32tm /config /manualpeerlist:$ntp /syncfromflags:manual /update | Out-Null
+ Restart-Service w32time
+ w32tm /resync | Out-Null
+
+ # Task 08 - ICMP
+ Enable-NetFirewallRule -DisplayName "File and Printer Sharing (Echo Request - ICMPv4-In)"
+
+ # Task 09 - Disable unused adapters
+ Get-NetAdapter | Where-Object { $_.Status -eq "Disconnected" } | Disable-NetAdapter -Confirm:$false
+ Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
+
+ # Task 10 - Hostname
+ Rename-Computer -NewName $hostname -Force
+ }
+ Restart-Computer -ComputerName $node.ip -Force
+ Write-Host "[$($node.ip)] Restarting -> $($node.hostname)"
+}
+
+Write-Host "Waiting 60s for nodes to come back online..."
+Start-Sleep -Seconds 60
+
+foreach ($node in $nodes) {
+ Invoke-Command -ComputerName $node.ip -ScriptBlock {
+ [PSCustomObject]@{
+ Hostname = $env:COMPUTERNAME
+ IP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^169\.' -and $_.IPAddress -ne '127.0.0.1' }).IPAddress
+ DNS = (Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object ServerAddresses).ServerAddresses -join ", "
+ NTP = (w32tm /query /source)
+ }
+ }
+} | Sort -Property PsComputerName | Format-Table -AutoSize
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Checklist
+
+- [ ] All nodes restarted successfully
+- [ ] Hostnames match `variables.yml`
+- [ ] Static IPs set and DHCP disabled
+- [ ] DNS resolves correctly
+- [ ] NTP synchronized
+- [ ] ICMP responds from all nodes
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Script fails on one node but succeeds on others | WinRM connectivity issue or credential mismatch | Verify `Enter-PSSession -ComputerName <node>` works; re-run `Enable-PSRemoting -Force` on the failing node |
+| Hostname not changed after reboot | `Rename-Computer` requires a restart to take effect | Confirm the script includes `-Restart` flag; manually reboot if needed: `Restart-Computer -Force` |
+| Static IP not applied | DHCP still enabled on the management adapter | Run `Set-NetIPInterface -InterfaceAlias "Management" -Dhcp Disabled` before assigning the static IP |
+| DNS resolution fails after configuration | DNS server addresses not set or wrong order | Verify with `Get-DnsClientServerAddress`; re-run the DNS configuration step with correct IPs from `variables.yml` |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+[← Task 11: Clear Storage](./task-11-clear-previous-storage-configuration-conditional.mdx) · [↑ Phase 03](./index.mdx)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

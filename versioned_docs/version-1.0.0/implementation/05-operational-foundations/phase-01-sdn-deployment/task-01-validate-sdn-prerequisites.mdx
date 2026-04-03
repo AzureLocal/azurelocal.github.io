@@ -1,0 +1,400 @@
+---
+title: "Task 01: Validate SDN Prerequisites"
+sidebar_label: "Task 01: Validate Prerequisites"
+sidebar_position: 1
+description: "Verify network intent compatibility and requirements before enabling SDN on Azure Local"
+category: "Runbook"
+scope: "Verify network intent compatibility and requirements before enabling SDN on A..."
+purpose: "Verify network intent compatibility and requirements before enabling SDN on Azure Local"
+author: "AzureLocal"
+created: 2025-03-25
+updated: 2026-04-01
+version: "1.1.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - sdn
+keywords:
+  - Validate
+  - Prerequisites
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Validate SDN Prerequisites
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: SDN prerequisite validation   
+> **PURPOSE**: Verify cluster meets SDN requirements   
+> **MASTER REFERENCE**: [Microsoft Learn - SDN Overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/sdn-overview)
+
+**Status**: Active
+
+## Overview
+
+Before enabling SDN on Azure Local, you must verify that your cluster meets all prerequisites including version requirements, network intent configuration, and workload compatibility.
+
+## Prerequisites Checklist
+
+### Version Requirements
+
+| Requirement | Minimum Version |
+|-------------|-----------------|
+| Azure Local | 2601 |
+| OS Build | 26100.xxxx |
+| Arc Agent | Latest |
+
+### Network Intent Compatibility
+
+SDN enabled by Arc only supports specific Network ATC configurations. Verify your intent matches one of these patterns:
+
+| Pattern | Description | Storage Connectivity |
+|---------|-------------|---------------------|
+| Group All Traffic | Single intent for all traffic | Switched only |
+| Management + Compute with Separate Storage | 2 intents | Switched or Switchless (≤4 nodes) |
+| Fully Disaggregated | Up to 3 separate intents | Switched or Switchless (≤4 nodes) |
+
+### Workload Compatibility
+
+| Workload | SDN Compatible |
+|----------|----------------|
+| Azure Local VMs (deployed from Azure) | ✅ Yes |
+| Hyper-V VMs (deployed locally) | ❌ No - Use on-premises SDN |
+| AKS on Azure Local | ❌ No |
+| Multi-cast applications | ❌ No |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Steps
+
+1. Navigate to **Azure Portal** → **Azure Arc** → **Azure Local**
+2. Select your cluster resource
+3. Go to **Overview** and verify:
+ - **Version**: 2601 or later
+ - **Connection Status**: Connected
+
+:::warning Portal Limitation
+Network ATC intent configuration and OS build version are **not visible in the Azure Portal**. You must use PowerShell (Direct Script or Orchestrated Script) to validate these prerequisites. The portal can only confirm cluster version and Arc connectivity.
+:::
+
+### Verification (Portal Only)
+
+Document the following from the portal:
+- [ ] Cluster version is 2601+
+- [ ] Arc connection is active
+
+**For full validation**, use the Direct Script or Orchestrated Script tab to also verify:
+- OS build (26100.xxxx+)
+- Network intent compatibility
+- AKS workload check
+
+</TabItem>
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run this script from the management server to validate SDN prerequisites remotely.
+
+```powershell title="Validate-SDNPrerequisites-Orchestrated.ps1 (Run FROM Management Server)"
+#Requires -Modules Az.Accounts, Az.Resources, Az.StackHCI
+
+<#
+.SYNOPSIS
+ Validates SDN prerequisites on an Azure Local cluster from a management server.
+.DESCRIPTION
+ This script connects to Azure and validates that the target cluster meets
+ all requirements for enabling SDN via Azure Arc.
+.PARAMETER ClusterName
+ The name of the Azure Local cluster.
+.PARAMETER ResourceGroupName
+ The resource group containing the cluster.
+.PARAMETER SubscriptionId
+ The Azure subscription ID.
+.PARAMETER NodeName
+ The name of a cluster node for remote PowerShell validation.
+.PARAMETER Credential
+ Credentials for connecting to cluster nodes.
+#>
+
+[CmdletBinding()]
+param(
+ [Parameter(Mandatory = $true)]
+ [string]$ClusterName,
+ 
+ [Parameter(Mandatory = $true)]
+ [string]$ResourceGroupName,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$SubscriptionId,
+ 
+ [Parameter(Mandatory = $true)]
+ [string]$NodeName,
+ 
+ [Parameter(Mandatory = $false)]
+ [PSCredential]$Credential
+)
+
+$ErrorActionPreference = 'Stop'
+
+# Connect to Azure if not already connected
+$context = Get-AzContext
+if (-not $context) {
+ Write-Host "Connecting to Azure..." -ForegroundColor Yellow
+ Connect-AzAccount
+}
+
+if ($SubscriptionId) {
+ Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+}
+
+Write-Host "=" * 60 -ForegroundColor Cyan
+Write-Host "SDN Prerequisites Validation (Remote)" -ForegroundColor Cyan
+Write-Host "Cluster: $ClusterName" -ForegroundColor Cyan
+Write-Host "=" * 60 -ForegroundColor Cyan
+
+# Get cluster resource from Azure
+Write-Host "`n[1/4] Retrieving cluster information from Azure..." -ForegroundColor Yellow
+$cluster = Get-AzResource -ResourceGroupName $ResourceGroupName -Name $ClusterName -ResourceType "Microsoft.AzureStackHCI/clusters" -ExpandProperties
+
+if (-not $cluster) {
+ throw "Cluster '$ClusterName' not found in resource group '$ResourceGroupName'"
+}
+
+Write-Host " Cluster ID: $($cluster.ResourceId)" -ForegroundColor Gray
+Write-Host " Status: $($cluster.Properties.status)" -ForegroundColor Gray
+Write-Host " Connectivity: $($cluster.Properties.connectivityStatus)" -ForegroundColor Gray
+
+# Check version via Azure
+Write-Host "`n[2/4] Checking cluster version..." -ForegroundColor Yellow
+$reportedVersion = $cluster.Properties.reportedProperties.clusterVersion
+Write-Host " Reported Version: $reportedVersion"
+
+# Check connectivity status
+Write-Host "`n[3/4] Checking Arc connectivity..." -ForegroundColor Yellow
+$connectivityStatus = $cluster.Properties.connectivityStatus
+if ($connectivityStatus -eq "Connected") {
+ Write-Host " ✓ Cluster is connected to Azure Arc" -ForegroundColor Green
+} else {
+ Write-Host " ✗ Cluster connectivity: $connectivityStatus" -ForegroundColor Red
+}
+
+# Remote validation on node
+Write-Host "`n[4/4] Running remote validation on node: $NodeName..." -ForegroundColor Yellow
+
+$remoteParams = @{
+ ComputerName = $NodeName
+}
+
+if ($Credential) {
+ $remoteParams.Credential = $Credential
+}
+
+$remoteResult = Invoke-Command @remoteParams -ScriptBlock {
+ $result = @{
+ OSBuild = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuild
+ IntentCount = (Get-NetIntent | Measure-Object).Count
+ Intents = Get-NetIntent | Select-Object IntentName, @{N='TrafficTypes';E={$_.TrafficType -join ','}}
+ }
+ return $result
+}
+
+Write-Host " OS Build: $($remoteResult.OSBuild)" -ForegroundColor Gray
+Write-Host " Network Intents: $($remoteResult.IntentCount)" -ForegroundColor Gray
+foreach ($intent in $remoteResult.Intents) {
+ Write-Host " - $($intent.IntentName): $($intent.TrafficTypes)" -ForegroundColor Gray
+}
+
+# Summary
+Write-Host "`n" + "=" * 60 -ForegroundColor Cyan
+Write-Host "Validation Complete" -ForegroundColor Cyan
+Write-Host "=" * 60 -ForegroundColor Cyan
+
+Write-Host @"
+
+Review the output above and verify:
+ [ ] Cluster version is 2601+
+ [ ] OS build is 26100+
+ [ ] Arc connectivity is Connected
+ [ ] Network intent configuration is compatible
+ [ ] No AKS workloads are running
+
+If all prerequisites are met, proceed to Post-Deployment: Deploy SDN.
+"@ -ForegroundColor Yellow
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+Copy-paste ready validation script — no config file, no helpers, no dependencies.
+
+```powershell title="Validate-SDNPrerequisites-Standalone.ps1"
+# ============================================================================
+# Script: Validate-SDNPrerequisites-Standalone.ps1
+# Execution: Run anywhere — fully self-contained, no external dependencies
+# Prerequisites: PowerShell, run ON an Azure Local cluster node
+# ============================================================================
+
+#region CONFIGURATION
+# ── No configuration needed — this script reads values from the local node ──
+#endregion CONFIGURATION
+
+$ErrorActionPreference = 'Stop'
+
+Write-Host "=" * 60 -ForegroundColor Cyan
+Write-Host "SDN Prerequisites Validation (Standalone)" -ForegroundColor Cyan
+Write-Host "=" * 60 -ForegroundColor Cyan
+
+$results = @{ Pass = 0; Fail = 0 }
+
+# [1/5] Azure Local version
+Write-Host "`n[1/5] Checking Azure Local version..." -ForegroundColor Yellow
+$registration = Get-AzStackHCI
+$version = $registration.ClusterVersion
+Write-Host " Cluster Version: $version"
+if ($version -match "^2[6-9]\." -or $version -match "^[3-9][0-9]\.") {
+ Write-Host " ✓ Version requirement met (2601+)" -ForegroundColor Green; $results.Pass++
+} else {
+ Write-Host " ✗ Version 2601+ required" -ForegroundColor Red; $results.Fail++
+}
+
+# [2/5] OS Build
+Write-Host "`n[2/5] Checking OS build version..." -ForegroundColor Yellow
+$osBuild = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuild
+Write-Host " OS Build: $osBuild"
+if ([int]$osBuild -ge 26100) {
+ Write-Host " ✓ OS build requirement met (26100+)" -ForegroundColor Green; $results.Pass++
+} else {
+ Write-Host " ✗ OS build 26100+ required" -ForegroundColor Red; $results.Fail++
+}
+
+# [3/5] Arc connection
+Write-Host "`n[3/5] Checking Arc connection status..." -ForegroundColor Yellow
+Write-Host " Connection Status: $($registration.ConnectionStatus)"
+if ($registration.ConnectionStatus -eq 'Connected') {
+ Write-Host " ✓ Arc connection active" -ForegroundColor Green; $results.Pass++
+} else {
+ Write-Host " ✗ Arc connection required" -ForegroundColor Red; $results.Fail++
+}
+
+# [4/5] Network intents
+Write-Host "`n[4/5] Checking Network ATC intents..." -ForegroundColor Yellow
+try {
+ $intents = Get-NetIntent
+ foreach ($i in $intents) { Write-Host " - $($i.IntentName): $($i.TrafficType -join ', ')" -ForegroundColor Gray }
+ Write-Host " ✓ Network intent configuration retrieved" -ForegroundColor Green; $results.Pass++
+} catch {
+ Write-Host " ⚠ Could not retrieve network intents: $_" -ForegroundColor Yellow; $results.Fail++
+}
+
+# [5/5] AKS workloads
+Write-Host "`n[5/5] Checking for AKS workloads..." -ForegroundColor Yellow
+try {
+ $aksCount = (Get-VM | Where-Object { $_.Name -match "^(aks|kubernetes|k8s)" } | Measure-Object).Count
+ if ($aksCount -eq 0) {
+ Write-Host " ✓ No AKS workloads detected" -ForegroundColor Green; $results.Pass++
+ } else {
+ Write-Host " ✗ AKS workloads detected ($aksCount VMs)" -ForegroundColor Red; $results.Fail++
+ }
+} catch {
+ Write-Host " ⚠ Could not check VMs: $_" -ForegroundColor Yellow; $results.Pass++
+}
+
+# Summary
+Write-Host "`n" + "=" * 60 -ForegroundColor Cyan
+Write-Host "Results: $($results.Pass) passed, $($results.Fail) failed" -ForegroundColor $(if ($results.Fail -eq 0) { 'Green' } else { 'Red' })
+```
+
+:::info No External Dependencies
+This script is completely self-contained. Run it directly on any Azure Local cluster node — no `variables.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Checklist
+
+Complete this checklist before proceeding to SDN enablement:
+
+| Requirement | Status | Notes |
+|-------------|--------|-------|
+| Azure Local version 2601+ | ☐ | |
+| OS build 26100.xxxx+ | ☐ | |
+| Arc connection active | ☐ | |
+| Network intent compatible | ☐ | Document pattern used |
+| No AKS workloads | ☐ | |
+| No existing on-premises SDN | ☐ | |
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| Version too old | Upgrade Azure Local to 2601+ |
+| Arc not connected | Run `Sync-AzureStackHCI` and verify connectivity |
+| Incompatible network intent | Reconfigure Network ATC before enabling SDN |
+| AKS workloads present | Cannot enable SDN - AKS not supported |
+| Existing SDN via WAC/SDN Express | Cannot migrate - choose one method |
+
+## Next Steps
+
+If all prerequisites are met, proceed to [Post-Deployment: Deploy SDN](../../04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn.mdx).
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Phase 01: SDN Operations](./index.mdx) | [Phase 01: SDN Operations](./index.mdx) | [Task 02: Configure NSGs →](./task-02-configure-network-security-groups.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | AzureLocal | Initial release |
+| 1.1.0 | 2026-04-01 | AzureLocal | Align naming conventions, remove consulting language |
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| SDN Prerequisites | `operational.sdn.prerequisites_check` | `true` |
+| Network Controller FQDN | `operational.sdn.nc_fqdn` | `nc.contoso.local` |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | AzureLocal | Initial release |
+| 1.1.0 | 2026-04-01 | AzureLocal | Align naming conventions, remove consulting language |

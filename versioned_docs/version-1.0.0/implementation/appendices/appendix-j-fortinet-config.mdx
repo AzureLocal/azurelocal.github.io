@@ -1,0 +1,553 @@
+---
+title: "Appendix J: Fortinet Config"
+sidebar_label: "Appendix J: Fortinet Config"
+sidebar_position: 10
+description: "FortiGate firewall configuration templates for Azure Local deployments"
+---
+
+# Appendix J: Fortinet Configuration
+
+[![Reference](https://img.shields.io/badge/Type-Reference-green?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference   
+> **SCOPE**: FortiGate firewall configuration   
+> **PURPOSE**: Firewall rules, VPN, and Azure endpoint whitelist configuration   
+> **MASTER REFERENCE**: [Fortinet Documentation](https://docs.fortinet.com/)
+
+**Status**: Active
+
+## Overview
+
+This appendix provides FortiGate firewall configuration templates for Azure Local deployments. These configurations establish secure connectivity between on-premises Azure Local infrastructure and Azure cloud services via Site-to-Site VPN with BGP routing.
+
+**Key Configuration Areas:**
+- **Azure URL Whitelist**: Required FQDN endpoints for Azure Local connectivity
+- **Service Definitions**: Custom ports and protocols for cluster communication
+- **VPN Configuration**: IKEv2 Site-to-Site VPN with Azure VPN Gateway
+- **BGP Routing**: Dynamic route exchange between on-premises and Azure
+- **Firewall Policies**: Traffic rules for Azure management and cluster operations
+
+---
+
+## Azure URL Whitelist
+
+:::warning Critical
+These URLs must be whitelisted for outbound HTTPS (443) traffic from Azure Local nodes for proper cluster registration and Arc integration.
+:::
+
+### Azure Local Core Services
+
+| FQDN | Purpose |
+|------|---------|
+| `dp.stackhci.azure.com` | Azure Stack HCI data plane |
+| `*.platform.edge.azure.com` | Edge platform services |
+| `azurestackhci.azurefd.net` | Azure Stack HCI front door |
+| `hciarcvmscontainerregistry.azurecr.io` | Arc VM container registry |
+
+### Authentication & Identity
+
+| FQDN | Purpose |
+|------|---------|
+| `login.microsoftonline.com` | Microsoft Online authentication |
+| `*.login.microsoftonline.com` | Microsoft Online (wildcard) |
+| `login.windows.net` | Windows authentication |
+| `graph.windows.net` | Azure AD Graph API |
+| `graph.microsoft.com` | Microsoft Graph API |
+| `sts.windows.net` | Security Token Service |
+| `pas.windows.net` | Policy Administration Service |
+
+### Azure Resource Management
+
+| FQDN | Purpose |
+|------|---------|
+| `management.azure.com` | Azure Resource Manager |
+| `guestnotificationservice.azure.com` | Guest notifications |
+| `*.his.arc.azure.com` | Arc hybrid identity |
+| `*.guestconfiguration.azure.com` | Guest configuration |
+| `*.guestnotificationservice.azure.com` | Guest notifications (wildcard) |
+| `*.arc.azure.net` | Arc connectivity |
+| `*.obo.arc.azure.com` | Arc on-behalf-of |
+
+### Kubernetes & AKS Arc
+
+| FQDN | Purpose |
+|------|---------|
+| `*.dp.kubernetesconfiguration.azure.com` | Kubernetes config data plane |
+| `*.mcr.microsoft.com` | Microsoft Container Registry |
+| `*.data.mcr.microsoft.com` | MCR data |
+| `k8connecthelm.azureedge.net` | K8s Connect Helm charts |
+| `k8sconnectcsp.azureedge.net` | K8s Connect CSP |
+| `dl.k8s.io` | Kubernetes downloads |
+| `arcdataservicesrow1.azurecr.io` | Arc Data Services registry |
+| `*.arcdataservices.com` | Arc Data Services |
+
+### Monitoring & Telemetry
+
+| FQDN | Purpose |
+|------|---------|
+| `*.ods.opinsights.azure.com` | Operations Data Service |
+| `*.oms.opinsights.azure.com` | Operations Management Suite |
+| `dc.services.visualstudio.com` | Application Insights telemetry |
+| `*.servicebus.windows.net` | Service Bus messaging |
+
+### Windows Update & Downloads
+
+| FQDN | Purpose |
+|------|---------|
+| `windowsupdate.microsoft.com` | Windows Update |
+| `download.windowsupdate.com` | Windows Update downloads |
+| `*.download.windowsupdate.com` | Windows Update (wildcard) |
+| `*.windowsupdate.microsoft.com` | Windows Update (wildcard) |
+| `*.windowsupdate.com` | Windows Update (wildcard) |
+| `*.update.microsoft.com` | Microsoft Update (wildcard) |
+| `download.microsoft.com` | Microsoft downloads |
+| `fe3.delivery.mp.microsoft.com` | Content delivery |
+| `tlu.dl.delivery.mp.microsoft.com` | Delivery optimization |
+| `dl.delivery.mp.microsoft.com` | Delivery optimization |
+| `*.delivery.mp.microsoft.com` | Delivery (wildcard) |
+| `msk8s.api.cdp.microsoft.com` | MSK8S API |
+| `msk8s.sb.tlu.dl.delivery.mp.microsoft.com` | MSK8S delivery |
+
+### Other Required Services
+
+| FQDN | Purpose |
+|------|---------|
+| `aka.ms` | Microsoft URL shortener |
+| `redirectiontool.trafficmanager.net` | Traffic Manager redirection |
+| `*.waconazure.com` | Windows Admin Center |
+| `*.blob.core.windows.net` | Azure Blob Storage |
+| `crl3.digicert.com` | Certificate revocation |
+| `crl4.digicert.com` | Certificate revocation |
+| `*.powershellgallery.com` | PowerShell Gallery |
+| `packages.microsoft.com` | Microsoft packages |
+| `www.microsoft.com` | Microsoft web |
+| `go.microsoft.com` | Microsoft redirects |
+| `ntservicepack.microsoft.com` | Service packs |
+| `wustat.windows.com` | Windows Update stats |
+
+---
+
+## FortiGate CLI Configuration
+
+### Create Address Objects
+
+```fortios
+config firewall address
+ edit "fe3.delivery.mp.microsoft.com"
+ set type fqdn
+ set fqdn "fe3.delivery.mp.microsoft.com"
+ next
+ edit "login.microsoftonline.com"
+ set type fqdn
+ set fqdn "login.microsoftonline.com"
+ next
+ edit "management.azure.com"
+ set type fqdn
+ set fqdn "management.azure.com"
+ next
+ edit "dp.stackhci.azure.com"
+ set type fqdn
+ set fqdn "dp.stackhci.azure.com"
+ next
+ edit "*.platform.edge.azure.com"
+ set type fqdn
+ set fqdn "*.platform.edge.azure.com"
+ next
+ edit "azurestackhci.azurefd.net"
+ set type fqdn
+ set fqdn "azurestackhci.azurefd.net"
+ next
+ edit "graph.microsoft.com"
+ set type fqdn
+ set fqdn "graph.microsoft.com"
+ next
+ edit "*.his.arc.azure.com"
+ set type fqdn
+ set fqdn "*.his.arc.azure.com"
+ next
+ edit "*.guestconfiguration.azure.com"
+ set type fqdn
+ set fqdn "*.guestconfiguration.azure.com"
+ next
+ edit "*.blob.core.windows.net"
+ set type fqdn
+ set fqdn "*.blob.core.windows.net"
+ next
+ edit "*.mcr.microsoft.com"
+ set type fqdn
+ set fqdn "*.mcr.microsoft.com"
+ next
+ edit "*.arc.azure.net"
+ set type fqdn
+ set fqdn "*.arc.azure.net"
+ next
+end
+```
+
+### Create Address Group
+
+```fortios
+config firewall addrgrp
+ edit "AzureLocal-Whitelist"
+ set member "fe3.delivery.mp.microsoft.com" "login.microsoftonline.com" "management.azure.com" "dp.stackhci.azure.com" "*.platform.edge.azure.com" "azurestackhci.azurefd.net" "graph.microsoft.com" "*.his.arc.azure.com" "*.guestconfiguration.azure.com" "*.blob.core.windows.net" "*.mcr.microsoft.com" "*.arc.azure.net"
+ set comment "Azure Local required URLs"
+ next
+end
+```
+
+### Management Network Address
+
+```fortios
+config firewall address
+ edit "AzureLocal-Mgmt-Subnet"
+ set subnet 10.100.1.0 255.255.255.0
+ set comment "Azure Local management network"
+ next
+end
+```
+
+---
+
+## Service Definitions
+
+### Azure Local Custom Services
+
+```fortios
+config firewall service custom
+ edit "WinRM-HTTP"
+ set tcp-portrange 5985
+ set comment "Windows Remote Management HTTP"
+ next
+ edit "WinRM-HTTPS"
+ set tcp-portrange 5986
+ set comment "Windows Remote Management HTTPS"
+ next
+ edit "AzureLocal-LiveMigration"
+ set tcp-portrange 6600
+ set comment "Hyper-V Live Migration"
+ next
+ edit "AzureLocal-VMConsole"
+ set tcp-portrange 2179
+ set comment "VM Console service"
+ next
+ edit "AzureLocal-ClusterService"
+ set tcp-portrange 3343
+ set udp-portrange 3343
+ set comment "Failover Cluster service"
+ next
+ edit "AzureLocal-ClusterAdmin"
+ set udp-portrange 137
+ set comment "NetBIOS for cluster admin"
+ next
+ edit "AKS-Arc-API"
+ set tcp-portrange 6443
+ set comment "AKS Arc Kubernetes API"
+ next
+ edit "AKS-Arc-gRPC"
+ set tcp-portrange 55000
+ set comment "AKS Arc gRPC"
+ next
+ edit "AKS-Arc-gRPC-Auth"
+ set tcp-portrange 65000
+ set comment "AKS Arc gRPC authentication"
+ next
+ edit "DCE-RPC"
+ set category "Remote Access"
+ set tcp-portrange 135
+ set udp-portrange 135
+ set comment "DCE/RPC endpoint mapper"
+ next
+ edit "RPC-Dynamic"
+ set tcp-portrange 5000-6000
+ set comment "RPC dynamic ports"
+ next
+ edit "LDAPS"
+ set tcp-portrange 636
+ set comment "LDAP over SSL"
+ next
+ edit "ADWS"
+ set tcp-portrange 9389
+ set comment "AD Web Services"
+ next
+ edit "GlobalCatalog"
+ set tcp-portrange 3268-3269
+ set comment "AD Global Catalog"
+ next
+end
+```
+
+### Service Group
+
+```fortios
+config firewall service group
+ edit "AzureLocal-Management-Services"
+ set member "SMB" "WinRM-HTTP" "WinRM-HTTPS" "AzureLocal-LiveMigration" "AzureLocal-VMConsole" "AzureLocal-ClusterService" "AzureLocal-ClusterAdmin" "DCE-RPC" "RPC-Dynamic" "HTTP" "HTTPS" "RDP" "SSH" "AKS-Arc-API" "AKS-Arc-gRPC" "AKS-Arc-gRPC-Auth" "DNS" "LDAPS" "ADWS" "GlobalCatalog" "NTP" "SNMP" "PING"
+ set comment "All Azure Local management services"
+ next
+end
+```
+
+---
+
+## Site-to-Site VPN Configuration
+
+### Phase 1 (IKE)
+
+```fortios
+config vpn ipsec phase1-interface
+ edit "AzureLocal-VPN"
+ set interface "wan1"
+ set ike-version 2
+ set peertype any
+ set net-device disable
+ set proposal aes256gcm-prfsha384
+ set dpd on-idle
+ set dhgrp 14
+ set remote-gw <AZURE_VPN_GATEWAY_IP>
+ set psksecret <PRE_SHARED_KEY>
+ set dpd-retryinterval 2
+ set comments "Azure Local management VPN"
+ next
+end
+```
+
+### Phase 2 (IPsec)
+
+```fortios
+config vpn ipsec phase2-interface
+ edit "AzureLocal-VPN"
+ set phase1name "AzureLocal-VPN"
+ set proposal aes256gcm
+ set dhgrp 14
+ set auto-negotiate enable
+ set keylifeseconds 28800
+ next
+end
+```
+
+### Tunnel Interface
+
+```fortios
+config system interface
+ edit "AzureLocal-VPN"
+ set vdom "root"
+ set ip 169.254.100.1 255.255.255.255
+ set type tunnel
+ set remote-ip 169.254.100.2 255.255.255.254
+ set interface "wan1"
+ set description "Azure Local VPN tunnel interface"
+ next
+end
+```
+
+---
+
+## BGP Configuration
+
+```fortios
+config router bgp
+ set as 64512
+ set router-id <FORTIGATE_ROUTER_ID>
+ 
+ config neighbor
+ edit "169.254.100.2"
+ set remote-as 65515
+ set update-source "AzureLocal-VPN"
+ set description "Azure VPN Gateway BGP peer"
+ next
+ end
+ 
+ config network
+ edit 1
+ set prefix 10.100.3.0 255.255.255.0
+ set comment "On-premises management network"
+ next
+ end
+end
+```
+
+:::note
+- **On-premises ASN**: 64512 (customize for your environment)
+- **Azure ASN**: 64513 (default Azure VPN Gateway ASN)
+- **BGP peer IP**: 169.254.100.2 (APIPA range for VPN BGP)
+:::
+
+---
+
+## Firewall Policies
+
+### Outbound to Azure Services
+
+```fortios
+config firewall policy
+ edit 0
+ set name "AzureLocal-Outbound-Azure"
+ set srcintf "Virt-Mgmt"
+ set dstintf "wan1"
+ set action accept
+ set srcaddr "AzureLocal-Mgmt-Subnet"
+ set dstaddr "AzureLocal-Whitelist"
+ set schedule "always"
+ set service "HTTP" "HTTPS"
+ set utm-status enable
+ set inspection-mode proxy
+ set ssl-ssh-profile "certificate-inspection"
+ set logtraffic all
+ set comments "Azure Local outbound to Azure services"
+ next
+end
+```
+
+### Inbound from Azure VPN
+
+```fortios
+config firewall policy
+ edit 0
+ set name "Azure-to-AzureLocal-Mgmt"
+ set srcintf "AzureLocal-VPN"
+ set dstintf "Virt-Mgmt"
+ set action accept
+ set srcaddr "Azure-Management-Subnet"
+ set dstaddr "AzureLocal-Mgmt-Subnet"
+ set schedule "always"
+ set service "AzureLocal-Management-Services"
+ set utm-status enable
+ set inspection-mode proxy
+ set logtraffic all
+ set comments "Azure to Azure Local management traffic"
+ next
+end
+```
+
+---
+
+## DHCP Server Configuration
+
+For Azure Local management VLAN:
+
+```fortios
+config system dhcp server
+ edit 1
+ set dns-service default
+ set default-gateway 10.100.3.1
+ set netmask 255.255.255.0
+ set interface "Virt-Mgmt"
+ set lease-time 0
+ 
+ config ip-range
+ edit 1
+ set start-ip 10.100.3.100
+ set end-ip 10.100.3.254
+ next
+ end
+ 
+ config reserved-address
+ edit 1
+ set ip 10.100.3.100
+ set mac 02:ec:03:15:00:00
+ set description "Reserved for deployment"
+ next
+ end
+ 
+ set dns-server1 10.100.1.10
+ set dns-server2 10.100.1.11
+ set ntp-server1 10.100.1.10
+ set ntp-server2 10.100.1.11
+ next
+end
+```
+
+---
+
+## Verification Commands
+
+### VPN Status
+
+```fortios
+# Check Phase 1 status
+diagnose vpn ike gateway list
+
+# Check Phase 2 status
+diagnose vpn tunnel list name AzureLocal-VPN
+
+# Show VPN event log
+diagnose vpn tunnel stat
+```
+
+### BGP Status
+
+```fortios
+# Check BGP neighbor status
+get router info bgp summary
+
+# View BGP routes
+get router info bgp network
+
+# Check route table
+get router info routing-table all
+```
+
+### Firewall Policy Hits
+
+```fortios
+# View policy hit counts
+diagnose firewall policy list
+
+# Check active sessions
+diagnose sys session filter dst 10.100.1.0/24
+diagnose sys session list
+```
+
+---
+
+## Troubleshooting
+
+### VPN Tunnel Not Establishing
+
+```fortios
+# Enable debug for IKE
+diagnose debug application ike -1
+diagnose debug enable
+
+# Common issues:
+# - Pre-shared key mismatch
+# - Proposal mismatch (encryption/DH group)
+# - Remote gateway IP incorrect
+# - Firewall blocking UDP 500/4500
+```
+
+### BGP Neighbor Down
+
+```fortios
+# Check BGP neighbor detail
+get router info bgp neighbors 169.254.100.2
+
+# Common issues:
+# - ASN mismatch
+# - VPN tunnel down (BGP depends on VPN)
+# - Update-source interface incorrect
+# - Azure VPN Gateway not configured for BGP
+```
+
+### Traffic Not Flowing
+
+```fortios
+# Check if traffic hits policy
+diagnose sniffer packet any "host 10.100.1.10" 4
+
+# Verify NAT settings
+diagnose firewall iprope state
+
+# Check for implicit deny
+diagnose firewall policy 0
+```
+
+---
+
+## Related Documentation
+
+- [Appendix K: OpenGear Configuration](./appendix-k-opengear-config.mdx)
+- [Microsoft Learn: Azure Local firewall requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements)
+- [Fortinet Documentation](https://docs.fortinet.com/)
+

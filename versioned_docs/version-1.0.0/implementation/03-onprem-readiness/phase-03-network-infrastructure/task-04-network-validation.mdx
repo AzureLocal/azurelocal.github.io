@@ -1,0 +1,453 @@
+---
+title: "Task 04: Network Validation & Environment Checker"
+sidebar_label: "Task 04: Network Validation"
+sidebar_position: 4
+description: "Run comprehensive network validation and Microsoft Environment Checker"
+category: "Runbook"
+scope: Network connectivity validation
+purpose: Validate network readiness for cluster deployment
+author: Azure Local Cloud CI/CD Engineering
+created: 2026-01-31
+updated: 2026-03-03
+version: "1.1.0"
+tags:
+  - azure-local
+  - network-validation
+  - environment-checker
+  - idrac-validation
+keywords:
+  - network validation
+  - Environment Checker
+  - iDRAC
+  - VLT
+  - QoS
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Network Validation & Environment Checker
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Network connectivity validation   
+> **PURPOSE**: Validate network readiness for cluster deployment   
+> **MASTER REFERENCE**: [Microsoft Learn - Environment Checker](https://learn.microsoft.com/en-us/azure-stack/hci/manage/use-environment-checker) 
+
+**Status**: Active 
+**Estimated Time**: 45 minutes 
+**Last Updated**: 2026-01-31
+
+---
+
+## Overview
+
+Perform comprehensive validation of network connectivity and run Microsoft's official Environment Checker to ensure infrastructure is ready for Azure Local deployment.
+
+---
+
+## Prerequisites
+
+| Requirement | Description |
+|-------------|-------------|
+| OpenGear configured | Step 1 completed |
+| Switches configured | Step 2 completed - VLT, QoS/DCB, VLANs |
+| Firewall rules verified | Step 3 completed with customer network team |
+| Management workstation | Connected to management VLAN (same as nodes) |
+| PowerShell 7+ | Installed on management workstation |
+
+---
+
+## Variables from variables.yml
+
+| Variable Path | Type | Description |
+|---|---|---|
+| `compute.nodes[]` | Array | Node hostnames, management IPs, iDRAC IPs for connectivity tests |
+| `networking.network_devices.switch_primary` | Object | Primary switch IP for verification commands |
+| `networking.network_devices.switch_secondary` | Object | Secondary switch IP for verification commands |
+| `networking.network_devices.opengear` | Object | OpenGear IP for OOB network validation |
+| `networking.onprem.vlans.management` | Object | Management VLAN details for routing verification |
+
+---
+
+## Validation Checklist
+
+Track validation progress with this checklist:
+
+### Network Device Validation
+
+- [ ] Dell switches: VLT domain operational (both peers up)
+- [ ] Dell switches: VLT peer link and backup link up
+- [ ] Dell switches: QoS/DCB configuration applied (PFC, ETS)
+- [ ] Dell switches: All VLANs active (management, storage 711-714)
+- [ ] Dell switches: All node-facing ports up with correct speed
+- [ ] Dell switches: Uplinks to core infrastructure operational
+- [ ] Customer network team confirms firewall rules implemented
+
+### Azure Endpoint Validation
+
+- [ ] Azure Resource Manager: `management.azure.com` reachable
+- [ ] Azure AD: `login.microsoftonline.com` reachable
+- [ ] Azure Local services: `azurestackhci.azurefd.net` reachable
+- [ ] Azure Arc services: `*.his.arc.azure.com` reachable
+- [ ] Microsoft downloads: `download.microsoft.com` reachable
+- [ ] Windows Update: `windowsupdate.microsoft.com` reachable
+
+### Dell Endpoint Validation
+
+- [ ] Dell downloads: `downloads.dell.com` reachable
+- [ ] Dell SupportAssist: `supportassist.dell.com` reachable
+
+### Infrastructure Access Validation
+
+- [ ] All node iDRAC/BMC interfaces accessible via HTTPS (port 443)
+- [ ] All node iDRAC/BMC interfaces accessible via SSH (port 22)
+- [ ] Management workstation can reach management VLAN
+- [ ] DNS resolution working for Azure and Dell endpoints
+
+---
+
+## Switch Verification Commands
+
+Run these commands on both TOR switches to verify configuration:
+
+### Verify VLT Status
+
+```cisco
+show vlt 1
+```
+
+**Expected output:**
+- VLT domain status: Up
+- Peer link status: Up
+- Backup link status: Up
+
+### Verify QoS Configuration
+
+```cisco
+show running-configuration class-map
+show running-configuration policy-map
+show qos interface ethernet1/1/1
+```
+
+**Verify:**
+- PFC enabled on priority 3
+- ETS bandwidth allocation (48%/50%/2%)
+- Trust map applied
+
+### Verify VLANs
+
+```cisco
+show vlan
+```
+
+**Expected VLANs active:**
+- VLAN 200 (Management)
+- VLANs 711-714 (Storage)
+
+### Verify Port Status
+
+```cisco
+show interface status
+```
+
+**Verify:**
+- All node-facing ports up
+- Correct speed (25G/100G as per design)
+- MTU 9216 on storage ports
+
+---
+
+## iDRAC Accessibility Test
+
+Validate access to all server iDRAC interfaces:
+
+```powershell
+# iDRAC Accessibility Test
+# Update IP addresses to match your deployment
+
+$iDRACAddresses = @(
+ "192.168.100.11", # Node 1 iDRAC
+ "192.168.100.12", # Node 2 iDRAC
+ "192.168.100.13", # Node 3 iDRAC (if applicable)
+ "192.168.100.14" # Node 4 iDRAC (if applicable)
+)
+
+Write-Host "`n=== iDRAC Accessibility Test ===" -ForegroundColor Cyan
+
+foreach ($ip in $iDRACAddresses) {
+ Write-Host "`nTesting iDRAC: $ip" -ForegroundColor White
+ 
+ # HTTPS test (port 443)
+ $httpsTest = Test-NetConnection -ComputerName $ip -Port 443 -WarningAction SilentlyContinue
+ if ($httpsTest.TcpTestSucceeded) {
+ Write-Host " [PASS] HTTPS (443)" -ForegroundColor Green
+ }
+ else {
+ Write-Host " [FAIL] HTTPS (443)" -ForegroundColor Red
+ }
+ 
+ # SSH test (port 22)
+ $sshTest = Test-NetConnection -ComputerName $ip -Port 22 -WarningAction SilentlyContinue
+ if ($sshTest.TcpTestSucceeded) {
+ Write-Host " [PASS] SSH (22)" -ForegroundColor Green
+ }
+ else {
+ Write-Host " [FAIL] SSH (22)" -ForegroundColor Red
+ }
+ 
+ # Redfish API test (port 443)
+ try {
+ $redfishUrl = "https://$ip/redfish/v1"
+ $response = Invoke-WebRequest -Uri $redfishUrl -Method Get -SkipCertificateCheck -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop
+ Write-Host " [PASS] Redfish API accessible" -ForegroundColor Green
+ }
+ catch {
+ Write-Host " [WARN] Redfish API test failed (may require auth)" -ForegroundColor Yellow
+ }
+}
+```
+
+---
+
+## Microsoft Environment Checker
+
+Run Microsoft's official Azure Stack HCI Environment Checker to validate network prerequisites.
+
+:::warning Run Location — Management Workstation Required
+**This validation must be run from a laptop or server on the SAME management/compute network (VLAN) that the Azure Local nodes will use.**
+
+At this stage, the cluster nodes do not have an operating system installed yet, so we cannot run validation directly on them. However, we need to verify network connectivity NOW to confirm switch and firewall configuration is correct before proceeding with OS installation.
+
+**Requirements:**
+- Laptop or jump server connected to the management/compute VLAN
+- PowerShell 5.1 or later
+- Internet connectivity to install the module from PSGallery
+
+**Note:** We will run this validation again from the actual cluster nodes in Stage 14 (pre-registration check) after the OS is installed, confirming end-to-end connectivity from the nodes themselves.
+:::
+
+### Install Environment Checker
+
+```powershell
+# Install from PowerShell Gallery
+Install-Module -Name AzStackHci.EnvironmentChecker -Repository PSGallery -Force
+
+# Verify installation
+Get-Module -Name AzStackHci.EnvironmentChecker -ListAvailable
+```
+
+### Run Connectivity Validation
+
+```powershell
+# Run connectivity validation with verbose output
+Invoke-AzStackHciConnectivityValidation -Verbose
+
+# Save results to file for documentation
+$timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+Invoke-AzStackHciConnectivityValidation -Verbose | 
+ Tee-Object -FilePath "EnvironmentChecker-$timestamp.txt"
+```
+
+### Environment Checker Validates
+
+| Check Category | Description |
+|---------------|-------------|
+| **DNS** | DNS resolution for required endpoints |
+| **Azure Arc** | Connectivity to Azure Arc services |
+| **Azure Local** | Connectivity to Azure Local cloud services |
+| **Windows Update** | Access to Microsoft Update services |
+| **Time Sync** | NTP server accessibility |
+| **Certificate** | CRL/OCSP endpoint accessibility |
+
+### Interpret Results
+
+| Status | Meaning | Action |
+|--------|---------|--------|
+| **PASS** | Test completed successfully | No action needed |
+| **WARNING** | Non-critical issue detected | Review and address if possible |
+| **FAIL** | Critical issue detected | Must be resolved before proceeding |
+
+### Address Failures
+
+For any **FAIL** status:
+
+1. Review the specific endpoint or service that failed
+2. Check firewall rules with customer network team
+3. Verify DNS resolution for the endpoint
+4. Check for proxy or HTTPS inspection issues
+5. Re-run validation after remediation
+
+---
+
+## Validation Results Documentation
+
+Document validation results in the site deployment folder:
+
+| Validation Category | Status | Notes |
+|--------------------|--------|-------|
+| VLT Domain Status | ☐ Pass / ☐ Fail | |
+| QoS/DCB Configuration | ☐ Pass / ☐ Fail | |
+| VLANs Active (200, 711-714) | ☐ Pass / ☐ Fail | |
+| Azure Endpoints | ☐ Pass / ☐ Fail | |
+| Dell Endpoints | ☐ Pass / ☐ Fail | |
+| DNS Resolution | ☐ Pass / ☐ Fail | |
+| NTP Connectivity | ☐ Pass / ☐ Fail | |
+| iDRAC Access (all nodes) | ☐ Pass / ☐ Fail | |
+| Environment Checker | ☐ Pass / ☐ Fail | |
+
+---
+
+## Phase 03 Completion Criteria
+
+Before proceeding to Stage 11 (Hardware Provisioning):
+
+### Dell PowerSwitch Configuration
+- [ ] VLT (Virtual Link Trunking) operational for high availability
+- [ ] QoS/DCB settings configured for RoCE RDMA (PFC, ETS)
+- [ ] Jumbo frames (MTU 9216) enabled on storage paths
+- [ ] Management VLAN and storage VLANs 711-714 configured
+- [ ] Tenant VLANs configured per site requirements
+- [ ] SNMP and syslog forwarding configured (if required)
+
+### Firewall Verification
+- [ ] Azure public endpoints accessible (Azure Arc, Azure Local, Windows Update)
+- [ ] Dell public endpoints accessible (firmware, SupportAssist)
+- [ ] Customer network team confirmed rules implemented
+- [ ] No HTTPS inspection on required endpoints
+
+### Network Validation
+- [ ] All endpoint connectivity tests passed
+- [ ] DNS resolution verified
+- [ ] NTP connectivity verified
+- [ ] iDRAC/BMC interfaces accessible
+
+### Environment Checker
+- [ ] Microsoft Environment Checker validation passed
+- [ ] No critical failures
+- [ ] Results documented and saved
+
+---
+
+## Troubleshooting
+
+### VLT Domain Not Forming
+
+```cisco
+! Check VLT peer link physical status
+show interface ethernet 1/1/11
+show interface ethernet 1/1/12
+
+! Check backup destination reachability
+ping 192.168.255.2
+
+! Check VLT configuration
+show running-configuration | grep vlt
+```
+
+### QoS Not Applied
+
+```cisco
+! Verify class-maps exist
+show running-configuration class-map
+
+! Verify policy-maps exist
+show running-configuration policy-map
+
+! Check interface QoS binding
+show qos interface ethernet1/1/1
+```
+
+### Endpoint Connectivity Failures
+
+1. Verify DNS resolution: `Resolve-DnsName management.azure.com`
+2. Check firewall rules with network team
+3. Test with explicit port: `Test-NetConnection management.azure.com -Port 443`
+4. Check for proxy configuration issues
+5. Verify no HTTPS inspection is breaking connections
+
+### Environment Checker Failures
+
+1. Document the specific failure message
+2. Cross-reference with the endpoint tables in Step 3
+3. Work with customer network team to add missing firewall rules
+4. Re-run Environment Checker after remediation
+
+---
+
+## Next Steps
+
+Upon successful completion of all validation checks, proceed to **Part 5: Cluster Deployment** - [Phase 11 - Hardware Provisioning](../../04-cluster-deployment/phase-01-hardware-provisioning/index.mdx).
+
+---
+
+---
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual" default>
+
+> **When to use**: Use this option for manual step-by-step execution.
+
+See procedure steps above for manual execution guidance.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository.
+:::
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 03: Firewall Endpoint Verification](./task-03-firewall-endpoint-verification.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Part 4: Cluster Deployment →](../../04-cluster-deployment/) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud CI/CD Engineering | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud CI/CD Engineering | Standardized runbook format |
+
+---
+
+*End of Task*

@@ -1,0 +1,328 @@
+---
+title: "Multi-Site Planning"
+sidebar_label: "Multi-Site Planning"
+sidebar_position: 6
+description: "Planning considerations for multi-site Azure Local deployments"
+---
+
+# Multi-Site Planning
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Multi-location deployment considerations 
+> **PURPOSE**: Plan for deployments spanning multiple sites 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Multi-site Azure Local deployments require additional planning to ensure consistency, manageability, and operational efficiency across all locations. This document covers:
+
+- **Naming Consistency** - Standardized naming across all sites
+- **Network Isolation** - Site-specific network configurations
+- **Centralized vs. Distributed Management** - Management infrastructure placement
+- **Disaster Recovery Planning** - Cross-site DR considerations
+- **Per-Site Configuration Templates** - Reusable worksheets for each location
+
+:::tip Multi-Site Complexity
+Each additional site multiplies planning complexity. Use this document to establish patterns that scale consistently across all sites.
+:::
+
+---
+
+## Multi-Site Architecture Patterns
+
+### Deployment Topology Options
+
+| Pattern | Description | Use Case | Complexity |
+|---------|-------------|----------|------------|
+| **Hub and Spoke** | Centralized management hub with remote cluster sites | Enterprise with datacenter + edge sites | Medium |
+| **Distributed** | Independent clusters at each site with shared Azure management | Multiple autonomous locations | Low |
+| **Stretched** | Single cluster spanning two sites (synchronous replication) | Active-active HA within metro distance | High |
+| **Tiered** | Primary site with DR sites (async replication) | Active-passive DR | Medium |
+
+### Azure Local Cloud Standard Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Azure (Azure Local Cloud MGMT Tenant) │
+│ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
+│ │ Azure Monitor│ │ Azure Arc │ │ Key Vault │ │
+│ │ (Central) │ │ (Central) │ │ (Central) │ │
+│ └──────────────┘ └──────────────┘ └──────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+ │ │ │
+ ▼ ▼ ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ Site 1 │ │ Site 2 │ │ Site 3 │
+│ (Primary DC) │ │ (Secondary DC) │ │ (Edge Site) │
+│ │ │ │ │ │
+│ ┌─────────────┐ │ │ ┌─────────────┐ │ │ ┌─────────────┐ │
+│ │ Azure Local │ │ │ │ Azure Local │ │ │ │ Azure Local │ │
+│ │ Cluster 1 │ │ │ │ Cluster 2 │ │ │ │ Cluster 3 │ │
+│ │ (4-node) │ │ │ │ (4-node) │ │ │ │ (2-node) │ │
+│ └─────────────┘ │ │ └─────────────┘ │ │ └─────────────┘ │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+---
+
+## Naming Consistency Across Sites
+
+### Site Code Convention
+
+Establish a consistent site code format for all locations:
+
+| Site | Location | Site Code | Example Usage |
+|------|----------|-----------|---------------|
+| Site 1 | New York, NY | `NYC` | `CUSNYC01`, `rg-cus-azlocal-nyc-001` |
+| Site 2 | Dallas, TX | `DFW` | `CUSDFW01`, `rg-cus-azlocal-dfw-001` |
+| Site 3 | Seattle, WA | `SEA` | `CUSSEA01`, `rg-cus-azlocal-sea-001` |
+| Site 4 | Chicago, IL | `CHI` | `CUSCHI01`, `rg-cus-azlocal-chi-001` |
+
+### Multi-Site Naming Patterns
+
+All resources should include site identifier for clarity:
+
+| Resource Type | Pattern | Site 1 Example | Site 2 Example |
+|---------------|---------|----------------|----------------|
+| **Cluster Nodes** | `{CUSTOMER}{SITE}AX{NN}` | `CONNYCAX01` | `CONDFWAX01` |
+| **Cluster Name** | `{CUSTOMER}-AZL-{SITE}-{NN}` | `CON-AZL-NYC-01` | `CON-AZL-DFW-01` |
+| **Resource Group** | `rg-{customer}-azlocal-{site}-{nnn}` | `rg-con-azlocal-nyc-001` | `rg-con-azlocal-dfw-001` |
+| **VNet** | `vnet-{customer}-{site}-{env}` | `vnet-con-nyc-prod` | `vnet-con-dfw-prod` |
+| **Key Vault** | `kv-{customer}-{site}-{env}` | `kv-con-nyc-prod` | `kv-con-dfw-prod` |
+| **Storage Account** | `st{customer}{site}{env}` | `stconnycstor001` | `stcondfwstor001` |
+| **Log Analytics** | `law-{customer}-{scope}-{region}` | `law-con-central-eus` | (shared) |
+
+### Multi-Site Naming Validation
+
+- [ ] Site codes defined for all locations
+- [ ] Site codes are unique and unambiguous
+- [ ] Site codes are 3-4 characters (airport codes recommended)
+- [ ] Naming patterns documented and approved
+- [ ] Naming constraints validated (character limits, restricted chars)
+- [ ] Examples provided for all resource types
+
+---
+
+## Network Isolation Between Sites
+
+### Site Network Independence
+
+Each site should have independent network addressing to prevent conflicts:
+
+| Site | Management VLAN | Storage VLAN 1 | Storage VLAN 2 | Production VLAN |
+|------|-----------------|----------------|----------------|-----------------|
+| Site 1 (NYC) | 100 | 711 | 712 | 200 |
+| Site 2 (DFW) | 100 | 711 | 712 | 200 |
+| Site 3 (SEA) | 100 | 711 | 712 | 200 |
+
+:::info VLAN Strategy
+VLAN IDs can be reused across sites since they are locally significant. IP ranges **must** be unique if sites are interconnected.
+:::
+
+### IP Address Planning (Per-Site)
+
+Allocate unique IP ranges for each site to enable inter-site routing:
+
+| Site | Management Network | Storage 1 | Storage 2 | Production |
+|------|-------------------|-----------|-----------|------------|
+| Site 1 (NYC) | `10.10.100.0/24` | `10.10.111.0/24` | `10.10.112.0/24` | `10.10.200.0/24` |
+| Site 2 (DFW) | `10.20.100.0/24` | `10.20.111.0/24` | `10.20.112.0/24` | `10.20.200.0/24` |
+| Site 3 (SEA) | `10.30.100.0/24` | `10.30.111.0/24` | `10.30.112.0/24` | `10.30.200.0/24` |
+
+### Inter-Site Connectivity
+
+| Connection Type | Use Case | Bandwidth | Latency Requirement |
+|-----------------|----------|-----------|---------------------|
+| **Site-to-Site VPN** | Management traffic, AD replication | 100 Mbps+ | < 100ms |
+| **ExpressRoute** | Production workloads, DR replication | 1 Gbps+ | < 50ms |
+| **Azure Arc Gateway** | Azure management when direct internet blocked | N/A | N/A |
+
+---
+
+## Centralized vs. Distributed Management
+
+### Management Infrastructure Placement
+
+| Component | Centralized | Per-Site | Recommendation |
+|-----------|-------------|----------|----------------|
+| **Domain Controllers** | Hub site only | Each site | **Per-Site** (latency, resilience) |
+| **DNS Servers** | Hub site only | Each site | **Per-Site** (local resolution) |
+| **NTP Servers** | Hub site only | Each site | **Centralized or Per-Site** |
+| **Windows Admin Center** | Hub site | Each site | **Centralized** (single pane) |
+| **CI/CD runners** | Azure Local Cloud MGMT | N/A | **Centralized** (Azure Local Cloud managed) |
+| **Log Analytics Workspace** | Single workspace | Per-site workspace | **Centralized** (consolidated view) |
+| **Key Vault** | Per-subscription | Per-site | **Per-Subscription** (secrets isolation) |
+| **Azure Bastion** | Hub VNet | Per-site | **Centralized** (via VNet peering) |
+
+### Azure Local Cloud Multi-Site Management Model
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Azure Local Cloud MGMT Subscription │
+│ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐ │
+│ │ CI/CD runners │ │ Windows Admin │ │ Log Analytics │ │
+│ │ (Centralized)│ │ Center │ │ (Central) │ │
+│ └────────────────┘ └────────────────┘ └────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+ │
+ ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Customer Subscription(s) │
+│ │
+│ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ │
+│ │ Site 1 RG │ │ Site 2 RG │ │ Site 3 RG │ │
+│ │ Key Vault │ │ Key Vault │ │ Key Vault │ │
+│ │ Storage Acct │ │ Storage Acct │ │ Storage Acct │ │
+│ │ Azure Local │ │ Azure Local │ │ Azure Local │ │
+│ └─────────────────┘ └─────────────────┘ └─────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Disaster Recovery Site Planning
+
+### DR Topology Options
+
+| Topology | Description | RTO | RPO | Complexity |
+|----------|-------------|-----|-----|------------|
+| **Active-Passive** | Primary site active, DR site standby | 1-4 hours | 15-60 min | Medium |
+| **Active-Active** | Both sites active, workload distribution | Minutes | Near-zero | High |
+| **Stretched Cluster** | Single cluster across two sites | Seconds | Zero | Very High |
+
+### DR Site Requirements
+
+If planning a DR site, document the following:
+
+| Field | Primary Site | DR Site |
+|-------|--------------|---------|
+| **Site Name** | `____________` | `____________` |
+| **Site Code** | `____________` | `____________` |
+| **Distance** | N/A | `____________` km/miles |
+| **Network Latency** | N/A | `____________` ms |
+| **Bandwidth** | N/A | `____________` Gbps |
+| **Cluster Size** | `____` nodes | `____` nodes |
+| **Storage Capacity** | `____` TB | `____` TB |
+
+### Replication Configuration
+
+| Setting | Value | Notes |
+|---------|-------|-------|
+| **Replication Method** | ☐ Azure Site Recovery ☐ Storage Replica ☐ Third-party | |
+| **Replication Mode** | ☐ Synchronous ☐ Asynchronous | Sync requires < 5ms latency |
+| **RPO Target** | `____________` minutes | |
+| **RTO Target** | `____________` hours | |
+| **Failover Type** | ☐ Automatic ☐ Manual | |
+| **Failback Plan** | ☐ Documented ☐ Not documented | |
+
+---
+
+## Per-Site Configuration Template
+
+Use this template for each site in a multi-site deployment. Copy and complete for each location.
+
+### Site Information
+
+| Field | Value |
+|-------|-------|
+| **Site Name** | `________________________` |
+| **Site Code** | `________` |
+| **Physical Address** | `________________________` |
+| **Data Center/Cage** | `________________________` |
+| **Site Contact** | `________________________` |
+| **Site Contact Phone** | `________________________` |
+
+### Site Network Summary
+
+| Network | VLAN ID | IP Range | Gateway | DHCP |
+|---------|---------|----------|---------|------|
+| Management | `____` | `____________` | `____________` | ☐ Yes ☐ No |
+| Storage 1 | `____` | `____________` | N/A | ☐ No |
+| Storage 2 | `____` | `____________` | N/A | ☐ No |
+| Production | `____` | `____________` | `____________` | ☐ Yes ☐ No |
+| Backup | `____` | `____________` | `____________` | ☐ Yes ☐ No |
+
+### Site Infrastructure
+
+| Component | Quantity | Model | Notes |
+|-----------|----------|-------|-------|
+| **Cluster Nodes** | `____` | `____________` | |
+| **Top-of-Rack Switches** | `____` | `____________` | |
+| **Console Server** | `____` | `____________` | OpenGear |
+| **PDUs** | `____` | `____________` | |
+| **UPS** | `____` | `____________` | |
+
+### Site Cluster Configuration
+
+| Setting | Value |
+|---------|-------|
+| **Cluster Name** | `________________________` |
+| **Cluster IP** | `________________________` |
+| **Node Count** | ☐ 2 ☐ 3 ☐ 4 ☐ 8 ☐ 16 |
+| **Network Intent** | ☐ Converged ☐ Non-converged |
+| **Storage Pool Size** | `____________` TB raw |
+| **Expected Workload VMs** | `____________` |
+
+### Site Deployment Status
+
+| Stage | Status | Completion Date | Notes |
+|-------|--------|-----------------|-------|
+| Planning Complete | ☐ Yes ☐ No | `____________` | |
+| Hardware Delivered | ☐ Yes ☐ No | `____________` | |
+| Network Ready | ☐ Yes ☐ No | `____________` | |
+| AD/DNS Ready | ☐ Yes ☐ No | `____________` | |
+| Cluster Deployed | ☐ Yes ☐ No | `____________` | |
+| Workloads Migrated | ☐ Yes ☐ No | `____________` | |
+| Handover Complete | ☐ Yes ☐ No | `____________` | |
+
+---
+
+## Multi-Site Deployment Checklist
+
+### Pre-Deployment
+
+- [ ] All site codes defined and documented
+- [ ] Naming conventions applied consistently across sites
+- [ ] IP addressing plan prevents conflicts between sites
+- [ ] Inter-site connectivity established (VPN/ExpressRoute)
+- [ ] Centralized management infrastructure deployed
+- [ ] Per-site management requirements documented
+- [ ] DR requirements and site pairings defined
+
+### Per-Site Deployment
+
+- [ ] Site assessment completed ([Site Assessment](./03-site-assessment.mdx))
+- [ ] Hardware requirements documented ([Hardware Requirements](./05-hardware-requirements.mdx))
+- [ ] Site-specific configuration template completed
+- [ ] Network infrastructure validated
+- [ ] AD/DNS objects created for site
+- [ ] Firewall rules configured for Azure endpoints
+- [ ] Cluster deployment completed
+- [ ] Site validation testing passed
+
+### Post-Deployment
+
+- [ ] All sites registered in Azure Arc
+- [ ] Centralized monitoring configured for all sites
+- [ ] DR replication configured (if applicable)
+- [ ] Backup policies applied to all sites
+- [ ] Documentation updated with site-specific details
+- [ ] Operations team trained on multi-site management
+
+---
+
+## Next Steps
+
+After completing multi-site planning:
+
+1. **Complete per-site assessments** using [Site Assessment](./03-site-assessment.mdx)
+2. **Document hardware per-site** using [Hardware Requirements](./05-hardware-requirements.mdx)
+3. **Begin deployment** with the primary site first, then secondary sites
+4. **Configure DR** after all sites are operational

@@ -1,0 +1,247 @@
+---
+title: "Lab Monitoring Plan"
+sidebar_label: "Lab Monitoring Plan"
+sidebar_position: 3
+description: "Monitoring strategy and observability plan for the Azure Local lab environment"
+---
+
+# Lab Monitoring Plan
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Lab environment monitoring and observability
+> **PURPOSE**: Define the monitoring strategy for the Azure Local lab environment, modelled after what a production deployment would use
+> **MASTER REFERENCE**: [Monitor Azure Local with Azure Monitor](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-overview)
+
+**Status**: Example / Reference
+
+:::info Lab Reference Document
+This monitoring plan is a worked example showing how a real Azure Local deployment would be documented. Replace all `[EXAMPLE]` values with your environment-specific details before using in production.
+:::
+
+---
+
+## Monitoring Objectives
+
+The lab monitoring strategy delivers the same observability posture as a production deployment, enabling:
+
+- **Cluster health visibility** — Real-time and historical health across all nodes, storage, and network
+- **Workload performance** — Per-VM and per-service metrics for workloads running on the cluster
+- **Alerting** — Automated notification when critical thresholds are breached
+- **Audit trail** — Log retention sufficient for security review and troubleshooting
+- **Capacity planning** — Trend data for predicting growth and right-sizing
+
+---
+
+## Environment Scope
+
+| Attribute | Value |
+|-----------|-------|
+| Environment Name | `[EXAMPLE] azlocal-lab-001` |
+| Cluster Node Count | `[EXAMPLE] 3` |
+| Azure Region | `[EXAMPLE] australiaeast` |
+| Azure Subscription | `[EXAMPLE] AzureLocal-Lab-Sub` |
+| Resource Group | `[EXAMPLE] rg-azlocal-lab-monitoring` |
+| Log Analytics Workspace | `[EXAMPLE] law-azlocal-lab-001` |
+| Retention Period | `[EXAMPLE] 30 days (hot) / 90 days (archive)` |
+
+---
+
+## Monitoring Architecture
+
+The lab uses the same stack documented in the [Monitoring and Observability solution](../operations/monitoring-on-azure-local.md):
+
+```
+Cluster Nodes (3x)
+     │
+     ├──▶ Azure Monitor Agent (AMA)
+     │         │
+     │         ├──▶ Log Analytics Workspace (law-azlocal-lab-001)
+     │         │         └──▶ KQL Queries / Workbooks / Alerts
+     │         └──▶ Azure Monitor Metrics
+     │
+     ├──▶ Prometheus (workload metrics — deployed on AKS Arc)
+     │         │
+     │         └──▶ Azure Managed Grafana (grafana-azlocal-lab-001)
+     │
+     └──▶ Azure Monitor Alerts ──▶ Action Group (lab-ops-email)
+```
+
+### Components
+
+| Component | Deployment | Notes |
+|-----------|-----------|-------|
+| Azure Monitor Agent | Arc-enabled VM extension | Replaces legacy MMA/OMS |
+| Log Analytics Workspace | Azure-hosted | Centralized for all nodes and workloads |
+| Prometheus | AKS Arc cluster | Scrapes node-exporter and kube-state-metrics |
+| Azure Managed Grafana | Azure-hosted | Pre-built Azure Local dashboards |
+| Azure Monitor Alerts | Azure-hosted | Threshold and anomaly-based rules |
+
+---
+
+## Key Metrics and Thresholds
+
+### Cluster Infrastructure
+
+| Metric | Warning Threshold | Critical Threshold | Collection Interval |
+|--------|------------------|--------------------|---------------------|
+| Node CPU utilization | 70% | 90% | 60 seconds |
+| Node memory utilization | 75% | 90% | 60 seconds |
+| Storage pool capacity | 70% | 85% | 5 minutes |
+| Storage I/O latency (avg) | 5 ms | 20 ms | 60 seconds |
+| Network packet loss | 0.1% | 1% | 60 seconds |
+| Node heartbeat | — | No heartbeat > 5 min | 1 minute |
+
+### Workload Metrics
+
+| Metric | Warning Threshold | Critical Threshold | Collection Interval |
+|--------|------------------|--------------------|---------------------|
+| VM CPU utilization | 80% | 95% | 5 minutes |
+| VM memory utilization | 80% | 95% | 5 minutes |
+| VM disk read latency | 10 ms | 30 ms | 5 minutes |
+| VM disk write latency | 10 ms | 30 ms | 5 minutes |
+| AVD session count | 75% of capacity | 95% of capacity | 5 minutes |
+
+### Azure Local-Specific
+
+| Metric | Warning Threshold | Critical Threshold |
+|--------|------------------|--------------------|
+| Arc connectivity status | — | Disconnected > 15 min |
+| Storage Spaces Direct (S2D) health | Degraded | Failed |
+| Failover Cluster health | — | Any node offline |
+
+---
+
+## Log Analytics Configuration
+
+### Data Sources
+
+| Source | Table | Retention |
+|--------|-------|-----------|
+| Windows Event Logs (System, Application) | `Event` | 30 days |
+| Performance Counters | `Perf` | 30 days |
+| Azure Activity Log | `AzureActivity` | 90 days |
+| Arc Agent Heartbeat | `Heartbeat` | 30 days |
+| Custom Syslog (Linux nodes) | `Syslog` | 30 days |
+| Security Events | `SecurityEvent` | 90 days |
+
+### Key KQL Queries
+
+**Node availability (last 24 hours):**
+```kusto
+Heartbeat
+| where TimeGenerated > ago(24h)
+| summarize LastHeartbeat = max(TimeGenerated) by Computer
+| extend MinutesSince = datetime_diff('minute', now(), LastHeartbeat)
+| project Computer, LastHeartbeat, MinutesSince
+| order by MinutesSince desc
+```
+
+**Top CPU consumers (last 1 hour):**
+```kusto
+Perf
+| where TimeGenerated > ago(1h)
+| where ObjectName == "Processor" and CounterName == "% Processor Time"
+| summarize AvgCPU = avg(CounterValue) by Computer
+| order by AvgCPU desc
+| take 10
+```
+
+**Storage latency trend:**
+```kusto
+Perf
+| where TimeGenerated > ago(6h)
+| where ObjectName == "LogicalDisk" and CounterName == "Avg. Disk sec/Read"
+| summarize AvgLatencyMs = avg(CounterValue * 1000) by bin(TimeGenerated, 5m), Computer
+| render timechart
+```
+
+---
+
+## Alert Configuration
+
+### Action Group
+
+| Setting | Value |
+|---------|-------|
+| Action Group Name | `[EXAMPLE] ag-azlocal-lab-ops` |
+| Email Recipients | `[EXAMPLE] lab-ops@contoso.com` |
+| Webhook (optional) | `[EXAMPLE] Teams channel webhook URL` |
+| SMS (optional) | `[EXAMPLE] N/A for lab` |
+
+### Alert Rules
+
+| Alert Name | Severity | Condition | Action |
+|-----------|----------|-----------|--------|
+| Node CPU Critical | Sev 1 | CPU > 90% for 5 min | Email + Teams |
+| Node Memory Critical | Sev 1 | Memory > 90% for 5 min | Email + Teams |
+| Node Heartbeat Lost | Sev 0 | No heartbeat > 5 min | Email + Teams |
+| Storage Pool Warning | Sev 2 | Capacity > 70% | Email |
+| Storage Pool Critical | Sev 1 | Capacity > 85% | Email + Teams |
+| Storage Latency Critical | Sev 1 | Avg latency > 20ms | Email |
+| Arc Connectivity Lost | Sev 1 | Disconnected > 15 min | Email + Teams |
+| VM CPU Critical | Sev 2 | VM CPU > 95% for 10 min | Email |
+
+---
+
+## Grafana Dashboards
+
+| Dashboard | Source | Purpose |
+|-----------|--------|---------|
+| Azure Local Cluster Overview | [azurelocal-monitoring repo](https://github.com/AzureLocal/azurelocal-monitoring) | Node health, storage, network |
+| AVD Session Monitoring | [azurelocal-avd](https://azurelocal.github.io/azurelocal-avd/) | Session counts, hostpool health |
+| VM Performance | Community / Custom | Per-VM CPU, memory, disk |
+| Storage Spaces Direct | Microsoft | S2D health, capacity, latency |
+
+Access: `[EXAMPLE] https://grafana-azlocal-lab-001.australiaeast.grafana.azure.com`
+
+---
+
+## Response Procedures
+
+### Severity 0 — Node Down
+
+1. Validate in Azure portal → Azure Arc → Servers
+2. Check physical hardware (iDRAC/iLO console)
+3. Attempt remote power cycle if hardware permits
+4. Escalate to on-site team if remote resolution fails
+5. Document incident in [Support Instructions](../operations/support-instructions.mdx)
+
+### Severity 1 — Critical Threshold Breached
+
+1. Acknowledge alert within 15 minutes
+2. Open Log Analytics and run relevant KQL query to confirm scope
+3. Check workload impact — live migration VMs if node is saturated
+4. Review recent changes via Azure Activity Log
+5. Document findings in incident log
+
+### Severity 2 — Warning Threshold Breached
+
+1. Review trend over last 24 hours in Grafana
+2. Determine if threshold is trending toward critical
+3. Open capacity review ticket if storage warning persists > 48 hours
+4. No immediate escalation required unless trend worsens
+
+---
+
+## Review Cadence
+
+| Review | Frequency | Owner |
+|--------|-----------|-------|
+| Alert rule tuning | Monthly | Lab Ops |
+| Log Analytics cost review | Monthly | Lab Ops |
+| Dashboard review | Quarterly | Lab Ops |
+| Retention policy review | Quarterly | Lab Ops |
+| Monitoring architecture review | Annually | Platform Team |
+
+---
+
+## References
+
+- [Monitoring and Observability on Azure Local](../operations/monitoring-on-azure-local.md) — solution guide
+- [Monitor Azure Local with Azure Monitor](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-cluster) — Microsoft Learn
+- [Azure Monitor Agent overview](https://learn.microsoft.com/en-us/azure/azure-monitor/agents/azure-monitor-agent-overview)
+- [azurelocal-monitoring repository](https://github.com/AzureLocal/azurelocal-monitoring) — deployment scripts and dashboards
+- [Azure Managed Grafana](https://learn.microsoft.com/en-us/azure/managed-grafana/overview)

@@ -1,0 +1,251 @@
+---
+title: "Task 02: Configure Management Mode"
+sidebar_label: "Task 02: Configure Management Mode"
+sidebar_position: 2
+description: "Define network configuration for management infrastructure deployment"
+category: "Runbook"
+scope: "Define network configuration for management infrastructure deployment"
+purpose: "Define network configuration for management infrastructure deployment"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - azure-foundation
+  - management-infrastructure
+keywords:
+  - Configure
+  - Management
+  - Mode
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Configure Management Mode
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-green?style=flat-square)](../../index.mdx)
+[![Terraform](https://img.shields.io/badge/Tool-Terraform-purple?style=flat-square&logo=terraform)](https://terraform.io)
+
+> **DOCUMENT CATEGORY**: Task   
+> **SCOPE**: Management mode network configuration   
+> **PURPOSE**: Define VNet, VPN Gateway, subnets, and optional servers 
+> **MASTER REFERENCE**: [Azure Local Deployment Overview](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-introduction)
+
+**Status**: Active 
+**Last Updated**: 2026-02-07
+
+---
+
+## Objective
+
+Configure the `management_network_config` variable for deploying shared management infrastructure including VNet, VPN Gateway, Bastion, Key Vault, and optional monitoring servers.
+
+---
+
+## Prerequisites
+
+- [ ] Task 01 completed (core variables configured)
+- [ ] On-premises network IP ranges documented
+- [ ] Azure VNet IP range planned (avoid conflicts)
+- [ ] VPN Gateway BGP settings from network team
+- [ ] Subnet sizing calculated (minimum requirements met)
+
+---
+
+## Configuration
+
+### Network Configuration Block
+
+```hcl
+management_network_config = {
+ on_prem = {
+ mgmt_network = "10.0.0.0/24" # On-premises management network CIDR
+ oob_network = "10.1.0.0/24" # Out-of-band management network CIDR
+ }
+ 
+ azure = {
+ asn = 65515 # VPN Gateway ASN (Azure default or custom)
+ gateway_bgp_ips = [ # VPN Gateway BGP IP addresses
+ "169.254.21.2", # Instance 0 BGP IP
+ "169.254.21.3" # Instance 1 BGP IP (zone-redundant)
+ ]
+ gateway_sku = "VpnGw2AZ" # VPN Gateway SKU (VpnGw1/2/3 or AZ variants)
+ vnet_address_space = "10.100.1.0/24" # Azure VNet CIDR (must not conflict)
+ 
+ subnets = {
+ gateway = "10.100.1.0/27" # GatewaySubnet (minimum /27)
+ azrl = "10.100.1.32/27" # Azure Local management VMs
+ bastion = "10.100.1.64/26" # AzureBastionSubnet (minimum /26)
+ endpoints = "10.100.1.128/27" # Private endpoints
+ dns = "10.100.1.160/28" # DNS resolver (minimum /28)
+ }
+ }
+}
+```
+
+### Optional: Deploy NDM and Utility Servers
+
+```hcl
+# Optional: Network Device Monitor server
+deploy_ndm_server = true
+
+# Optional: Utility/jumpbox server
+deploy_utility_server = true
+```
+
+---
+
+## Variable Reference
+
+| Variable | Type | Description | Example |
+|----------|------|-------------|---------|
+| `on_prem.mgmt_network` | string | On-prem management network | `"10.0.0.0/24"` |
+| `on_prem.oob_network` | string | Out-of-band network | `"10.1.0.0/24"` |
+| `azure.asn` | number | VPN Gateway ASN | `65515` |
+| `azure.gateway_bgp_ips` | list(string) | BGP IP addresses | `["169.254.21.2", ...]` |
+| `azure.gateway_sku` | string | VPN Gateway SKU | `"VpnGw2AZ"` |
+| `azure.vnet_address_space` | string | Azure VNet CIDR | `"10.100.1.0/24"` |
+| `azure.subnets.gateway` | string | Gateway subnet (min /27) | `"10.100.1.0/27"` |
+| `azure.subnets.azrl` | string | Management VMs subnet | `"10.100.1.32/27"` |
+| `azure.subnets.bastion` | string | Bastion subnet (min /26) | `"10.100.1.64/26"` |
+| `azure.subnets.endpoints` | string | Private endpoints subnet | `"10.100.1.128/27"` |
+| `azure.subnets.dns` | string | DNS resolver (min /28) | `"10.100.1.160/28"` |
+
+---
+
+## VPN Gateway SKU Options
+
+| SKU | Tunnels | Throughput | Zone-Redundant | Use Case |
+|-----|---------|------------|----------------|----------|
+| VpnGw1 | 30 | 650 Mbps | No | Small deployments |
+| VpnGw2 | 30 | 1 Gbps | No | Standard deployments |
+| VpnGw3 | 30 | 1.25 Gbps | No | High bandwidth |
+| VpnGw1AZ | 30 | 650 Mbps | **Yes** | Small + HA |
+| VpnGw2AZ | 30 | 1 Gbps | **Yes** | **Recommended** |
+| VpnGw3AZ | 30 | 1.25 Gbps | **Yes** | High bandwidth + HA |
+
+:::tip Recommended SKU
+Use `VpnGw2AZ` for zone-redundant high availability with 1 Gbps throughput.
+:::
+
+---
+
+## IP Planning Guidelines
+
+### Subnet Minimums
+
+| Subnet | Minimum | Recommended | Purpose |
+|--------|---------|-------------|---------|
+| Gateway | /27 (32 IPs) | /27 | VPN Gateway instances |
+| Bastion | /26 (64 IPs) | /26 | Azure Bastion service |
+| DNS | /28 (16 IPs) | /28 | DNS resolver |
+| AZRL | /27 (32 IPs) | /27 or larger | Management VMs |
+| Endpoints | /27 (32 IPs) | /27 or larger | Private endpoints |
+
+### Network Conflict Check
+
+Ensure Azure VNet CIDR does not overlap with:
+- ✅ On-premises management network
+- ✅ On-premises OOB network
+- ✅ Cluster networks
+- ✅ Other Azure VNets
+
+---
+
+## Validation
+
+- [ ] VNet CIDR does not conflict with on-premises networks
+- [ ] All subnets fit within VNet address space
+- [ ] Gateway subnet is minimum /27
+- [ ] Bastion subnet is minimum /26
+- [ ] DNS subnet is minimum /28
+- [ ] VPN Gateway SKU supports required bandwidth
+- [ ] BGP ASN and IPs are correct
+- [ ] Optional server flags set as desired
+
+---
+
+## Next Steps
+
+Proceed to [Task 03 - Configure Cluster Mode](./task-03-configure-cluster-mode.mdx) to define cluster-specific resources.
+
+---
+
+---
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitHub Actions.
+
+See procedure steps above for GitHub-specific guidance.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitLab CI/CD.
+
+See procedure steps for GitLab-specific guidance.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on Azure DevOps Pipelines.
+
+See procedure steps for Azure DevOps-specific guidance.
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01 - Core Variables](./task-01-configure-core-variables.mdx) | [Phase 01 - Configuration](./index.mdx) | [Task 03 - Cluster Mode](./task-03-configure-cluster-mode.mdx) |
+
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Management Mode | `azure.management.mode` | `full` |
+| Management VNET | `azure.networking.management.vnet_name` | `vnet-management-01` |
+| Management Subnet | `azure.networking.management.subnet_name` | `snet-management-01` |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Management mode configuration not applying | Invalid variable values in configuration file | Verify management mode variables match expected format |
+| Pipeline fails at management mode validation | Conflicting settings between management and cluster modes | Review mode configuration for consistency |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |

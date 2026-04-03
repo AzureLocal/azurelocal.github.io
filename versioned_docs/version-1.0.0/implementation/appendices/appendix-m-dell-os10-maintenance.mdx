@@ -1,0 +1,211 @@
+---
+title: "Appendix M: Dell OS10 Switch Maintenance"
+sidebar_label: "Appendix M: Dell OS10 Maintenance"
+sidebar_position: 13
+description: "Maintenance procedures, reinstallation, flashing, troubleshooting, and management for Dell OS10 switches in Azure Local deployments."
+---
+
+# Dell OS10 Switch Maintenance
+
+[![Reference](https://img.shields.io/badge/Type-Reference-purple?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference   
+> **SCOPE**: Dell OS10 switch maintenance   
+> **PURPOSE**: Provide procedures for reinstalling OS10, flashing, troubleshooting, and managing Dell switches   
+> **MASTER REFERENCE**: [Dell OS10 Documentation](https://infohub.delltechnologies.com/)
+
+**Status**: Active
+
+This document provides maintenance procedures, reinstallation steps, flashing instructions, troubleshooting, and management guidance for Dell OS10 switches (e.g., S4112F-ON) used in Azure Local Cloud Demos Azure Local deployments.
+
+## Reinstalling OS10 Software
+
+### Using USB Drive
+1. Prepare a FAT32-formatted USB drive with the OS10 installation package.
+2. Boot the switch into ONIE:
+ - Power on and interrupt boot with `Ctrl+C`.
+ - Select "ONIE: Install OS" and press `Ctrl+C` to stop.
+3. Mount the USB drive:
+ ```bash
+ mkdir /mnt/usb
+ cd /mnt
+ fdisk -l # Identify USB partition (e.g., /dev/sdb1)
+ mount -t vfat /dev/sdb1 /mnt/usb
+ ```
+4. Install OS10:
+ ```bash
+ cd /mnt/usb
+ ls # Confirm .bin file
+ onie-nos-install <filename>.bin
+ ```
+5. Reboot after installation completes.
+
+### Using Network (HTTP/TFTP)
+1. Boot into ONIE as above.
+2. Install via network:
+ ```bash
+ onie-nos-install http://example.com/path/to/os10.bin
+ # Or for TFTP:
+ onie-nos-install tftp://192.168.1.100/os10.bin
+ ```
+
+## Installing OS10
+
+### Automatic Installation via ONIE
+OS10 supports automatic installation through DHCP/TFTP or USB discovery:
+
+1. Prepare the installation media:
+ - For DHCP/TFTP: Configure DHCP server with OS10 image URL
+ - For USB: Format USB as FAT32 and copy OS10 .bin file
+
+2. Boot the switch into ONIE:
+ - Power cycle the switch
+ - Interrupt boot with `Ctrl+C` when GRUB menu appears
+ - Select "ONIE: Install OS"
+
+3. The system automatically detects and installs OS10 from:
+ - DHCP option 114 (OS10 image URL)
+ - USB drive (if DHCP fails)
+ - TFTP server (fallback)
+
+### Manual Installation via ONIE
+For manual installation when automatic discovery fails:
+
+1. Boot into ONIE rescue mode:
+ ```bash
+ onie# ifconfig eth0 <ip-address> netmask <netmask>
+ onie# route add default gw <gateway-ip>
+ ```
+
+2. Install OS10:
+ ```bash
+ onie-nos-install http://<server-ip>/path/to/os10.bin
+ # Or for USB:
+ mkdir /mnt/usb
+ mount -t vfat /dev/sdb1 /mnt/usb
+ cd /mnt/usb
+ onie-nos-install <filename>.bin
+ ```
+
+3. Monitor installation and reboot when complete.
+
+## Upgrading OS10
+
+### Zero Touch Deployment (ZTD) Upgrade
+ZTD enables automatic upgrades across multiple switches:
+
+1. Configure ZTD server with upgrade policy
+2. Enable ZTD on switches:
+ ```bash
+ OS10# configure terminal
+ OS10(config)# ztd enable
+ OS10(config)# ztd server <server-ip>
+ ```
+
+3. The system automatically downloads and installs updates based on policy.
+
+### CLI-Based Upgrade
+For manual upgrades:
+
+1. Download the image:
+ ```bash
+ OS10# image download <protocol>://<server>/<path>/os10.bin
+ ```
+
+2. Install the image:
+ ```bash
+ OS10# image install <image-name>
+ ```
+
+3. Set boot image and reboot:
+ ```bash
+ OS10# boot system <image-name>
+ OS10# reload
+ ```
+
+### VLT Domain Upgrade
+For Virtual Link Trunking setups:
+
+1. Upgrade secondary VLT peer first
+2. Verify VLT status:
+ ```bash
+ OS10# show vlt brief
+ ```
+
+3. Upgrade primary peer
+4. Confirm VLT reformation after reboot
+
+## Flashing Firmware
+
+### PCIe Firmware Upgrade from DIAG OS
+For S5200-ON series switches:
+
+1. Boot into DIAG OS:
+ - Reload switch and select "ONIE" from GRUB
+ - Select "EDA-DIAG" from ONIE menu
+ - Login as root
+
+2. Configure network and download firmware:
+ ```bash
+ root@dellemc-diag-os# ifconfig eth0 <management-ip>
+ root@dellemc-diag-os# route add default gw <gateway-ip>
+ root@dellemc-diag-os# wget <url>/pcieg3fw.bin
+ ```
+
+3. Enter BCM shell and upgrade:
+ ```bash
+ root@dellemc-diag-os# nputool -d -i
+ BCM.0> pciephy fw load pcieg3fw.bin
+ BCM.0> exit
+ ```
+
+4. Power cycle the switch to complete upgrade.
+
+### PCIe Firmware Upgrade from OS10 hshell
+For switches without console access:
+
+1. Copy firmware to switch:
+ ```bash
+ OS10# system "sudo -i"
+ root@OS10# scp user@host:/path/pcieg3fw.bin /home/admin/
+ ```
+
+2. Enter hshell and upgrade:
+ ```bash
+ root@OS10# hshell
+ SAI.0> cd /home/admin
+ SAI.0> pciephy fw load pcieg3fw.bin
+ SAI.0> ::exit
+ ```
+
+3. Power cycle the switch.
+
+### ONIE Firmware Updates
+Ensure ONIE firmware is updated to minimum required versions per platform. Refer to Dell documentation for specific ONIE Firmware Updater versions and procedures.
+
+## Flashing the Device
+Dell OS10 switches use ONIE for firmware updates. Follow the reinstallation steps above, as OS10 installation includes firmware flashing.
+
+## Troubleshooting
+- **Boot Issues**: Ensure ONIE is enabled in BIOS.
+- **USB Mount Errors**: Run `dosfsck -r /dev/sdb1` to repair FAT filesystem.
+- **Network Issues**: Verify IP configuration and connectivity.
+- **Interface Problems**: Use `show interfaces status` to check ports.
+
+## Management
+- Default login: `admin` (no password).
+- Basic config:
+ ```bash
+ enable
+ configure terminal
+ hostname sw00-iic
+ interface management 1/1/1
+ ip address 10.100.64.6/24
+ no shutdown
+ write memory
+ ```
+
+> Data verified with Dell OS10 Installation Guide as of 2026-02-02.
+
+For questions about these procedures, refer to the Dell documentation or contact the Azure Local Cloud documentation team.

@@ -1,0 +1,263 @@
+---
+title: "Task 05: Configure Environment Variables"
+sidebar_label: "Task 05: Configure Environment Variables"
+sidebar_position: 5
+description: "Configure CI/CD environment variables for Azure authentication"
+category: "Runbook"
+scope: "Configure CI/CD environment variables for Azure authentication"
+purpose: "Configure CI/CD environment variables for Azure authentication"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cicd-infrastructure
+  - implementation
+keywords:
+  - Configure
+  - Environment
+  - Variables
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 05: Configure Environment Variables
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![GitHub](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://github.com/AzureLocal)
+[![GitLab](https://img.shields.io/badge/Platform-GitLab-FC6D26?style=flat-square&logo=gitlab)](https://gitlab.com)
+[![Azure DevOps](https://img.shields.io/badge/Platform-Azure%20DevOps-0078D7?style=flat-square&logo=azuredevops)](https://dev.azure.com)
+
+> **DOCUMENT CATEGORY**: Runbook Step   
+> **SCOPE**: CI/CD pipeline variable configuration   
+> **PURPOSE**: Configure environment variables for Azure authentication   
+> **MASTER REFERENCE**: See platform-specific docs below
+
+**Status**: Active 
+
+---
+
+## Objective
+
+Configure CI/CD pipeline environment variables for each target Azure subscription.
+
+---
+
+## Prerequisites
+
+- [ ] Environments created (Task 04)
+- [ ] Bootstrap values from Task 01 (`ARM_CLIENT_ID`, `ARM_CLIENT_SECRET`)
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Tenant ID | `azure.tenant_id` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| Subscription ID | `azure.subscription.id` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| SPN Client ID | `identity.service_principal.app_id` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| SPN Client Secret | `keyvault://<vault>/automation-spn-secret` | *(Key Vault reference)* |
+
+---
+
+## Required Variables
+
+Configure the following variables for **each** target Azure subscription:
+
+| Variable | Description | Sensitivity |
+|----------|-------------|-------------|
+| `ARM_TENANT_ID` | Entra ID tenant ID | Masked |
+| `ARM_SUBSCRIPTION_ID` | Azure subscription ID | Masked |
+| `ARM_CLIENT_ID` | `azurelocal-cicd` App Registration ID (from Task 01) | Masked |
+| `ARM_CLIENT_SECRET` | `azurelocal-cicd` App Registration secret (from Task 01) | Secret |
+
+---
+
+## Procedure
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+### Configure Repository Secrets
+
+1. Navigate to your repository → **Settings** → **Secrets and variables** → **Actions**
+2. Click **New repository secret** for each variable:
+
+| Secret Name | Value |
+|-------------|-------|
+| `ARM_TENANT_ID` | Entra ID tenant ID |
+| `ARM_SUBSCRIPTION_ID` | Azure subscription ID |
+| `ARM_CLIENT_ID` | App Registration client ID |
+| `ARM_CLIENT_SECRET` | App Registration client secret |
+
+### Environment-Scoped Secrets (Recommended)
+
+For multi-environment deployments, use environment-scoped secrets:
+
+1. Go to **Settings** → **Environments** → select environment (e.g. `azr-prod-us`)
+2. Under **Environment secrets**, click **Add secret**
+3. Add environment-specific values for `ARM_SUBSCRIPTION_ID` (and others if they differ per environment)
+
+> **Tip:** Repository-level secrets apply to all environments. Use environment secrets to override per environment.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+### Configure CI/CD Variables
+
+1. Navigate to **Settings** → **CI/CD**
+2. Expand **Variables**
+3. Click **Add variable** for each required variable:
+
+| Variable | Configuration |
+|----------|---------------|
+| **ARM_TENANT_ID** | |
+| Type | `Variable` |
+| Environments | Select target environment |
+| Flags | `Masked` |
+| Value | Entra ID tenant ID |
+
+| Variable | Configuration |
+|----------|---------------|
+| **ARM_SUBSCRIPTION_ID** | |
+| Type | `Variable` |
+| Environments | Select target environment |
+| Flags | `Masked` |
+| Value | Azure subscription ID |
+
+| Variable | Configuration |
+|----------|---------------|
+| **ARM_CLIENT_ID** | |
+| Type | `Variable` |
+| Environments | Select target environment |
+| Flags | `Masked` |
+| Value | `azurelocal-cicd` App Registration ID (from Task 01) |
+
+| Variable | Configuration |
+|----------|---------------|
+| **ARM_CLIENT_SECRET** | |
+| Type | `Variable` |
+| Environments | Select target environment |
+| Flags | `Masked` |
+| Value | `azurelocal-cicd` App Registration secret (from Task 01) |
+
+> **Tip:** Scope variables to specific environments to support multi-subscription deployments.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+### Create Variable Group
+
+1. Navigate to **Pipelines** → **Library**
+2. Click **+ Variable group**
+3. Name it: `azure-credentials-<environment>` (e.g. `azure-credentials-azr-prod-us`)
+4. Add variables:
+
+| Variable | Value | Lock |
+|----------|-------|------|
+| `ARM_TENANT_ID` | Entra ID tenant ID | 🔒 |
+| `ARM_SUBSCRIPTION_ID` | Azure subscription ID | 🔒 |
+| `ARM_CLIENT_ID` | App Registration client ID | 🔒 |
+| `ARM_CLIENT_SECRET` | App Registration client secret | 🔒 |
+
+5. Click **Save**
+
+### Link to Pipeline
+
+Reference the variable group in your pipeline YAML:
+
+```yaml
+variables:
+  - group: azure-credentials-azr-prod-us
+```
+
+> **Tip:** Create separate variable groups per environment and link them using pipeline stages.
+
+</TabItem>
+</Tabs>
+
+---
+
+## Verification
+
+- [ ] All required variables configured per environment
+- [ ] Sensitive values are masked/secret
+- [ ] Variables scoped to correct environments
+- [ ] Test pipeline can authenticate to Azure
+
+---
+
+## Next Steps
+
+[Deploy Runners](task-06-deploy-runners.mdx)
+
+---
+
+## References
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+- [GitHub Actions Secrets](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions)
+- [GitHub Environments](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment)
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+- [GitLab CI/CD Variables](https://docs.gitlab.com/ee/ci/variables/)
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+- [Azure DevOps Variable Groups](https://learn.microsoft.com/en-us/azure/devops/pipelines/library/variable-groups)
+- [Azure DevOps Pipeline Variables](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/variables)
+
+</TabItem>
+</Tabs>
+
+
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 04: Create Environments](./task-04-create-environments.mdx) | [Phase 01: CI/CD Setup](./index.mdx) | [Task 06: Deploy Runners ->](./task-06-deploy-runners.mdx) |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Variable group not accessible | Pipeline authorization missing | Authorize the pipeline to use the variable group |
+| Secret variables not resolving | Key vault integration misconfigured | Verify key vault access policy and service connection |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

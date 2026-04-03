@@ -1,0 +1,246 @@
+---
+title: "Task 05: Monitor Apply Stage"
+sidebar_label: "Task 05: Monitor Apply Stage"
+sidebar_position: 5
+description: "Monitor infrastructure deployment during apply stage"
+category: "Runbook"
+scope: "Monitor infrastructure deployment during apply stage"
+purpose: "Monitor infrastructure deployment during apply stage"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - azure-foundation
+  - management-infrastructure
+keywords:
+  - Monitor
+  - Apply
+  - Stage
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 05: Monitor Apply Stage
+
+> **Objective**: Monitor Terraform apply stage as Azure resources are deployed 
+> **Duration**: 45-90 minutes (management mode), 10-15 minutes (cluster mode)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Monitor infrastructure deployment during apply stage
+> **PURPOSE**: Monitor infrastructure deployment during apply stage
+> **MASTER REFERENCE**: [Terraform Apply Documentation](https://developer.hashicorp.com/terraform/cli/commands/apply)
+
+**Status**: Active
+
+## What Happens
+
+The apply stage:
+1. Executes Terraform plan
+2. Creates Azure resources in dependency order
+3. Waits for long-running resources (VPN Gateway: 30-45 min)
+4. Configures all resources
+5. Outputs deployment information
+
+---
+
+## Monitoring Procedure
+
+### 1. Watch Apply Job
+
+Click the **apply** job in the pipeline to see real-time logs.
+
+### 2. Track Resource Creation
+
+Resources deploy in this order:
+
+**Phase 1: Foundation (5-10 min)**
+```
+azurerm_resource_group.management: Creating...
+azurerm_virtual_network.hub: Creating...
+azurerm_subnet.gateway: Creating...
+azurerm_subnet.bastion: Creating...
+azurerm_log_analytics_workspace: Creating...
+```
+
+**Phase 2: VPN Gateway (30-45 min)** ⏰
+```
+azurerm_public_ip.vpn_gateway: Creating...
+azurerm_virtual_network_gateway.vpn: Creating...
+ (This will take 30-45 minutes - DO NOT INTERRUPT)
+azurerm_virtual_network_gateway.vpn: Still creating... [5m0s elapsed]
+azurerm_virtual_network_gateway.vpn: Still creating... [10m0s elapsed]
+...
+azurerm_virtual_network_gateway.vpn: Still creating... [40m0s elapsed]
+azurerm_virtual_network_gateway.vpn: Creation complete after 42m15s
+```
+
+**Phase 3: Remaining Resources (10-15 min)**
+```
+azurerm_bastion_host: Creating...
+azurerm_key_vault: Creating...
+azurerm_storage_account: Creating...
+azurerm_private_dns_zone: Creating...
+```
+
+### 3. Expected Timing
+
+| Component | Time |
+|-----------|------|
+| Resource groups, VNet, subnets | 5-10 min |
+| **VPN Gateway** | **30-45 min** |
+| Bastion, Key Vault, Log Analytics | 10-15 min |
+| DNS, storage, remaining resources | 5-10 min |
+| **Total (Management Mode)** | **45-90 min** |
+| **Total (Cluster Mode)** | **10-15 min** |
+
+---
+
+## Progress Indicators
+
+### Healthy Deployment
+```
+Apply complete! Resources: 45 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+vpn_gateway_id = "/subscriptions/.../virtualNetworkGateways/..."
+key_vault_id = "/subscriptions/.../vaults/..."
+bastion_id = "/subscriptions/.../bastionHosts/..."
+```
+
+### Warning Signs
+
+**Stuck resources:**
+```
+azurerm_resource.name: Still creating... [60m0s elapsed]
+```
+If any resource (except VPN Gateway) is stuck beyond expected time, investigate in Azure Portal.
+
+**Errors:**
+```
+Error: creating Resource: authorization failed
+Error: Code="QuotaExceeded"
+```
+Pipeline will fail with error details. See Troubleshooting section.
+
+---
+
+## During Deployment
+
+✅ **DO:**
+- Monitor pipeline logs
+- Check Azure Portal for resource creation
+- Keep stakeholders updated on progress
+- Prepare for validation steps
+
+❌ **DON'T:**
+- Cancel the pipeline
+- Modify resources in Azure Portal
+- Push new commits (starts new pipeline)
+- Make configuration changes
+
+---
+
+## Common Issues
+
+**Issue**: Quota exceeded errors 
+**Solution**: Request quota increase for the subscription
+
+**Issue**: VPN Gateway taking longer than 45 minutes 
+**Solution**: Check Azure Portal for actual status; may take up to 60 minutes in some regions
+
+**Issue**: Bastion creation fails 
+**Solution**: Verify `/26` subnet size and `AzureBastionSubnet` name
+
+**Issue**: Key Vault name conflict 
+**Solution**: Key Vault names must be globally unique; module generates unique names
+
+---
+
+## Validation
+
+- [ ] Apply stage completed successfully
+- [ ] All resources created without errors
+- [ ] Output values displayed
+- [ ] No warning or error messages in final summary
+
+---
+
+---
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitHub Actions.
+
+See procedure steps above for GitHub-specific guidance.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitLab CI/CD.
+
+See procedure steps for GitLab-specific guidance.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on Azure DevOps Pipelines.
+
+See procedure steps for Azure DevOps-specific guidance.
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 04 - Approve](./task-04-approve-deployment.mdx) | [Phase 02 - Execution](./index.mdx) | [Task 06 - Test Stage](./task-06-verify-test-stage.mdx) |
+
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Apply Timeout | `cicd.pipeline.apply_timeout` | `120` |
+| Retry Count | `cicd.pipeline.retry_count` | `3` |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Apply stage fails | Resource provisioning errors or quota limits | Check Azure quota and resource provider status |
+| Partial deployment | Transient Azure API errors during apply | Re-run the pipeline to retry failed resources |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |

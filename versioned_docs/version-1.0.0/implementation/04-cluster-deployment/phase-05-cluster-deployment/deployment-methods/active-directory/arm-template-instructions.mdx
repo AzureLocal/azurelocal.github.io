@@ -1,0 +1,970 @@
+---
+title: "Active Directory - Via ARM Template"
+sidebar_label: "AD - ARM Template"
+sidebar_position: 2
+description: "Deploy Azure Local cluster with Active Directory authentication using ARM templates"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Active Directory Authentication - ARM Template Deployment
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook  
+> **SCOPE**: ARM template-based cluster deployment with Active Directory  
+> **PURPOSE**: Automated and repeatable deployment via infrastructure-as-code  
+> **MASTER REFERENCE**: [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-arm)
+
+**Status**: Active
+
+## Overview
+
+This guide walks through deploying an Azure Local cluster with **Active Directory** authentication using ARM templates. It is structured as a sequential runbook — complete each task in order from start to finish.
+
+AD authentication requires:
+- A pre-existing Active Directory domain accessible from the cluster nodes
+- An organizational unit (OU) for Azure Local computer objects
+- A deployment service account with OU `GenericAll` permissions
+
+The Microsoft official ARM template (`azuredeploy.json`, apiVersion `2025-09-15-preview`) accepts **54 parameters**. Azure Local Cloud provides parameter template files and a generation script that populates all 54 from `variables.yml`. See the [Reference](#reference) section at the bottom for the full parameter catalog.
+
+---
+
+## Before You Begin
+
+### Prerequisites
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Azure CLI or PowerShell | Az module installed | `Get-Module -Name Az` |
+| Subscription access | Contributor + User Access Administrator | Verify in IAM |
+| Resource group | Created for cluster deployment | `Get-AzResourceGroup` |
+| Platform Key Vault | Stores deployment credentials (local admin, LCM passwords) | Secrets populated in prior phases |
+| Arc-registered nodes | All nodes registered in Azure Arc | Verify in Azure Portal |
+| Identical local credentials | Same admin password on all nodes | Verify login via WinRM |
+| Active Directory | Domain reachable from all nodes | `Test-ComputerSecureChannel` |
+| OU for Azure Local | Dedicated OU in AD | `Get-ADOrganizationalUnit` |
+| LCM service account | Domain account with OU `GenericAll` | Verify delegation |
+
+### What You Need Ready
+
+Before starting the deployment procedure, confirm each item:
+
+1. **`variables.yml` fully populated** — all 13 sections complete, including `cluster_arm_deployment`, `accounts`, `network_intents`, and `compute.cluster_nodes`
+2. **Authenticated to Azure** — run `Connect-AzAccount` (PowerShell) or `az login` (CLI) on the machine where you will execute commands
+3. **`powershell-yaml` module installed** — required by the generation script: `Install-Module powershell-yaml -Scope CurrentUser`
+4. **Arc nodes registered** — Phase 04 complete; `arc_node_resource_ids` populated in `variables.yml`
+5. **Platform Key Vault secrets stored** — `local-admin-password` and `lcm-deployment-password` secrets exist in the platform Key Vault (from prior phases)
+6. **AD infrastructure ready** — domain reachable, OU created, LCM service account has `GenericAll` delegation on the OU
+
+:::info Where to Run From
+All commands in this runbook run from the **azl-toolkit repo root** on a management/jump box authenticated to Azure. The toolkit scripts expect `variables.yml` at `config/variables.yml` relative to the repo root.
+:::
+
+:::info Key Vault Architecture
+Two Key Vaults are involved in Azure Local deployment:
+
+- **Platform Key Vault** — Already exists from prior phases. Stores deployment credentials (local admin password, LCM domain service account password). Referenced in the parameter file via Key Vault references. **No action needed here.**
+- **Cluster Key Vault** — Created automatically by the ARM template when `createNewKeyVault` is `true`. The name (`keyVaultName`) and other settings are already defined in `variables.yml`.
+:::
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `compute.arm_deployment.cluster_name` | string | Cluster name |
+| `compute.arm_deployment.cluster_resource_group` | string | Cluster resource group |
+| `compute.cluster_nodes[*].ipv4_address` | string | Node IP addresses |
+| `compute.cluster_nodes[*].arc_node_resource_ids` | string | Arc resource IDs |
+| `cluster_arm_deployment.domain_ou_path` | string | AD OU distinguished name |
+| `accounts.lcm_admin.username` | string | LCM admin username |
+| `cluster_arm_deployment.resource_provider_object_id` | string | HCI RP Object ID |
+| `security.keyvault.*` | object | Key Vault references |
+| `networking.*` | object | Network intents and IP allocation |
+
+---
+
+## Deployment Procedure
+
+### Task 1: Verify Active Directory Prerequisites
+
+Confirm that each cluster node can reach the domain, the OU exists, and the LCM service account has the required delegation.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual Commands" default>
+
+**When to use**: You want to verify each check individually using standard AD PowerShell commands.
+
+```powershell title="Step 1 — Define variables from variables.yml"
+# Replace placeholders with values from your variables.yml
+$nodeIPs = @("<NODE_IP_1>", "<NODE_IP_2>") # compute.cluster_nodes[*].ipv4_address
+$ouPath = "<DOMAIN_OU_PATH>" # cluster_arm_deployment.domain_ou_path
+$lcmUser = "<LCM_USERNAME>" # accounts.lcm_admin.username
+```
+
+```powershell title="Step 2 — Verify domain connectivity from each node"
+# Expected: True for every node
+Invoke-Command -ComputerName $nodeIPs -ScriptBlock {
+ [pscustomobject]@{
+ Node = $env:COMPUTERNAME
+ SecureChannel = (Test-ComputerSecureChannel)
+ }
+}
+```
+
+**Expected output** — every node returns `SecureChannel = True`:
+```
+Node SecureChannel
+---- -------------
+iic-01-n01 True
+iic-01-n02 True
+```
+
+```powershell title="Step 3 — Verify OU exists"
+# Expected: Returns the OU object without error
+Get-ADOrganizationalUnit -Identity $ouPath | Format-List Name, DistinguishedName
+```
+
+```powershell title="Step 4 — Verify LCM account has GenericAll on OU"
+$acl = Get-Acl "AD:\$ouPath"
+$delegation = $acl.Access | Where-Object {
+ $_.IdentityReference -like "*$lcmUser*" -and
+ $_.ActiveDirectoryRights -match "GenericAll"
+}
+
+if ($delegation) {
+ Write-Host "PASS: $lcmUser has GenericAll on $ouPath" -ForegroundColor Green
+ $delegation | Format-Table IdentityReference, ActiveDirectoryRights
+} else {
+ Write-Host "FAIL: $lcmUser does NOT have GenericAll on $ouPath" -ForegroundColor Red
+}
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+**When to use**: You have a populated `variables.yml` and want all AD checks run automatically.
+
+**Run from the repo root:**
+
+```
+scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/
+ active-directory/task-01-initiate-deployment-via-arm-template/
+ powershell/Invoke-VerifyADPrerequisites-Orchestrated.ps1
+```
+
+```powershell title="Run AD prerequisites verification"
+.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\active-directory\task-01-initiate-deployment-via-arm-template\powershell\Invoke-VerifyADPrerequisites-Orchestrated.ps1 `
+ -ConfigPath "config/variables.yml"
+```
+
+The script reads node IPs, domain FQDN, OU path, and LCM account from the config and verifies each prerequisite. Results are logged to `./logs/task-01-initiate-deployment-via-arm-template/`.
+
+**Expected output**: All checks report `PASS`. Any `FAIL` must be resolved before proceeding.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+**When to use**: No `variables.yml` required — all values are defined inline.
+
+```
+scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/
+ active-directory/task-01-initiate-deployment-via-arm-template/
+ powershell/Test-ADPrerequisites-Standalone.ps1
+```
+
+1. Open the script and edit the `#region CONFIGURATION` block at the top with your environment values
+2. Run: `.\Test-ADPrerequisites-Standalone.ps1`
+
+</TabItem>
+</Tabs>
+
+:::danger Do Not Proceed If Checks Fail
+If domain connectivity, OU existence, or LCM delegation checks fail, fix the AD configuration before continuing. Deployment will fail if these prerequisites are not met.
+:::
+
+---
+
+### Task 2: Get HCI Resource Provider Object ID
+
+The `hciResourceProviderObjectID` parameter requires the tenant-specific Object ID of the `Microsoft.AzureStackHCI` resource provider service principal. This GUID is unique per Entra ID tenant and must be looked up once, then stored in `variables.yml` at `cluster_arm_deployment.resource_provider_object_id`.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual Commands" default>
+
+**When to use**: Quick one-time lookup.
+
+```powershell title="PowerShell — look up the Object ID"
+$hciRP = Get-AzADServicePrincipal -DisplayName "Microsoft.AzureStackHCI Resource Provider"
+$hciRP.Id
+```
+
+```bash title="Azure CLI alternative"
+az ad sp list --display-name "Microsoft.AzureStackHCI Resource Provider" --query "[0].id" -o tsv
+```
+
+**Expected output**: A single GUID, e.g. `ab12cd34-ef56-7890-ab12-cd34ef567890`
+
+**Next**: Open `variables.yml`, find `cluster_arm_deployment.resource_provider_object_id`, and paste the GUID as the value.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+**When to use**: Look up the GUID and automatically write it into `variables.yml`.
+
+```
+scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/
+ active-directory/task-01-initiate-deployment-via-arm-template/
+ powershell/Get-HciResourceProviderObjectId.ps1
+```
+
+```powershell title="Look up and auto-update variables.yml"
+.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\active-directory\task-01-initiate-deployment-via-arm-template\powershell\Get-HciResourceProviderObjectId.ps1 `
+ -ConfigPath "config/variables.yml" `
+ -UpdateConfig
+```
+
+The `-UpdateConfig` flag writes the Object ID directly into `variables.yml` at `cluster_arm_deployment.resource_provider_object_id`. Without it, the script only prints the GUID.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+**When to use**: No config file — just print the GUID.
+
+```
+scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/
+ active-directory/task-01-initiate-deployment-via-arm-template/
+ powershell/Get-HciResourceProviderObjectId-Standalone.ps1
+```
+
+```powershell title="Run standalone lookup"
+.\Get-HciResourceProviderObjectId-Standalone.ps1
+```
+
+Copy the output GUID into your parameter file manually.
+
+</TabItem>
+</Tabs>
+
+---
+
+### Task 3: Generate Parameter File
+
+Create the deployment-ready JSON parameter file that maps all 54 ARM template parameters. This step produces the file used by Tasks 4 and 5.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual Commands" default>
+
+**When to use**: You want to build the parameter file by hand or use a pre-built example as a starting point.
+
+1. Copy the template: `configs/azure/arm-templates/04-cluster-deployment/azuredeploy.parameters.ad.json`
+2. Replace all `{{VARIABLE}}` placeholders with values from your `variables.yml`
+
+**Key placeholders to replace** (most common errors come from these):
+
+| Placeholder | YAML Source Path | Description |
+|-------------|-----------------|-------------|
+| `{{CLUSTER_NAME}}` | `cluster_arm_deployment.cluster_name` | Cluster resource name |
+| `{{RESOURCE_GROUP}}` | `azure.resource_group` | Target resource group |
+| `{{LOCATION}}` | `azure.location` | Azure region |
+| `{{KEY_VAULT_NAME}}` | `cluster_arm_deployment.key_vault_name` | Cluster KV (created by ARM) |
+| `{{DIAGNOSTIC_STORAGE}}` | `cluster_arm_deployment.arm_diagnostic_storage_account_name` | KV diagnostics storage |
+| `{{WITNESS_STORAGE}}` | `cluster_arm_deployment.cloud_witness_storage_account` | Cloud witness storage |
+| `{{LOCAL_ADMIN_USER}}` | `accounts.local_admin.username` | Local admin on all nodes |
+| `{{LCM_ADMIN_USER}}` | `accounts.lcm_admin.username` | LCM sAMAccountName (no `@domain`) |
+| `{{HCI_RP_OBJECT_ID}}` | `cluster_arm_deployment.resource_provider_object_id` | From Task 2 |
+| `{{DOMAIN_FQDN}}` | `cluster_arm_deployment.domain_fqdn` | AD domain FQDN |
+| `{{ADOU_PATH}}` | `cluster_arm_deployment.domain_ou_path` | OU distinguished name |
+| `{{NAMING_PREFIX}}` | `cluster_arm_deployment.naming_prefix` | Resource prefix |
+
+For `localAdminPassword` and `AzureStackLCMAdminPassword`, use Key Vault references (not plain text):
+
+```json title="Key Vault reference format (points to platform Key Vault)"
+"localAdminPassword": {
+ "reference": {
+ "keyVault": {
+ "id": "/subscriptions/<SUB_ID>/resourceGroups/<RG>/providers/Microsoft.KeyVault/vaults/<PLATFORM_KV_NAME>"
+ },
+ "secretName": "local-admin-password"
+ }
+}
+```
+
+3. Verify all `{{` placeholders are replaced: search the file for `{{` — there should be zero matches
+4. Save as `azuredeploy.parameters.ad.json` in your working directory
+
+:::tip Use an Example as Reference
+Validated IIC examples exist for each networking pattern in `configs/azure/arm-templates/examples/`. Compare your file against the matching pattern — see the **Example Parameter Files** collapsible in the [Reference](#reference) section below.
+:::
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+**When to use**: You have a populated `variables.yml` and want all 54 parameters mapped automatically. **This is the recommended path.**
+
+```powershell title="Generate the parameter file from variables.yml"
+.\configs\Generate-AzureLocal-Parameters.ps1 `
+ -ConfigPath "config/variables.yml" `
+ -AuthType AD `
+ -OutputPath "azuredeploy.parameters.ad.generated.json"
+```
+
+**What the script does:**
+1. Reads `variables.yml` and maps all 54 parameters from the YAML config sections
+2. Auto-derives `networkingPattern` (hyperConverged / convergedManagementCompute / custom) from the intent definitions
+3. Auto-derives `networkingType` (switched / switchless / single) from node count and config
+4. Builds the complex arrays (`intentList`, `storageNetworkList`, `physicalNodesSettings`) dynamically
+5. Uses Key Vault references for `localAdminPassword` and `AzureStackLCMAdminPassword`
+6. For `-AuthType AD`: populates `domainFqdn` and `adouPath` from `cluster_arm_deployment`
+7. Writes the output JSON and prints a summary
+
+**Expected output:**
+```
+=== Parameter Generation Summary ===
+Auth Type: AD
+Cluster Name: iic-clus01
+Resource Group: rg-iic-azurelocal
+Networking Pattern: convergedManagementCompute
+Node Count: 2
+Output File: azuredeploy.parameters.ad.generated.json
+
+Next steps:
+ 1. Review the generated file
+ 2. Run deployment in Validate mode first
+```
+
+**Verify the generated file** — spot-check these critical values:
+```powershell title="Quick validation of generated parameters"
+$params = (Get-Content "azuredeploy.parameters.ad.generated.json" | ConvertFrom-Json).parameters
+Write-Host "Cluster: $($params.clusterName.value)"
+Write-Host "Domain: $($params.domainFqdn.value)"
+Write-Host "OU: $($params.adouPath.value)"
+Write-Host "Nodes: $($params.physicalNodesSettings.value.Count)"
+Write-Host "Pattern: $($params.networkingPattern.value)"
+Write-Host "Mode: $($params.deploymentMode.value)"
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+**When to use**: You are using the standalone deployment script in Task 4, which has all parameters defined inline — skip this step.
+
+The standalone `Deploy-AzureLocalCluster-Standalone.ps1` includes a `#region CONFIGURATION` block with all deployment variables. There is no separate parameter file generation step.
+
+Proceed directly to **Task 4**.
+
+</TabItem>
+</Tabs>
+
+---
+
+### Task 4: Validate Deployment
+
+Run the ARM template in **Validate** mode first. Validation executes the full deployment pipeline — environment checks, connectivity tests, credential validation — but stops before provisioning. Fix all errors before proceeding to Deploy.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual Commands" default>
+
+**When to use**: You built the parameter file manually in Task 3 and want to run validation directly.
+
+```powershell title="Define deployment variables"
+# Values from variables.yml
+$subscriptionId = "<SUB_ID>" # azure.subscription_id
+$resourceGroup = "<RESOURCE_GROUP>" # azure.resource_group
+$parametersFile = ".\azuredeploy.parameters.ad.json" # File from Task 3
+$templateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json"
+
+# Set subscription context
+Set-AzContext -SubscriptionId $subscriptionId
+```
+
+```powershell title="Ensure deploymentMode is set to Validate"
+# Check current mode in the parameters file
+$json = Get-Content $parametersFile | ConvertFrom-Json
+$currentMode = $json.parameters.deploymentMode.value
+Write-Host "Current deploymentMode: $currentMode"
+
+# If not "Validate", update it:
+if ($currentMode -ne "Validate") {
+ $json.parameters.deploymentMode.value = "Validate"
+ $json | ConvertTo-Json -Depth 20 | Set-Content $parametersFile
+ Write-Host "Updated deploymentMode to Validate" -ForegroundColor Yellow
+}
+```
+
+```powershell title="Run validation"
+$validateResult = New-AzResourceGroupDeployment `
+ -Name "azl-validate-$(Get-Date -Format 'yyyyMMddHHmmss')" `
+ -ResourceGroupName $resourceGroup `
+ -TemplateUri $templateUri `
+ -TemplateParameterFile $parametersFile `
+ -Verbose
+
+$validateResult | Select-Object DeploymentName, ProvisioningState, Timestamp
+```
+
+**Expected output** for a successful validation:
+```
+DeploymentName ProvisioningState Timestamp
+-------------- ----------------- ---------
+azl-validate-20260309142055 Succeeded 3/9/2026 2:45:30 PM
+```
+
+If validation fails, check the error output against the [Troubleshooting](#troubleshooting) table.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+**When to use**: Single command that generates the parameter file (if needed) and runs validation. **Recommended path.**
+
+```
+scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/
+ active-directory/task-01-initiate-deployment-via-arm-template/
+ powershell/Deploy-AzureLocalCluster.ps1
+```
+
+```powershell title="Run validation (generates params + validates in one step)"
+.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\active-directory\task-01-initiate-deployment-via-arm-template\powershell\Deploy-AzureLocalCluster.ps1 `
+ -ConfigPath "config/variables.yml" `
+ -AuthType AD `
+ -DeploymentMode Validate
+```
+
+The script:
+1. Verifies Azure authentication (`Get-AzContext`)
+2. Reads `variables.yml` for subscription, resource group, cluster name
+3. Calls `Generate-AzureLocal-Parameters.ps1` to produce the parameter file
+4. Patches `deploymentMode` to `Validate`
+5. Runs `New-AzResourceGroupDeployment` with the generated file
+6. Reports success/failure and next steps
+
+**Expected output** on success:
+```
+[SUCCESS] Validation PASSED for cluster 'iic-clus01'
+[INFO] Next step: Re-run with -DeploymentMode Deploy
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+**When to use**: No config file needed — all variables defined inline.
+
+```
+scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/
+ active-directory/task-01-initiate-deployment-via-arm-template/
+ powershell/Deploy-AzureLocalCluster-Standalone.ps1
+```
+
+1. Open the script and edit the `#region CONFIGURATION` block:
+ - `$subscriptionId` — your Azure subscription ID
+ - `$resourceGroup` — target resource group name
+ - `$parametersFile` — path to a pre-built parameter file
+ - `$templateUri` — leave as default (Microsoft Quickstart)
+
+2. Run:
+```powershell title="Run standalone validation"
+.\Deploy-AzureLocalCluster-Standalone.ps1 -DeploymentMode Validate
+```
+
+</TabItem>
+</Tabs>
+
+:::tip Run the Validation Monitor
+While validation runs, start [Monitor-Validation.ps1](../../deployment-monitoring/monitor-validation.mdx) to see live step status and `EnvironmentValidatorFull` log output. It auto-exits when validation completes.
+:::
+
+:::warning Validate First — Always
+Validation runs the full deployment pipeline but stops before provisioning. **Never skip validation.** Fix all errors before switching to Deploy mode.
+:::
+
+---
+
+### Task 5: Deploy Cluster
+
+After validation passes, switch to **Deploy** mode and run the deployment. This provisions the cluster — the process takes 1.5–3 hours depending on node count.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual Commands" default>
+
+**When to use**: You ran validation manually in Task 4 and want to continue with direct commands.
+
+```powershell title="Step 1 — Switch deploymentMode to Deploy"
+$parametersFile = ".\azuredeploy.parameters.ad.json"
+
+$json = Get-Content $parametersFile | ConvertFrom-Json
+$json.parameters.deploymentMode.value = "Deploy"
+$json | ConvertTo-Json -Depth 20 | Set-Content $parametersFile
+Write-Host "Updated deploymentMode to Deploy" -ForegroundColor Green
+```
+
+```powershell title="Step 2 — Run deployment"
+$templateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json"
+$resourceGroup = "<RESOURCE_GROUP>" # azure.resource_group
+$deploymentName = "azl-deploy-$(Get-Date -Format 'yyyyMMddHHmmss')"
+
+$deployment = New-AzResourceGroupDeployment `
+ -Name $deploymentName `
+ -ResourceGroupName $resourceGroup `
+ -TemplateUri $templateUri `
+ -TemplateParameterFile $parametersFile `
+ -Verbose
+
+$deployment | Select-Object DeploymentName, ProvisioningState, Timestamp
+```
+
+:::danger This is a Long-Running Operation
+The `New-AzResourceGroupDeployment` command blocks until deployment completes (1.5–3 hours). Do not close the terminal. Use the monitoring script in a separate terminal to track progress.
+:::
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+**When to use**: Single command — patches the mode and deploys. **Recommended path.**
+
+```powershell title="Run deployment (after validation passed)"
+.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\active-directory\task-01-initiate-deployment-via-arm-template\powershell\Deploy-AzureLocalCluster.ps1 `
+ -ConfigPath "config/variables.yml" `
+ -AuthType AD `
+ -DeploymentMode Deploy
+```
+
+The script automatically patches `deploymentMode` to `Deploy` in the generated parameter file — no manual JSON editing needed.
+
+**Expected output** on success:
+```
+[SUCCESS] Deployment SUCCEEDED for cluster 'iic-clus01'
+[INFO] ProvisioningState: Succeeded
+[INFO] Next step: Run post-deployment verification
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+**When to use**: No config file — same standalone script as Task 4, different mode.
+
+```powershell title="Run standalone deployment"
+.\Deploy-AzureLocalCluster-Standalone.ps1 -DeploymentMode Deploy
+```
+
+</TabItem>
+</Tabs>
+
+:::tip Run the Deployment Monitor
+After deployment starts, open a second terminal and run [Monitor-Deployment.ps1](../../deployment-monitoring/monitor-deployment.mdx) to track hierarchical step progress and stream `OrchestratorFull` logs in real time. Press Ctrl+C to exit at any time.
+:::
+
+**Expected Duration:**
+
+| Node Count | Approximate Time |
+|------------|-----------------|
+| 1-node | ~1.5 hours |
+| 2-node | ~2.5 hours |
+| 4-node | ~3 hours |
+
+---
+
+### Task 6: Verify Deployment
+
+After deployment completes successfully, verify the cluster is healthy, all nodes are online, storage is operational, and domain join is correct.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual Commands" default>
+
+**When to use**: Verify the deployment step-by-step using standard commands.
+
+```powershell title="Step 1 — Verify cluster resource in Azure"
+$resourceGroup = "<RESOURCE_GROUP>" # azure.resource_group
+Get-AzResource -ResourceGroupName $resourceGroup `
+ -ResourceType "Microsoft.AzureStackHCI/clusters" |
+ Format-Table Name, Location, ProvisioningState
+```
+
+**Expected**: Cluster shows `ProvisioningState = Succeeded`
+
+```powershell title="Step 2 — Connect to a node and verify cluster health"
+$nodeIP = "<NODE_IP>" # compute.cluster_nodes[0].ipv4_address
+$cred = Get-Credential -Message "Enter local admin credentials"
+
+Invoke-Command -ComputerName $nodeIP -Credential $cred -ScriptBlock {
+ Write-Host "=== Cluster Status ===" -ForegroundColor Cyan
+ Get-Cluster | Format-List Name, SharedVolumesRoot
+
+ Write-Host "`n=== Node Status ===" -ForegroundColor Cyan
+ Get-ClusterNode | Format-Table Name, State, StatusInformation
+ # Expected: All nodes State = Up
+
+ Write-Host "`n=== Storage Pool ===" -ForegroundColor Cyan
+ Get-StoragePool | Where-Object IsPrimordial -eq $false |
+ Format-Table FriendlyName, HealthStatus, OperationalStatus
+ # Expected: HealthStatus = Healthy
+
+ Write-Host "`n=== Domain Status ===" -ForegroundColor Cyan
+ Get-ClusterNode | ForEach-Object {
+ [pscustomobject]@{
+ Node = $_.Name
+ Domain = (Get-WmiObject -ComputerName $_.Name Win32_ComputerSystem).Domain
+ Secure = (Test-ComputerSecureChannel -Server $_.Name -ErrorAction SilentlyContinue)
+ }
+ } | Format-Table
+ # Expected: All nodes joined to correct domain, SecureChannel = True
+}
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+**When to use**: Automated verification across all nodes using `variables.yml`.
+
+```
+scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/
+ active-directory/task-02-verify-deployment-completion/
+ powershell/Invoke-VerifyADDomainStatus-Orchestrated.ps1
+```
+
+```powershell title="Run full cluster + AD domain verification"
+.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\active-directory\task-02-verify-deployment-completion\powershell\Invoke-VerifyADDomainStatus-Orchestrated.ps1 `
+ -ConfigPath "config/variables.yml"
+```
+
+The script verifies cluster health, node status, storage, domain membership, secure channel trust, OU placement, and LCM delegation across all nodes. Results are logged to `./logs/task-02-verify-deployment-completion/`.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+**When to use**: No config file — standalone verification scripts with inline variables.
+
+Two standalone scripts are available (run both):
+
+```powershell title="Verify cluster health"
+.\Test-ClusterHealth-Standalone.ps1
+```
+
+```powershell title="Verify AD domain status"
+.\Test-ADDomainStatus-Standalone.ps1
+```
+
+Edit the `#region CONFIGURATION` block in each script before running.
+
+Scripts are in:
+```
+scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/
+ active-directory/task-02-verify-deployment-completion/powershell/
+```
+
+</TabItem>
+</Tabs>
+
+**Healthy cluster indicators:**
+
+| Check | Expected Result |
+|-------|----------------|
+| Azure resource state | `ProvisioningState = Succeeded` |
+| All cluster nodes | `State = Up` |
+| Storage pool | `HealthStatus = Healthy` |
+| Domain membership | All nodes joined to correct domain |
+| Secure channel | `True` for every node |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Key Vault access denied | Missing RBAC on platform KV | Grant `Key Vault Secrets User` to deployment identity on the **platform** Key Vault |
+| Domain join fails | LCM account lacks OU permissions | Verify `GenericAll` delegation on the OU |
+| Credential mismatch | Different local passwords across nodes | Reset to identical password on all nodes |
+| `adouPath` format error | Incorrect DN syntax | Must be full DN: `OU=...,DC=...,DC=...` |
+| Validation fails on `hciResourceProviderObjectID` | Wrong Object ID | Re-run `Get-AzADServicePrincipal` (Task 2) |
+| `networkingPattern` error | Intent layout doesn't match pattern | Verify intent count and traffic types match pattern |
+| Deployment timeout | Network or Azure service issue | Check node Azure endpoint connectivity |
+| Arc extension failed | Node not reachable from Azure | Verify WinRM/HTTPS and Arc agent status |
+| `deploymentMode` stuck on `Validate` | Forgot to switch mode | Re-run the script with `-DeploymentMode Deploy` or edit the JSON |
+| Parameter file has `{{` placeholders | Incomplete placeholder replacement | Search file for `{{` and replace all remaining |
+
+### Deployment Logs
+
+```powershell title="Check deployment logs on a cluster node"
+# Azure-side deployment operations
+Get-AzResourceGroupDeploymentOperation `
+ -ResourceGroupName $resourceGroup `
+ -DeploymentName $deploymentName |
+ Where-Object { $_.ProvisioningState -ne "Succeeded" } |
+ Select-Object OperationId, ProvisioningState, @{N="Error";E={$_.StatusMessage}} |
+ Format-List
+
+# Node-side logs
+Invoke-Command -ComputerName $nodeIP -Credential $cred -ScriptBlock {
+ Get-ChildItem "C:\CloudDeployment\Logs" -Recurse |
+ Sort-Object LastWriteTime -Descending |
+ Select-Object -First 10 FullName, LastWriteTime
+}
+```
+
+---
+
+## Next Steps
+
+| Deployment Status | Next Action |
+|-------------------|-------------|
+| ✅ Validation passed | Switch to `Deploy` mode (Task 5) |
+| ✅ Deployment succeeded | Run verification (Task 6), then proceed to [Phase 06: Post-Deployment](../../../phase-06-post-deployment/index.mdx) |
+| ❌ Failed | Review [Troubleshooting](#troubleshooting) table and deployment logs |
+
+---
+
+## Reference
+
+The sections below provide detailed reference material for the ARM template parameters, networking patterns, and examples. Expand each section as needed.
+
+<details>
+<summary><strong>ARM Template Parameters — Complete Reference (54 parameters)</strong></summary>
+
+The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameters** organized into 10 functional groups. **Required** parameters (no `defaultValue` in the template) are marked with ⚠️.
+
+#### Key Vault & Diagnostics
+
+| Parameter | Type | Required | Description | Example |
+|-----------|------|----------|-------------|---------|
+| `keyVaultName` | string | ⚠️ | Cluster deployment Key Vault name | `kv-iic-deploy-01` |
+| `createNewKeyVault` | bool | | Create KV or use existing | `true` |
+| `softDeleteRetentionDays` | int | | KV soft-delete retention (7–90) | `30` |
+| `diagnosticStorageAccountName` | string | ⚠️ | Storage for KV audit logs | `stiicdiag01` |
+| `logsRetentionInDays` | int | | KV log retention days | `30` |
+| `storageAccountType` | string | | KV diagnostic storage SKU | `Standard_LRS` |
+
+#### Cluster Identity
+
+| Parameter | Type | Required | Description | Example |
+|-----------|------|----------|-------------|---------|
+| `clusterName` | string | ⚠️ | Azure Local cluster resource name | `iic-clus01` |
+| `location` | string | | Azure region | `eastus` |
+| `tenantId` | string | | Entra ID tenant GUID | `a1b2c3d4-...` |
+| `deploymentMode` | string | | `Validate` first, then `Deploy` | `Validate` |
+
+#### Cluster Witness
+
+| Parameter | Type | Required | Description | Example |
+|-----------|------|----------|-------------|---------|
+| `witnessType` | string | | `Cloud` (recommended) | `Cloud` |
+| `clusterWitnessStorageAccountName` | string | | Cloud witness storage account | `stiicwitness01` |
+
+#### Credentials & Admin Accounts
+
+| Parameter | Type | Required | Description | Example |
+|-----------|------|----------|-------------|---------|
+| `localAdminUserName` | string | ⚠️ | Local admin on all nodes | `osfadmin` |
+| `localAdminPassword` | securestring | ⚠️ | Key Vault reference for password | *(KV ref)* |
+| `AzureStackLCMAdminUsername` | string | ⚠️ | LCM admin — **sAMAccountName only, no `@domain`** (domain comes from `domainFqdn`) | `svc-azlocal-lcm` |
+| `AzureStackLCMAdminPassword` | securestring | ⚠️ | Key Vault reference for LCM pwd | *(KV ref)* |
+| `hciResourceProviderObjectID` | string | ⚠️ | `Microsoft.AzureStackHCI` RP Object ID | `abcdef01-...` |
+
+#### Active Directory Authentication
+
+| Parameter | Type | Required | Description | AD Value |
+|-----------|------|----------|-------------|----------|
+| `domainFqdn` | string | | AD domain FQDN | `ad.azurelocal.cloud` |
+| `adouPath` | string | | OU distinguished name | `OU=AzureLocal,OU=Servers,DC=ad,DC=azurelocal,DC=cloud` |
+| `namingPrefix` | string | | Resource naming prefix | `iic-01` |
+
+:::warning AD-Specific Parameters
+- **`domainFqdn`** must be the FQDN (not NetBIOS)
+- **`adouPath`** must be the full distinguished name
+- **`AzureStackLCMAdminUsername`** must be the **sAMAccountName only** (e.g., `svc-azlocal-lcm`) — do **NOT** pass the full UPN with `@domain`. The domain is already provided via `domainFqdn`. Azure Local's `Initialize-CloudDeployment.ps1` rejects usernames containing `@` or `\`.
+- The LCM service account needs `GenericAll` on the specified OU
+:::
+
+#### Arc Integration
+
+| Parameter | Type | Required | Description | Example |
+|-----------|------|----------|-------------|---------|
+| `arcNodeResourceIds` | array | | Arc-registered node resource IDs | *(array of resource ID strings)* |
+
+#### Security Settings
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `securityLevel` | string | `Recommended` | `Recommended` or `Customized` |
+| `driftControlEnforced` | bool | `true` | Reapply security defaults regularly |
+| `credentialGuardEnforced` | bool | `true` | VBS credential protection |
+| `smbSigningEnforced` | bool | `true` | SMB traffic signing |
+| `smbClusterEncryption` | bool | `false` | SMB in-transit encryption |
+| `bitlockerBootVolume` | bool | `true` | Boot volume encryption |
+| `bitlockerDataVolumes` | bool | `true` | Data volume encryption |
+| `wdacEnforced` | bool | `true` | Windows Defender Application Control |
+
+#### Telemetry & Observability
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `streamingDataClient` | bool | `true` | Telemetry streaming to Microsoft |
+| `euLocation` | bool | `false` | EU data residency compliance |
+| `episodicDataUpload` | bool | `true` | Crash dumps and diagnostics |
+
+#### Storage Configuration
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `configurationMode` | string | `Express` | `Express` (auto) or `InfraOnly` |
+
+#### Networking
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `subnetMask` | string | Management subnet mask | `255.255.255.0` |
+| `defaultGateway` | string | Management gateway | `192.168.100.1` |
+| `startingIPAddress` | string | Cluster IP pool start | `192.168.100.30` |
+| `endingIPAddress` | string | Cluster IP pool end | `192.168.100.39` |
+| `dnsServers` | array | DNS servers | `["192.168.100.10"]` |
+| `useDhcp` | bool | Use DHCP for management | `false` |
+| `networkingType` | string | Deployment topology | `switchedMultiServerDeployment` |
+| `networkingPattern` | string | Intent layout | `convergedManagementCompute` |
+| `intentList` | array | Network intent definitions | *(see examples)* |
+| `storageNetworkList` | array | Storage VLAN mappings | *(see examples)* |
+| `storageConnectivitySwitchless` | bool | Switchless storage | `false` |
+| `enableStorageAutoIp` | bool | Auto-IP for storage | `true` |
+| `physicalNodesSettings` | array | Node name + IP list | *(see examples)* |
+
+#### SBE (Solution Builder Extension)
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `sbeVersion` | string | SBE package version | `4.1.2411.1` |
+| `sbeFamily` | string | SBE family/category | `AzureLocal` |
+| `sbePublisher` | string | SBE vendor | `Dell` |
+| `sbeManifestSource` | string | Manifest URL | `""` |
+| `sbeManifestCreationDate` | string | Manifest date | `""` |
+| `partnerProperties` | array | Partner key-value pairs | `[]` |
+| `partnerCredentiallist` | array | Partner credentials | `[]` |
+
+#### Other
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `customLocation` | string | Arc custom location resource ID | `""` |
+
+</details>
+
+<details>
+<summary><strong>Networking Pattern & Type Reference</strong></summary>
+
+#### networkingPattern Values
+
+| Pattern | Intents | Description | Use Case |
+|---------|---------|-------------|----------|
+| `hyperConverged` | 1 | All traffic (Mgmt+Compute+Storage) on one adapter pair | Small clusters, 2 NICs/node |
+| `convergedManagementCompute` | 2 | Mgmt+Compute shared; Storage dedicated | **Standard production** (4 NICs/node) |
+| `convergedComputeStorage` | 2 | Compute+Storage shared; Mgmt dedicated | Rare; management-isolated |
+| `custom` | 3 | Fully disaggregated (Mgmt / Compute / Storage) | Large clusters, 6 NICs/node |
+
+#### networkingType Values
+
+| Type | Node Count | Storage Connectivity |
+|------|------------|---------------------|
+| `switchedMultiServerDeployment` | 2+ nodes | Top-of-rack switches |
+| `switchlessMultiServerDeployment` | 2–3 nodes | Direct-connect (no TOR for storage) |
+| `singleServerDeployment` | 1 node | N/A |
+
+</details>
+
+<details>
+<summary><strong>Key Vault Reference Syntax</strong></summary>
+
+Sensitive parameters (`localAdminPassword`, `AzureStackLCMAdminPassword`) use Key Vault references that point to the **platform Key Vault** — the vault provisioned in prior phases where deployment credentials are already stored:
+
+```json title="Key Vault reference pointing to platform Key Vault"
+"localAdminPassword": {
+ "reference": {
+ "keyVault": {
+ "id": "/subscriptions/<SUB_ID>/resourceGroups/<RG>/providers/Microsoft.KeyVault/vaults/<PLATFORM_KV_NAME>"
+ },
+ "secretName": "local-admin-password"
+ }
+}
+```
+
+This is **not** the cluster Key Vault (`keyVaultName`) — that vault is created by the ARM template during deployment.
+
+:::danger Never Store Passwords in Plain Text
+Always use Key Vault references to the platform Key Vault for sensitive parameters.
+:::
+
+</details>
+
+<details>
+<summary><strong>Example Parameter Files by Networking Pattern</strong></summary>
+
+Azure Local Cloud maintains validated IIC examples for each networking pattern in:
+`azl-toolkit/configs/azure/arm-templates/examples/`
+
+<Tabs>
+<TabItem value="single" label="1-Intent (HyperConverged)" default>
+
+**Layout**: All traffic on 2 × 25 Gbps adapters per node
+**Pattern**: `hyperConverged`
+
+```
+NIC1 (25 Gbps) ──┐
+ ├── Management + Compute + Storage
+NIC2 (25 Gbps) ──┘
+```
+
+See: `examples/single-intent-converged/azuredeploy.parameters.ad.json`
+
+</TabItem>
+<TabItem value="two" label="2-Intent (Standard)">
+
+**Layout**: Mgmt+Compute and Storage on separate adapter pairs (4 × 25 Gbps)
+**Pattern**: `convergedManagementCompute`
+
+```
+NIC1 (25 Gbps) ──┐
+ ├── Intent 1: Management + Compute
+NIC2 (25 Gbps) ──┘
+
+SMB1 (25 Gbps) ──┐
+ ├── Intent 2: Storage (RDMA)
+SMB2 (25 Gbps) ──┘
+```
+
+See: `examples/two-intent-standard/azuredeploy.parameters.ad.json`
+
+</TabItem>
+<TabItem value="three" label="3-Intent (Separated)">
+
+**Layout**: Fully disaggregated — Management, Compute, Storage each dedicated
+**Pattern**: `custom`
+
+```
+MGMT1 (1 GbE) ───┐
+ ├── Intent 1: Management
+MGMT2 (1 GbE) ───┘
+
+NIC1 (25 Gbps) ──┐
+ ├── Intent 2: Compute
+NIC2 (25 Gbps) ──┘
+
+SMB1 (25 Gbps) ──┐
+ ├── Intent 3: Storage (RDMA)
+SMB2 (25 Gbps) ──┘
+```
+
+See: `examples/three-intent-separated/azuredeploy.parameters.ad.json`
+
+</TabItem>
+</Tabs>
+
+</details>
+
+---
+
+**References**:
+- [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-arm)
+- [Microsoft Learn - ARM Template Reference](https://learn.microsoft.com/en-us/azure/templates/microsoft.azurestackhci/clusters)
+- [Azure Quickstart Template Source](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci/create-cluster)
+- [ARM Template Key Vault Reference](https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/key-vault-parameter)
+

@@ -1,0 +1,332 @@
+---
+title: "Task 03: Configure Project Settings"
+sidebar_label: "Task 03: Configure Project Settings"
+sidebar_position: 3
+description: "Configure source control project settings for branch protection, merge approvals, and security"
+category: "Runbook"
+scope: "Configure source control project settings for branch protection, merge approv..."
+purpose: "Configure source control project settings for branch protection, merge approvals, and security"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cicd-infrastructure
+  - implementation
+keywords:
+  - Configure
+  - Project
+  - Settings
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Configure Project Settings
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![GitHub](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://github.com)
+[![GitLab](https://img.shields.io/badge/Platform-GitLab-FC6D26?style=flat-square&logo=gitlab)](https://gitlab.com)
+[![Azure DevOps](https://img.shields.io/badge/Platform-Azure_DevOps-0078D7?style=flat-square&logo=azuredevops)](https://dev.azure.com)
+
+> **DOCUMENT CATEGORY**: Runbook Step   
+> **SCOPE**: Source control project configuration   
+> **PURPOSE**: Configure repository settings, branch protection, and merge/pull request approvals 
+> **MASTER REFERENCE**: [Azure DevOps Project Settings](https://learn.microsoft.com/en-us/azure/devops/organizations/projects/about-projects)
+
+**Status**: Active 
+
+---
+
+## Objective
+
+Configure required settings for the source control project. Most settings are replicated from the template, but must be verified. Select your platform below for platform-specific instructions.
+
+---
+
+## Prerequisites
+
+- [ ] Source control project created (Task 02)
+- [ ] Admin / Maintainer role in the project
+
+---
+
+## Procedure
+
+### Branch Protection
+
+Protect the `main` branch to prevent direct pushes and require reviews before merging.
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+1. Navigate to **Settings** → **Branches**
+2. Click **Add branch protection rule**
+3. Set **Branch name pattern** to `main`
+4. Enable the following:
+
+| Setting | Value |
+|---------|-------|
+| Require a pull request before merging | ✅ |
+| Require approvals | ✅ (see [Approval Rules](#merge--pull-request-approvals) below) |
+| Dismiss stale pull request approvals when new commits are pushed | ✅ |
+| Require status checks to pass before merging | ✅ |
+| Require conversation resolution before merging | ✅ |
+| Do not allow bypassing the above settings | ✅ |
+| Restrict who can push to matching branches | ✅ (No direct pushes) |
+| Allow force pushes | ❌ Disabled |
+| Allow deletions | ❌ Disabled |
+
+5. Click **Save changes**
+
+**References:** [GitHub — Branch protection rules](https://docs.github.com/en/repositories/configuring-branches-and-merges-for-your-repository/managing-a-branch-protection-rule)
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+1. Navigate to **Settings** → **Repository** → **Protected Branches**
+2. Configure `main`:
+
+| Setting | Value |
+|---------|-------|
+| Allowed to merge | `Developers + Maintainers` |
+| Allowed to push and merge | `No one` |
+| Allowed to force push | ❌ Disabled |
+| Code owner approval | ❌ Disabled |
+
+**References:** [GitLab — Protected branches](https://docs.gitlab.com/ee/user/project/protected_branches.html)
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+1. Navigate to **Repos** → **Branches**
+2. Click the `...` menu on `main` → **Branch policies**
+3. Enable the following:
+
+| Setting | Value |
+|---------|-------|
+| Require a minimum number of reviewers | ✅ (see [Approval Rules](#merge--pull-request-approvals) below) |
+| Check for linked work items | ✅ |
+| Check for comment resolution | ✅ Required |
+| Limit merge types | ✅ Squash merge only |
+| Build validation | ✅ Add build policy for CI pipeline |
+| Automatically included reviewers | Add required reviewer groups |
+
+**References:** [Azure DevOps — Branch policies](https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies)
+
+</TabItem>
+</Tabs>
+
+### Push Rules / Security Settings
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+GitHub handles push security via branch protection (configured above) and repository settings:
+
+1. Navigate to **Settings** → **Code security and analysis**
+2. Enable:
+   - ✅ **Secret scanning** — detect committed secrets
+   - ✅ **Push protection** — block pushes containing secrets
+3. Navigate to **Settings** → **General** → **Pull Requests**
+   - ✅ Allow squash merging (set default commit message)
+   - ❌ Disable merge commits and rebase merging (optional — enforce squash)
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+1. Navigate to **Settings** → **Repository** → **Push Rules**
+2. Enable the following:
+
+| Setting | Enabled |
+|---------|:-------:|
+| Reject unverified users | ✅ |
+| Reject inconsistent user name | ✅ |
+| Reject unsigned commits | ✅ |
+| Do not allow users to remove Git tags with git push | ✅ |
+| Check whether the commit author is a GitLab user | ✅ |
+| Prevent pushing secret files | ✅ |
+| **Maximum file size (MB)** | `1` |
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+1. Navigate to **Project Settings** → **Repositories** → select your repo
+2. Under **Policies**, configure:
+
+| Setting | Value |
+|---------|-------|
+| Commit author email validation | ✅ Enable pattern matching |
+| File path validation | ✅ Block paths matching secret patterns |
+| File size restriction | ✅ Max `1 MB` |
+| Reserved names restriction | ✅ |
+
+3. Under **Security**, set permissions for the `main` branch:
+   - **Contributors**: Deny _Force push_ and _Remove others' locks_
+
+</TabItem>
+</Tabs>
+
+### Merge / Pull Request Approvals
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+Configure required approvals in **Settings** → **Branches** → branch protection rule for `main`:
+
+| Project Type | Required Approvals | Reviewers |
+|--------------|:-----------------:|-----------|
+| Sandbox/Lab | `0` | — |
+| Core repos | `3` | `@AzureLocal/cicd` team |
+| Deployment repos | `2` | `@AzureLocal/pcie` team |
+| All others | `2` | `@AzureLocal/cicd` team |
+
+Optionally, add a `CODEOWNERS` file to the repository root to auto-assign reviewers:
+
+```text title="CODEOWNERS"
+# Default reviewers for all files
+* @AzureLocal/cicd
+```
+
+**References:** [GitHub — CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+1. Navigate to **Settings** → **Merge Requests** → **Merge request approvals**
+
+| Setting | Value |
+|---------|-------|
+| **Merge method** | `Merge commit with semi-linear history` |
+| **Squash commits** | `Require` |
+
+**Merge options** — enable only:
+- ✅ Show link to create or view a merge request when pushing
+- ✅ Enable "Delete source branch" option by default
+
+**Merge checks** — enable only:
+- ✅ Pipelines must succeed
+- ✅ All threads must be resolved
+
+2. **Add approval rule:**
+
+| Project Type | Required Approvals | Group |
+|--------------|:-----------------:|-------|
+| Sandbox/Lab | `0` | — |
+| Core repos | `3` | `CI/CD` |
+| All others | `2` | `CI/CD` |
+
+   - Click **Add approval rule**
+   - **Rule name:** `CI/CD`
+   - **Target branch:** `All protected branches`
+   - **Required approvals:** (per table above)
+   - **Groups:** Search and select the appropriate group
+   - **Save changes**
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+Configure in **Repos** → **Branches** → `main` branch policies:
+
+1. **Minimum number of reviewers:**
+
+| Project Type | Required Approvals | Reviewer Group |
+|--------------|:-----------------:|----------------|
+| Sandbox/Lab | `0` | — |
+| Core repos | `3` | `[Project]\CI-CD` |
+| Deployment repos | `2` | `[Project]\PCIE` |
+| All others | `2` | `[Project]\CI-CD` |
+
+2. **Additional settings:**
+   - ✅ Prohibit the most recent pusher from approving their own changes
+   - ✅ Reset code reviewer votes when there are new changes
+   - ✅ Allow requestors to approve their own changes: **No**
+
+3. **Automatically included reviewers** — click **Add automatic reviewers**:
+   - **Reviewers:** Select the appropriate group
+   - **For pull requests affecting these paths:** `*` (all paths)
+   - **Activity:** Required
+
+**References:** [Azure DevOps — Branch policies](https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies)
+
+</TabItem>
+</Tabs>
+
+---
+
+## Verification
+
+- [ ] `main` branch protected — no direct pushes allowed
+- [ ] Push rules / security scanning configured
+- [ ] Merge/PR approval rules added with correct reviewer counts
+- [ ] Squash merge enforced (or preferred merge strategy set)
+
+---
+
+## Next Steps
+
+[Create Environments](task-04-create-environments.mdx)
+
+---
+
+## References
+
+- [GitHub — Managing a branch protection rule](https://docs.github.com/en/repositories/configuring-branches-and-merges-for-your-repository/managing-a-branch-protection-rule)
+- [GitLab — Manage projects](https://docs.gitlab.com/ee/user/project/working_with_projects.html)
+- [Azure DevOps — Branch policies](https://learn.microsoft.com/en-us/azure/devops/repos/git/branch-policies)
+
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Default Branch | `cicd.project.default_branch` | `main` |
+| Branch Policy | `cicd.project.branch_policy` | `require-pr` |
+| Pipeline Path | `cicd.project.pipeline_path` | `/pipelines` |
+
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 02: Create source control project](./task-02-create-project.mdx) | [Phase 01: CI/CD Setup](./index.mdx) | [Task 04: Create Environments ->](./task-04-create-environments.mdx) |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Branch policies not applying | Insufficient project admin permissions | Verify user has Project Administrator role |
+| Pipeline configuration fails | Invalid YAML syntax in pipeline definition | Validate YAML syntax using pipeline editor |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

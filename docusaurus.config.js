@@ -45,9 +45,19 @@ const config = {
         docs: {
           numberPrefixParser: false,
           sidebarPath: './sidebars.js',
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
           editUrl: 'https://github.com/AzureLocal/',
+          lastVersion: '1.0.0',
+          versions: {
+            current: {
+              label: 'Next',
+              path: 'next',
+            },
+            '1.0.0': {
+              label: '1.0.0',
+              path: '/',
+              badge: true,
+            },
+          },
         },
         blog: {
           showReadingTime: true,

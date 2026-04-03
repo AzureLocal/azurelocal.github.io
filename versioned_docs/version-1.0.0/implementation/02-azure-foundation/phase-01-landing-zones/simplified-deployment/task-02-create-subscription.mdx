@@ -1,0 +1,281 @@
+---
+title: "Task 02: Create Subscription"
+sidebar_label: "Task 02: Create Subscription"
+sidebar_position: 2
+description: "Create a single subscription for the single subscription deployment and associate it with the landing zone management group."
+category: "Runbook"
+scope: "Single subscription deployment — subscription provisioning"
+purpose: "Create and configure single subscription"
+author: "Hybrid Cloud Solutions"
+created: 2026-01-15
+updated: 2026-03-19
+version: "3.0.0"
+tags:
+ - azure-local
+ - phase-01
+ - subscription
+ - single-subscription-deployment
+keywords:
+ - subscription
+ - single subscription deployment
+ - single subscription
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Create Subscription
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Single subscription deployment — subscription provisioning   
+> **PURPOSE**: Create and configure single subscription   
+> **MASTER REFERENCE**: [Create Azure subscriptions programmatically](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/programmatically-create-subscription)
+
+**Status**: Active
+
+## Overview
+
+Provision a single Azure subscription and associate it with the landing zone management group. In the single subscription deployment model, all resources reside in one subscription, with organization achieved through resource groups and tags.
+
+### How You Create Subscriptions
+
+How you create subscriptions depends on your organization's billing arrangement:
+
+| Billing Type | Creation Method | Programmatic Support |
+|---|---|---|
+| **Enterprise Agreement (EA)** | EA Portal, Azure CLI, or REST API | ✅ Full — `az account create` with enrollment account |
+| **Microsoft Customer Agreement (MCA)** | Azure Portal, Azure CLI, or REST API | ✅ Full — `az account create` with billing profile + invoice section |
+| **Pay-As-You-Go / MOSP** | Azure Portal only | ❌ Manual only — use the Portal tab |
+
+### What This Accomplishes
+
+- **Single billing boundary** — all costs tracked in one subscription
+- **Unified resource container** — all resources under one subscription
+- **Simplified management** — one subscription to govern
+
+## Prerequisites
+
+| Prerequisite | Detail |
+|---|---|
+| **Management Group** | Landing zone management group deployed ([Task 01](./task-01-configure-management-group)) |
+| **Billing Access** | EA enrollment account owner, MCA billing profile owner, or Azure Portal access to create subscriptions |
+| **Permissions** | Management Group Contributor on the landing zone MG (to associate the subscription after creation) |
+
+## Subscription Details
+
+### Naming Convention
+
+**Pattern**: `<org>-<purpose>-<environment>-<instance>`
+
+**Example (IIC)**: `iic-lz-azurelocal-001`
+
+### Configuration Reference
+
+| Attribute | Value | Config Path |
+|-----------|-------|-------------|
+| **Subscription Name** | Per config | `variables.yml → azure.subscriptions.lab.name` |
+| **Subscription ID** | Per config | `variables.yml → azure.subscriptions.lab.id` |
+| **Landing Zone MG** | Per config | `variables.yml → azure.management_groups.landing_zone.name` |
+| **Purpose** | All Azure Local resources | — |
+
+### IIC Example Values
+
+| Attribute | IIC Value |
+|-----------|-----------|
+| Subscription Name | `iic-lz-azurelocal-001` |
+| Landing Zone MG | `cmp-landing-zones-iic` |
+
+## Resource Organization Strategy
+
+In the single subscription model, a single resource group provides resource organization within the subscription:
+
+```
+iic-lz-azurelocal-001                    ← subscription
+└── rg-c01-azl-eus-01                    ← single resource group (Task 03)
+    ├── Azure Local cluster resources
+    ├── Arc-enabled servers
+    ├── Key Vault
+    └── Storage accounts
+```
+
+:::tip
+The single resource group is created in [Task 03: Create Resource Groups](./task-03-create-resource-groups). This task only covers the subscription itself.
+:::
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example (IIC) |
+|----------|-------------|---------------|
+| Subscription Name | `azure.subscriptions.lab.name` | `iic-lz-azurelocal-001` |
+| Subscription ID | `azure.subscriptions.lab.id` | *(per environment)* |
+| Landing Zone MG | `azure.management_groups.landing_zone.name` | `cmp-landing-zones-iic` |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Pay-As-You-Go billing, or you prefer the visual interface
+
+#### Procedure
+
+1. **Navigate to Subscriptions**:
+   - In Azure Portal, search for **Subscriptions**
+   - Click **+ Add**
+
+2. **Create the subscription**:
+   - **Subscription name**: `iic-lz-azurelocal-001` (or your value from `variables.yml`)
+   - **Billing**: Select your billing account / enrollment
+   - **Management group**: Select the landing zone management group (`cmp-landing-zones-iic`)
+   - Click **Create**
+
+3. **Verify** the subscription appears under the correct management group in **Management groups** view
+
+#### Validation
+
+- [ ] Subscription created with name matching `variables.yml`
+- [ ] Subscription is under the landing zone management group
+- [ ] You have Owner access to the subscription
+
+</TabItem>
+
+
+
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
+:::
+
+</TabItem>
+
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Using an Existing Subscription
+
+If your organization already has a subscription provisioned, skip creation and associate it with the landing zone management group:
+
+```bash
+az account management-group subscription add \
+  --name "cmp-landing-zones-iic" \
+  --subscription "<subscription-id-or-name>"
+```
+
+```powershell
+New-AzManagementGroupSubscription `
+    -GroupId "cmp-landing-zones-iic" `
+    -SubscriptionId "<subscription-id>"
+```
+
+:::warning Subscription Move Impact
+Moving a subscription to a different management group changes which Azure Policies and RBAC role assignments it inherits. Review inherited policies before moving production subscriptions.
+:::
+
+### Target Structure
+
+```
+cmp-iic-root                              ← organization root MG (already exists)
+└── cmp-landing-zones-iic                 ← landing zone MG (Task 01)
+    └── iic-lz-azurelocal-001             ← subscription (this task)
+```
+
+## Validation
+
+- [ ] Subscription exists with the name from `variables.yml`
+- [ ] Subscription is associated with the **landing zone** management group (not root)
+- [ ] Subscription is visible under the landing zone MG in the Azure Portal
+- [ ] You have Owner or Contributor access to the subscription
+
+### Verify via CLI
+
+```bash
+az account management-group show --name "cmp-landing-zones-iic" --expand \
+  --query "children[?type=='Microsoft.Management/managementGroups/subscriptions'].{Name:name, DisplayName:displayName}" \
+  -o table
+```
+
+## Troubleshooting
+
+| Symptom | Error | Resolution |
+|---------|-------|------------|
+| No enrollment account found | Empty result from `az billing enrollment-account list` | You need EA enrollment account owner role — contact your organization's EA admin |
+| Subscription creation fails | `AuthorizationFailed` or `BillingAccountNotFound` | Verify your billing access — EA enrollment owner, MCA billing profile contributor, etc. |
+| Cannot associate with MG | `AuthorizationFailed` | Verify Management Group Contributor role on the landing zone MG |
+| Subscription under wrong MG | Shows under root or Tenant Root Group | Move: `az account management-group subscription add --name cmp-landing-zones-iic --subscription <sub-id>` |
+| Subscription not visible | Not listed in Azure Portal | Verify you're signed into the correct tenant — check with `az account show` |
+
+## Next Steps
+
+Proceed to [Task 03: Create Resource Groups](./task-03-create-resource-groups)
+
+## References
+
+- [Create Azure Subscriptions Programmatically](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/programmatically-create-subscription)
+- [Create EA Subscriptions](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/programmatically-create-subscription-enterprise-agreement)
+- [Create MCA Subscriptions](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/programmatically-create-subscription-microsoft-customer-agreement)
+- [Move Subscriptions Between Management Groups](https://learn.microsoft.com/en-us/azure/governance/management-groups/manage)
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01 — Management Group](./task-01-configure-management-group.mdx) | [Single Subscription Deployment Overview](./index.mdx) | [Task 03 — Create Resource Groups](./task-03-create-resource-groups.mdx) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-19 by Hybrid Cloud Solutions
+- Version: 3.0.0
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

@@ -1,0 +1,497 @@
+---
+title: "Task 03: Test DR Procedures"
+sidebar_label: "Task 03: Test DR Procedures"
+sidebar_position: 3
+description: "Validate disaster recovery procedures with test failovers and failback testing"
+category: "Runbook"
+scope: "Validate disaster recovery procedures with test failovers and failback testing"
+purpose: "Validate disaster recovery procedures with test failovers and failback testing"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - backup-dr
+keywords:
+  - Test
+  - Procedures
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Test DR Procedures
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: DR testing and validation   
+> **PURPOSE**: Validate failover and failback procedures without impacting production   
+> **MASTER REFERENCE**: [Microsoft Learn - Test Failover to Azure](https://learn.microsoft.com/en-us/azure/site-recovery/site-recovery-test-failover-to-azure)
+
+**Status**: Active
+
+Regular disaster recovery testing validates that replication is working correctly and that your organization can recover within defined RTO (Recovery Time Objective) and RPO (Recovery Point Objective) targets. This step covers test failover procedures, validation steps, and cleanup.
+
+## Prerequisites
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Replication configured | VMs replicating to Azure | Step 2 complete |
+| Initial sync complete | All VMs show 100% synced | Replicated items status |
+| Test network available | Isolated Azure VNet for testing | No production connectivity |
+| Recovery plan | Multi-VM orchestration plan | Created in Site Recovery |
+| Change window | Approved maintenance window | For production failover tests |
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
+| `AZURE_REGION` | `azure.resource_group.location` | `eastus2` |
+| `RECOVERY_VAULT_NAME` | `dr.recovery_vault_name` | `rsv-azl-dal-dr-01` |
+| `DR_TEST_VNET_NAME` | `dr.test_vnet_name` | `vnet-dr-test-isolated` |
+| `RECOVERY_PLAN_NAME` | `dr.recovery_plan_name` | `RP-CriticalApps-DAL` |
+| `TARGET_RTO` | `dr.target_rto_minutes` | `240` |
+| `TARGET_RPO` | `dr.target_rpo_minutes` | `15` |
+
+## Test Failover Overview
+
+Test failover creates VMs in Azure from the latest recovery point **without affecting production**:
+
+| Failover Type | Impact | Use Case |
+|--------------|--------|----------|
+| **Test failover** | None — creates isolated copy | Regular DR testing |
+| **Planned failover** | Source VMs shut down first | Planned migration or DR |
+| **Unplanned failover** | Immediate failover | Actual disaster scenario |
+
+:::tip Best Practice
+Run test failovers **quarterly** to validate DR readiness and train operations staff.
+:::
+
+## Test Failover Procedures
+
+### Step 3.1: Create Isolated Test Network
+
+Create a virtual network isolated from production for safe testing:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Virtual networks** → **Create**
+2. Configure:
+ - Name: `{{DR_TEST_VNET_NAME}}`
+ - Region: Same as Recovery Services vault
+ - Address space: Non-overlapping CIDR
+3. **Do NOT** configure VNet peering or VPN gateways
+4. Click **Create**
+
+</TabItem>
+
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
+:::
+
+</TabItem>
+</Tabs>
+
+:::warning Network Isolation
+Never connect the test network to production. Test VMs could conflict with production if networks are connected.
+:::
+
+### Step 3.2: Run Test Failover for Single VM
+
+Test individual VMs before testing recovery plans:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Recovery Services vault** → **Replicated items**
+2. Select the VM to test
+3. Click **Test Failover**
+4. Configure:
+ - Recovery point: **Latest processed** (recommended) or specific point
+ - Azure virtual network: `{{DR_TEST_VNET_NAME}}`
+5. Click **OK** to start test failover
+
+6. Monitor progress in **Site Recovery jobs**
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Set vault context
+$vault = Get-AzRecoveryServicesVault `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -Name "{{RECOVERY_VAULT_NAME}}"
+Set-AzRecoveryServicesAsrVaultContext -Vault $vault
+
+# Get protected item
+$protectedItem = Get-AzRecoveryServicesAsrReplicationProtectedItem `
+ -ProtectionContainer $container `
+ -FriendlyName "{{VM_NAME}}"
+
+# Get test network
+$testNetwork = Get-AzVirtualNetwork `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -Name "{{DR_TEST_VNET_NAME}}"
+
+# Start test failover
+$job = Start-AzRecoveryServicesAsrTestFailoverJob `
+ -ReplicationProtectedItem $protectedItem `
+ -Direction PrimaryToRecovery `
+ -AzureVMNetworkId $testNetwork.Id
+
+# Monitor job
+Get-AzRecoveryServicesAsrJob -Job $job
+```
+
+</TabItem>
+</Tabs>
+
+### Step 3.3: Validate Test VM
+
+Once test failover completes, validate the VM:
+
+#### Connect to Test VM
+
+1. Navigate to **Virtual machines** in Azure Portal
+2. Find the test VM (named `{VMName}-test`)
+3. Assign a public IP if needed:
+ - Go to VM → **Networking** → NIC → **IP configurations**
+ - Associate a public IP
+4. Connect via RDP or SSH
+
+#### Validation Checklist
+
+| Validation | Command/Check | Expected Result |
+|------------|---------------|-----------------|
+| VM boots successfully | RDP/SSH connection | Login successful |
+| Network connectivity | `Test-NetConnection` | Internal ping works |
+| Disk volumes mounted | `Get-Volume` | All drives present |
+| Services running | `Get-Service` | Critical services started |
+| Application health | App-specific checks | Application responds |
+| Data integrity | Verify recent data | Latest data present |
+
+#### Application-Specific Validation
+
+```powershell
+# Example: Validate SQL Server
+Get-Service -Name 'MSSQLSERVER'
+Invoke-Sqlcmd -Query "SELECT @@VERSION" -ServerInstance "localhost"
+
+# Example: Validate IIS
+Get-Service -Name 'W3SVC'
+Invoke-WebRequest -Uri "http://localhost" -UseBasicParsing
+
+# Example: Validate Domain Controller
+Get-Service -Name 'NTDS'
+dcdiag /q
+```
+
+### Step 3.4: Document Test Results
+
+Record test results for compliance and improvement:
+
+```markdown
+## DR Test Report - {{TEST_DATE}}
+
+### Test Summary
+- **Test Type**: Test Failover
+- **VMs Tested**: {{VM_LIST}}
+- **Recovery Point**: {{RECOVERY_POINT_TIME}}
+- **Test Duration**: {{DURATION_MINUTES}} minutes
+
+### Results
+| VM Name | Failover Time | Boot Time | Validation | Status |
+|---------|---------------|-----------|------------|--------|
+| VM1 | 5 min | 3 min | Passed | ✅ |
+| VM2 | 7 min | 4 min | Passed | ✅ |
+
+### Issues Identified
+- Issue 1: [Description and resolution]
+
+### RTO/RPO Analysis
+- **Actual RTO**: {{ACTUAL_RTO}} minutes
+- **Target RTO**: {{TARGET_RTO}} minutes
+- **Actual RPO**: {{ACTUAL_RPO}} minutes (data age)
+- **Target RPO**: {{TARGET_RPO}} minutes
+
+### Recommendations
+1. [Improvement recommendation]
+```
+
+### Step 3.5: Cleanup Test Failover
+
+**Always clean up test failovers** to avoid orphaned resources and charges:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Recovery Services vault** → **Replicated items**
+2. Select the VM that was tested
+3. Click **Cleanup test failover**
+4. Add notes about the test (optional)
+5. Check **Testing is complete. Delete test failover virtual machine(s)**
+6. Click **OK**
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Cleanup test failover
+$protectedItem = Get-AzRecoveryServicesAsrReplicationProtectedItem `
+ -ProtectionContainer $container `
+ -FriendlyName "{{VM_NAME}}"
+
+# Complete test failover cleanup
+$cleanupJob = Start-AzRecoveryServicesAsrTestFailoverCleanupJob `
+ -ReplicationProtectedItem $protectedItem `
+ -Comment "DR test completed successfully on {{TEST_DATE}}"
+
+Get-AzRecoveryServicesAsrJob -Job $cleanupJob
+```
+
+</TabItem>
+</Tabs>
+
+:::warning Cleanup Required
+VMs marked for test failover will show a warning banner until cleanup is completed. Cleanup removes the test VM and associated resources.
+:::
+
+## Recovery Plan Testing
+
+### Step 3.6: Test Recovery Plan
+
+Test multi-VM failover with proper sequencing:
+
+1. Navigate to **Recovery Services vault** → **Recovery Plans**
+2. Select `{{RECOVERY_PLAN_NAME}}`
+3. Click **Test failover**
+4. Configure:
+ - Recovery point: **Latest processed**
+ - Azure virtual network: `{{DR_TEST_VNET_NAME}}`
+5. Click **OK**
+
+6. Monitor failover sequence:
+ - Group 1 fails over first
+ - Each group completes before next starts
+ - Pre/post actions execute at appropriate times
+
+### Step 3.7: Validate Recovery Plan Sequence
+
+| Group | VMs | Expected Boot Order | Dependencies |
+|-------|-----|---------------------|--------------|
+| 1 | Domain Controllers | First | None |
+| 2 | SQL Servers | After Group 1 | AD available |
+| 3 | App Servers | After Group 2 | Database available |
+| 4 | Web Servers | After Group 3 | App tier available |
+
+### Cleanup Recovery Plan Test
+
+1. Navigate to **Recovery Plans** → Select plan
+2. Click **Cleanup test failover**
+3. Confirm cleanup of all VMs in the plan
+
+## Production Failover (Planned)
+
+For planned failover during actual DR event or migration:
+
+:::danger Production Impact
+Planned and unplanned failovers affect production. Only execute during approved change windows or actual disasters.
+:::
+
+### Step 3.8: Execute Planned Failover
+
+1. **Pre-failover checklist**:
+ - [ ] Change approval obtained
+ - [ ] Stakeholders notified
+ - [ ] DNS TTL reduced (optional)
+ - [ ] Recent recovery point available
+
+2. Navigate to **Replicated items** or **Recovery Plans**
+3. Click **Failover** (not Test Failover)
+4. Configure:
+ - Recovery point: **Latest** or specific point
+ - Shut down machine before failover: **Yes** (for planned)
+5. Click **OK**
+
+6. After failover completes:
+ - Verify VMs in Azure
+ - Update DNS records
+ - Validate applications
+ - **Commit** the failover
+
+### Commit Failover
+
+After validating successful failover:
+
+1. Navigate to **Replicated items** → Select VM
+2. Click **Commit**
+3. This finalizes the failover and removes earlier recovery points
+
+## Failback Procedures
+
+### Step 3.9: Plan Failback
+
+After on-premises infrastructure is restored:
+
+| Failback Option | Description | Use Case |
+|-----------------|-------------|----------|
+| **Minimize downtime** | Syncs data before failover | Production workloads |
+| **Full download** | Downloads entire disk | On-premises VM deleted |
+| **Create new VM** | Creates new VM on-premises | Original VM unavailable |
+
+### Step 3.10: Execute Failback
+
+1. **Prepare on-premises environment**:
+ - Restore Hyper-V hosts
+ - Reinstall Site Recovery provider if needed
+ - Verify network connectivity
+
+2. **Re-protect Azure VMs**:
+ - Navigate to **Replicated items** → Select VM
+ - Click **Re-protect**
+ - Replication reverses: Azure → On-premises
+
+3. **Execute failback**:
+ - After reverse replication sync completes
+ - Click **Failover** with direction **Recovery to Primary**
+ - Select recovery point
+ - Execute failover
+
+4. **Commit and re-protect**:
+ - Validate on-premises VM
+ - Commit failback
+ - Re-enable Azure replication for future DR
+
+## Testing Schedule
+
+Recommended testing frequency:
+
+| Test Type | Frequency | Duration | Participants |
+|-----------|-----------|----------|--------------|
+| Single VM test | Monthly | 2-4 hours | DR team |
+| Recovery plan test | Quarterly | 4-8 hours | DR team, App owners |
+| Full DR drill | Annually | 1-2 days | All stakeholders |
+| Documentation review | Quarterly | 2 hours | DR team |
+
+## Validation
+
+### Post-Test Validation
+
+| Component | Verification | Expected Result |
+|-----------|--------------|-----------------|
+| Test cleanup | No orphan VMs | Test VMs deleted |
+| Replication health | Replicated items status | Healthy, Protected |
+| Recovery point currency | Latest recovery point | Recent timestamp |
+| Test records | Documentation complete | Report filed |
+
+### Monitor for Issues
+
+```kusto
+// Query Site Recovery events in Log Analytics
+AzureDiagnostics
+| where Category == "AzureSiteRecoveryEvents"
+| where TimeGenerated > ago(24h)
+| where Level == "Error" or Level == "Warning"
+| project TimeGenerated, OperationName, Message, Resource
+| order by TimeGenerated desc
+```
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Resolution |
+|---------|--------------|------------|
+| Test failover fails | Quota exceeded | Request Azure quota increase |
+| VM fails to boot | Boot order or drivers | Check boot diagnostics, update drivers |
+| No network connectivity | NSG rules | Check NSG allows test traffic |
+| App validation fails | Missing dependencies | Verify all app-tier VMs included |
+| Cleanup incomplete | Azure resource lock | Remove locks, retry cleanup |
+| Long failover time | Large disk sizes | Consider managed disks, SSD |
+
+## Metrics and Reporting
+
+### Key DR Metrics
+
+| Metric | Definition | Target |
+|--------|------------|--------|
+| **RTO** | Time to restore service | < 4 hours |
+| **RPO** | Maximum data loss | < 15 minutes |
+| **Test success rate** | % of tests passed | 100% |
+| **Mean time to recover** | Average recovery time | < 2 hours |
+
+### Sample Report Query
+
+```powershell
+# Get failover history
+$jobs = Get-AzRecoveryServicesAsrJob | 
+ Where-Object { $_.JobType -like "*Failover*" } |
+ Select-Object ScenarioName, State, StartTime, EndTime, 
+ @{N='Duration';E={($_.EndTime - $_.StartTime).TotalMinutes}}
+
+$jobs | Export-Csv "DR-Test-Report-$(Get-Date -Format 'yyyy-MM').csv"
+```
+
+## Variables Reference
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{DR_TEST_VNET_NAME}}` | Isolated test network | `vnet-dr-test-isolated` |
+| `{{RECOVERY_PLAN_NAME}}` | Recovery plan name | `RP-CriticalApps-DAL` |
+| `{{TARGET_RTO}}` | RTO target in minutes | `240` |
+| `{{TARGET_RPO}}` | RPO target in minutes | `15` |
+
+## Next Steps
+
+After completing DR testing:
+
+1. ➡️ **[Phase 20: Security and Governance](../phase-04-security-governance/index.mdx)** — Configure security baselines
+2. Schedule next quarterly DR test
+3. Update DR runbooks based on lessons learned
+4. Review and update RTO/RPO targets if needed
+5. Train new staff on DR procedures
+
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 02: Configure Site Recovery](./task-02-configure-site-recovery.mdx) | [Phase 03: Backup & DR](./index.mdx) | --- |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

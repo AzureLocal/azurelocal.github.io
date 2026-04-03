@@ -1,0 +1,397 @@
+---
+title: "Task 04: Enable Security Logging"
+sidebar_label: "Task 04: Security Logging"
+sidebar_position: 4
+description: "Configure security event collection via Data Collection Rules for Azure Local"
+category: "Runbook"
+scope: "Configure security event collection via Data Collection Rules for Azure Local"
+purpose: "Configure security event collection via Data Collection Rules for Azure Local"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - security-governance
+keywords:
+  - Enable
+  - Security
+  - Logging
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Enable Security Logging
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Security event collection   
+> **PURPOSE**: Configure Data Collection Rules for security logs   
+> **MASTER REFERENCE**: [Microsoft Learn - DCR](https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/data-collection-rule-overview)
+
+**Status**: Active
+
+Security logging provides visibility into security events across your Azure Local infrastructure. This step configures Data Collection Rules (DCR) to collect security events from Arc-enabled servers and send them to Log Analytics.
+
+:::info Azure Monitor Agent
+Azure Monitor Agent (AMA) is the recommended agent for log collection, replacing the legacy Log Analytics agent (MMA). DCRs define what data to collect and where to send it.
+:::
+
+## Overview
+
+| Log Type | Source | Purpose |
+|----------|--------|---------|
+| **Windows Security Events** | Windows Event Log | Authentication, authorization, policy changes |
+| **Syslog** | Linux systems | System and security events |
+| **Performance Counters** | OS metrics | Resource utilization and anomaly detection |
+| **Custom Logs** | Application logs | Application-specific security events |
+
+## Prerequisites
+
+- Log Analytics workspace created in Stage 06
+- Azure Monitor Agent deployed (or will deploy via DCR)
+- Arc-enabled servers registered (or will be during cluster deployment)
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
+| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
+| `AZURE_REGION` | `azure.resource_group.location` | `eastus2` |
+| `LOG_ANALYTICS_WORKSPACE_NAME` | `monitoring.log_analytics.workspace_name` | `law-azl-DAL-prod-01` |
+
+## Security Event Tiers
+
+| Tier | Events Collected | Use Case |
+|------|------------------|----------|
+| **Minimal** | Critical security events only | Cost-sensitive environments |
+| **Common** | Important events (recommended) | Standard security monitoring |
+| **All** | Complete security log | Compliance, forensics |
+
+## Procedure
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Create Data Collection Rule for Security Events
+
+1. **Navigate to Data Collection Rules**
+ - In Azure Portal, search for **Data collection rules**
+ - Click **+ Create**
+
+2. **Configure Basics**
+ - **Rule Name**: `dcr-security-events-prod-eus2`
+ - **Subscription**: Select your subscription
+ - **Resource Group**: `rg-management-prod-eastus2`
+ - **Region**: Same as Log Analytics workspace
+ - **Platform Type**: Windows (or All for both Windows and Linux)
+
+3. **Add Resources (Optional)**
+ - Click **+ Add resources**
+ - Select Arc-enabled servers (if already registered)
+ - Or leave empty to assign later during cluster deployment
+
+4. **Configure Data Sources**
+
+ **Windows Security Events:**
+ - Click **+ Add data source**
+ - **Data source type**: Windows Event Logs
+ - **Configure**: Select **Security** under Windows event logs
+ - Click **Add data source**
+
+ **Windows Event Logs:**
+ - Click **+ Add data source**
+ - **Data source type**: Windows Event Logs
+ - Check: **System**, **Application**
+ - Configure XPath queries for specific events (optional)
+
+5. **Configure Destination**
+ - Click **+ Add destination**
+ - **Destination type**: Azure Monitor Logs
+ - **Subscription**: Select your subscription
+ - **Destination**: Select your Log Analytics workspace
+
+6. **Review and Create**
+ - Click **Review + create**
+ - Click **Create**
+
+### Create Syslog Collection Rule (Linux)
+
+1. **Create New DCR for Linux**
+ - **Rule Name**: `dcr-syslog-security-prod-eus2`
+ - **Platform Type**: Linux
+
+2. **Add Syslog Data Source**
+ - Click **+ Add data source**
+ - **Data source type**: Linux Syslog
+ - Configure facilities:
+ - `auth` - LOG_WARNING and above
+ - `authpriv` - LOG_WARNING and above
+ - `syslog` - LOG_WARNING and above
+ - `daemon` - LOG_ERR and above
+
+3. **Add Destination**
+ - Select your Log Analytics workspace
+ - Click **Create**
+
+</TabItem>
+
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Variables
+$subscriptionId = "<your-subscription-id>"
+$resourceGroup = "rg-management-prod-eastus2"
+$location = "eastus2"
+$workspaceName = "law-azlmgmt-prod-eus2"
+$dcrName = "dcr-security-events-prod-eus2"
+
+# Connect and set context
+Connect-AzAccount
+Set-AzContext -SubscriptionId $subscriptionId
+
+# Get Log Analytics workspace
+$workspace = Get-AzOperationalInsightsWorkspace `
+ -ResourceGroupName $resourceGroup `
+ -Name $workspaceName
+
+# Define Windows Security Event XPath queries (Common tier)
+$securityXPathQueries = @(
+ # Logon events
+ "Security!*[System[(EventID=4624)]]", # Successful logon
+ "Security!*[System[(EventID=4625)]]", # Failed logon
+ "Security!*[System[(EventID=4648)]]", # Explicit credentials
+ "Security!*[System[(EventID=4672)]]", # Special privileges
+ # Account management
+ "Security!*[System[(EventID=4720)]]", # Account created
+ "Security!*[System[(EventID=4722)]]", # Account enabled
+ "Security!*[System[(EventID=4725)]]", # Account disabled
+ "Security!*[System[(EventID=4726)]]", # Account deleted
+ "Security!*[System[(EventID=4738)]]", # Account changed
+ # Group management
+ "Security!*[System[(EventID=4728)]]", # Member added to security group
+ "Security!*[System[(EventID=4732)]]", # Member added to local group
+ "Security!*[System[(EventID=4756)]]", # Member added to universal group
+ # Authentication
+ "Security!*[System[(EventID=4768)]]", # Kerberos TGT request
+ "Security!*[System[(EventID=4769)]]", # Kerberos service ticket
+ "Security!*[System[(EventID=4776)]]", # NTLM authentication
+ # Policy changes
+ "Security!*[System[(EventID=4719)]]" # Audit policy changed
+)
+
+# Create Data Collection Rule using ARM template
+$dcrTemplate = @{
+ '$schema' = "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"
+ contentVersion = "1.0.0.0"
+ resources = @(
+ @{
+ type = "Microsoft.Insights/dataCollectionRules"
+ apiVersion = "2022-06-01"
+ name = $dcrName
+ location = $location
+ properties = @{
+ description = "Security event collection for Azure Local infrastructure"
+ dataSources = @{
+ windowsEventLogs = @(
+ @{
+ name = "SecurityEventDataSource"
+ streams = @("Microsoft-SecurityEvent")
+ xPathQueries = $securityXPathQueries
+ }
+ @{
+ name = "SystemEventDataSource"
+ streams = @("Microsoft-Event")
+ xPathQueries = @(
+ "System!*[System[(Level=1 or Level=2 or Level=3)]]"
+ "Application!*[System[(Level=1 or Level=2)]]"
+ )
+ }
+ )
+ }
+ destinations = @{
+ logAnalytics = @(
+ @{
+ workspaceResourceId = $workspace.ResourceId
+ name = "LogAnalyticsDestination"
+ }
+ )
+ }
+ dataFlows = @(
+ @{
+ streams = @("Microsoft-SecurityEvent")
+ destinations = @("LogAnalyticsDestination")
+ }
+ @{
+ streams = @("Microsoft-Event")
+ destinations = @("LogAnalyticsDestination")
+ }
+ )
+ }
+ }
+ )
+}
+
+# Convert to JSON and deploy
+$templatePath = Join-Path $env:TEMP "dcr-template.json"
+$dcrTemplate | ConvertTo-Json -Depth 20 | Out-File $templatePath -Encoding UTF8
+
+New-AzResourceGroupDeployment `
+ -ResourceGroupName $resourceGroup `
+ -TemplateFile $templatePath `
+ -Name "DCR-SecurityEvents-Deployment"
+
+Write-Host "✅ Data Collection Rule created: $dcrName" -ForegroundColor Green
+
+# Clean up
+Remove-Item $templatePath
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+## Key Security Events to Collect
+
+| Event ID | Description | Category |
+|----------|-------------|----------|
+| **4624** | Successful logon | Authentication |
+| **4625** | Failed logon | Authentication |
+| **4648** | Logon with explicit credentials | Authentication |
+| **4672** | Special privileges assigned | Privilege Use |
+| **4720** | User account created | Account Management |
+| **4726** | User account deleted | Account Management |
+| **4728** | Member added to security group | Group Management |
+| **4738** | User account changed | Account Management |
+| **4768** | Kerberos TGT requested | Kerberos |
+| **4769** | Kerberos service ticket requested | Kerberos |
+
+## Validation
+
+```powershell
+# Verify DCR exists
+$dcr = Get-AzDataCollectionRule -ResourceGroupName $resourceGroup -Name $dcrName
+
+if ($dcr) {
+ Write-Host "✅ DCR exists: $($dcr.Name)" -ForegroundColor Green
+ Write-Host " Location: $($dcr.Location)"
+ Write-Host " Data Sources: $($dcr.DataSource.WindowsEventLog.Count) Windows Event Logs"
+} else {
+ Write-Host "❌ DCR not found" -ForegroundColor Red
+}
+
+# Query Log Analytics for security events (after data starts flowing)
+$query = @"
+SecurityEvent
+| where TimeGenerated > ago(1h)
+| summarize count() by EventID
+| order by count_ desc
+| take 10
+"@
+
+Write-Host "`nQuerying for security events..." -ForegroundColor Cyan
+# Note: Events may take 5-10 minutes to appear after DCR association
+```
+
+## Expected Output
+
+After Arc-enabled servers are registered and associated with the DCR:
+
+```
+SecurityEvent
+| summarize count() by EventID
+
+EventID count_
+------- ------
+4624 1547
+4625 23
+4672 892
+4648 156
+4768 2341
+4769 8923
+```
+
+## Assigning DCR to Arc-Enabled Servers
+
+Once Arc-enabled servers are registered during cluster deployment, associate them with the DCR:
+
+```powershell
+# Get DCR resource ID
+$dcrId = (Get-AzDataCollectionRule -ResourceGroupName $resourceGroup -Name $dcrName).Id
+
+# Associate with Arc-enabled server
+$arcServerResourceId = "/subscriptions/$subscriptionId/resourceGroups/rg-azurelocal-prod-eastus2/providers/Microsoft.HybridCompute/machines/azl-node-01"
+
+New-AzDataCollectionRuleAssociation `
+ -TargetResourceId $arcServerResourceId `
+ -AssociationName "dcr-association-node01" `
+ -RuleId $dcrId
+```
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| DCR creation fails with `WorkspaceId invalid` | Log Analytics workspace not found or wrong region | Verify workspace exists with `Get-AzOperationalInsightsWorkspace`; ensure DCR and workspace are in the same region |
+| Security events not appearing in Log Analytics | AMA not installed or DCR association missing | Verify AMA extension: `az connectedmachine extension list`; check DCR association: `Get-AzDataCollectionRuleAssociation` |
+| Partial event collection (some event types missing) | DCR XPath queries don't cover required event channels | Update DCR data sources to include all required Windows event channels (Security, System, Application) |
+
+## Next Steps
+
+Proceed to [Task 6: PIM & Conditional Access](./task-05-configure-azure-update-manager.mdx) to configure just-in-time access and identity protection.
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 03: Security Baselines](./task-03-configure-security-baselines.mdx) | [Phase 04: Security & Governance](./index.mdx) | [Task 05: Azure Update Manager →](./task-05-configure-azure-update-manager.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

@@ -1,0 +1,177 @@
+---
+title: "Task 09: Disable Unused Network Adapters"
+sidebar_label: "Task 09: Disable Adapters"
+sidebar_position: 9
+description: "Disable network adapters not used for management to prevent configuration issues during cluster deployment"
+category: "Runbook"
+scope: "Disable network adapters not used for management to prevent configuration iss..."
+purpose: "Disable network adapters not used for management to prevent configuration issues during cluster deployment"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - os-configuration
+keywords:
+  - Disable
+  - Unused
+  - Network
+  - Adapters
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 09: Disable Unused Network Adapters
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Disable network adapters not used for management to prevent configuration iss...
+> **PURPOSE**: Disable network adapters not used for management to prevent configuration issues during cluster deployment
+> **MASTER REFERENCE**: [Azure Local Network Adapter Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements-23h2)
+
+**Status**: Active
+
+## Overview
+
+Disable network adapters that are not connected. Only the management adapter needs to remain enabled at this stage. Compute and storage adapters are configured later in Phase 16.
+
+:::warning Do not disable the management adapter
+Verify which adapter is your active management connection before running. Disabling the wrong adapter requires console access to recover.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Tasks 01–08 complete | OS configured, ICMP enabled |
+| Management adapter identified | Know which NIC is your active connection |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `cluster_nodes[].management_ip` | string | PSRemoting target IP (orchestrated mode) |
+| `cluster.management_nic_name` | string | Adapter name to preserve (do not disable) |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run on each node individually via console, KVM, or RDP.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-09-disable-unused-network-adapters/powershell/Disable-UnusedAdapters.ps1`
+
+```powershell
+# Task 09 - Disable Unused Network Adapters
+# No variables required - targets all adapters with Status = Disconnected
+
+Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
+
+Get-NetAdapter | Where-Object { $_.Status -eq "Disconnected" } | Disable-NetAdapter -Confirm:$false
+
+Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run from the management server against all nodes.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-09-disable-unused-network-adapters/powershell/Invoke-DisableAdapters-Orchestrated.ps1`
+
+```powershell
+# Task 09 - Disable Unused Network Adapters (orchestrated, all nodes)
+# variables.yml variables:
+# cluster_nodes[].management_ip -> $ServerList
+
+$ConfigPath = "$env:USERPROFILE\variables.yml"
+$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
+ ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+
+Invoke-Command ($ServerList) {
+ Get-NetAdapter | Where-Object { $_.Status -eq "Disconnected" } | Disable-NetAdapter -Confirm:$false
+ Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
+} | Sort -Property PsComputerName
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+```powershell
+# Confirm no Disconnected adapters remain enabled
+Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
+```
+
+**Expected:** Only the management adapter shows `Up`. All others show `Disabled`.
+
+---
+
+## Validation Checklist
+
+- [ ] Management adapter remains `Up` on all nodes
+- [ ] All unused adapters show `Disabled`
+- [ ] Nodes still accessible over management network
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|---|---|
+| Lost connectivity after running | Re-enable the adapter from console: `Enable-NetAdapter -Name "<name>"` |
+| Adapter won't disable | Check for active sessions on that adapter |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+[← Task 08: Enable ICMP](./task-08-enable-icmp-ping.mdx) · [↑ Phase 03](./index.mdx) · [Task 10: Configure Hostname →](./task-10-configure-hostname.mdx)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

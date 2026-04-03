@@ -1,0 +1,368 @@
+---
+title: "Task 01: Register Resource Providers"
+sidebar_label: "Task 01: Register Providers"
+sidebar_position: 1
+description: "Register the 12 required Azure resource providers for Azure Local deployment."
+category: "Runbook"
+scope: "Azure resource provider registration"
+purpose: "Register all required Azure resource providers before cluster deployment"
+author: "Azure Local Cloudnology Team"
+created: 2026-01-15
+updated: 2026-03-02
+version: "2.0.0"
+tags:
+ - azure-local
+ - phase-02
+ - resource-providers
+ - registration
+keywords:
+ - register resource providers
+ - provider registration
+ - Azure Local prerequisites
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Register Resource Providers
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Azure resource provider registration   
+> **PURPOSE**: Register all required Azure resource providers before cluster deployment   
+> **MASTER REFERENCE**: [Microsoft Learn — Register Resource Provider](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types#register-resource-provider)
+
+**Status**: Active
+
+## Overview
+
+Azure Local requires specific resource providers to be registered before deployment can proceed. This task checks each provider's registration status and registers any that are not already registered.
+
+:::info Provider Registration Time
+Resource provider registration typically takes 1–3 minutes per provider. Some providers may take longer during high-demand periods.
+:::
+
+## Prerequisites
+
+| Prerequisite | Detail |
+|---|---|
+| **Landing Zones** | [Phase 01](../phase-01-landing-zones/) completed |
+| **Permissions** | Contributor or Owner role at subscription level |
+| **Authenticated Azure session** | See [Authentication](../../05-authentication.mdx) |
+| **`variables.yml`** | Configured with target subscription ID |
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example (IIC) |
+|----------|-------------|---------------|
+| Subscription ID | `azure.subscriptions.lab.id` | *(per environment)* |
+
+---
+
+## Required Providers
+
+Register these 12 resource providers in your Azure Local subscription:
+
+| # | Provider Namespace | Purpose |
+|---|-------------------|---------|
+| 1 | `Microsoft.HybridCompute` | Azure Arc-enabled servers |
+| 2 | `Microsoft.GuestConfiguration` | Azure Policy guest configuration |
+| 3 | `Microsoft.HybridConnectivity` | Azure Arc connectivity |
+| 4 | `Microsoft.AzureStackHCI` | Azure Local cluster management (core) |
+| 5 | `Microsoft.Kubernetes` | Azure Arc-enabled Kubernetes |
+| 6 | `Microsoft.KubernetesConfiguration` | Kubernetes configuration |
+| 7 | `Microsoft.ExtendedLocation` | Custom locations for Arc |
+| 8 | `Microsoft.ResourceConnector` | Azure Arc Resource Bridge |
+| 9 | `Microsoft.HybridContainerService` | Hybrid container workloads |
+| 10 | `Microsoft.Attestation` | Security attestation |
+| 11 | `Microsoft.Storage` | Storage accounts for deployment |
+| 12 | `Microsoft.Insights` | Monitoring and logging |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Navigate to Resource Providers**:
+ - In Azure Portal, search for **Subscriptions**
+ - Select your target subscription (`variables.yml → azure.subscriptions.lab.id`)
+ - In the left menu under **Settings**, click **Resource providers**
+
+2. **Register each provider**:
+
+ For each provider in the required list:
+
+ a. Search for the provider name (e.g., `Microsoft.HybridCompute`)
+
+ b. Check the **Status** column:
+ - **"Registered"** → skip to next provider
+ - **"NotRegistered"** or **"Unregistered"** → select the row and click **Register**
+
+ c. Wait for status to change to "Registered" (1–3 minutes)
+
+3. **Complete all 12 providers**:
+
+ - [ ] Microsoft.HybridCompute
+ - [ ] Microsoft.GuestConfiguration
+ - [ ] Microsoft.HybridConnectivity
+ - [ ] Microsoft.AzureStackHCI
+ - [ ] Microsoft.Kubernetes
+ - [ ] Microsoft.KubernetesConfiguration
+ - [ ] Microsoft.ExtendedLocation
+ - [ ] Microsoft.ResourceConnector
+ - [ ] Microsoft.HybridContainerService
+ - [ ] Microsoft.Attestation
+ - [ ] Microsoft.Storage
+ - [ ] Microsoft.Insights
+
+4. **Verify**: Refresh the page and confirm all 12 show **"Registered"** status.
+
+#### Links
+
+- [Microsoft Learn — Register Resource Provider (Portal)](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types#register-resource-provider)
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted deployment reading values from `variables.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-02-resource-providers/task-01-register-resource-providers/powershell/Register-ResourceProviders.ps1`
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Register-ResourceProviders.ps1
+# Prerequisites: Az.Resources module, authenticated with Contributor on subscription
+# ============================================================================
+
+#Requires -Modules Az.Resources
+
+# Load configuration
+$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
+
+# Extract subscription
+$SubscriptionId = $config.azure.subscriptions.lab.id
+
+# Set subscription context
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Define required providers
+$providers = @(
+ 'Microsoft.HybridCompute',
+ 'Microsoft.GuestConfiguration',
+ 'Microsoft.HybridConnectivity',
+ 'Microsoft.AzureStackHCI',
+ 'Microsoft.Kubernetes',
+ 'Microsoft.KubernetesConfiguration',
+ 'Microsoft.ExtendedLocation',
+ 'Microsoft.ResourceConnector',
+ 'Microsoft.HybridContainerService',
+ 'Microsoft.Attestation',
+ 'Microsoft.Storage',
+ 'Microsoft.Insights'
+)
+
+# Register each provider
+foreach ($provider in $providers) {
+ $status = (Get-AzResourceProvider -ProviderNamespace $provider).RegistrationState
+ if ($status -ne 'Registered') {
+ Write-Host "Registering: $provider" -ForegroundColor Cyan
+ Register-AzResourceProvider -ProviderNamespace $provider | Out-Null
+ } else {
+ Write-Host "Already registered: $provider" -ForegroundColor Green
+ }
+}
+
+# Wait for all registrations to complete
+Write-Host "`nWaiting for registrations to complete..." -ForegroundColor Yellow
+$maxWait = 300 # 5 minutes
+$elapsed = 0
+
+do {
+ Start-Sleep -Seconds 10
+ $elapsed += 10
+ $pending = $providers | Where-Object {
+ (Get-AzResourceProvider -ProviderNamespace $_).RegistrationState -ne 'Registered'
+ }
+ if ($pending) {
+ Write-Host " Still registering: $($pending -join ', ')" -ForegroundColor Yellow
+ }
+} while ($pending -and $elapsed -lt $maxWait)
+
+if ($pending) {
+ Write-Warning "Timeout: providers still registering after $maxWait seconds: $($pending -join ', ')"
+} else {
+ Write-Host "`nAll 12 providers registered successfully" -ForegroundColor Green
+}
+```
+
+#### Validation
+
+```powershell
+Get-AzResourceProvider -ListAvailable |
+ Where-Object ProviderNamespace -in $providers |
+ Select-Object ProviderNamespace, RegistrationState |
+ Format-Table -AutoSize
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers, no dependencies.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Register-ResourceProviders-Standalone.ps1
+# Execution: Run anywhere — fully self-contained, no external dependencies
+# Prerequisites: Az.Resources module, authenticated with Contributor on subscription
+# ============================================================================
+
+#Requires -Modules Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Your subscription ID
+#endregion CONFIGURATION
+
+# Set subscription context
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Define required providers
+$providers = @(
+ 'Microsoft.HybridCompute',
+ 'Microsoft.GuestConfiguration',
+ 'Microsoft.HybridConnectivity',
+ 'Microsoft.AzureStackHCI',
+ 'Microsoft.Kubernetes',
+ 'Microsoft.KubernetesConfiguration',
+ 'Microsoft.ExtendedLocation',
+ 'Microsoft.ResourceConnector',
+ 'Microsoft.HybridContainerService',
+ 'Microsoft.Attestation',
+ 'Microsoft.Storage',
+ 'Microsoft.Insights'
+)
+
+# Register each provider
+foreach ($provider in $providers) {
+ $status = (Get-AzResourceProvider -ProviderNamespace $provider).RegistrationState
+ if ($status -ne 'Registered') {
+ Write-Host "Registering: $provider" -ForegroundColor Cyan
+ Register-AzResourceProvider -ProviderNamespace $provider | Out-Null
+ } else {
+ Write-Host "Already registered: $provider" -ForegroundColor Green
+ }
+}
+
+# Wait for all registrations to complete
+Write-Host "`nWaiting for registrations to complete..." -ForegroundColor Yellow
+$maxWait = 300
+$elapsed = 0
+
+do {
+ Start-Sleep -Seconds 10
+ $elapsed += 10
+ $pending = $providers | Where-Object {
+ (Get-AzResourceProvider -ProviderNamespace $_).RegistrationState -ne 'Registered'
+ }
+ if ($pending) {
+ Write-Host " Still registering: $($pending -join ', ')" -ForegroundColor Yellow
+ }
+} while ($pending -and $elapsed -lt $maxWait)
+
+if ($pending) {
+ Write-Warning "Timeout: providers still registering after $maxWait seconds: $($pending -join ', ')"
+} else {
+ Write-Host "`nAll 12 providers registered successfully" -ForegroundColor Green
+}
+
+# Verify
+Get-AzResourceProvider -ListAvailable |
+ Where-Object ProviderNamespace -in $providers |
+ Select-Object ProviderNamespace, RegistrationState |
+ Format-Table -AutoSize
+```
+
+:::info No External Dependencies
+This script is completely self-contained. Edit the `$SubscriptionId` in the `#region CONFIGURATION` block and run — no `variables.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Troubleshooting
+
+| Symptom | Error | Resolution |
+|---------|-------|------------|
+| Permission denied | `AuthorizationFailed` | Verify Contributor or Owner role at **subscription** level — resource group-level permissions are insufficient |
+| Provider stuck registering | Status remains "Registering" for 10+ minutes | Unregister then re-register: `Unregister-AzResourceProvider -ProviderNamespace "Microsoft.X"`, wait 2 min, then `Register-AzResourceProvider` |
+| Provider not found | Namespace not recognized | Verify spelling; check Azure status page for regional availability |
+
+## Next Steps
+
+Proceed to [Task 02: Verify Provider Registration](./task-02-verify-provider-registration) to validate all providers are fully registered.
+
+## References
+
+- [Microsoft Learn — Resource Providers and Types](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types)
+- [Microsoft Learn — Register Resource Provider](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types#register-resource-provider)
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 02 — Resource Providers](./index.mdx) | [Phase 02 — Resource Providers](./index.mdx) | [Task 02 — Verify Provider Registration](./task-02-verify-provider-registration.mdx) |
+
+---
+
+**Version Control**
+- Created: 2026-01-15 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-02 by Azure Local Cloudnology Team
+- Version: 2.0.0
+- Tags: azure-local, phase-02, resource-providers, registration
+- Keywords: register resource providers, provider registration, Azure Local prerequisites
+- Author: Azure Local Cloudnology Team
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

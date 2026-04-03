@@ -1,0 +1,388 @@
+---
+title: "Task 04: Verify OS Deployment"
+sidebar_label: "Task 04: Verify Deployment"
+sidebar_position: 4
+description: "Verify that Azure Stack HCI OS has been successfully installed on all cluster nodes before proceeding to Phase 03: OS Configuration."
+category: "Runbook"
+scope: OS installation verification
+purpose: Validate correct OS version, build number, boot drive, and console access on all nodes to confirm Phase 02 is complete
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: "1.1.0"
+tags:
+  - azure-local
+  - os-installation
+  - azure-stack-hci
+  - verification
+  - idrac
+  - powershell
+keywords:
+  - Azure Stack HCI OS
+  - OS verification
+  - build number
+  - BOSS card
+  - Server Core
+  - SConfig
+  - Test-OsDeployment
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Verify OS Deployment
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: OS installation verification   
+> **PURPOSE**: Validate correct OS version, build number, boot drive, and console access on all nodes to confirm Phase 02 is complete   
+> **MASTER REFERENCE**: [Phase 02: OS Installation](./index.mdx)
+
+**Status**: Active
+
+## Overview
+
+Verify that Azure Stack HCI OS was installed correctly on every cluster node before moving to Phase 03: OS Configuration. Checks cover OS version, build number, boot drive assignment, and SConfig accessibility.
+
+:::info Prerequisites Recap
+- **Task 01**: BOSS virtual disk deleted and recreated ✓
+- **Task 02**: Dell gold image ISO mounted / USB inserted ✓
+- **Task 03**: Azure Stack HCI OS installed (Windows Setup completed) ✓
+
+This task confirms Task 03 produced a healthy installation on every node.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Task 03 Complete | OS installation finished on all nodes | [Task 03](./task-03-manual-os-installation.mdx) |
+| iDRAC console access | Virtual Console accessible for each node | `variables.yml: nodes.<name>.idrac_ip` |
+| Administrator credentials | Local admin password set during Task 03 | Key Vault: `node-<hostname>-local-admin` |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `nodes.<name>.idrac_ip` | string | iDRAC IP for console access during verification |
+| `nodes.<name>.hostname` | string | Expected hostname for verification |
+| `nodes.<name>.management_ip` | string | Expected management IP for network test |
+
+---
+
+## Phase 02 Pre-Flight Checklist
+
+Confirm all prior tasks are complete before running verification:
+
+| Check | Task | Status |
+|-------|------|--------|
+| BOSS virtual disks deleted and recreated on all nodes | [Task 01](./task-01-delete-and-recreate-virtual-disk-on-dell-boss-card.mdx) | ☐ |
+| Dell gold image ISO mounted / USB inserted on all nodes | [Task 02](./task-02-mount-and-verify-dell-gold-image-iso.mdx) | ☐ |
+| Azure Stack HCI OS installed on all nodes | [Task 03](./task-03-manual-os-installation.mdx) | ☐ |
+| Administrator passwords set and stored in Key Vault | [Task 03](./task-03-manual-os-installation.mdx) | ☐ |
+| All nodes at Server Core command prompt | [Task 03](./task-03-manual-os-installation.mdx) | ☐ |
+
+---
+
+## Verification Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct Script (On Node)">
+
+Connect to each node via iDRAC Virtual Console and run the following commands directly at the Server Core prompt. Repeat for every node.
+
+### Step 1 — Open iDRAC Virtual Console
+
+1. Open `https://<idrac-ip>` for the target node
+2. Navigate to **Dashboard** → **Virtual Console** → **Launch**
+3. Log in as `Administrator` with the password set during Task 03
+
+### Step 2 — Verify OS Version and Build
+
+```powershell
+Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber
+```
+
+**Expected Output:**
+```
+WindowsProductName : Azure Stack HCI
+WindowsVersion : 24H2
+OsBuildNumber : 26100
+```
+
+### Step 3 — Verify Boot Drive (BOSS Card)
+
+```powershell
+# Confirm OS is on the BOSS drive (~238 GB)
+Get-Disk | Format-Table Number, FriendlyName, Size, OperationalStatus
+Get-Volume -DriveLetter C | Format-Table DriveLetter, FileSystemLabel, Size, SizeRemaining
+```
+
+**Expected:** C: drive size approximately 238 GB (BOSS RAID-1 volume).
+
+### Step 4 — Verify Network Adapters are Visible
+
+```powershell
+Get-NetAdapter | Format-Table Name, InterfaceDescription, Status
+```
+
+All physical NICs should be listed. IP addresses are not expected at this stage — networking is configured in Phase 03.
+
+### Step 5 — Verify SConfig
+
+Type `sconfig` at the prompt and confirm the SConfig menu loads without errors. Press `15` to exit back to the command prompt.
+
+### Repeat
+
+Perform Steps 1–5 for each remaining node before proceeding.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run the toolkit verification script from the management server. It reads all node details from `variables.yml`, connects via PowerShell remoting, and produces a summary report.
+
+:::info WinRM Requirement
+PowerShell remoting (WinRM) is not yet enabled on fresh nodes. If running this immediately after Task 03, you must either:
+- Enable WinRM on each node first via iDRAC console: `winrm quickconfig -q`
+- Or use the **Direct Script (On Node)** tab for now and run the orchestrated check again after WinRM is configured in Phase 03.
+:::
+
+`scripts/deploy/04-cluster-deployment/phase-02-os-installation/task-04-verify-os-deployment/powershell/Test-OsDeployment.ps1`
+
+```powershell
+#Requires -Version 7.0
+# ============================================================================
+# Script: Test-OsDeployment.ps1
+# Execution: Run FROM management server — PSRemoting to each node
+# Prerequisites: powershell-yaml, WinRM enabled on all nodes
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath = ".\config\variables.yml"
+)
+
+Import-Module powershell-yaml -ErrorAction Stop
+Import-Module Az.KeyVault -ErrorAction Stop
+
+$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+$vaultName = $config.key_vault.name
+
+$results = @()
+
+foreach ($nodeKey in $config.nodes.Keys) {
+ $node = $config.nodes[$nodeKey]
+ $hostname = $node.hostname
+ $mgmtIP = $node.management_ip
+
+ # Retrieve local admin credential from Key Vault
+ $secretName = "node-$hostname-local-admin"
+ $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName
+ $credential = [PSCredential]::new(
+ "Administrator",
+ $secret.SecretValue
+ )
+
+ Write-Host "$hostname ($mgmtIP)..." -ForegroundColor Yellow
+
+ try {
+ $info = Invoke-Command -ComputerName $mgmtIP -Credential $credential -ScriptBlock {
+ $ci = Get-ComputerInfo
+ $cDrive = Get-Volume -DriveLetter C -ErrorAction SilentlyContinue
+ $netAdapters = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }).Count
+ [PSCustomObject]@{
+ Hostname = $env:COMPUTERNAME
+ OS = $ci.WindowsProductName
+ Build = $ci.OsBuildNumber
+ BootDriveGB = [math]::Round($cDrive.Size / 1GB, 0)
+ AdaptersUp = $netAdapters
+ }
+ }
+
+ $pass = ($info.OS -match "Azure Stack HCI") -and ($info.Build -ge 26100) -and ($info.BootDriveGB -le 300)
+ $results += [PSCustomObject]@{
+ Node = $hostname
+ Status = if ($pass) { "PASS" } else { "REVIEW" }
+ OS = $info.OS
+ Build = $info.Build
+ BootDriveGB = $info.BootDriveGB
+ AdaptersUp = $info.AdaptersUp
+ }
+ Write-Host " $(if ($pass) { 'PASS' } else { 'REVIEW' })" -ForegroundColor $(if ($pass) { 'Green' } else { 'Yellow' })
+
+ } catch {
+ Write-Host " UNREACHABLE: $_" -ForegroundColor Red
+ $results += [PSCustomObject]@{
+ Node = $hostname; Status = "UNREACHABLE"
+ OS = "N/A"; Build = "N/A"; BootDriveGB = "N/A"; AdaptersUp = "N/A"
+ }
+ }
+}
+
+Write-Host "`nVerification Summary:" -ForegroundColor Cyan
+$results | Format-Table -AutoSize
+
+$failed = $results | Where-Object { $_.Status -notin @("PASS") }
+if ($failed) {
+ Write-Host "$($failed.Count) node(s) require review — resolve before proceeding to Phase 03" -ForegroundColor Yellow
+} else {
+ Write-Host "All nodes passed — Phase 02 complete. Proceed to Phase 03: OS Configuration." -ForegroundColor Green
+}
+```
+
+### Expected Output
+
+```
+azlocal-node01 (10.245.64.21)... PASS
+azlocal-node02 (10.245.64.22)... PASS
+azlocal-node03 (10.245.64.23)... PASS
+azlocal-node04 (10.245.64.24)... PASS
+
+Verification Summary:
+Node Status OS Build BootDriveGB AdaptersUp
+---- ------ -- ----- ----------- ----------
+azlocal-node01 PASS Azure Stack HCI 26100 238 4
+azlocal-node02 PASS Azure Stack HCI 26100 238 4
+azlocal-node03 PASS Azure Stack HCI 26100 238 4
+azlocal-node04 PASS Azure Stack HCI 26100 238 4
+
+All nodes passed — Phase 02 complete. Proceed to Phase 03: OS Configuration.
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+#Requires -Version 5.1
+# ============================================================================
+# Script: Test-OsDeployment-Standalone.ps1
+# Execution: Run FROM any workstation — PSRemoting to each node
+# Prerequisites: WinRM enabled on all nodes
+# ============================================================================
+
+#region CONFIGURATION
+$adminUser = "Administrator"
+$adminPassSecure = Read-Host "Enter local Administrator password" -AsSecureString
+$credential = [PSCredential]::new($adminUser, $adminPassSecure)
+
+$nodes = @(
+ @{ Hostname = "azlocal-node01"; ManagementIP = "10.245.64.21" },
+ @{ Hostname = "azlocal-node02"; ManagementIP = "10.245.64.22" },
+ @{ Hostname = "azlocal-node03"; ManagementIP = "10.245.64.23" },
+ @{ Hostname = "azlocal-node04"; ManagementIP = "10.245.64.24" }
+)
+#endregion
+
+$results = @()
+
+foreach ($node in $nodes) {
+ Write-Host "$($node.Hostname) ($($node.ManagementIP))..." -ForegroundColor Yellow
+ try {
+ $info = Invoke-Command -ComputerName $node.ManagementIP -Credential $credential -ScriptBlock {
+ $ci = Get-ComputerInfo
+ $cDrive = Get-Volume -DriveLetter C -ErrorAction SilentlyContinue
+ [PSCustomObject]@{
+ Hostname = $env:COMPUTERNAME
+ OS = $ci.WindowsProductName
+ Build = $ci.OsBuildNumber
+ BootDriveGB = [math]::Round($cDrive.Size / 1GB, 0)
+ }
+ }
+ $pass = ($info.OS -match "Azure Stack HCI") -and ($info.Build -ge 26100) -and ($info.BootDriveGB -le 300)
+ Write-Host " $(if ($pass) {'PASS'} else {'REVIEW'})" -ForegroundColor $(if ($pass) {'Green'} else {'Yellow'})
+ $results += [PSCustomObject]@{
+ Node = $node.Hostname; Status = if ($pass) {"PASS"} else {"REVIEW"}
+ OS = $info.OS; Build = $info.Build; BootDriveGB = $info.BootDriveGB
+ }
+ } catch {
+ Write-Host " UNREACHABLE: $_" -ForegroundColor Red
+ $results += [PSCustomObject]@{ Node = $node.Hostname; Status = "UNREACHABLE"
+ OS = "N/A"; Build = "N/A"; BootDriveGB = "N/A" }
+ }
+}
+
+$results | Format-Table -AutoSize
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Expected Results
+
+All nodes should produce consistent results:
+
+| Node | OS | Build | Boot Drive | Status |
+|------|-----|-------|------------|--------|
+| azlocal-node01 | Azure Stack HCI | 26100+ | ~238 GB | ✅ PASS |
+| azlocal-node02 | Azure Stack HCI | 26100+ | ~238 GB | ✅ PASS |
+| azlocal-node03 | Azure Stack HCI | 26100+ | ~238 GB | ✅ PASS |
+| azlocal-node04 | Azure Stack HCI | 26100+ | ~238 GB | ✅ PASS |
+
+---
+
+## Phase 02 Completion Criteria
+
+| Criterion | Description | Status |
+|-----------|-------------|--------|
+| BOSS virtual disks | Deleted and recreated per Dell validated practices | ☐ |
+| Gold image ISO | Mounted on all nodes during installation | ☐ |
+| OS installed | Azure Stack HCI OS installed on all nodes | ☐ |
+| Boot drive correct | OS on Dell BOSS card M.2 RAID-1 volume (~238 GB) | ☐ |
+| Passwords secured | Administrator passwords stored in Key Vault | ☐ |
+| Server Core prompt | All nodes boot to Server Core / SConfig | ☐ |
+| Build number | 26100 or higher on all nodes | ☐ |
+
+All criteria met — Phase 02 is complete. Proceed to Phase 03: OS Configuration.
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Wrong OS version / product name | Incorrect ISO used in Task 02 | Reinstall with the correct Dell gold image |
+| Build number below 26100 | Outdated ISO | Obtain current gold image and reinstall |
+| Can't connect remotely (WinRM) | WinRM not yet configured | Use Direct Script tab; enable WinRM manually: `winrm quickconfig -q` |
+| Cannot connect via iDRAC console | iDRAC network issue | Verify iDRAC IP and OOB connectivity |
+| Boot drive wrong size | OS installed on data drive, not BOSS | Reinstall — return to [Task 03](./task-03-manual-os-installation.mdx) and select Drive 0 |
+| Node not booting | Boot order or BOSS issue | Verify BIOS boot order; return to [Task 01](./task-01-delete-and-recreate-virtual-disk-on-dell-boss-card.mdx) |
+| SConfig not accessible | Installation incomplete | Verify installation completed; reboot node |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 03: Manual OS Installation](./task-03-manual-os-installation.mdx) | [↑ Phase 02: OS Installation](./index.mdx) | [Phase 03: OS Configuration →](../phase-03-os-configuration/index.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Full frontmatter, Azure badge, add tabs, Stage 12 → Phase 03, Phase 13 → Phase 03, Step 4.x → sequential steps, Step 2/3 → Task 01/03, consolidate checklists, key vault credential references, Navigation table, Version Control footer |

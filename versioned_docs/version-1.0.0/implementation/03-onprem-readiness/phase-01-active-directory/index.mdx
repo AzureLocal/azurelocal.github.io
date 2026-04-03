@@ -1,0 +1,149 @@
+---
+title: "Phase 01: Active Directory Preparation"
+sidebar_label: "Phase 01: Active Directory Preparation"
+sidebar_position: 1
+description: "Prepare Active Directory domain infrastructure including OU structure, service accounts, and group policies for Azure Local deployment"
+category: Runbook
+scope: Active Directory domain preparation
+purpose: Configure AD infrastructure for Azure Local
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2025-06-01
+updated: 2026-03-03
+version: 1.1
+tags: ["azure-local", "active-directory", "ou-structure", "service-accounts"]
+keywords: ["Active Directory", "OU", "service accounts", "security groups", "DNS"]
+status: Active
+---
+
+# Phase 01: Active Directory Preparation
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Active Directory domain preparation   
+> **PURPOSE**: Configure AD infrastructure for Azure Local   
+> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory) 
+
+**Status**: Active
+
+## Overview
+
+Prepare the Active Directory domain infrastructure required for Azure Local deployment. This stage establishes the foundational identity services, organizational structure, and security configuration needed for cluster operations.
+
+### What This Stage Accomplishes
+
+- Active Directory organizational preparation
+- Organizational Unit (OU) structure creation
+- Security groups for access control
+- DNS configuration for cluster nodes
+- Service and administrative accounts
+- Group assignments and permissions
+
+### Prerequisites
+
+- Windows Server domain controllers deployed
+- Domain admin access
+- DNS server configuration
+- Azure Local requirements documentation
+
+## Active Directory Preparation Steps
+
+### Task 1: OU Creation & Pre-Creation Artifacts
+
+Create the foundational OU structure in Active Directory.
+
+- Create MGMT OU on root domain
+- Create sub-OUs: Admins, Operations, Security Groups, Servers, Services
+- Create Clusters AzureLocal OUs
+
+[View Step 1 Details](./task-01-ou-creation-pre-creation-artifacts)
+
+### Task 2: Security Groups
+
+Create 7 security groups for role-based access control of Azure Local operations. Group names follow the convention `SG-{org_prefix}-{cluster_id}-AZL-{role}`, driven by `active_directory.security_groups.org_prefix` and `cluster_id` in `variables.yml`.
+
+| YAML Key | Example Name | Node Assignment |
+|---|---|---|
+| `azure_local_admins` | `SG-IIC-clus01-AZL-Administrators` | `Administrators` |
+| `operations` | `SG-IIC-clus01-AZL-Operations` | `Remote Management Users`, `Remote Desktop Users` |
+| `read_only` | `SG-IIC-clus01-AZL-ReadOnly` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` |
+| `wac_admins` | `SG-IIC-clus01-AZL-WAC-Administrators` | WAC server only |
+| `wac_users` | `SG-IIC-clus01-AZL-WAC-Users` | WAC server only |
+| `hyperv_admins` | `SG-IIC-clus01-AZL-HyperV-Administrators` | `Hyper-V Administrators`, `Remote Management Users` |
+| `storage_admins` | `SG-IIC-clus01-AZL-Storage-Administrators` | `Administrators` |
+
+[View Step 2 Details](./task-02-security-groups)
+
+### Task 3: DNS Node A Records
+
+Configure DNS A records for cluster node resolution.
+
+- Create forward and reverse lookup zones
+- Configure A records for cluster nodes
+- Set up CNAME records for management endpoints
+- Verify DNS resolution
+
+[View Step 3 Details](./task-03-dns-node-a-records)
+
+### Task 4: Service & Admin Accounts
+
+Create supplemental service and administrative user accounts.
+
+- Break-glass emergency admin account
+- Optional gMSA (Group Managed Service Account) scaffold
+- Configure account properties and secure password storage
+
+> **Note:** The LCM deployment account is created in [Task 01](./task-01-ou-creation-pre-creation-artifacts).
+
+[View Step 4 Details](./task-04-service-admin-accounts)
+
+### Task 5: Group Assignments
+
+Assign users and service accounts to security groups.
+
+- Add users to appropriate security groups
+- Configure group memberships
+- Assign group permissions
+- Validate group policies
+
+[View Step 5 Details](./task-05-group-assignments)
+
+## Validation Checklist
+
+- [ ] Active Directory domain deployed and functional
+- [ ] OU structure created and verified
+- [ ] All security groups created
+- [ ] DNS records configured and resolving
+- [ ] Service and admin accounts created
+- [ ] Group assignments completed
+- [ ] Domain controller replication verified
+
+## Next Steps
+
+After completing Active Directory preparation, proceed to [Phase 09 - Enterprise Network Readiness Validation](../phase-02-enterprise-readiness/) to validate network prerequisites.
+
+## Support Resources
+
+- [Microsoft Azure Local AD Requirements](https://docs.microsoft.com/en-us/azure/azure-local/)
+- [Active Directory Best Practices](https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/manage/security-best-practices/best-practices-for-securing-active-directory)
+- Contact Azure Local Cloud Azure Local Cloud team for assistance
+
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Part 3: On-Premises Readiness](../index.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Task 01: OU Creation →](./task-01-ou-creation-pre-creation-artifacts.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2025-06-01 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Standardized runbook format |
+
+---
+

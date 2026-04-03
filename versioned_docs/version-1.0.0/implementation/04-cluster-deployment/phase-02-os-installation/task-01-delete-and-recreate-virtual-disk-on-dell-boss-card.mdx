@@ -1,0 +1,436 @@
+---
+title: "Task 01: Delete and Recreate Virtual Disk on Dell BOSS Card"
+sidebar_label: "Task 01: BOSS Card Config"
+sidebar_position: 1
+description: "Delete and recreate virtual disks on Dell BOSS cards via iDRAC Storage Management or Redfish API for a clean OS installation target."
+category: "Runbook"
+scope: Boot device configuration
+purpose: Ensure a clean, initialized BOSS RAID-1 virtual disk exists on every node before OS installation begins
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: "1.1.0"
+tags:
+  - azure-local
+  - os-installation
+  - dell
+  - boss-card
+  - raid
+  - idrac
+  - redfish
+keywords:
+  - Dell BOSS card
+  - BOSS-S2
+  - RAID-1
+  - virtual disk
+  - iDRAC Storage Management
+  - Redfish API
+  - BOSS-N1
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Delete and Recreate Virtual Disk on Dell BOSS Card
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Optional](https://img.shields.io/badge/Step-Optional-yellow?style=flat-square)](#overview)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Boot device configuration   
+> **PURPOSE**: Ensure a clean, initialized BOSS RAID-1 virtual disk exists on every node before OS installation begins   
+> **MASTER REFERENCE**: [Phase 02: OS Installation](./index.mdx)
+
+**Status**: Active
+
+## Overview
+
+:::info Optional Step
+This task is **optional**. Perform it only if the BOSS card contains a residual virtual disk from a previous OS installation, or if Dell deployment guidance explicitly requires a clean BOSS state for your hardware generation.
+
+New hardware shipped with no OS typically arrives with the BOSS virtual disk already initialized and healthy — verify first before deleting.
+:::
+
+Delete and recreate the virtual disk on the Dell BOSS (Boot Optimized Storage Solution) card, then confirm the node reboots from the ISO/USB will be mounted in Task 02.
+
+**Why this step is required when needed:** Per the Dell Boot-Optimized Storage Solution-N1 User's Guide for Azure Local deployments:
+
+> "Delete the virtual disk on the BOSS... Create a virtual disk on the BOSS and initialize it."
+
+A complete delete-and-recreate ensures:
+
+- No residual UEFI boot entries from a previous OS
+- Clean partition table — no legacy partitions that block Windows Setup
+- Fresh initialized virtual disk ready for the Azure Stack HCI OS installer
+- No BitLocker state conflicts on the M.2 drives
+
+:::warning Data Loss
+This step permanently deletes any existing virtual disk and all data on the BOSS M.2 drives. Only proceed on new deployments or explicitly approved reinstallations.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Phase 01 Complete | Hardware provisioning and BIOS/iDRAC validation done | [Phase 01](../phase-01-hardware-provisioning/index.mdx) |
+| Dell BOSS card | BOSS-S1 or BOSS-S2 installed with two M.2 SSDs | Hardware team |
+| iDRAC access | iDRAC UI and Redfish API accessible | `variables.yml: nodes.<name>.idrac_ip` |
+| No existing OS | Or written approval for reinstallation | Project sign-off |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `nodes.<name>.idrac_ip` | string | iDRAC IP address for BOSS card management |
+| `nodes.<name>.hostname` | string | Node hostname for tracking |
+
+---
+
+## Dell BOSS Card Reference
+
+| Feature | BOSS-S1 | BOSS-S2 / BOSS-N1 |
+|---------|---------|---------|
+| Interface | PCIe 3.0 | PCIe 4.0 |
+| M.2 Slots | 2 | 2 |
+| Max Capacity | 480 GB × 2 | 960 GB × 2 |
+| RAID Level | RAID 1 | RAID 1 |
+| Purpose | Mirrored M.2 SATA SSDs for OS boot resilience |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Dell iDRAC UI" default>
+
+Perform the following steps on **each node** using iDRAC Storage Management.
+
+### Delete Existing Virtual Disk
+
+1. Open `https://<idrac-ip>` and log in with iDRAC credentials
+2. Navigate to **Configuration** → **Storage** → **Virtual Disks**
+3. Locate the BOSS controller (labelled `BOSS-N1` or `BOSS-S2`)
+4. Select the existing virtual disk
+5. Click **Delete Virtual Disk** (or choose from the **Operations** drop-down)
+6. Click **Apply Now** — iDRAC will schedule a RAID job and reboot
+
+Monitor the job in **Maintenance** → **Job Queue** until status shows **Completed**.
+
+### Recreate Virtual Disk (After Reboot)
+
+1. Navigate back to **Configuration** → **Storage** → **Controllers**
+2. Select the BOSS controller
+3. Click **Create Virtual Disk**
+4. Configure:
+ - **RAID Level**: RAID 1 (Mirror)
+ - **Physical Disks**: Select **both** M.2 drives
+ - **Name**: leave default or enter `OS-VD`
+ - **Stripe Size**: default
+5. Click **Create Virtual Disk** → **Apply Now**
+
+iDRAC schedules a second RAID job and reboots again to apply.
+
+### Verify
+
+After the second reboot, return to **Configuration** → **Storage** → **Virtual Disks** and confirm:
+
+- **Status**: Optimal
+- **RAID Level**: RAID 1
+- **Both physical disks**: Online
+
+The node will boot from the ISO (Task 01) after the BOSS recreation reboot.
+
+:::tip BIOS Alternative (Off-line)
+If iDRAC Storage Management is unavailable, the BOSS controller can also be configured at POST:
+press **Ctrl+R** when prompted during server boot, then use **Device Settings** → **BOSS Controller** to delete and recreate the virtual disk.
+:::
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Mount and execute from the management server. Reads iDRAC IPs from `variables.yml` and credentials from Key Vault.
+
+`scripts/deploy/04-cluster-deployment/phase-02-os-installation/task-02-delete-and-recreate-virtual-disk-on-dell-boss-card/powershell/Invoke-ResetBossVirtualDisk.ps1`
+
+```powershell
+#Requires -Version 7.0
+# ============================================================================
+# Script: Invoke-ResetBossVirtualDisk.ps1
+# Execution: Run FROM management server — Redfish API to each iDRAC
+# Prerequisites: powershell-yaml, Az module, iDRAC reachable on port 443
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath = ".\config\variables.yml",
+
+ [Parameter(Mandatory = $false)]
+ [switch]$WhatIf
+)
+
+Import-Module powershell-yaml -ErrorAction Stop
+Import-Module Az.KeyVault -ErrorAction Stop
+
+$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+$secrets = Get-AzKeyVaultSecret -VaultName $config.key_vault.name
+
+$iDRACUser = ($secrets | Where-Object { $_.Name -eq "idrac-username" }).SecretValue |
+ ConvertFrom-SecureString -AsPlainText
+$iDRACPass = ($secrets | Where-Object { $_.Name -eq "idrac-password" }).SecretValue |
+ ConvertFrom-SecureString -AsPlainText
+$credential = [PSCredential]::new($iDRACUser, (ConvertTo-SecureString $iDRACPass -AsPlainText -Force))
+
+$results = @()
+
+foreach ($nodeKey in $config.nodes.Keys) {
+ $node = $config.nodes[$nodeKey]
+ $ip = $node.idrac_ip
+ $baseUri = "https://$ip/redfish/v1"
+ $rest = @{ Credential = $credential; SkipCertificateCheck = $true
+ Headers = @{ "Content-Type" = "application/json" } }
+
+ Write-Host "`n$($node.hostname) ($ip)" -ForegroundColor Cyan
+
+ try {
+ # --- Step 1: Find BOSS controller ---
+ Write-Host " [1/4] Locating BOSS controller..." -ForegroundColor Yellow
+ $controllers = Invoke-RestMethod -Uri "$baseUri/Systems/System.Embedded.1/Storage" -Method Get @rest
+ $bossId = ($controllers.Members | ForEach-Object {
+ $c = Invoke-RestMethod -Uri "https://$ip$_.'@odata.id'" -Method Get @rest
+ if ($c.Name -match "BOSS") { $c.Id }
+ }) | Select-Object -First 1
+
+ if (-not $bossId) { throw "BOSS controller not found" }
+ Write-Host " Found: $bossId" -ForegroundColor Green
+ $bossUri = "$baseUri/Systems/System.Embedded.1/Storage/$bossId"
+
+ # --- Step 2: Delete existing virtual disks ---
+ Write-Host " [2/4] Querying virtual disks..." -ForegroundColor Yellow
+ $vds = Invoke-RestMethod -Uri "$bossUri/Volumes" -Method Get @rest
+ foreach ($vdRef in $vds.Members) {
+ $vdUri = "https://$ip$($vdRef.'@odata.id')"
+ if ($WhatIf) { Write-Host " WHATIF: Would delete $vdUri"; continue }
+ Invoke-RestMethod -Uri $vdUri -Method Delete @rest | Out-Null
+ Write-Host " Deleted: $($vdRef.'@odata.id')" -ForegroundColor Green
+ }
+
+ if ($vds.'Members@odata.count' -eq 0) {
+ Write-Host " No virtual disks found — already clean" -ForegroundColor Gray
+ } else {
+ # Wait for deletion job to complete
+ Start-Sleep -Seconds 5
+ Write-Host " Waiting for RAID deletion job..." -ForegroundColor Yellow
+ $timeout = (Get-Date).AddMinutes(10)
+ while ((Get-Date) -lt $timeout) {
+ $jobs = Invoke-RestMethod -Uri "$baseUri/Managers/iDRAC.Embedded.1/Jobs" -Method Get @rest
+ $pending = $jobs.Members | Where-Object { $_.'@odata.id' -match "JID_" }
+ if (-not $pending) { break }
+ Start-Sleep -Seconds 15
+ }
+ }
+
+ # --- Step 3: Get physical drives ---
+ Write-Host " [3/4] Reading physical drives..." -ForegroundColor Yellow
+ $drives = (Invoke-RestMethod -Uri "$bossUri/Drives" -Method Get @rest).Members
+ if ($drives.Count -lt 2) { throw "Expected 2 M.2 drives, found $($drives.Count)" }
+ $driveUris = $drives | ForEach-Object { @{ '@odata.id' = $_.'@odata.id' } }
+
+ # --- Step 4: Create RAID-1 virtual disk ---
+ Write-Host " [4/4] Creating RAID-1 virtual disk..." -ForegroundColor Yellow
+ $vdPayload = @{
+ VolumeType = "Mirrored"
+ Drives = $driveUris
+ DisplayName = "OS-VD"
+ } | ConvertTo-Json
+
+ if ($WhatIf) {
+ Write-Host " WHATIF: Would POST RAID-1 creation to $bossUri/Volumes"
+ } else {
+ Invoke-RestMethod -Uri "$bossUri/Volumes" -Method Post -Body $vdPayload @rest | Out-Null
+ Write-Host " RAID-1 virtual disk created" -ForegroundColor Green
+ }
+
+ $results += [PSCustomObject]@{ Node = $node.hostname; Status = "OK" }
+
+ } catch {
+ Write-Host " FAILED: $_" -ForegroundColor Red
+ $results += [PSCustomObject]@{ Node = $node.hostname; Status = "FAIL"; Error = "$_" }
+ }
+}
+
+Write-Host "`nSummary:" -ForegroundColor Cyan
+$results | Format-Table -AutoSize
+
+$failed = $results | Where-Object { $_.Status -eq "FAIL" }
+if ($failed) {
+ Write-Host "$($failed.Count) node(s) failed — resolve before proceeding to Task 03" -ForegroundColor Red
+ exit 1
+}
+Write-Host "All nodes reset — nodes will reboot from ISO (Task 01) — proceed to Task 03" -ForegroundColor Green
+```
+
+### Expected Output
+
+```
+azlocal-node01 (10.245.64.11)
+ [1/4] Locating BOSS controller...
+ Found: BOSS-N1.Modular.1-1
+ [2/4] Querying virtual disks...
+ Deleted: /redfish/v1/Systems/System.Embedded.1/Storage/BOSS-N1.Modular.1-1/Volumes/Disk.Virtual.0:BOSS-N1.Modular.1-1
+ Waiting for RAID deletion job...
+ [3/4] Reading physical drives...
+ [4/4] Creating RAID-1 virtual disk...
+ RAID-1 virtual disk created
+
+Summary:
+Node Status
+---- ------
+azlocal-node01 OK
+azlocal-node02 OK
+azlocal-node03 OK
+azlocal-node04 OK
+
+All nodes reset — nodes will reboot from ISO (Task 01) — proceed to Task 03
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+#Requires -Version 5.1
+# ============================================================================
+# Script: Invoke-ResetBossVirtualDisk-Standalone.ps1
+# Execution: Run FROM any workstation — Redfish API to each iDRAC
+# Prerequisites: iDRAC reachable on port 443, administrator credentials
+# ============================================================================
+
+#region CONFIGURATION
+$iDRACUser = "root"
+$iDRACPassSecure = Read-Host "Enter iDRAC password" -AsSecureString
+$credential = [PSCredential]::new($iDRACUser, $iDRACPassSecure)
+
+$nodes = @(
+ @{ Hostname = "azlocal-node01"; iDRACIP = "10.245.64.11" },
+ @{ Hostname = "azlocal-node02"; iDRACIP = "10.245.64.12" },
+ @{ Hostname = "azlocal-node03"; iDRACIP = "10.245.64.13" },
+ @{ Hostname = "azlocal-node04"; iDRACIP = "10.245.64.14" }
+)
+#endregion
+
+$rest = @{ Credential = $credential; SkipCertificateCheck = $true
+ Headers = @{ "Content-Type" = "application/json" } }
+
+foreach ($node in $nodes) {
+ $ip = $node.iDRACIP
+ $baseUri = "https://$ip/redfish/v1"
+ Write-Host "`n$($node.Hostname) ($ip)" -ForegroundColor Cyan
+
+ try {
+ # Find BOSS controller
+ $controllers = Invoke-RestMethod -Uri "$baseUri/Systems/System.Embedded.1/Storage" -Method Get @rest
+ $bossId = ($controllers.Members | ForEach-Object {
+ $c = Invoke-RestMethod -Uri "https://$ip$_.'@odata.id'" -Method Get @rest
+ if ($c.Name -match "BOSS") { $c.Id }
+ }) | Select-Object -First 1
+ if (-not $bossId) { throw "BOSS controller not found" }
+ $bossUri = "$baseUri/Systems/System.Embedded.1/Storage/$bossId"
+
+ # Delete existing VDs
+ $vds = Invoke-RestMethod -Uri "$bossUri/Volumes" -Method Get @rest
+ foreach ($vdRef in $vds.Members) {
+ Invoke-RestMethod -Uri "https://$ip$($vdRef.'@odata.id')" -Method Delete @rest | Out-Null
+ Write-Host " Deleted: $($vdRef.'@odata.id')" -ForegroundColor Green
+ }
+ if ($vds.'Members@odata.count' -gt 0) { Start-Sleep -Seconds 30 }
+
+ # Create RAID-1
+ $drives = (Invoke-RestMethod -Uri "$bossUri/Drives" -Method Get @rest).Members
+ $driveUris = $drives | ForEach-Object { @{ '@odata.id' = $_.'@odata.id' } }
+ $payload = @{ VolumeType = "Mirrored"; Drives = $driveUris; DisplayName = "OS-VD" } | ConvertTo-Json
+ Invoke-RestMethod -Uri "$bossUri/Volumes" -Method Post -Body $payload @rest | Out-Null
+ Write-Host " RAID-1 virtual disk created" -ForegroundColor Green
+
+ } catch {
+ Write-Host " ERROR: $_" -ForegroundColor Red
+ }
+}
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## What Happens After BOSS Recreation
+
+1. iDRAC schedules a RAID configuration job and **reboots the node automatically**
+2. On reboot, BOSS initializes the new RAID-1 virtual disk
+3. At next boot, the node falls back to the ISO/USB will be mounted in Task 02
+4. **"Press any key to boot from CD/DVD..."** appears → Windows Setup begins loading
+5. Proceed to Task 03
+
+---
+
+## Validation Checklist
+
+- [ ] BOSS virtual disk `Status: Optimal` on all nodes
+- [ ] RAID Level: `RAID 1` (mirror)
+- [ ] Both M.2 physical disks: `Online`
+- [ ] No failed or degraded drives
+- [ ] All nodes rebooted and booting from ISO
+- [ ] Windows Setup loading on all nodes (verify via iDRAC Virtual Console)
+
+:::danger Do Not Proceed Until Verified
+Do not start Task 03 until all nodes show Windows Setup loading. A node that reboots without a mounted ISO will halt at a "Boot device not found" prompt and require manual intervention.
+:::
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| BOSS controller not found | BOSS card not installed or disabled | Verify BOSS card in BIOS: **Device Settings** |
+| Cannot delete virtual disk | Insufficient iDRAC permissions | Use account with Administrator role |
+| RAID job stuck | iDRAC job queue blocked | Clear stuck jobs: **Maintenance** → **Job Queue** → **Delete All Jobs** |
+| Server not rebooting after job | iDRAC connectivity issue | Reboot manually via iDRAC: **Power** → **Power Cycle** |
+| Boot to wrong device after reboot | ISO not mounted | Return to Task 01 and verify ISO is inserted |
+| Disk degraded / one drive offline | M.2 drive failure | Replace faulty drive and recreate virtual disk |
+| `Members@odata.count: 0` on volumes | Virtual disk already clean | Skip deletion; proceed directly to creation |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Phase 02 Overview](./index.mdx) | [↑ Phase 02: OS Installation](./index.mdx) | [Task 02: Mount Gold Image →](./task-02-mount-and-verify-dell-gold-image-iso.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Add Optional badge, Azure badge, full frontmatter, fix tab labels and script paths, remove duplicate sections, standards alignment |
+| 1.2 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Reorder: promoted to Task 01 (BOSS config before ISO mount) |

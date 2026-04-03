@@ -1,0 +1,409 @@
+---
+title: "Task 05: Azure Bastion"
+sidebar_label: "Task 05: Azure Bastion"
+sidebar_position: 5
+description: "Deploy Azure Bastion for secure browser-based RDP/SSH access to management VMs without public IP exposure."
+category: "Runbook"
+scope: Azure Bastion deployment
+purpose: Provide secure remote access to management VMs
+author: Hybrid Cloud Solutions
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags:
+  - azure-local
+  - bastion
+  - remote-access
+  - security
+keywords:
+  - Azure Bastion
+  - RDP
+  - SSH
+  - browser access
+  - jump host
+  - secure access
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 05: Azure Bastion
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Azure Bastion deployment   
+> **PURPOSE**: Provide secure remote access to management VMs   
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Bastion](https://learn.microsoft.com/en-us/azure/bastion/bastion-overview)
+
+**Status**: Active
+
+## Overview
+
+This task deploys Azure Bastion into the AzureBastionSubnet created in Task 01. Bastion provides secure, browser-based RDP and SSH access to management VMs without requiring public IP addresses on target resources.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::info Terraform Reference
+**Module:** `azurelocal-toolkit` 
+**File:** `bastion.tf` 
+**Mode:** Management
+:::
+
+### Components Created
+
+| Resource | Name Pattern | Purpose |
+|----------|-------------|---------|
+| Public IP | `pip-bastion-{env}-{region}-01` | Bastion public IP |
+| Azure Bastion | `bas-azrl-{env}-{region}-01` | Secure RDP/SSH proxy |
+
+### Bastion Configuration
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| SKU | Standard | `azure_infrastructure.bastion.sku` |
+| Subnet | AzureBastionSubnet | `network.azure_vnets.management.subnets.bastion.name` |
+| Features | File transfer, shareable links | Standard SKU features |
+
+## Prerequisites
+
+- [ ] [Task 01: Virtual Network](./task-01-virtual-network) completed — AzureBastionSubnet exists with /26 or larger
+- [ ] [Task 06: NSG](./task-06-network-security-groups) — Bastion NSG applied (can be done concurrently)
+- [ ] No existing Bastion deployment in same VNet
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example (IIC) |
+|----------|-------------|---------------|
+| Subscription ID | `azure.subscriptions.<name>.id` | *(per environment)* |
+| Resource Group | `azure_infrastructure.bastion.resource_group` | `rg-azrlmgmt-azl-eus-01` |
+| Bastion Name | `azure_infrastructure.bastion.name` | `bas-azrl-azl-eus-01` |
+| Public IP Name | `azure_infrastructure.bastion.public_ip` | `pip-bastion-azl-eus-01` |
+| SKU | `azure_infrastructure.bastion.sku` | `Standard` |
+| Bastion Subnet | `network.azure_vnets.management.subnets.bastion.name` | `AzureBastionSubnet` |
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.bastion.resource_group` |
+| Bastion Name | `bas-azrl-{env}-{region}-01` | `azure_infrastructure.bastion.name` |
+| Public IP Name | `pip-bastion-{env}-{region}-01` | `azure_infrastructure.bastion.public_ip` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Create Public IP**:
+ - Search for **Public IP addresses** → **+ Create**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | `pip-bastion-{env}-{region}-01` | `azure_infrastructure.bastion.public_ip` |
+ | SKU | Standard | Required for Bastion |
+ | Assignment | Static | Required for Bastion |
+ | Availability Zone | Zone-redundant | Best practice |
+
+2. **Create Azure Bastion**:
+ - Search for **Bastions** → **+ Create**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | `bas-azrl-{env}-{region}-01` | `azure_infrastructure.bastion.name` |
+ | Region | Your region | `azure.region` |
+ | Tier | Standard | `azure_infrastructure.bastion.sku` |
+ | Virtual network | Management VNet | `network.azure_vnets.management.name` |
+ | Subnet | AzureBastionSubnet (auto-selected) | `network.azure_vnets.management.subnets.bastion.name` |
+ | Public IP | Select PIP from Step 1 | `azure_infrastructure.bastion.public_ip` |
+
+3. **Review + create**: Verify → Click **Create** → Wait for deployment (~5 minutes)
+
+#### Validation
+
+- [ ] Bastion provisioning state: **Succeeded**
+- [ ] Public IP assigned
+- [ ] Can connect to VM via Bastion from Azure Portal
+
+#### Links
+
+- [Microsoft Learn: Create Azure Bastion](https://learn.microsoft.com/en-us/azure/bastion/tutorial-create-host-portal)
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-05-azure-bastion/powershell/New-AzureBastion.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| PowerShell + Azure CLI | `task-05-azure-bastion/azure-cli/New-AzureBastion.azcli.ps1` |
+| Bash + Azure CLI | `task-05-azure-bastion/bash/invoke-azure-bastion.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-AzureBastion.ps1
+# Execution: Run from management workstation — reads variables.yml
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "config/variables.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# Extract values
+$SubscriptionId = $config.azure.subscriptions.($config.azure_infrastructure.bastion.subscription).id
+$ResourceGroup = $config.azure_infrastructure.bastion.resource_group
+$BastionName = $config.azure_infrastructure.bastion.name
+$PublicIpName = $config.azure_infrastructure.bastion.public_ip
+$Sku = $config.azure_infrastructure.bastion.sku
+$Location = $config.network.azure_vnets.management.location
+$VNetName = $config.network.azure_vnets.management.name
+$VNetRg = $config.network.azure_vnets.management.resource_group
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Create Public IP
+Write-LogInfo "Creating Public IP: $PublicIpName"
+$pip = New-AzPublicIpAddress `
+ -Name $PublicIpName `
+ -ResourceGroupName $ResourceGroup `
+ -Location $Location `
+ -Sku Standard `
+ -AllocationMethod Static `
+ -Zone @("1","2","3")
+
+# Get AzureBastionSubnet
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $VNetRg
+$bastionSubnet = Get-AzVirtualNetworkSubnetConfig -Name "AzureBastionSubnet" -VirtualNetwork $vnet
+
+# Create Bastion
+Write-LogInfo "Creating Azure Bastion: $BastionName"
+$bastion = New-AzBastion `
+ -Name $BastionName `
+ -ResourceGroupName $ResourceGroup `
+ -VirtualNetworkId $vnet.Id `
+ -PublicIpAddressId $pip.Id `
+ -Sku $Sku
+
+Write-LogSuccess "Azure Bastion created: $($bastion.Name)"
+$bastion
+```
+
+#### Validation
+
+```powershell
+Get-AzBastion -ResourceGroupName $ResourceGroup | Format-List Name, ProvisioningState, DnsName, Sku
+```
+
+**Validation Script**: `scripts/validation/02-azure-foundation/phase-04/Test-AzureBastion.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers needed.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-AzureBastion-Standalone.ps1
+# Execution: Run anywhere — fully self-contained
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Target subscription
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01" # Resource group
+$BastionName = "bas-azrl-azl-eus-01" # Bastion name
+$PublicIpName = "pip-bastion-azl-eus-01" # Public IP name
+$Location = "eastus" # Azure region
+$VNetName = "vnet-azrl-azl-eus-01" # VNet name
+$Sku = "Standard" # Bastion SKU
+#endregion CONFIGURATION
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Create Public IP
+Write-Host "Creating Public IP: $PublicIpName" -ForegroundColor Cyan
+$pip = New-AzPublicIpAddress -Name $PublicIpName -ResourceGroupName $ResourceGroup `
+ -Location $Location -Sku Standard -AllocationMethod Static -Zone @("1","2","3")
+
+# Get VNet and Bastion subnet
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+
+# Create Bastion
+Write-Host "Creating Azure Bastion: $BastionName" -ForegroundColor Cyan
+$bastion = New-AzBastion -Name $BastionName -ResourceGroupName $ResourceGroup `
+ -VirtualNetworkId $vnet.Id -PublicIpAddressId $pip.Id -Sku $Sku
+
+Write-Host "Azure Bastion '$BastionName' created successfully" -ForegroundColor Green
+$bastion | Format-List Name, ProvisioningState, DnsName
+```
+
+:::info No External Dependencies
+Self-contained. Edit the `#region CONFIGURATION` block and run.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Azure Bastion provisioning state: **Succeeded**
+- [ ] Public IP assigned and DNS name generated
+- [ ] Can connect to a management VM via Portal → Connect → Bastion
+- [ ] File transfer works (Standard SKU)
+
+---
+
+## CAF/WAF Landing Zone Model
+
+In the CAF/WAF model, Azure Bastion is deployed in the **Connectivity subscription** within the Hub VNet, or optionally in the Management subscription if a spoke Bastion is required.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Connectivity** subscription | `azure.subscriptions.connectivity.id` |
+| Resource Group | `rg-azrlconn-{env}-{region}-01` | `azure_infrastructure.bastion.resource_group` |
+| Bastion Name | `bas-azrl-{env}-{region}-01` | `azure_infrastructure.bastion.name` |
+| VNet | Hub VNet | `network.azure_vnets.management.name` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+Follow the same procedure as [Single Subscription → Azure Portal](#azure-portal), targeting the **Connectivity** subscription and Hub VNet.
+
+#### Validation
+
+- [ ] Bastion in **Connectivity** subscription
+- [ ] Can reach spoke VMs via VNet peering
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### Azure CLI / PowerShell
+
+:::tip Same Script — Different Config
+The orchestrated script is identical. `variables.yml` contains the correct Connectivity subscription values for CAF/WAF.
+:::
+
+See the [Single Subscription → Azure CLI / PowerShell](#azure-cli--powershell) tab for the full script.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+Use the same standalone script from Single Subscription, updating the `#region CONFIGURATION` block:
+
+```powershell
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Connectivity subscription ID
+$ResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
+# ... remaining values same as single-sub
+#endregion CONFIGURATION
+```
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Bastion deployed in **Connectivity** subscription
+- [ ] Bastion can reach spoke VMs through peered VNets
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| Bastion deployment fails | AzureBastionSubnet too small | Ensure /26 or larger |
+| Cannot connect to VM | NSG blocking Bastion traffic | Apply Bastion NSG rules (Task 06) |
+| Bastion DNS not resolving | Propagation delay | Wait 5 minutes and retry |
+| File transfer unavailable | Basic SKU deployed | Upgrade to Standard SKU |
+| Session disconnects frequently | Network instability | Check Bastion subnet NSG rules |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 04: P2S VPN Connection](./task-04-p2s-vpn-connection) | [Manual Deployment Index](./index.mdx) | [Task 06: Network Security Groups](./task-06-network-security-groups) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-03 by Hybrid Cloud Solutions
+- Version: 4.0.0
+- Tags: azure-local, bastion, remote-access, security
+- Keywords: Azure Bastion, RDP, SSH, browser access, jump host, secure access
+- Author: Hybrid Cloud Solutions
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

@@ -1,0 +1,280 @@
+---
+title: "Task 01: Verify Azure Resources"
+sidebar_label: "Task 01: Verify Azure Resources"
+sidebar_position: 1
+description: "Verify all Azure resources exist and are configured correctly"
+category: "Runbook"
+scope: "Verify all Azure resources exist and are configured correctly"
+purpose: "Verify all Azure resources exist and are configured correctly"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - azure-foundation
+  - management-infrastructure
+keywords:
+  - Verify
+  - Azure
+  - Resources
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Verify Azure Resources
+
+> **Objective**: Confirm all Azure resources were deployed with correct configuration
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Verify all Azure resources exist and are configured correctly
+> **PURPOSE**: Verify all Azure resources exist and are configured correctly
+> **MASTER REFERENCE**: [Azure Local Deployment Overview](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-introduction)
+
+**Status**: Active
+
+## Management Mode Resources
+
+### 1. Resource Groups
+
+**Azure Portal:** Resource groups
+
+Verify:
+- [ ] `rg-{cid}-{env}-{region}-management` exists
+- [ ] Contains ~30-40 resources
+- [ ] Tags applied correctly
+
+### 2. Virtual Network
+
+**Azure Portal:** Virtual networks → Select management VNet
+
+Verify:
+- [ ] VNet address space correct (e.g., `10.100.1.0/24`)
+- [ ] All 5 subnets created:
+ - [ ] `GatewaySubnet` (minimum /27)
+ - [ ] `azrl-subnet` (Azure Local management)
+ - [ ] `AzureBastionSubnet` (minimum /26)
+ - [ ] `endpoints-subnet` (private endpoints)
+ - [ ] `dns-subnet` (DNS resolver, minimum /28)
+- [ ] NSGs attached to subnets
+
+### 3. VPN Gateway
+
+**Azure Portal:** Virtual network gateways → Select VPN gateway
+
+Verify:
+- [ ] Status: **Succeeded**
+- [ ] Gateway type: **VPN**
+- [ ] SKU: **VpnGw2AZ** (or configured SKU)
+- [ ] BGP: **Enabled**
+- [ ] BGP ASN matches configuration
+- [ ] Two public IPs (zone-redundant)
+
+**Azure CLI:**
+```bash
+az network vnet-gateway show \
+ --name vpngw-{cid}-{env}-{region} \
+ --resource-group rg-{cid}-{env}-{region}-management \
+ --query '{status:provisioningState, sku:sku.name, bgp:bgpSettings.asn}'
+```
+
+### 4. Azure Bastion
+
+**Azure Portal:** Bastions → Select bastion host
+
+Verify:
+- [ ] Status: **Succeeded**
+- [ ] SKU: **Standard** or **Basic**
+- [ ] Virtual network linked correctly
+- [ ] Public IP assigned
+
+### 5. Key Vault
+
+**Azure Portal:** Key vaults → Select management Key Vault
+
+Verify:
+- [ ] Status: **Active**
+- [ ] Access policies configured
+- [ ] Azure Local Cloud group has access
+- [ ] CI/CD service principal has access
+- [ ] Soft delete enabled
+- [ ] Purge protection enabled (production)
+
+**Test Access:**
+```bash
+az keyvault secret set \
+ --vault-name kv-{cid}-{env}-mgmt \
+ --name test-secret \
+ --value "deployment-validation"
+
+az keyvault secret show \
+ --vault-name kv-{cid}-{env}-mgmt \
+ --name test-secret
+```
+
+### 6. Log Analytics Workspace
+
+**Azure Portal:** Log Analytics workspaces → Select workspace
+
+Verify:
+- [ ] Status: **Active**
+- [ ] Retention: 30-90 days
+- [ ] Solutions installed (if configured)
+
+### 7. Storage Account (if cluster mode)
+
+**Azure Portal:** Storage accounts → Select cloud witness storage
+
+Verify:
+- [ ] Status: **Available**
+- [ ] Replication: **LRS** or **ZRS**
+- [ ] Blob service enabled
+- [ ] File service enabled
+
+---
+
+## Cluster Mode Resources
+
+If cluster mode was configured:
+
+### 1. VPN Connection
+
+**Azure Portal:** Virtual network gateways → VPN gateway → Connections
+
+Verify:
+- [ ] Connection created to on-premises cluster
+- [ ] Status: **Connected** (may show "Connecting" initially)
+- [ ] BGP enabled
+
+### 2. Cluster Key Vault
+
+**Azure Portal:** Key vaults → Cluster Key Vault
+
+Verify:
+- [ ] Separate from management Key Vault
+- [ ] Name pattern: `kv-{cid}-{cluster}-{env}`
+
+### 3. DNS A Records
+
+**Azure Portal:** Private DNS zones → Select zone → Record sets
+
+Verify:
+- [ ] A record for each cluster node
+- [ ] IP addresses match node configuration
+- [ ] TTL appropriate (300-3600 seconds)
+
+---
+
+## Validation Checklist
+
+### Management Mode (Complete List)
+- [ ] Resource group exists
+- [ ] Virtual network deployed with correct CIDR
+- [ ] All 5 subnets created with correct sizing
+- [ ] VPN Gateway online (VpnGw2AZ or configured SKU)
+- [ ] BGP configured on VPN Gateway
+- [ ] Azure Bastion deployed and accessible
+- [ ] NAT Gateway deployed (if configured)
+- [ ] Key Vault accessible
+- [ ] Log Analytics Workspace collecting data
+- [ ] Private DNS Zone created
+- [ ] DNS Resolver deployed
+- [ ] NSGs attached to subnets
+- [ ] Optional servers deployed (NDM/Utility if configured)
+
+### Cluster Mode (Complete List)
+- [ ] Cluster resource group exists
+- [ ] VPN connection to cluster network created
+- [ ] VPN connection status is Connected or Connecting
+- [ ] Cluster Key Vault accessible
+- [ ] Cluster Log Analytics Workspace created
+- [ ] Cloud witness storage account accessible
+- [ ] DNS A records created for all nodes
+- [ ] Arc Gateway deployed (if enabled)
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Resource Group | `azure.resource_groups.management.name` | `rg-management-01` |
+| Expected Resources | `azure.validation.expected_resource_count` | `15` |
+
+---
+
+## Troubleshooting
+
+**VPN Gateway not showing:**
+- Check deployment logs in Phase 02, Task 05
+- Verify in Azure Portal → Activity log
+
+**Key Vault access denied:**
+- Verify Azure Local Cloud group membership
+- Check RBAC assignments
+- Confirm access policies
+
+**Missing resources:**
+- Review Terraform outputs
+- Check apply stage logs
+- Verify configuration in terraform.tfvars
+
+---
+
+---
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitHub Actions.
+
+See procedure steps above for GitHub-specific guidance.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitLab CI/CD.
+
+See procedure steps for GitLab-specific guidance.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on Azure DevOps Pipelines.
+
+See procedure steps for Azure DevOps-specific guidance.
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 02 - Execution](../phase-02-pipeline-execution/) | [Phase 03 - Validation](./index.mdx) | [Task 02 - Test Connectivity](./task-02-test-connectivity.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |

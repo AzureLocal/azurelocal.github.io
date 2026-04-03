@@ -1,0 +1,178 @@
+---
+title: "Requirements Workshops"
+sidebar_label: "Requirements Workshops"
+sidebar_position: 3
+description: "Requirements workshop procedures and best practices"
+---
+
+# Requirements Workshops
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook 
+> **SCOPE**: Discovery sessions for requirements gathering 
+> **PURPOSE**: Gather technical and business requirements 
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Local Planning](https://learn.microsoft.com/en-us/azure/azure-local/plan/plan-overview)
+
+**Status**: Active
+
+---
+
+Discovery workshops are structured sessions designed to gather all technical and business information required for successful Azure Local implementation.
+
+## Workshop Planning and Logistics
+
+### Workshop Structure
+
+#### Day 1: Business and Technical Overview (4 hours)
+
+- **Hour 1**: Business requirements and objectives
+- **Hour 2**: Current state architecture review
+- **Hour 3**: Application portfolio discussion
+- **Hour 4**: Compliance and security requirements
+
+#### Day 2: Technical Deep Dive (6 hours)
+
+- **Hours 1-2**: Infrastructure assessment
+- **Hours 3-4**: Network architecture workshop
+- **Hours 5-6**: Migration strategy session
+
+#### Day 3: Design Validation (2 hours)
+
+- **Hour 1**: Review preliminary design
+- **Hour 2**: Validate assumptions and next steps
+
+## Naming Standards Workshop
+
+### Naming Convention Development
+
+During discovery, establish naming standards that will be used throughout the implementation.
+
+### Workshop Output - Naming Standards Document
+
+```markdown
+# Azure Local Naming Standards
+
+## Organization: [Organization Name]
+## Date Established: [Date]
+
+### 1. On-Premises Infrastructure
+
+#### Azure Local Cluster Nodes
+Pattern: {CUSTOMER}AX{NN}
+Examples:
+- CONAX01 (Customer AX Node 01)
+- CONAX02 (Customer AX Node 02)
+
+#### Management Infrastructure
+- Domain Controllers: {CUSTOMER}DC{NN}
+- Certificate Servers: {CUSTOMER}CA{NN}
+- WAC Gateway: {CUSTOMER}WACGW
+- Tools Server: {CUSTOMER}TOOLS
+
+### 2. Azure Resources
+
+#### Resource Groups
+Pattern: rg-{customer}-{component}-{environment}-{region}
+Examples:
+- rg-con-azlocal-prod-eus
+- rg-con-network-prod-eus
+- rg-con-management-prod-eus
+
+#### Virtual Networks and Subnets
+VNet Pattern: vnet-{customer}-{environment}-{region}
+Subnet Pattern: snet-{purpose}-{environment}
+Examples:
+- vnet-con-prod-eus
+- snet-management-prod
+- snet-vms-prod
+
+#### Storage and Key Vault
+Storage: st{customer}azl{env}{region}
+Key Vault: kv-{customer}-{env}-{region}
+Examples:
+- stconazlprodeus
+- kv-con-prod-eus
+
+### 3. Virtual Machines
+
+Pattern: {customer}-{app}-{role}-{env}-{nn}
+Examples:
+- CON-SQL-DB-PROD-01
+- CON-WEB-APP-PROD-01
+- CON-APP-SVC-PROD-01
+```
+
+## Network Requirements Discovery
+
+### Network Planning Workshop Output
+
+#### VLAN Allocation Table (Site-Specific)
+
+| **VLAN ID** | **Purpose** | **IP Range** | **Subnet Mask** | **Gateway** | **Notes** |
+| ----------- | --------------- | ------------ | --------------- | ----------- | ------------------------- |
+| 100 | Management | 10.10.100.0 | /24 | 10.10.100.1 | iDRAC, cluster management |
+| 711 | Storage 1 | Non-routed | /24 | N/A | Storage Spaces Direct |
+| 712 | Storage 2 | Non-routed | /24 | N/A | Storage Spaces Direct |
+| 200 | Production VMs | 10.10.200.0 | /24 | 10.10.200.1 | Production workloads |
+| 201 | Development VMs | 10.10.201.0 | /24 | 10.10.201.1 | Dev/Test workloads |
+| 300 | Backup | 10.10.300.0 | /24 | 10.10.300.1 | Backup traffic isolation |
+| 400 | DMZ | 10.10.400.0 | /24 | 10.10.400.1 | Internet-facing services |
+
+#### IP Address Planning (Management Network)
+
+| **Device/Service** | **Hostname** | **IP Address** | **Purpose** |
+| ------------------ | ------------- | --------------- | ---------------------- |
+| Cluster IP | CONCLUS01 | 10.10.100.10 | Cluster management |
+| Node 1 | CONAX01 | 10.10.100.11 | AX Node 1 management |
+| Node 2 | CONAX02 | 10.10.100.12 | AX Node 2 management |
+| Node 3 | CONAX03 | 10.10.100.13 | AX Node 3 management |
+| Node 4 | CONAX04 | 10.10.100.14 | AX Node 4 management |
+| Reserved | - | 10.10.100.15-20 | Future expansion |
+| iDRAC Node 1 | CONAX01-iDRAC | 10.10.100.21 | Out-of-band management |
+| iDRAC Node 2 | CONAX02-iDRAC | 10.10.100.22 | Out-of-band management |
+| iDRAC Node 3 | CONAX03-iDRAC | 10.10.100.23 | Out-of-band management |
+| iDRAC Node 4 | CONAX04-iDRAC | 10.10.100.24 | Out-of-band management |
+
+## DNS and Active Directory Planning
+
+### DNS Namespace Design
+
+```
+External DNS Domain: customer.com
+Internal AD Domain: azurelocal.mgmt
+Azure Local Cluster: cluster.azurelocal.mgmt
+
+DNS Zones:
+├── azurelocal.mgmt (AD-integrated)
+├── cluster.azurelocal.mgmt (for cluster resources)
+├── vms.azurelocal.mgmt (for guest VMs)
+└── _msdcs.azurelocal.mgmt (AD service records)
+```
+
+### Active Directory OU Structure
+
+```
+azurelocal.mgmt
+└── MGMT
+ ├── Admins
+ │ ├── Azure Local Cloud (Domain Admin)
+ │ └── Azure Local Cloud2 (Domain Admin)
+ ├── Operations
+ │ ├── tpoperator
+ │ ├── Azure Local Cloud-backup
+ │ └── Azure Local Cloud-mos
+ ├── Security Groups
+ │ ├── Azure Local Admins
+ │ ├── Network Controller Admins
+ │ └── Azure Local Cloud Admins
+ ├── Servers
+ │ └── Clusters
+ │ └── AzureLocal
+ │ └── CONCLUS01 (OU for cluster)
+ └── Services
+ ├── svc.ncadmin
+ ├── tpdomainjoin
+ └── svc.migration
+```

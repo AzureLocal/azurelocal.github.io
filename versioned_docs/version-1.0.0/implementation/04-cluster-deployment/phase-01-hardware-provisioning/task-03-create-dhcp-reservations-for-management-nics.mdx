@@ -1,0 +1,361 @@
+---
+title: "Task 03: Create DHCP Reservations for Management NICs"
+sidebar_label: "Task 03: Management NIC Reservations"
+sidebar_position: 3
+description: "Create DHCP reservations for in-band management network interfaces using MAC addresses from Task 02 hardware discovery and planned IPs from variables.yml."
+category: "Runbook"
+scope: Azure Local hardware provisioning
+purpose: Pre-stage DHCP reservations for management NICs so nodes receive consistent IPs on first OS boot, enabling automated remote configuration
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: "1.1.0"
+tags:
+  - azure-local
+  - dhcp
+  - management-nic
+  - hardware-provisioning
+  - fortigate
+  - windows-dhcp
+keywords:
+  - DHCP reservation
+  - management NIC
+  - in-band management
+  - FortiGate DHCP
+  - Windows DHCP
+  - MAC address
+  - onboard NIC
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Create DHCP Reservations for Management NICs
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+[![Optional](https://img.shields.io/badge/Task-Optional-yellow?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Azure Local hardware provisioning   
+> **PURPOSE**: Pre-stage DHCP reservations for management NICs so nodes receive consistent IPs on first OS boot, enabling automated remote configuration   
+> **MASTER REFERENCE**: [Phase 01: Hardware Provisioning](./index.mdx)
+
+**Status**: Active
+
+## Overview
+
+:::tip Optional Configuration
+This task is **optional but strongly recommended** for enterprise deployments. Creating DHCP reservations for management NICs before OS installation enables automated IP discovery, eliminating manual console access or network scanning during initial configuration.
+
+**Benefits:**
+- Nodes receive a known, predictable IP the moment the OS boots for the first time
+- Eliminates network scanning or manual console access during Stage 11/12 configuration
+- Required for fully automated deployment pipelines
+- Consistent IP addressing throughout the deployment lifecycle until static IPs are configured
+:::
+
+Create DHCP reservations for in-band management NICs using MAC addresses from `variables.yml` (populated from Task 02 hardware discovery) and planned IPs from `variables.yml`. Although these interfaces are ultimately assigned **static IPs during OS configuration**, DHCP reservations provide consistent temporary addressing for remote automation workflows.
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Task 02 Complete | Management NIC MACs populated in `variables.yml` | `variables.yml: nodes.<name>.macs.onboard_port1` |
+| DHCP Server Access | FortiGate admin rights, Windows DHCP admin, or customer DHCP contact | Network team |
+| Management Network Subnet | Management VLAN DHCP scope configured | `variables.yml: network.vlans.management.cidr` |
+| Planned Management IPs | Assigned management IP per node | `variables.yml: nodes.<name>.management_ip` |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `network.vlans.management.cidr` | string | Management network CIDR (e.g., `192.168.203.0/24`) |
+| `network.vlans.management.dhcp.provider` | string | DHCP provider type (e.g., `FortiGate Firewalls`) |
+| `nodes.<name>.management_ip` | string | Planned management NIC IP address per node |
+| `nodes.<name>.hostname` | string | Node hostname |
+| `nodes.<name>.service_tag` | string | Dell service tag |
+| `nodes.<name>.macs.onboard_port1` | string | Management NIC (onboard port 1 / Management LOM) MAC address |
+
+---
+
+## Execution Options
+
+Select the tab matching your DHCP infrastructure:
+
+<Tabs groupId="device-type">
+<TabItem value="fortigate" label="FortiGate DHCP" default>
+
+> **When to use**: Azure Local Cloud-managed environments using FortiGate firewalls for DHCP
+
+### FortiGate Web UI
+
+1. Open browser to `https://<fortigate-ip>` and log in with admin credentials
+2. Navigate to **Policy & Objects** → **DHCP Server**
+3. Select the DHCP server for the management network and click **Edit**
+4. In the **Reserved Addresses** section, click **Create New** for each node:
+ - **IP Address**: `nodes.<name>.management_ip` from `variables.yml`
+ - **MAC Address**: `nodes.<name>.macs.onboard_port1` from `variables.yml`
+ - **Description**: `<hostname>-mgmt (Service Tag: <service-tag>)`
+5. Click **OK** to save
+
+### FortiOS CLI (from Management Server)
+
+Connect via SSH from the management server and run the following for each node. Replace values with actual entries from `variables.yml`.
+
+```bash
+# ============================================================================
+# FortiGate DHCP Reservation — FortiOS CLI
+# Execution: SSH FROM management server TO FortiGate
+# Prerequisites: SSH access to FortiGate, admin rights
+# ============================================================================
+
+ssh admin@<fortigate-ip>
+
+config system dhcp server
+ edit "<Management-DHCP-Server-Name>"
+ config reserved-address
+ edit "<hostname>-mgmt"
+ set ip <nodes.<name>.management_ip>
+ set mac <nodes.<name>.macs.onboard_port1>
+ set description "Mgmt NIC for <hostname> (ST: <service_tag>)"
+ next
+ end
+ next
+end
+
+save config
+exit
+```
+
+Repeat the `edit` block for each node.
+
+### Validation
+
+```bash
+# Verify reservations on FortiGate
+show system dhcp server | grep -A5 "mgmt"
+```
+
+</TabItem>
+<TabItem value="windows-dhcp" label="Windows DHCP Server">
+
+> **When to use**: Azure Local Cloud-managed environments using Windows Server DHCP
+
+### Windows DHCP Console
+
+1. Run `dhcpmgmt.msc` on the DHCP server or an admin workstation with RSAT installed
+2. Connect to the DHCP server
+3. Expand server → **IPv4** → **Scope [Management Network]** → **Reservations**
+4. Right-click **Reservations** → **New Reservation** for each node:
+ - **Reservation name**: `<hostname>-mgmt`
+ - **IP address**: `nodes.<name>.management_ip` from `variables.yml`
+ - **MAC address**: `nodes.<name>.macs.onboard_port1` from `variables.yml`
+ - **Description**: `Mgmt NIC for <hostname> (Service Tag: <service-tag>)`
+ - Click **Add**
+
+### Orchestrated Script (Mgmt Server)
+
+`scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-03-create-dhcp-reservations-for-management-nics/powershell/Invoke-MgmtNicDHCPReservations.ps1`
+
+```powershell
+#Requires -Version 7.0
+# ============================================================================
+# Script: Invoke-MgmtNicDHCPReservations.ps1
+# Execution: Run FROM management server — PSRemoting to Windows DHCP server
+# Prerequisites: powershell-yaml, PSRemoting to DHCP server, DHCP admin rights
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath = ".\config\variables.yml",
+
+ [Parameter(Mandatory = $false)]
+ [string]$DHCPServerOverride
+)
+
+Import-Module powershell-yaml -ErrorAction Stop
+$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+$MgmtScopeId = ($config.network.vlans.management.cidr -split '/')[0]
+$DHCPServer = if ($DHCPServerOverride) { $DHCPServerOverride } else { $config.network.vlans.management.dhcp.server }
+
+Write-Host "Creating management NIC DHCP reservations on $DHCPServer (Scope: $MgmtScopeId)..." -ForegroundColor Cyan
+
+foreach ($nodeKey in $config.nodes.Keys) {
+ $node = $config.nodes[$nodeKey]
+ $macFmt = $node.macs.onboard_port1 -replace ':', '-'
+ $resName = "$($node.hostname)-mgmt"
+ $resDesc = "Mgmt NIC for $($node.hostname) (ST: $($node.service_tag))"
+
+ Write-Host " $resName -> $($node.management_ip)" -ForegroundColor Yellow
+
+ Invoke-Command -ComputerName $DHCPServer -ScriptBlock {
+ param($ScopeId, $IP, $MAC, $Name, $Desc)
+ Add-DhcpServerv4Reservation `
+ -ScopeId $ScopeId `
+ -IPAddress $IP `
+ -ClientId $MAC `
+ -Name $Name `
+ -Description $Desc
+ } -ArgumentList $MgmtScopeId, $node.management_ip, $macFmt, $resName, $resDesc
+
+ Write-Host " Created" -ForegroundColor Green
+}
+
+Write-Host "Done." -ForegroundColor Green
+```
+
+### Standalone Script
+
+```powershell
+#Requires -Version 5.1
+# ============================================================================
+# Script: Invoke-MgmtNicDHCPReservations-Standalone.ps1
+# Execution: Run FROM any workstation with DHCP admin rights
+# Prerequisites: RSAT-DHCP or run directly on DHCP server
+# ============================================================================
+
+#region CONFIGURATION
+$DHCPServer = "dhcp01.corp.example.com" # Windows DHCP server hostname
+$MgmtScopeId = "192.168.203.0" # Management scope network address
+
+$nodes = @(
+ @{ Hostname = "azlocal-node01"; MgmtIP = "192.168.203.11"; MgmtMAC = "AA-BB-CC-DD-EE-01"; ServiceTag = "ABCDE01" },
+ @{ Hostname = "azlocal-node02"; MgmtIP = "192.168.203.12"; MgmtMAC = "AA-BB-CC-DD-EE-02"; ServiceTag = "ABCDE02" },
+ @{ Hostname = "azlocal-node03"; MgmtIP = "192.168.203.13"; MgmtMAC = "AA-BB-CC-DD-EE-03"; ServiceTag = "ABCDE03" },
+ @{ Hostname = "azlocal-node04"; MgmtIP = "192.168.203.14"; MgmtMAC = "AA-BB-CC-DD-EE-04"; ServiceTag = "ABCDE04" }
+)
+#endregion
+
+foreach ($node in $nodes) {
+ $resName = "$($node.Hostname)-mgmt"
+ $resDesc = "Mgmt NIC for $($node.Hostname) (ST: $($node.ServiceTag))"
+ Write-Host "Creating: $resName -> $($node.MgmtIP)" -ForegroundColor Yellow
+ Add-DhcpServerv4Reservation `
+ -ComputerName $DHCPServer `
+ -ScopeId $MgmtScopeId `
+ -IPAddress $node.MgmtIP `
+ -ClientId $node.MgmtMAC `
+ -Name $resName `
+ -Description $resDesc
+ Write-Host " Created" -ForegroundColor Green
+}
+
+Write-Host "Done." -ForegroundColor Green
+```
+
+</TabItem>
+<TabItem value="customer" label="Customer-Managed DHCP">
+
+> **When to use**: DHCP infrastructure is managed by the customer network team
+
+### Information to Provide to Customer
+
+Extract and provide the following from `variables.yml`:
+
+| Field | variables.yml Path | Example |
+|-------|------------------------|---------|
+| Management NIC MAC | `nodes.<name>.macs.onboard_port1` | `C4:CB:E1:F9:AF:E4` |
+| Planned management IP | `nodes.<name>.management_ip` | `192.168.203.11` |
+| Reservation name | Derived: `<hostname>-mgmt` | `azlocal-node01-mgmt` |
+| Description | Derived | `Mgmt NIC for azlocal-node01 (ST: ABCDE01)` |
+| DHCP scope | `network.vlans.management.cidr` | `192.168.203.0/24` |
+
+### Coordination Steps
+
+1. Extract node data from `variables.yml`
+2. Submit request to customer network team with the table above
+3. Confirm VLAN and DHCP scope with network team
+4. Obtain confirmation that reservations have been created
+5. Validate (see below)
+
+### Validation
+
+- [ ] Customer confirms all reservations created
+- [ ] IP addresses match `variables.yml: nodes.<name>.management_ip`
+- [ ] MAC addresses match `variables.yml: nodes.<name>.macs.onboard_port1`
+- [ ] Reservation names follow convention: `<hostname>-mgmt`
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Checklist
+
+```powershell
+# Windows DHCP — List management NIC reservations
+$config = Get-Content ".\config\variables.yml" -Raw | ConvertFrom-Yaml
+$MgmtScopeId = ($config.network.vlans.management.cidr -split '/')[0]
+$DHCPServer = $config.network.vlans.management.dhcp.server
+
+Get-DhcpServerv4Reservation -ComputerName $DHCPServer -ScopeId $MgmtScopeId |
+ Format-Table -Property Name, IPAddress, ClientId, Description -AutoSize
+```
+
+**Expected Output:**
+
+```
+Name IPAddress ClientId Description
+---- --------- -------- -----------
+azlocal-node01-mgmt 192.168.203.11 c4-cb-e1-f9-af-e4 Mgmt NIC for azlocal-node01 (ST: 8T6GDB4)
+azlocal-node02-mgmt 192.168.203.12 c4-cb-e1-f9-ca-2e Mgmt NIC for azlocal-node02 (ST: 9T6GDB4)
+```
+
+- [ ] DHCP reservation created for every node (one per node)
+- [ ] IP addresses match `nodes.<name>.management_ip` in `variables.yml`
+- [ ] MAC addresses match `nodes.<name>.macs.onboard_port1` in `variables.yml`
+- [ ] Reservation names follow convention: `<hostname>-mgmt`
+- [ ] Reservation descriptions include hostname and service tag
+- [ ] All reservations in the correct management DHCP scope
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `DhcpServer module not found` | RSAT not installed | `Install-WindowsFeature RSAT-DHCP` or run directly on DHCP server |
+| `Duplicate reservation` | Reservation already exists | Remove existing: `Remove-DhcpServerv4Reservation` then re-add |
+| `Scope not found` | Wrong scope ID | Verify: `Get-DhcpServerv4Scope -ComputerName $DHCPServer` |
+| `Access denied` | Insufficient rights | Run as DHCP Administrator role member |
+| `MAC address format error` | Incorrect format | Use format: `AA-BB-CC-DD-EE-FF` (hyphens, not colons) |
+| `FortiGate SSH access denied` | SSH not enabled or wrong credentials | Enable SSH on FortiGate admin interface |
+| `DHCP server unreachable` | Network connectivity | Verify management server can reach DHCP server |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 02: Hardware Discovery](./task-02-hardware-discovery-via-dell-redfish-api.mdx) | [↑ Phase 01: Hardware Provisioning](./index.mdx) | [Task 04: BIOS/iDRAC Validation →](./task-04-bios-and-idrac-settings-validation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Fix tab labels, script paths, variable references, standards alignment |

@@ -1,0 +1,412 @@
+---
+title: "Task 03: OpenGear Lighthouse Portal Verification"
+sidebar_label: "Task 03: OpenGear Verification"
+sidebar_position: 3
+description: "Verify OpenGear console server is registered with Lighthouse"
+category: "Runbook"
+scope: Console server verification
+purpose: Verify OpenGear is enrolled and accessible via Lighthouse
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2025-06-04
+updated: 2026-03-03
+version: "1.1.0"
+tags:
+  - azure-local
+  - opengear
+  - lighthouse
+  - console-server
+  - oob-management
+keywords:
+  - OpenGear
+  - Lighthouse portal
+  - console server
+  - serial ports
+  - OOB
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: OpenGear Lighthouse Portal Verification
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-OpenGear-green?style=flat-square)](https://opengear.com/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Console server verification   
+> **PURPOSE**: Verify OpenGear is enrolled and accessible via Lighthouse   
+> **MASTER REFERENCE**: [OpenGear Lighthouse Documentation](https://opengear.com/docs/) 
+
+**Status**: Active 
+**Estimated Time**: 15 minutes 
+---
+
+## Overview
+
+Verify that the OpenGear console server has been enrolled with the Lighthouse portal and provides remote access to infrastructure devices.
+
+:::warning Run Location
+This verification requires access to the Lighthouse portal. Ensure you have the appropriate credentials before proceeding.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Description |
+|-------------|-------------|
+| Lighthouse access | Azure Local Cloud Lighthouse portal credentials |
+| OpenGear installed | Console server racked and powered |
+| NET1 connectivity | Internet-routable network connected |
+
+---
+
+## Variables from variables.yml
+
+| Variable Path | Type | Description |
+|---|---|---|
+| `networking.network_devices.opengear` | Object | OpenGear hostname, IP, model, Lighthouse enrollment token |
+| `networking.network_devices.opengear.ports[]` | Array | Serial port-to-node mappings (port number, connected device, baud rate) |
+| `compute.nodes[]` | Array | Node hostnames for console port label verification |
+| `networking.onprem.vlans.oob` | Object | OOB VLAN ID, CIDR, gateway for network connectivity tests |
+| `virtual_machines.lighthouse` | Object | Lighthouse portal VM details |
+
+---
+
+## Lighthouse Portal Verification
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Lighthouse Portal" default>
+
+#### Step 3.1: Login to Lighthouse Portal
+
+1. Navigate to **\{\{lighthouse_url\}\}**
+2. Login with Azure Local Cloud credentials
+3. Navigate to **Nodes** → **All Nodes**
+
+#### Step 3.2: Locate Site Console Server
+
+1. Search for node: `OM-<SITE_CODE>`
+2. Verify node appears in the list
+3. Check status indicator
+
+| Status | Indicator | Meaning |
+|--------|-----------|---------|
+| Online | 🟢 Green | Connected and operational |
+| Offline | 🔴 Red | Not connected - investigate |
+| Pending | 🟡 Yellow | Enrollment in progress |
+
+#### Step 3.3: Verify Node Details
+
+Click on the node to view details:
+
+| Field | Expected Value | Status |
+|-------|----------------|--------|
+| Node Name | `OM-<SITE_CODE>` | ☐ |
+| Status | Online | ☐ |
+| Firmware | Current version | ☐ |
+| IP Address | Visible | ☐ |
+| Last Check-in | Recent (< 5 min) | ☐ |
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Managing from a domain-joined management server — config-driven via variables.yml
+
+#### Script
+
+**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpenGearVerification.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/azure-cli/Test-OpenGearVerification.ps1` |
+| Bash | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/bash/test-opengear-verification.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Test-OpenGearVerification.ps1
+# Execution: Run FROM management server — reads variables.yml
+# Prerequisites: powershell-yaml module, Lighthouse API token, OOB network access
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath,
+ [Parameter(Mandatory = $false)]
+ [string]$LighthouseToken
+)
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($ConfigPath) {
+ $ConfigFile = $ConfigPath
+} else {
+ $ConfigFile = Join-Path $ScriptDir "..\\..\\..\\..\\configs\\variables.yml"
+}
+if (!(Test-Path $ConfigFile)) { throw "variables.yml not found at $ConfigFile" }
+
+Import-Module powershell-yaml -ErrorAction Stop
+
+$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
+$ogIp = $config["network_devices"]["opengear"]["ip"]
+$ogHost = $config["network_devices"]["opengear"]["hostname"]
+$ogPorts = $config["network_devices"]["opengear"]["ports"]
+$nodes = $config["nodes"]
+$lhVm = $config["virtual_machines"]["lighthouse"]
+$lhFqdn = $lhVm["fqdn"]
+
+# --- Test OpenGear reachability ---
+Write-Host "[1/4] Testing OpenGear connectivity ($ogHost - $ogIp)..." -ForegroundColor Cyan
+$ogTest = Test-NetConnection -ComputerName $ogIp -Port 443 -WarningAction SilentlyContinue
+if ($ogTest.TcpTestSucceeded) {
+ Write-Host " [PASS] $ogHost ($ogIp) reachable on port 443" -ForegroundColor Green
+} else {
+ Write-Host " [FAIL] $ogHost ($ogIp) unreachable on port 443" -ForegroundColor Red
+}
+
+# --- Test Lighthouse reachability ---
+Write-Host "\n[2/4] Testing Lighthouse VM ($($lhVm["name"]) - $($lhVm["private_ip"]))..." -ForegroundColor Cyan
+$lhTest = Test-NetConnection -ComputerName $lhVm["private_ip"] -Port 443 -WarningAction SilentlyContinue
+if ($lhTest.TcpTestSucceeded) {
+ Write-Host " [PASS] Lighthouse reachable" -ForegroundColor Green
+} else {
+ Write-Host " [FAIL] Lighthouse unreachable" -ForegroundColor Red
+}
+
+# --- Query Lighthouse API (if token provided) ---
+Write-Host "\n[3/4] Querying Lighthouse API..." -ForegroundColor Cyan
+if ($LighthouseToken) {
+ $headers = @{ Authorization = "Bearer $LighthouseToken" }
+ try {
+ $response = Invoke-RestMethod -Uri "https://$lhFqdn/api/v1.0/nodes?filter=name:$ogHost" `
+ -Headers $headers -Method Get -ErrorAction Stop
+ foreach ($node in $response.nodes) {
+ Write-Host " Node: $($node.name) | Status: $($node.status) | Last Seen: $($node.last_seen)" -ForegroundColor Green
+ }
+ } catch {
+ Write-Host " [WARN] API query failed: $($_.Exception.Message)" -ForegroundColor Yellow
+ }
+} else {
+ Write-Host " [SKIP] No Lighthouse token provided (-LighthouseToken parameter)" -ForegroundColor Yellow
+}
+
+# --- Test iDRAC connectivity via OOB ---
+Write-Host "\n[4/4] Testing iDRAC connectivity (OOB network)..." -ForegroundColor Cyan
+foreach ($key in $nodes.Keys) {
+ $node = $nodes[$key]
+ $idracIp = $node["idrac_ip"]
+ $ping = Test-Connection -ComputerName $idracIp -Count 2 -Quiet -ErrorAction SilentlyContinue
+ $status = if ($ping) { "[PASS]" } else { "[FAIL]" }
+ $color = if ($ping) { "Green" } else { "Red" }
+ Write-Host " $status $($node["hostname"]) iDRAC ($idracIp)" -ForegroundColor $color
+}
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Quick verification without variables.yml — manually set variables in the configuration block.
+
+#### Script
+
+**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpenGearVerification-Standalone.ps1`
+
+#### Code
+
+```powershell
+#region CONFIGURATION
+$OpenGearHostname = "og01-azl-demo"
+$OpenGearIP = "10.245.64.5"
+$LighthouseUrl = "https://lh-eus-01.azrl.mgmt"
+$LighthouseToken = "" # Set token for API verification, or leave empty to skip
+$iDRACs = @(
+ @{ Hostname = "azl-demo-01-n01"; IP = "10.245.64.11" },
+ @{ Hostname = "azl-demo-01-n02"; IP = "10.245.64.12" }
+)
+#endregion
+
+# --- OpenGear connectivity ---
+Write-Host "=== OpenGear Connectivity ===" -ForegroundColor Cyan
+$ogTest = Test-NetConnection -ComputerName $OpenGearIP -Port 443 -WarningAction SilentlyContinue
+$status = if ($ogTest.TcpTestSucceeded) { "[PASS]" } else { "[FAIL]" }
+Write-Host " $status $OpenGearHostname ($OpenGearIP)" -ForegroundColor $(if ($ogTest.TcpTestSucceeded) {"Green"} else {"Red"})
+
+# --- Lighthouse API (optional) ---
+if ($LighthouseToken) {
+ Write-Host "\n=== Lighthouse API ===" -ForegroundColor Cyan
+ $headers = @{ Authorization = "Bearer $LighthouseToken" }
+ try {
+ $r = Invoke-RestMethod -Uri "$LighthouseUrl/api/v1.0/nodes?filter=name:$OpenGearHostname" -Headers $headers -Method Get -EA Stop
+ $r.nodes | ForEach-Object { Write-Host " Node: $($_.name) | Status: $($_.status)" -ForegroundColor Green }
+ } catch {
+ Write-Host " [WARN] API query failed: $($_.Exception.Message)" -ForegroundColor Yellow
+ }
+}
+
+# --- iDRAC connectivity ---
+Write-Host "\n=== iDRAC Connectivity (OOB) ===" -ForegroundColor Cyan
+foreach ($node in $iDRACs) {
+ $ping = Test-Connection -ComputerName $node.IP -Count 2 -Quiet -EA SilentlyContinue
+ $status = if ($ping) { "[PASS]" } else { "[FAIL]" }
+ Write-Host " $status $($node.Hostname) ($($node.IP))" -ForegroundColor $(if ($ping) {"Green"} else {"Red"})
+}
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Console Port Verification
+
+### Step 3.4: Verify Serial Port Labels
+
+1. In Lighthouse, click on the node
+2. Navigate to **Serial Ports**
+3. Verify port labels match design:
+
+| Port | Expected Label | Configured | Status |
+|------|----------------|------------|--------|
+| Console ports | Per variables.yml `network_devices.opengear.ports.console` | ☐ | ☐ |
+| Network ports | Per variables.yml `network_devices.opengear.ports.network` | ☐ | ☐ |
+| Switch ports | Per variables.yml `network_devices.opengear.ports.switch` | ☐ | ☐ |
+
+### Step 3.5: Test Console Access
+
+1. Click on a serial port (e.g., `Switch-TOR1`)
+2. Click **Connect** or **Web Terminal**
+3. Verify console session opens
+4. Test keyboard input (press Enter)
+5. Close session
+
+**Expected Result**: Console session opens and accepts input.
+
+---
+
+## OOB Network Verification
+
+### Step 3.6: Verify Bridge Configuration
+
+1. In Lighthouse, navigate to node **Network** settings
+2. Verify br0 bridge configuration:
+
+| Setting | Expected Value | Status |
+|---------|----------------|--------|
+| Bridge Members | net2, sw0p1-sw0p8 | ☐ |
+| IP Address | Per variables.yml `vlans.oob` | ☐ |
+| Default Route | Disabled | ☐ |
+
+### Step 3.7: Test iDRAC Connectivity (via Lighthouse)
+
+1. In Lighthouse, use **Network Tools** or SSH to OpenGear
+2. Ping iDRAC addresses from OpenGear:
+
+```bash
+# SSH to OpenGear via Lighthouse, then ping each node iDRAC IP
+# from variables.yml: nodes.<node_name>.idrac_ip
+ping -c 2 <IDRAC_IP_NODE1>
+ping -c 2 <IDRAC_IP_NODE2>
+# Repeat for all nodes defined in variables.yml
+```
+
+**Expected Result**: All iDRAC IPs respond to ping from OpenGear.
+
+---
+
+## Firewall Zone Verification
+
+### Step 3.8: Verify Firewall Configuration
+
+Via Lighthouse or SSH to OpenGear:
+
+```bash
+# Check firewall zones
+ogcli get system.firewall.zones
+
+# Expected output:
+# WAN zone: net1 (reject default)
+# LAN zone: br0 (accept default)
+```
+
+---
+
+## Troubleshooting
+
+| Issue | Likely Cause | Resolution |
+|-------|--------------|------------|
+| Node offline | NET1 no internet | Verify NET1 connectivity |
+| Enrollment pending | Firewall blocking | Open ports 443, 1194, 51820 outbound |
+| Console won't connect | Serial cable issue | Check physical connection |
+| iDRAC not pingable | OOB VLAN issue | Verify br0 bridge members |
+
+---
+
+## Validation Checklist
+
+| Check | Expected | Status |
+|-------|----------|--------|
+| Node visible in Lighthouse | Yes | ☐ |
+| Node status | Online (Green) | ☐ |
+| Serial ports labeled | All ports configured | ☐ |
+| Console access works | Session opens | ☐ |
+| iDRAC pingable from OpenGear | All respond | ☐ |
+| Firewall zones configured | WAN/LAN correct | ☐ |
+
+---
+
+## Acceptance Criteria
+
+- OpenGear node appears in Lighthouse portal with "Online" status
+- All serial port labels match physical connections
+- Console access test successful (session opens, accepts input)
+- iDRAC devices pingable from OpenGear via OOB network
+- Artifacts saved to deployment folder: `artifacts/phase-02-enterprise-readiness/`
+
+---
+
+## Next Steps
+
+| Step Complete? | Next Action |
+|----------------|-------------|
+| ✅ Yes | Proceed to [Task 4: Validation Sign-Off](./task-04-validation-signoff.mdx) |
+| ❌ No | Troubleshoot OpenGear connectivity issues |
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 02: Network Service Verification](./task-02-network-service-verification.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Task 04: Validation Sign-Off →](./task-04-validation-signoff.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2025-06-04 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Standardized runbook format |
+
+---
+
+*End of Task*

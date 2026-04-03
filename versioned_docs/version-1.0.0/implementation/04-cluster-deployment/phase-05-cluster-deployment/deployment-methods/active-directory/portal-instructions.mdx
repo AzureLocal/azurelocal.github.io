@@ -1,0 +1,476 @@
+---
+title: "Active Directory - Via Portal"
+sidebar_label: "AD - Portal Deployment"
+sidebar_position: 1
+description: "Deploy Azure Local cluster with Active Directory authentication using the Azure Portal"
+category: "RUNBOOK"
+scope: "Portal-based cluster deployment with Active Directory authentication"
+purpose: "Deploy Azure Local cluster using domain accounts and AD-managed identity"
+author: "Azure Local Cloud Azure Local Cloud"
+created: 2026-01-30
+updated: 2026-03-09
+version: "1.1.0"
+tags:
+ - azure-local
+ - active-directory
+ - portal
+ - runbook
+keywords:
+ - active directory
+ - domain deployment
+ - portal deployment
+ - azure local cluster
+ - LCM user
+status: "approved"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Active Directory Authentication - Portal Deployment
+
+> **DOCUMENT CATEGORY**: Runbook  
+> **SCOPE**: Portal-based cluster deployment with Active Directory authentication  
+> **PURPOSE**: Deploy Azure Local cluster using domain accounts and AD-managed identity  
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy Azure Local via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+[![Standard](https://img.shields.io/badge/Status-Standard-green?style=flat-square)](https://Azure Local Cloud.com)
+
+**Status**: Active
+
+## Overview
+
+Active Directory deployment is the **Azure Local Cloud standard** for Azure Local clusters. Authentication is managed through domain accounts, with the Life Cycle Manager (LCM) service account pre-created in AD. Nodes must be in **workgroup state** when the portal wizard runs — the wizard handles domain join automatically during deployment.
+
+:::info Azure Local Cloud Standard Deployment
+Active Directory authentication is the recommended and fully supported Azure Local Cloud deployment method for Azure Local. All AD object prerequisites were completed in Phase 02 (Active Directory Configuration). If that work is not done, stop and complete Phase 02 first.
+:::
+
+---
+
+## Prerequisites
+
+All items below must be complete before starting the portal wizard. These were completed in earlier phases — this is a verification checklist only.
+
+### AD Prerequisites (Phase 02)
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| AD objects pre-created | `New-HciAdObjectsPreCreation` run successfully | Objects visible in `OU=AzureLocal` |
+| LCM service account | `svc-azl-deploy@<DOMAIN>` exists, password ≥14 chars | `Get-ADUser svc-azl-deploy` |
+| Computer accounts | Pre-created computer objects for each node in designated OU | `Get-ADComputer -SearchBase <OU>` |
+| Group memberships | LCM account in all required AD groups | `Get-ADGroupMember` |
+
+### Node Prerequisites (Phase 04)
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| **Workgroup state** | Nodes are NOT domain-joined | `(Get-WmiObject Win32_ComputerSystem).PartOfDomain` = False |
+| Arc registered | All nodes visible in Azure Arc > Servers | Portal: Arc > Servers |
+| DNS resolves domain | All nodes can resolve the AD domain FQDN | `Resolve-DnsName corp.azurelocal.cloud` |
+| DC accessible | Domain controller reachable on port 389 from node management IPs | `Test-NetConnection <DC_IP> -Port 389` |
+| WinRM enabled | Remote management enabled on all nodes | `Test-WSMan <NODE_IP>` |
+
+:::warning Nodes must be in workgroup state
+Azure Local requires all nodes to be in **WORKGROUP** (not domain-joined) before the portal deployment wizard runs. The wizard performs the domain join as part of deployment. If any node is already domain-joined, remove it from the domain before proceeding.
+:::
+
+### Azure Prerequisites
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Subscription | Active subscription with Contributor + User Access Administrator | `Get-AzSubscription` |
+| Resource group | Dedicated RG for the cluster | Created in Azure Portal |
+| Arc registration | All nodes Arc-registered (Phase 04) | Azure Portal > Arc > Servers |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `compute.arm_deployment.cluster_name` | string | Cluster name |
+| `azure_platform.region` | string | Azure region |
+| `identity.ad.domain_fqdn` | string | AD domain FQDN |
+| `identity.ad.organizational_unit` | string | AD OU distinguished name |
+| `identity.accounts.account_lcm_username` | string | LCM service account |
+| `compute.arm_deployment.network_intents[*].intent_adapters` | array | Network adapter names |
+| `compute.arm_deployment.ip_allocation.starting_ip` | string | IP pool start |
+| `compute.arm_deployment.ip_allocation.ending_ip` | string | IP pool end |
+| `compute.arm_deployment.subnet_mask` | string | Subnet mask |
+| `compute.arm_deployment.default_gateway` | string | Default gateway |
+| `compute.arm_deployment.dns_servers` | array | DNS servers |
+| `storage_accounts.storage_accounts.cluster_witness.*` | object | Witness storage account |
+
+---
+
+## Portal Deployment
+
+### Task 1: Navigate to Azure Local
+
+1. Open [Azure Portal](https://portal.azure.com)
+2. Search for **"Azure Local"**
+3. Select **Azure Local** from results
+4. Click **+ Create**
+
+---
+
+### Task 2: Basics Configuration
+
+| Field | Value | Source |
+|-------|-------|--------|
+| **Subscription** | Select subscription | Must have Contributor + UAA |
+| **Resource group** | Select or create | Dedicated RG for cluster |
+| **Cluster name** | `<CLUSTER_NAME>` | `compute.arm_deployment.cluster_name` |
+| **Region** | `<AZURE_REGION>` | `azure_platform.azure_tenants[*].aztenant_location` |
+
+**Add Arc-registered machines:**
+
+1. Click **Add machines**
+2. Select all Arc-registered nodes from Phase 04
+3. Click **Add**
+4. Allow time for Arc extension installation to complete before proceeding
+
+**Authentication selection:**
+
+Under the **Identity** section of the Basics tab, select **Active Directory** as the authentication type. Domain credentials are entered in [Task 4](#task-4-basics--domain-credentials) below.
+
+---
+
+### Task 3: Configuration
+
+- Select **New configuration** (manual configuration)
+- Do NOT use an existing template unless one has been explicitly reviewed and approved for this environment
+
+---
+
+### Task 4: Basics — Domain Credentials
+
+The domain credential fields appear in the **Basics tab** after selecting Active Directory authentication. There is no separate Identity tab.
+
+| Field | Value | Source |
+|-------|-------|--------|
+| **Authentication type** | **Active Directory** | |
+| **Domain FQDN** | `corp.azurelocal.cloud` | `identity.ad.domain_fqdn` |
+| **Computer OU** | `OU=AzureLocal,OU=Servers,DC=corp,DC=azurelocal,DC=cloud` | `identity.ad.organizational_unit` |
+| **Deployment user** | `svc-azl-deploy@corp.azurelocal.cloud` | `identity.accounts.account_lcm_username` |
+| **Deployment password** | [Enter service account password] | `identity.accounts.account_lcm_password` (keyvault ref) |
+
+:::warning LCM account password requirements
+The deployment account password must be **at least 14 characters**. This is a Microsoft hard requirement for the LCM service account. A password shorter than 14 characters will fail portal validation with no clear error message.
+
+**Source**: [MS Learn — AD Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
+:::
+
+:::info Computer OU distinguished name
+The OU path entered here must exactly match the OU used by `New-HciAdObjectsPreCreation` in Phase 02. The pre-created computer account objects for each node must reside in this OU at the time the wizard runs. Verify with `Get-ADComputer -SearchBase "<OU>"` before proceeding.
+:::
+
+---
+
+### Task 5: Networking Configuration
+
+**Storage connectivity:**
+
+| Option | When to use |
+|--------|-------------|
+| **Network switch for storage traffic** | 3+ node clusters (recommended) |
+| **No switch for storage** | 1–2 node clusters only (switchless) |
+
+**Network intents:**
+
+:::info Network intents are defined by your planning design
+The number of intents, traffic type assignments, and adapter bindings configured here must match the design from your planning and discovery sessions, as captured in `variables.yml` under `compute.arm_deployment.network_intents`. Do not assume a specific number of intents or a fixed layout.
+
+Typical layouts:
+
+| Layout | Intent | Traffic types |
+|--------|--------|---------------|
+| 2-intent | Management + Compute | Management, Compute |
+| 2-intent | Storage | Storage |
+| 3-intent | Management | Management |
+| 3-intent | Compute | Compute |
+| 3-intent | Storage | Storage |
+
+For adapter assignments for each intent, refer to `compute.arm_deployment.network_intents[*].intent_adapters` in your `variables.yml`.
+:::
+
+**IP allocation:**
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| Starting IP | First available management IP | `compute.arm_deployment.ip_allocation.starting_ip` |
+| Ending IP | Last available management IP | `compute.arm_deployment.ip_allocation.ending_ip` |
+| Subnet mask | e.g., `255.255.255.0` | `compute.arm_deployment.subnet_mask` |
+| Default gateway | Gateway IP | `compute.arm_deployment.default_gateway` |
+| DNS servers | Primary, Secondary | `compute.arm_deployment.dns_servers` |
+
+:::warning IP pool requirement
+A minimum of **6 consecutive IPs** are required for cluster infrastructure (cluster IP, Arc Resource Bridge IP, etc.). Individual node management IPs are separate — do not include them in this pool.
+:::
+
+:::info DNS must resolve the AD domain FQDN
+For AD deployments, the DNS servers entered here must be able to resolve `identity.ad.domain_fqdn`. Nodes query these DNS servers during the domain join step of deployment. If DNS cannot resolve the domain, deployment will fail at domain join.
+:::
+
+---
+
+### Task 6: Management Configuration
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| **Custom location name** | `<CLUSTER_NAME>-location` | For Arc VM management |
+| **Cloud witness storage** | Create or select storage account | For cluster quorum |
+
+:::info No Key Vault selection for AD deployments
+Active Directory deployments do **not** include a Key Vault selector in the Management tab. AD manages LCM credentials through domain accounts, so there is no Azure Key Vault dependency in the portal wizard. The Key Vault selection seen in Local Identity deployments does not appear here.
+:::
+
+---
+
+### Task 7: Security Configuration
+
+| Setting | Recommendation | Notes |
+|---------|----------------|-------|
+| **BitLocker for data volumes** | Enabled | Encrypt all data volumes |
+| **BitLocker for OS boot** | Enabled | Encrypt OS volumes |
+| **Credential Guard** | Enabled | Protect domain credentials on nodes |
+| **WDAC** | Enabled | Application control policy |
+| **Drift control** | Enabled | Monitor security baseline |
+| **Side channel mitigation** | Enabled | Protect against side-channel attacks |
+| **SMB signing** | Required | Secure SMB traffic |
+| **SMB cluster encryption** | Enabled | Encrypt intra-cluster traffic |
+
+Select **Recommended security settings** to apply all settings at once.
+
+---
+
+### Task 8: Advanced Configuration
+
+**Volume creation strategy:**
+
+- ✓ **Create workload volumes and required infrastructure volumes** (Recommended)
+
+**Tags:**
+
+| Tag | Value |
+|-----|-------|
+| `Environment` | Production / Development |
+| `DeploymentType` | ActiveDirectory |
+| `DeploymentDate` | YYYY-MM-DD |
+
+---
+
+### Task 9: Validation
+
+1. Click **Start validation**
+2. Wait approximately 15–20 minutes for all checks to complete
+3. **Do NOT click "Try again"** while validation is running — wait for it to complete or fail before taking any action
+
+:::tip Run the validation monitor
+While validation runs, start [Monitor-Validation.ps1](../../deployment-monitoring/monitor-validation.mdx) to see live step status and `EnvironmentValidatorFull` log output. It auto-exits when validation completes.
+:::
+
+**Validation checks:**
+
+| Check | Description | Action if failed |
+|-------|-------------|-----------------|
+| Connectivity | All nodes reachable | Verify network connectivity |
+| Arc registration | Nodes registered with Arc | Verify Phase 04 completion |
+| Domain accessibility | DC reachable from nodes | `Test-NetConnection <DC_IP> -Port 389` |
+| Storage | Disks available and healthy | Check physical disk health |
+| Network | NICs available and configured | Verify NIC drivers and connectivity |
+| Azure endpoints | Required endpoints accessible | Check firewall and proxy rules |
+
+Resolve all errors before proceeding to Task 10. Warnings may be acknowledged but should be documented.
+
+---
+
+### Task 10: Review + Create
+
+1. Review all configuration settings on the summary page
+2. Confirm:
+ - All Arc-registered nodes are listed
+ - Authentication type shows **Active Directory**
+ - Domain FQDN and OU path are correct
+ - Management IP pool has 6+ IPs
+ - Storage adapters are configured
+3. Click **Create**
+
+---
+
+## Deployment Progress
+
+**Estimated duration:**
+
+| Cluster size | Estimated time |
+|-------------|----------------|
+| Single machine | 1.5–2 hours |
+| Two-node cluster | ~2.5 hours |
+| Three+ node cluster | ~3 hours |
+
+**Deployment stages:**
+
+1. Begin cloud deployment (45–60 min)
+2. Install Arc extensions
+3. Join nodes to domain
+4. Configure network intents
+5. Create storage pools and volumes
+6. Deploy Arc Resource Bridge
+7. Provision custom location
+
+:::tip Run the deployment monitor
+After clicking Create, start [Monitor-Deployment.ps1](../../deployment-monitoring/monitor-deployment.mdx) to track hierarchical step progress and stream `OrchestratorFull` logs in real time. Press Ctrl+C to exit at any time.
+:::
+
+Monitor progress in **Azure Portal > Resource Groups > Your RG > Deployments**.
+
+---
+
+## Post-Deployment Validation
+
+### Verify Azure resources
+
+| Resource type | Count | Description |
+|---------------|-------|-------------|
+| Machine — Azure Arc | 1 per node | Arc-connected machines |
+| Azure Local instance | 1 | Cluster resource |
+| Arc Resource Bridge | 1 | VM management bridge |
+| Custom location | 1 | For Arc VM placement |
+
+### Verify cluster health
+
+<Tabs groupId="post-deployment-ad">
+<TabItem value="manual" label="Manual" default>
+
+```powershell title="Run on any cluster node or from a management host with network access"
+# Verify nodes are domain-joined after deployment
+Invoke-Command -ComputerName @("iic-01-n01","iic-01-n02","iic-01-n03") -ScriptBlock {
+ $cs = Get-WmiObject Win32_ComputerSystem
+ [PSCustomObject]@{
+ Node = $env:COMPUTERNAME
+ Domain = $cs.Domain
+ DomainJoined = $cs.PartOfDomain
+ }
+} | Format-Table -AutoSize
+
+# Verify cluster status
+Get-Cluster | Format-List Name, QuorumType, QuorumResourceName
+
+# Verify all nodes online
+Get-ClusterNode | Format-Table Name, State, NodeWeight
+
+# Verify Storage Spaces Direct health
+Get-StoragePool | Format-Table FriendlyName, HealthStatus, OperationalStatus
+
+# Verify volumes
+Get-Volume |
+ Where-Object FileSystemLabel -match 'ClusterPerf|UserStorage' |
+ Format-Table FileSystemLabel, HealthStatus, OperationalStatus, Size
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Reads cluster node IPs and credentials from `variables.yml`. Resolves credentials from Key Vault. Logs results to `./logs/`.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1`
+
+```powershell title="Run from repository root"
+.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-03-verify-deployment-completion\powershell\Invoke-VerifyClusterHealth-Orchestrated.ps1 `
+ -ConfigPath "config/variables.yml"
+```
+
+WhatIf (dry run, no remote connections):
+
+```powershell
+.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-03-verify-deployment-completion\powershell\Invoke-VerifyClusterHealth-Orchestrated.ps1 `
+ -ConfigPath "config/variables.yml" `
+ -WhatIf
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+No `variables.yml` required. Edit the `#region CONFIGURATION` block with node IPs before running.
+
+**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Test-ClusterHealth-Standalone.ps1`
+
+```powershell title="Edit node IPs before running"
+# Open the script and update these values in #region CONFIGURATION:
+$NodeIPs = @(
+ "REPLACE_NODE_01_IP"
+ "REPLACE_NODE_02_IP"
+ "REPLACE_NODE_03_IP"
+)
+
+.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-03-verify-deployment-completion\powershell\Test-ClusterHealth-Standalone.ps1
+```
+
+</TabItem>
+</Tabs>
+
+:::warning RDP is disabled after deployment
+RDP is disabled by default on all cluster nodes after deployment completes. To re-enable on a specific node, run this on the node (or via PSRemoting):
+
+```powershell
+Enable-ASRemoteDesktop
+```
+
+This applies to all Azure Local deployments regardless of identity type.
+
+**Source**: [MS Learn — Deploy via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
+:::
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Domain join fails | DC unreachable or wrong credentials | `Test-NetConnection <DC_IP> -Port 389` + verify LCM account password |
+| LCM password rejected by portal | Password < 14 characters | Reset service account password to ≥14 chars, retry wizard |
+| Computer account conflict | Stale pre-existing account in OU | Delete stale computer object from OU, re-run validation |
+| Node not domain-joined after deployment | DNS issue during join | Check DNS server setting in Task 5 resolves the AD domain |
+| Validation timeout | Azure endpoint connectivity | Check firewall rules for required Azure endpoints |
+| Arc extension install fails | Arc agent issue on node | Reinstall Azure Connected Machine agent on affected node |
+| Storage configuration fails | Unhealthy physical disk | `Get-PhysicalDisk` on the affected node |
+
+**Collect deployment logs:**
+
+```powershell title="Run on a cluster node — retrieves most recent log files"
+Get-ChildItem "C:\CloudDeployment\Logs" -Recurse |
+ Sort-Object LastWriteTime -Descending |
+ Select-Object -First 10 Name, LastWriteTime, Length |
+ Format-Table -AutoSize
+```
+
+---
+
+## Next Steps
+
+| Deployment status | Next action |
+|-------------------|-------------|
+| Successful | Proceed to [Phase 16: Post-Deployment](../../../phase-06-post-deployment/index.mdx) |
+| Failed | Review troubleshooting section and deployment logs; re-run validation |
+
+---
+
+**References**:
+- [Microsoft Learn — Deploy Azure Local via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
+- [Microsoft Learn — AD Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
+- [Microsoft Learn — Deployment Troubleshooting](https://learn.microsoft.com/en-us/azure/azure-local/manage/troubleshoot-deployment)
+
+---
+
+**Version Control**
+- Created: 2026-01-30 by Azure Local Cloudnology Team
+- Last Updated: 2026-03-09 by Azure Local Cloudnology Team
+- Version: 1.1.0
+- Tags: azure-local, active-directory, portal, runbook
+- Keywords: active directory, domain deployment, portal deployment, azure local cluster, LCM user
+- Author: Azure Local Cloudnology Team
+

@@ -1,0 +1,342 @@
+---
+title: "Task 08: Enable ICMP (Ping)"
+sidebar_label: "Task 08: Enable ICMP"
+sidebar_position: 8
+description: "Enable ICMPv4 and ICMPv6 inbound firewall rules on each Azure Local node to allow ping for network diagnostics and connectivity validation."
+category: "Runbook"
+scope: Firewall configuration
+purpose: Enable ICMP ping on all cluster nodes so that network connectivity can be tested and validated throughout the deployment process
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: "2.0.0"
+tags:
+  - azure-local
+  - os-configuration
+  - firewall
+  - icmp
+  - ping
+  - networking
+  - powershell
+keywords:
+  - enable ICMP
+  - Enable-ICMPFirewallRule
+  - Invoke-EnableICMP-Orchestrated
+  - ICMPv4-In
+  - ICMPv6-In
+  - Enable-NetFirewallRule
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 08: Enable ICMP (Ping)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Firewall configuration   
+> **PURPOSE**: Enable ICMP ping on all cluster nodes so that network connectivity can be tested and validated throughout the deployment process   
+> **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
+
+**Status**: Active 
+**Estimated Time**: 2 minutes per node / 5 minutes orchestrated (all nodes)
+
+---
+
+## Overview
+
+Windows Server blocks ICMP by default. Enabling the ICMPv4-In and ICMPv6-In firewall rules allows
+ping-based connectivity validation from the management server and between nodes — required for
+cluster health checks, network diagnostics, and Azure Local validation tooling.
+
+**What the scripts do:**
+
+1. Enable `File and Printer Sharing (Echo Request - ICMPv4-In)`
+2. Enable `File and Printer Sharing (Echo Request - ICMPv6-In)`
+3. Verify each rule is enabled and report pass/fail
+
+No configuration variables are required — this task has no values to read from `variables.yml`.
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Task 07 complete | NTP configured on all nodes | [Task 07: Configure NTP](./task-07-configure-time-synchronization-ntp.mdx) |
+| Local admin rights | Required to modify firewall rules | Node credentials |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="sconfig" label="SConfig (Recommended)" default>
+
+On the node console, open SConfig if not already running:
+
+```powershell
+sconfig
+```
+
+Navigate the menu:
+
+1. Select **`4`** → Configure Remote Management
+2. Select **`3`** → Configure Windows Firewall to allow ICMPv4 responses (ping)
+3. Confirm the prompt — ICMP ping is now enabled
+4. Select **`4`** → Back to main menu
+
+:::note IPv6
+SConfig only configures ICMPv4. If ICMPv6 is also required, run the direct script or use the Orchestrated tab to enable both rules.
+:::
+
+</TabItem>
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run from the management server to enable ICMP on all nodes in a single pass.
+
+**Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-08-enable-icmp-ping/powershell/Invoke-EnableICMP-Orchestrated.ps1`
+
+Reads all `cluster_nodes` entries from `variables.yml`. Connects to each
+node via PSRemoting and enables both ICMPv4 and ICMPv6 inbound rules.
+
+```powershell title="Invoke-EnableICMP-Orchestrated.ps1"
+<#
+.SYNOPSIS
+ Invoke-EnableICMP-Orchestrated.ps1
+ Enables ICMP (ping) firewall rules on all Azure Local nodes via PSRemoting.
+
+.DESCRIPTION
+ Runs from the management server. Reads node IPs from variables.yml,
+ connects to each node over PSRemoting, and enables ICMPv4/ICMPv6 inbound
+ firewall rules.
+
+ variables.yml paths used:
+ cluster_nodes[].management_ip - PSRemoting connection target per node
+ cluster_nodes[].hostname - Node hostname (display only)
+
+.NOTES
+ Author: Azure Local Cloud Azure Local Cloud
+ Version: 1.0.0
+ Phase: 03-os-configuration
+ Task: task-08-enable-icmp-ping
+ Execution: Run from management server (PSRemoting outbound to nodes)
+ Prerequisites: WinRM enabled on all nodes, admin credentials
+ Run after: Task 07 - NTP configured
+
+.EXAMPLE
+ .\Invoke-EnableICMP-Orchestrated.ps1
+ .\Invoke-EnableICMP-Orchestrated.ps1 -ConfigPath "C:\config\variables.yml"
+#>
+
+[CmdletBinding()]
+param(
+ [string]$ConfigPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region HELPERS
+
+function Write-Log {
+ param([string]$Message, [string]$Level = "INFO")
+ $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+ switch ($Level) {
+ "SUCCESS" { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
+ "ERROR" { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
+ "WARN" { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
+ "HEADER" { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
+ default { Write-Host "[$ts] [INFO] $Message" }
+ }
+}
+
+function Resolve-ConfigPath {
+ param([string]$Provided)
+ if ($Provided -ne "" -and (Test-Path $Provided)) { return $Provided }
+ $candidates = @(
+ "$env:USERPROFILE\variables.yml",
+ "C:\config\variables.yml",
+ "$PSScriptRoot\..\..\..\..\..\config\variables.yml"
+ )
+ foreach ($c in $candidates) {
+ if (Test-Path $c) { return (Resolve-Path $c).Path }
+ }
+ throw "variables.yml not found. Pass -ConfigPath or place it in a standard location."
+}
+
+function Get-ClusterNodes {
+ param([string]$FilePath)
+ $lines = Get-Content -Path $FilePath -Encoding UTF8
+ $inNodes = $false
+ $nodes = @()
+ $current = $null
+
+ foreach ($line in $lines) {
+ if ($line -match '^\s*#' -or $line.Trim() -eq '') { continue }
+ if ($line -match '^cluster_nodes:') { $inNodes = $true; continue }
+ if ($inNodes) {
+ if ($line -match '^[^\s-]') { break }
+ if ($line -match '^\s+-\s+hostname:\s+"?([^"]+)"?') {
+ if ($current -and $current.hostname -ne "") { $nodes += $current }
+ $current = @{ hostname = $Matches[1].Trim(); management_ip = "" }
+ } elseif ($line -match '^\s+hostname:\s+"?([^"]+)"?' -and $current) {
+ $current.hostname = $Matches[1].Trim()
+ } elseif ($line -match '^\s+management_ip:\s+"?([^"]+)"?' -and $current) {
+ $current.management_ip = $Matches[1].Trim()
+ }
+ }
+ }
+ if ($current -and $current.hostname -ne "") { $nodes += $current }
+ return $nodes
+}
+
+#endregion HELPERS
+
+#region MAIN
+
+Write-Log "=== Task 08 - Enable ICMP (Ping) ===" "HEADER"
+
+$configFile = Resolve-ConfigPath -Provided $ConfigPath
+Write-Log "Config: $configFile"
+
+$nodes = Get-ClusterNodes -FilePath $configFile
+if ($nodes.Count -eq 0) { throw "cluster_nodes not found or empty in variables.yml" }
+
+Write-Log "Nodes: $($nodes.Count) found"
+
+$cred = Get-Credential -Message "Enter credentials for PSRemoting to Azure Local nodes"
+
+$results = @()
+
+foreach ($node in $nodes) {
+ $ip = $node.management_ip
+ $hostname = $node.hostname
+ if (-not $ip) {
+ Write-Log "[$hostname] management_ip missing -- skipping" "WARN"
+ continue
+ }
+
+ Write-Log "[$hostname] Connecting to $ip..."
+
+ try {
+ $r = Invoke-Command -ComputerName $ip -Credential $cred -ScriptBlock {
+ $rules = @(
+ "File and Printer Sharing (Echo Request - ICMPv4-In)",
+ "File and Printer Sharing (Echo Request - ICMPv6-In)"
+ )
+ $failed = 0
+ foreach ($ruleName in $rules) {
+ $rule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
+ if ($rule) {
+ Enable-NetFirewallRule -DisplayName $ruleName
+ $rule = Get-NetFirewallRule -DisplayName $ruleName
+ if ($rule.Enabled -ne "True") { $failed++ }
+ }
+ }
+ [PSCustomObject]@{
+ Hostname = $env:COMPUTERNAME
+ Status = if ($failed -eq 0) { "PASS" } else { "FAIL" }
+ }
+ }
+
+ Write-Log "[$hostname] $($r.Status)" $(if ($r.Status -eq "PASS") {"SUCCESS"} else {"ERROR"})
+ $results += [PSCustomObject]@{ Node = $hostname; IP = $ip; Status = $r.Status }
+
+ } catch {
+ Write-Log "[$hostname] PSRemoting failed: $_" "ERROR"
+ $results += [PSCustomObject]@{ Node = $hostname; IP = $ip; Status = "ERROR" }
+ }
+}
+
+Write-Log ""
+Write-Log "=== ICMP Configuration Summary ===" "HEADER"
+$results | Format-Table Node, IP, Status -AutoSize
+
+$failCount = ($results | Where-Object { $_.Status -ne "PASS" }).Count
+if ($failCount -eq 0) {
+ Write-Log "All $($results.Count) node(s) ICMP enabled successfully." "SUCCESS"
+} else {
+ Write-Log "$failCount node(s) failed. Review output above." "ERROR"
+ exit 1
+}
+
+#endregion MAIN
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Checklist
+
+- [ ] ICMPv4-In rule enabled on all nodes (`Get-NetFirewallRule -DisplayName "*ICMPv4-In*"`)
+- [ ] ICMPv6-In rule enabled on all nodes (`Get-NetFirewallRule -DisplayName "*ICMPv6-In*"`)
+- [ ] Nodes respond to ping from management server (`Test-Connection -ComputerName <node-ip> -Count 2`)
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Firewall Profile | `cluster.security.firewall.profile` | `Domain` |
+| ICMP Rule Name | `cluster.security.firewall.icmp_rule` | `Allow-ICMPv4-In` |
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|------------|-------------|
+| Rule not found | Rule name differs (GPO rename or locale) | Run `Get-NetFirewallRule | Where-Object Protocol -eq 'ICMPv4'` to find actual name |
+| Rule found but still not enabled | Group Policy overriding local rule | Check GPO firewall policy; may need to configure via GPO |
+| Orchestrated: node unreachable | WinRM not enabled or firewall blocking | Verify WinRM configured (Task 01); check firewall allows port 5985/5986 |
+| Ping still failing after enable | Layer-3 routing or switch ACL | Verify network path; check switch ACLs and VLAN routing |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 07: Configure NTP](./task-07-configure-time-synchronization-ntp.mdx) | [↑ Phase 03: OS Configuration](./index.mdx) | [Task 09: Disable Unused Adapters →](./task-09-disable-unused-network-adapters.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 2.0 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Full rewrite to standards — complete frontmatter, bare-node 2-tab structure (Direct, Orchestrated), Standalone tab removed, full embedded scripts, `Get-ClusterNodes` helper, no configuration variables required |

@@ -1,0 +1,327 @@
+---
+title: "Task 02: Mount and Verify Dell Gold Image ISO"
+sidebar_label: "Task 02: Mount Gold Image"
+sidebar_position: 2
+description: "Mount the Dell Azure Stack HCI OS gold image ISO to all cluster nodes via iDRAC virtual media or USB drive, and verify mount status before BOSS card preparation."
+category: "Runbook"
+scope: Azure Local OS installation
+purpose: Prepare installation media on all cluster nodes so nodes boot from the gold image ISO after BOSS virtual disk recreation in Task 02
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-04
+version: "1.1.0"
+tags:
+  - azure-local
+  - os-installation
+  - idrac
+  - virtual-media
+  - gold-image
+  - boss
+keywords:
+  - Dell gold image ISO
+  - iDRAC virtual media
+  - USB drive
+  - Azure Stack HCI OS
+  - mount ISO
+  - Redfish API
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Mount and Verify Dell Gold Image ISO
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Azure Local OS installation   
+> **PURPOSE**: Prepare installation media on all cluster nodes so nodes boot from the gold image ISO after BOSS virtual disk recreation in Task 02   
+> **MASTER REFERENCE**: [Phase 02: OS Installation](./index.mdx)
+
+**Status**: Active
+
+## Overview
+
+Mount the Dell Azure Stack HCI OS gold image ISO to all cluster nodes, then verify mount status **before** proceeding to Task 02. BOSS virtual disk recreation (Task 02) triggers an automatic reboot — nodes must have a valid boot source ready before that reboot occurs.
+
+:::warning Mount Media Before BOSS Deletion
+Task 02 deletes and recreates the BOSS virtual disk, which triggers an automatic reboot. After reboot the BOSS has no OS and the node falls back to the next boot device. **ISO or USB must be in place before Task 02 starts.**
+:::
+
+:::tip On-Site Deployments
+If you are physically at the data centre, use the **USB Drive (On-Site)** tab. It is faster, more reliable, and has no network dependencies.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| Task 01 Complete | BOSS card virtual disk deleted and recreated | [Task 01](./task-01-delete-and-recreate-virtual-disk-on-dell-boss-card.mdx) |
+| iDRAC Access | Virtual Console and Virtual Media enabled | `variables.yml: nodes.<name>.idrac_ip` |
+| Gold Image ISO | Dell Azure Stack HCI OS gold image ISO available | Azure Local Cloud build team |
+| Network Share (iDRAC tabs) | SMB/CIFS share accessible from iDRAC OOB network | Network team |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `nodes.<name>.idrac_ip` | string | iDRAC IP address for Virtual Media mount |
+| `nodes.<name>.hostname` | string | Node hostname for tracking |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Dell iDRAC UI" default>
+
+Perform the following steps on **each node**:
+
+1. Open `https://<idrac-ip>` and log in with iDRAC credentials
+2. Navigate to **Configuration** → **Virtual Media**
+3. Select **Map Network Share**:
+ - **Share Type**: CIFS
+ - **Share Address**: IP or hostname of the file server
+ - **Share Path**: Path to the ISO file on the share
+ - **Image Name**: `Dell-AzureStackHCI-24H2-Gold.iso`
+ - **Username / Password**: Share credentials (if required)
+4. Click **Map Device**
+5. Verify status shows **Connected** / **Inserted: True**
+
+Repeat for all nodes, then verify all mounts with the validation checklist below.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Mount ISO to all nodes simultaneously via Redfish API from the management server. Reads iDRAC IPs from `variables.yml`.
+
+`scripts/deploy/04-cluster-deployment/phase-02-os-installation/task-01-mount-and-verify-dell-gold-image-iso/powershell/Invoke-MountGoldImageISO.ps1`
+
+```powershell
+#Requires -Version 7.0
+# ============================================================================
+# Script: Invoke-MountGoldImageISO.ps1
+# Execution: Run FROM management server — Redfish API to each iDRAC
+# Prerequisites: powershell-yaml, Az module, iDRAC reachable on port 443
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath = ".\config\variables.yml",
+
+ [Parameter(Mandatory = $true)]
+ [string]$ISOPath, # e.g. \\deploy-server\images\Dell-AzureStackHCI-24H2-Gold.iso
+
+ [Parameter(Mandatory = $false)]
+ [PSCredential]$ShareCredential # Optional: SMB share credentials
+)
+
+Import-Module powershell-yaml -ErrorAction Stop
+Import-Module Az.KeyVault -ErrorAction Stop
+
+$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+$secrets = Get-AzKeyVaultSecret -VaultName $config.key_vault.name
+
+$iDRACUser = ($secrets | Where-Object { $_.Name -eq "idrac-username" }).SecretValue |
+ ConvertFrom-SecureString -AsPlainText
+$iDRACPass = ($secrets | Where-Object { $_.Name -eq "idrac-password" }).SecretValue |
+ ConvertFrom-SecureString -AsPlainText
+$credential = [PSCredential]::new($iDRACUser, (ConvertTo-SecureString $iDRACPass -AsPlainText -Force))
+
+$results = @()
+
+foreach ($nodeKey in $config.nodes.Keys) {
+ $node = $config.nodes[$nodeKey]
+ $ip = $node.idrac_ip
+ $baseUri = "https://$ip/redfish/v1"
+ $invokeParams = @{ Credential = $credential; SkipCertificateCheck = $true
+ Headers = @{ "Content-Type" = "application/json" } }
+
+ Write-Host "$($node.hostname) ($ip) — mounting ISO..." -ForegroundColor Yellow
+
+ try {
+ $cdUri = "$baseUri/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
+
+ # Eject if already inserted
+ $current = Invoke-RestMethod -Uri $cdUri -Method Get @invokeParams
+ if ($current.Inserted) {
+ Invoke-RestMethod -Uri "$cdUri/Actions/VirtualMedia.EjectMedia" `
+ -Method Post -Body '{}' @invokeParams | Out-Null
+ Start-Sleep -Seconds 3
+ }
+
+ # Build mount payload
+ $payload = @{ Image = $ISOPath; Inserted = $true; WriteProtected = $true }
+ if ($ShareCredential) {
+ $payload.UserName = $ShareCredential.UserName
+ $payload.Password = $ShareCredential.GetNetworkCredential().Password
+ }
+
+ Invoke-RestMethod -Uri "$cdUri/Actions/VirtualMedia.InsertMedia" `
+ -Method Post -Body ($payload | ConvertTo-Json) @invokeParams | Out-Null
+
+ Start-Sleep -Seconds 3
+ $verify = Invoke-RestMethod -Uri $cdUri -Method Get @invokeParams
+
+ if ($verify.Inserted) {
+ Write-Host " Mounted" -ForegroundColor Green
+ $results += [PSCustomObject]@{ Node = $node.hostname; Status = "OK"; Inserted = $true }
+ } else {
+ throw "Mount reported not inserted after InsertMedia"
+ }
+ } catch {
+ Write-Host " FAILED: $_" -ForegroundColor Red
+ $results += [PSCustomObject]@{ Node = $node.hostname; Status = "FAIL"; Error = "$_" }
+ }
+}
+
+Write-Host "`nSummary:" -ForegroundColor Cyan
+$results | Format-Table -AutoSize
+
+$failed = $results | Where-Object { $_.Status -eq "FAIL" }
+if ($failed) {
+ Write-Host "$($failed.Count) node(s) failed — resolve before proceeding to Task 02" -ForegroundColor Red
+ exit 1
+}
+Write-Host "All nodes mounted — proceed to Task 02" -ForegroundColor Green
+```
+
+### Verify Mount Status
+
+```powershell
+# Quick verification — confirms Inserted: true on all nodes
+foreach ($nodeKey in $config.nodes.Keys) {
+ $node = $config.nodes[$nodeKey]
+ $uri = "https://$($node.idrac_ip)/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
+ $vm = Invoke-RestMethod -Uri $uri -Method Get @invokeParams
+ $status = if ($vm.Inserted) { "OK" } else { "NOT MOUNTED" }
+ Write-Host "$($node.hostname): Inserted=$($vm.Inserted) — $status"
+}
+```
+
+</TabItem>
+
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+#Requires -Version 5.1
+# ============================================================================
+# Script: Invoke-MountGoldImageISO-Standalone.ps1
+# Execution: Run FROM any workstation — Redfish API to each iDRAC
+# Prerequisites: iDRAC reachable on port 443, admin credentials
+# ============================================================================
+
+#region CONFIGURATION
+$ISOPath = "\\deploy-server\images\Dell-AzureStackHCI-24H2-Gold.iso"
+
+$iDRACUser = "root"
+$iDRACPassSecure = Read-Host "Enter iDRAC password" -AsSecureString
+$credential = [PSCredential]::new($iDRACUser, $iDRACPassSecure)
+
+# Node iDRAC IP map
+$nodes = @(
+ @{ Hostname = "azlocal-node01"; iDRACIP = "10.245.64.11" },
+ @{ Hostname = "azlocal-node02"; iDRACIP = "10.245.64.12" },
+ @{ Hostname = "azlocal-node03"; iDRACIP = "10.245.64.13" },
+ @{ Hostname = "azlocal-node04"; iDRACIP = "10.245.64.14" }
+)
+#endregion
+
+$invokeParams = @{ Credential = $credential; SkipCertificateCheck = $true
+ Headers = @{ "Content-Type" = "application/json" } }
+
+foreach ($node in $nodes) {
+ $cdUri = "https://$($node.iDRACIP)/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
+ Write-Host "$($node.Hostname) ($($node.iDRACIP))..." -ForegroundColor Yellow
+
+ try {
+ $current = Invoke-RestMethod -Uri $cdUri -Method Get @invokeParams
+ if ($current.Inserted) {
+ Invoke-RestMethod -Uri "$cdUri/Actions/VirtualMedia.EjectMedia" `
+ -Method Post -Body '{}' @invokeParams | Out-Null
+ Start-Sleep -Seconds 3
+ }
+
+ $payload = @{ Image = $ISOPath; Inserted = $true; WriteProtected = $true } | ConvertTo-Json
+ Invoke-RestMethod -Uri "$cdUri/Actions/VirtualMedia.InsertMedia" `
+ -Method Post -Body $payload @invokeParams | Out-Null
+ Start-Sleep -Seconds 3
+
+ $verify = Invoke-RestMethod -Uri $cdUri -Method Get @invokeParams
+ if ($verify.Inserted) {
+ Write-Host " Mounted" -ForegroundColor Green
+ } else {
+ Write-Host " FAILED: not inserted after mount" -ForegroundColor Red
+ }
+ } catch {
+ Write-Host " ERROR: $_" -ForegroundColor Red
+ }
+}
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Checklist
+
+- [ ] ISO mounted on all nodes (`Inserted: True`)
+- [ ] Image path shows correct Dell gold image filename
+- [ ] `WriteProtected: True` (read-only mount)
+- [ ] USB drives inserted in all nodes (on-site deployments)
+- [ ] All nodes verified — no mount failures
+
+:::danger Do Not Proceed Until Verified
+Do **not** start Task 02 (BOSS virtual disk recreation) until all nodes show `Inserted: True`. Nodes that reboot without a boot source will require manual console intervention.
+:::
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| ISO not mounting | Network share not reachable from iDRAC OOB network | Verify share is accessible from OOB VLAN; check firewall |
+| Authentication failure | Wrong share credentials | Verify SMB username/password |
+| `Inserted: False` after mount | Mount timeout | Retry; increase `Start-Sleep` delay |
+| No CD/DVD slot found | iDRAC virtual media disabled | Enable in iDRAC: **Configuration** → **Virtual Media** |
+| Redfish Unauthorized | Wrong iDRAC credentials | Verify credentials in Key Vault |
+| USB not appearing in boot manager | USB drive not properly written | Re-create bootable USB with Rufus |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 01: BOSS Card Config](./task-01-delete-and-recreate-virtual-disk-on-dell-boss-card.mdx) | [↑ Phase 02: OS Installation](./index.mdx) | [Task 03: Manual OS Installation →](./task-03-manual-os-installation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Fix tab labels, script paths, Step→Task references, remove duplicate sections, standards alignment |
+| 1.2 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Reorder: demoted to Task 02 (BOSS config before ISO mount) |

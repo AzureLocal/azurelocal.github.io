@@ -1,0 +1,197 @@
+---
+title: "Task 10: Configure Hostname"
+sidebar_label: "Task 10: Hostname"
+sidebar_position: 10
+description: "Set the computer hostname for each node according to naming standards"
+category: "Runbook"
+scope: "Set the computer hostname for each node according to naming standards"
+purpose: "Set the computer hostname for each node according to naming standards"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - os-configuration
+keywords:
+  - Configure
+  - Hostname
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 10: Configure Hostname
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Set the computer hostname for each node according to naming standards
+> **PURPOSE**: Set the computer hostname for each node according to naming standards
+> **MASTER REFERENCE**: [Azure Local Prepare Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory)
+
+**Status**: Active
+
+## Overview
+
+Rename each node to its target hostname from `variables.yml`. Nodes must restart to apply the change.
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Tasks 01–09 complete | Unused adapters disabled |
+| Hostnames from variables.yml | `cluster_nodes[].hostname` |
+
+---
+
+## Config Reference
+
+| YAML Key | Variable | Example |
+|---|---|---|
+| `cluster_nodes[].hostname` | `$NewHostname` | `azlocal-node01` |
+| `cluster_nodes[].management_ip` | `$ServerList` / `$node.ip` | `10.0.0.11` |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="sconfig" label="SConfig (Recommended)" default>
+
+Run on each node via console, KVM, or RDP. SConfig is the simplest method.
+
+1. At the PowerShell prompt, type `SConfig` and press Enter
+2. Select **option 2** — Computer Name
+3. Type the hostname from `variables.yml` (`cluster_nodes[].hostname`)
+4. Press Enter and confirm
+5. Select **Yes** to restart now
+
+Repeat on each node.
+
+</TabItem>
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run from the management server. Reads all node IPs and hostnames from `variables.yml`, renames each node, restarts it, and waits for it to come back online.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname/powershell/Invoke-ConfigureHostname-Orchestrated.ps1`
+
+```powershell
+# Task 10 - Configure Hostname (orchestrated, all nodes)
+# variables.yml variables:
+# cluster_nodes[].management_ip -> connection IP per node
+# cluster_nodes[].hostname -> target hostname per node
+
+$ConfigPath = "$env:USERPROFILE\variables.yml"
+$lines = Get-Content $ConfigPath
+$nodes = @()
+$current = $null
+foreach ($line in $lines) {
+ if ($line -match '^\s*-\s*hostname:\s*"?([^"]+)"?') { $current = @{ hostname = $Matches[1].Trim(); ip = "" } }
+ elseif ($line -match '^\s+management_ip:\s*"?([^"]+)"?' -and $current) { $current.ip = $Matches[1].Trim() }
+ if ($current -and $current.ip -and $current.hostname) { $nodes += [PSCustomObject]$current; $current = $null }
+}
+
+foreach ($node in $nodes) {
+ Invoke-Command -ComputerName $node.ip -ArgumentList $node.hostname -ScriptBlock {
+ param($name)
+ Rename-Computer -NewName $name -Force
+ }
+ Restart-Computer -ComputerName $node.ip -Force
+ Write-Host "[$($node.ip)] Renamed to $($node.hostname) -- restarting"
+}
+
+Write-Host "Waiting 60s for nodes to come back online..."
+Start-Sleep -Seconds 60
+
+foreach ($node in $nodes) {
+ $reported = Invoke-Command -ComputerName $node.ip -ScriptBlock { $env:COMPUTERNAME }
+ Write-Host "[$($node.ip)] Online - hostname: $reported"
+}
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+```powershell
+# Confirm hostname on each node
+$env:COMPUTERNAME
+# or remotely:
+Invoke-Command -ComputerName <ip> -ScriptBlock { $env:COMPUTERNAME }
+```
+
+---
+
+## Validation Checklist
+
+- [ ] Each node reports the correct hostname
+- [ ] All nodes accessible after restart
+- [ ] Hostnames match `cluster_nodes[].hostname` in variables.yml
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Hostname Pattern | `cluster.nodes[].hostname` | `azlocal-node-01` |
+| Domain Name | `cluster.domain.name` | `contoso.local` |
+| OU Path | `cluster.domain.ou_path` | `OU=Servers,DC=contoso,DC=local` |
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|---|---|
+| Node didn't come back after restart | Wait another 60s then ping the management IP |
+| Hostname not applied | Confirm `Rename-Computer` ran without error; restart if needed |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+[← Task 09: Disable Adapters](./task-09-disable-unused-network-adapters.mdx) · [↑ Phase 03](./index.mdx) · [Task 11: Clear Storage →](./task-11-clear-previous-storage-configuration-conditional.mdx)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

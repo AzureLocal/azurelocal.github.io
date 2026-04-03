@@ -1,0 +1,682 @@
+---
+title: "Task 06: Deploy Runners"
+sidebar_label: "Task 06: Deploy Runners"
+sidebar_position: 6
+description: "Plan and deploy CI/CD runners for Azure Local automation"
+category: "Runbook"
+scope: "Plan and deploy CI/CD runners for Azure Local automation"
+purpose: "Plan and deploy CI/CD runners for Azure Local automation"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cicd-infrastructure
+  - implementation
+keywords:
+  - Deploy
+  - Runners
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 06: Deploy Runners
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![GitHub](https://img.shields.io/badge/Platform-GitHub-181717?style=flat-square&logo=github)](https://github.com/AzureLocal)
+[![GitLab](https://img.shields.io/badge/Platform-GitLab-FC6D26?style=flat-square&logo=gitlab)](https://gitlab.com)
+[![Azure DevOps](https://img.shields.io/badge/Platform-Azure%20DevOps-0078D7?style=flat-square&logo=azuredevops)](https://dev.azure.com)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?style=flat-square&logo=terraform)](https://terraform.io)
+
+> **DOCUMENT CATEGORY**: Runbook Step  
+> **SCOPE**: CI/CD runner planning and deployment  
+> **PURPOSE**: Evaluate hosting options and deploy self-hosted CI/CD runners  
+> **MASTER REFERENCE**: [Azure Local Toolkit — CI/CD Runner Module](https://github.com/AzureLocal/azurelocal-toolkit)
+
+**Status**: Active
+
+## Objective
+
+Select the appropriate runner hosting strategy and deploy self-hosted CI/CD runners that can execute automation pipelines against both Azure cloud resources and Azure Local on-premises clusters.
+
+---
+
+## Why Self-Hosted Runners?
+
+Azure Local automation has unique requirements that platform-hosted runners (GitHub-hosted, GitLab SaaS runners, Microsoft-hosted agents) cannot satisfy:
+
+- **On-premises access** — Pipelines must reach Azure Local cluster endpoints, iDRACs, switches, and management networks that are not internet-routable.
+- **Hybrid targeting** — A single pipeline may provision Azure cloud resources (landing zones, VPN gateways) *and* configure on-premises hardware (cluster registration, storage, networking).
+- **Long-running jobs** — Terraform applies for VPN gateways, Arc registration, and cluster deployment can run 30–60+ minutes, exceeding hosted-runner timeouts.
+- **Persistent tooling** — Runners need pre-installed tools (Terraform, Azure CLI, Ansible, PowerShell modules) to avoid downloading them on every run.
+- **Network security** — Sensitive credentials and on-premises management traffic should not traverse shared, multi-tenant hosted-runner infrastructure.
+
+---
+
+## Runner Hosting Options
+
+Choosing where to deploy runners is a critical planning decision. The right answer depends on your network topology, connectivity between Azure and on-premises, security requirements, and existing infrastructure.
+
+### Decision Matrix
+
+| Hosting Option | Azure Access | On-Prem Access | Connectivity Required | Best For |
+|:---|:---:|:---:|:---|:---|
+| **Azure VM / VMSS** | ✅ Native | ⚠️ Requires VPN/ER | S2S VPN or ExpressRoute to on-prem | Cloud-first deployments where VPN/ER is already planned |
+| **On-Prem VM (Hyper-V / Azure Local)** | ⚠️ Outbound internet | ✅ Native | Outbound HTTPS to SCM platform + Azure APIs | On-prem-first, or when Azure → on-prem connectivity is not yet established |
+| **Existing On-Prem Server** | ⚠️ Outbound internet | ✅ Native | Outbound HTTPS to SCM platform + Azure APIs | Reuse existing infrastructure, minimal new provisioning |
+| **OpenGear Console Server** | ⚠️ Limited | ✅ Native + OOB | Outbound HTTPS (or cellular backhaul) | Out-of-band automation, break-glass recovery, iDRAC/switch management |
+| **Hybrid (Azure + On-Prem)** | ✅ Native | ✅ Native | Independent | Full coverage — Azure runner for cloud tasks, on-prem runner for local tasks |
+
+### Option 1: Azure VM or VMSS (Cloud-Hosted Runner)
+
+Deploy a Linux or Windows VM (or VM Scale Set) in an Azure subscription. This is the default approach in the `azurelocal-toolkit` Terraform module.
+
+**Advantages:**
+- Autoscaling with VMSS — scale out for concurrent jobs, scale to zero when idle
+- Managed infrastructure — Azure handles host OS patching, disk, and NIC
+- Central placement near Azure control-plane APIs (ARM, Entra ID, Key Vault)
+- Terraform module in `azurelocal-toolkit` handles provisioning end-to-end
+
+**Disadvantages:**
+- Cannot reach on-premises management networks unless VPN or ExpressRoute is established
+- Adds a dependency — runners cannot reach Azure Local cluster endpoints until Part 2 (VPN Gateway) is deployed
+- VPN/ExpressRoute adds cost and complexity
+
+**When to use:** You already have (or plan to have) site-to-site VPN or ExpressRoute between Azure and on-prem, and you want a centrally managed runner fleet.
+
+:::info Connectivity Dependency
+If you choose this option, the runner will only be able to target Azure cloud resources until the VPN/ExpressRoute is deployed in [Part 2 — Phase 04: VPN Gateway](../../02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway.mdx). Plan for this phased capability.
+:::
+
+**Connectivity patterns for Azure-hosted runners:**
+
+| Connection | Protocol | Purpose |
+|:---|:---|:---|
+| S2S VPN (IKEv2/IPsec) | Encrypted tunnel over internet | Management traffic, Ansible/SSH to cluster nodes |
+| ExpressRoute | Private peering | Production workloads, high-bandwidth operations |
+| Azure Arc Gateway | HTTPS outbound from on-prem | Alternative when direct inbound to on-prem is blocked |
+
+**Recommended sizing (from [Discovery Checklist](../../../planning/02-discovery-checklist.mdx)):**
+
+| Workload | VM Size | Max Instances | Notes |
+|:---|:---|:---:|:---|
+| Light (< 5 concurrent jobs) | `Standard_D2s_v3` | 2 | Default for most deployments |
+| Medium (5-10 concurrent jobs) | `Standard_D4s_v3` | 5 | Multiple clusters or frequent pipelines |
+| Heavy (10+ concurrent jobs) | `Standard_D4s_v3` | 10 | Large-scale multi-site deployments |
+
+### Option 2: On-Premises VM
+
+Deploy a Linux or Windows VM directly on a Hyper-V host, an existing Azure Local cluster, or bare-metal server at the site.
+
+**Advantages:**
+- Direct access to on-premises management networks — no VPN required
+- Can reach cluster nodes, iDRACs, switches, and storage endpoints immediately
+- Works even when Azure ↔ on-prem connectivity is not yet established
+- Lower latency for on-prem operations (Ansible playbooks, PowerShell remoting)
+
+**Disadvantages:**
+- Must manage the VM yourself (OS patching, disk, backups)
+- Requires outbound internet access to reach your SCM platform (GitHub/GitLab/Azure DevOps) and Azure ARM APIs
+- Not centrally managed if you have multiple sites
+- No autoscaling — fixed capacity
+
+**When to use:** You need to run automation against on-premises targets before VPN/ExpressRoute is available, or your security policy prohibits inbound connectivity from Azure to on-prem networks.
+
+**Minimum requirements:**
+
+| Resource | Specification |
+|:---|:---|
+| OS | Ubuntu 22.04 LTS (recommended) or Windows Server 2022 |
+| vCPUs | 2+ |
+| RAM | 4 GB+ |
+| Disk | 50 GB+ |
+| Network | Outbound HTTPS (443) to SCM platform + Azure APIs; access to on-prem management VLANs |
+
+### Option 3: Existing On-Premises Server
+
+Install the runner agent directly on an existing server that is already on the management network. This avoids provisioning new infrastructure entirely.
+
+**Advantages:**
+- Zero new infrastructure — reuse what you have
+- Already on the correct network segments
+- Fastest path to a working runner
+
+**Disadvantages:**
+- Shared workload — runner competes with other services for CPU/RAM
+- Security risk if the server runs other sensitive services
+- Harder to isolate runner dependencies (Terraform versions, CLI tools)
+- Not reproducible — if the server dies, runner config is lost
+
+**When to use:** Proof-of-concept, lab environments, or early-stage deployments where you want to validate pipelines before investing in dedicated runner infrastructure.
+
+:::warning Isolation
+If you use an existing server, consider running the runner agent inside a **container** (Docker) to isolate its dependencies from the host OS. All three platforms support containerized runners.
+:::
+
+### Option 4: OpenGear Console Server
+
+Use an [OpenGear](https://opengear.com/) console server (e.g., OM1208-8E) as a lightweight runner for out-of-band (OOB) automation tasks.
+
+**Advantages:**
+- Always-on, independent of the cluster and primary network
+- Direct serial and network access to iDRACs, switches, and PDUs
+- Cellular backhaul provides connectivity even during network outages
+- Ideal for break-glass recovery scenarios and hardware lifecycle tasks
+
+**Disadvantages:**
+- Limited compute resources — cannot run heavy Terraform applies or large Ansible playbooks
+- Runs embedded Linux — not all runner agent versions are supported
+- Best suited for lightweight, targeted tasks (firmware updates, power cycling, console access)
+
+**When to use:** You have OpenGear devices deployed for OOB management and want to automate hardware-level tasks (iDRAC configuration, switch management, power operations) that don't require full Terraform/Ansible workloads.
+
+**Suitable tasks for OpenGear runners:**
+
+| Task | Example |
+|:---|:---|
+| Hardware power management | `ipmitool` power cycle via iDRAC |
+| Firmware updates | Push firmware to cluster nodes via Redfish API |
+| Switch configuration | Apply VLAN/BGP changes via serial console |
+| Health checks | Verify iDRAC reachability, check hardware status |
+| Break-glass recovery | Emergency cluster node reboot when primary network is down |
+
+### Option 5: Hybrid (Azure + On-Premises)
+
+Deploy runners in **both** Azure and on-premises, using **labels/tags** to route pipeline jobs to the appropriate runner based on target.
+
+**Advantages:**
+- Full coverage — cloud-targeting jobs run on Azure runners, on-prem-targeting jobs run on local runners
+- No single point of failure for connectivity
+- Each runner has native access to its target environment
+- Can start with on-prem only, add Azure runners later when VPN/ER is ready
+
+**Disadvantages:**
+- Two sets of infrastructure to manage
+- Runner registration and labeling must be carefully planned
+- Pipeline configuration is more complex (job routing by label)
+
+**When to use:** Production deployments that need to target both Azure and on-premises resources reliably, or phased deployments where connectivity comes online over time.
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+**Label-based routing in GitHub Actions:**
+
+```yaml
+jobs:
+  deploy-azure:
+    runs-on: [self-hosted, azure]
+    steps:
+      - name: Deploy Azure resources
+        run: terraform apply -auto-approve
+
+  configure-cluster:
+    runs-on: [self-hosted, onprem]
+    needs: deploy-azure
+    steps:
+      - name: Configure Azure Local cluster
+        run: ansible-playbook -i inventory cluster-config.yml
+```
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+**Tag-based routing in GitLab CI:**
+
+```yaml
+deploy-azure:
+  tags: [azure]
+  script:
+    - terraform apply -auto-approve
+
+configure-cluster:
+  tags: [onprem]
+  needs: [deploy-azure]
+  script:
+    - ansible-playbook -i inventory cluster-config.yml
+```
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+**Pool-based routing in Azure DevOps:**
+
+```yaml
+stages:
+  - stage: DeployAzure
+    pool: AzureRunners
+    jobs:
+      - job: Apply
+        steps:
+          - script: terraform apply -auto-approve
+
+  - stage: ConfigureCluster
+    dependsOn: DeployAzure
+    pool: OnPremRunners
+    jobs:
+      - job: Configure
+        steps:
+          - script: ansible-playbook -i inventory cluster-config.yml
+```
+
+</TabItem>
+</Tabs>
+
+### Recommendation
+
+For most Azure Local deployments, we recommend a **phased approach**:
+
+1. **Start with an on-premises VM** (Option 2) to unblock automation immediately — this runner can target both Azure APIs (outbound HTTPS) and on-prem infrastructure (direct network access).
+2. **Add an Azure VMSS runner** (Option 1) after VPN/ExpressRoute is deployed in Part 2 — this provides autoscaling, central management, and native Azure API access.
+3. **Optionally add OpenGear** (Option 4) for OOB hardware automation if console servers are deployed at the site.
+
+This phased approach avoids blocking on VPN connectivity while building toward a production-grade hybrid runner fleet.
+
+---
+
+## Prerequisites
+
+- [ ] Runner hosting option selected (see Decision Matrix above)
+- [ ] CI/CD setup complete (Tasks 01-05)
+- [ ] Environment variables configured ([Task 05](task-05-configure-variables.mdx))
+- [ ] Network connectivity confirmed for chosen hosting option
+- [ ] For Azure VM/VMSS: target subscription and region identified
+- [ ] For on-prem VM: host server or hypervisor available, management VLAN access confirmed
+- [ ] Runner registration token available from your SCM platform
+
+---
+
+## Procedure
+
+### Step 1: Obtain Runner Registration Token
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+1. Navigate to your repository or organization on GitHub
+2. Go to **Settings** → **Actions** → **Runners** → **New self-hosted runner**
+3. Copy the registration token
+
+Or via CLI:
+
+```bash
+# Organization-level runner (recommended)
+gh api -X POST orgs/{org}/actions/runners/registration-token --jq '.token'
+
+# Repository-level runner
+gh api -X POST repos/{owner}/{repo}/actions/runners/registration-token --jq '.token'
+```
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+1. Navigate to your project or group in GitLab
+2. Go to **Settings** → **CI/CD** → **Runners** → **New project runner**
+3. Copy the registration token
+
+Or via CLI:
+
+```bash
+# Create a runner authentication token (GitLab 16.0+)
+curl --request POST "https://gitlab.com/api/v4/user/runners" \
+  --header "PRIVATE-TOKEN: <your-token>" \
+  --form "runner_type=project_type" \
+  --form "project_id=<project-id>" \
+  --form "tag_list=azure,terraform"
+```
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+1. Navigate to your Azure DevOps organization
+2. Go to **Organization Settings** → **Agent Pools** → select or create a pool
+3. Click **New agent** and note the instructions
+4. Create a PAT with **Agent Pools (Read & Manage)** scope
+
+```bash
+# PAT is used during agent configuration
+# No separate registration token step — PAT is provided during ./config.sh
+```
+
+</TabItem>
+</Tabs>
+
+### Step 2: Deploy Runner Infrastructure
+
+Choose the deployment method that matches your selected hosting option.
+
+#### Option A: Azure VM/VMSS via Terraform
+
+Clone the deployment repository and apply the runner module:
+
+```bash
+git clone <your-deployment-repo>
+cd <deployment-repo>
+```
+
+Example Terraform configuration:
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+```hcl
+module "runner" {
+  source = "github.com/AzureLocal/azurelocal-toolkit//terraform/modules/cicd-runner"
+
+  runner_type     = "github"
+  runner_token    = var.runner_registration_token
+  runner_labels   = ["azure", "terraform", "prod"]
+  location        = "northcentralus"
+  environment     = "prod"
+  vm_size         = "Standard_D2s_v3"
+  vm_count        = 2
+  os_type         = "linux"
+  subscription_id = data.azurerm_subscription.current.id
+  tags            = local.tags
+}
+```
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+```hcl
+module "runner" {
+  source = "github.com/AzureLocal/azurelocal-toolkit//terraform/modules/cicd-runner"
+
+  runner_type     = "gitlab"
+  runner_token    = var.runner_registration_token
+  runner_tags     = ["azure", "terraform", "prod"]
+  location        = "northcentralus"
+  environment     = "prod"
+  vm_size         = "Standard_D2s_v3"
+  vm_count        = 2
+  os_type         = "linux"
+  subscription_id = data.azurerm_subscription.current.id
+  tags            = local.tags
+}
+```
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+```hcl
+module "runner" {
+  source = "github.com/AzureLocal/azurelocal-toolkit//terraform/modules/cicd-runner"
+
+  runner_type     = "azdo"
+  agent_pool_name = "AzureRunners"
+  azdo_pat        = var.azdo_pat
+  azdo_org_url    = var.azdo_org_url
+  location        = "northcentralus"
+  environment     = "prod"
+  vm_size         = "Standard_D2s_v3"
+  vm_count        = 2
+  os_type         = "linux"
+  subscription_id = data.azurerm_subscription.current.id
+  tags            = local.tags
+}
+```
+
+</TabItem>
+</Tabs>
+
+```bash
+terraform init
+terraform plan -out=runner.tfplan
+terraform apply runner.tfplan
+```
+
+#### Option B: On-Premises VM (Manual Setup)
+
+Provision a Linux VM on your hypervisor or existing server, then install the runner agent:
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+```bash
+# Download and install GitHub Actions runner
+mkdir actions-runner && cd actions-runner
+curl -o actions-runner-linux-x64.tar.gz -L \
+  https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64-2.321.0.tar.gz
+tar xzf actions-runner-linux-x64.tar.gz
+
+# Configure
+./config.sh \
+  --url https://github.com/<org> \
+  --token <REGISTRATION_TOKEN> \
+  --name "onprem-runner-01" \
+  --labels "onprem,terraform,ansible" \
+  --work "_work" \
+  --runasservice
+
+# Install and start as a service
+sudo ./svc.sh install
+sudo ./svc.sh start
+```
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+```bash
+# Install GitLab Runner
+curl -L https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh | sudo bash
+sudo apt-get install gitlab-runner
+
+# Register runner
+sudo gitlab-runner register \
+  --non-interactive \
+  --url "https://gitlab.com/" \
+  --token "<RUNNER_TOKEN>" \
+  --executor "shell" \
+  --description "onprem-runner-01" \
+  --tag-list "onprem,terraform,ansible"
+
+# Start service
+sudo gitlab-runner start
+```
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+```bash
+# Download Azure DevOps agent
+mkdir azagent && cd azagent
+curl -o vsts-agent-linux-x64.tar.gz -L \
+  https://vstsagentpackage.azureedge.net/agent/4.248.0/vsts-agent-linux-x64-4.248.0.tar.gz
+tar xzf vsts-agent-linux-x64.tar.gz
+
+# Configure
+./config.sh \
+  --unattended \
+  --url "https://dev.azure.com/<org>" \
+  --auth pat \
+  --token "<PAT>" \
+  --pool "OnPremRunners" \
+  --agent "onprem-runner-01" \
+  --acceptTeeEula
+
+# Install and start as a service
+sudo ./svc.sh install
+sudo ./svc.sh start
+```
+
+</TabItem>
+</Tabs>
+
+**Install required tools on the on-prem runner:**
+
+```bash
+# Terraform
+sudo apt-get update && sudo apt-get install -y gnupg software-properties-common
+wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | \
+  sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+  https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+  sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt-get update && sudo apt-get install terraform
+
+# Azure CLI
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+# Ansible (for cluster configuration)
+sudo apt-get install -y python3-pip
+pip3 install ansible
+
+# PowerShell (for Azure Local modules)
+sudo apt-get install -y powershell
+```
+
+---
+
+## Verification
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+- [ ] Runner deployed and online
+- [ ] Runner registered in **Settings → Actions → Runners** (shows green "Idle" status)
+- [ ] Runner labels applied correctly (e.g., `azure`, `onprem`, `terraform`)
+- [ ] Test job completes successfully:
+
+```yaml
+# .github/workflows/test-runner.yml
+name: Test Self-Hosted Runner
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: [self-hosted]
+    steps:
+      - run: |
+          echo "Runner: $(hostname)"
+          terraform version
+          az version
+```
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+- [ ] Runner deployed and online
+- [ ] Runner visible in **Settings → CI/CD → Runners** (shows green indicator)
+- [ ] Runner tags applied correctly (e.g., `azure`, `onprem`, `terraform`)
+- [ ] Test job completes successfully:
+
+```yaml
+# .gitlab-ci.yml
+test-runner:
+  tags: [onprem]
+  script:
+    - echo "Runner: $(hostname)"
+    - terraform version
+    - az version
+  when: manual
+```
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+- [ ] Agent deployed and online
+- [ ] Agent visible in **Organization Settings → Agent Pools** (shows green indicator)
+- [ ] Agent pool assigned correctly
+- [ ] Test pipeline completes successfully:
+
+```yaml
+# azure-pipelines.yml
+trigger: none
+pool: OnPremRunners
+steps:
+  - script: |
+      echo "Agent: $(hostname)"
+      terraform version
+      az version
+    displayName: Test Self-Hosted Agent
+```
+
+</TabItem>
+</Tabs>
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Runner Pool Name | `cicd.runners.pool_name` | `self-hosted-pool` |
+| Runner Image | `cicd.runners.image` | `ubuntu-latest` |
+| Runner Count | `cicd.runners.count` | `2` |
+
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 05: Configure Environment Variables](./task-05-configure-variables.mdx) | [Phase 01: CI/CD Setup](./index.mdx) | --- |
+
+---
+
+## Troubleshooting
+
+**Runner cannot reach SCM platform:**
+- Verify outbound HTTPS (port 443) is open to your SCM platform URL
+- Check DNS resolution: `nslookup github.com` / `nslookup gitlab.com` / `nslookup dev.azure.com`
+- If behind a proxy, configure the runner to use it (see platform-specific proxy docs)
+
+**Runner cannot reach Azure APIs:**
+- Verify outbound HTTPS (port 443) to `management.azure.com`, `login.microsoftonline.com`, `graph.microsoft.com`
+- Test with: `az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID`
+
+**On-prem runner cannot reach cluster nodes:**
+- Verify the runner VM is on the correct management VLAN (e.g., VLAN 2203)
+- Test connectivity: `ping <cluster-node-ip>`, `ssh <admin>@<cluster-node-ip>`
+
+**Azure runner cannot reach on-premises:**
+- VPN/ExpressRoute must be deployed first — see [Part 2 — VPN Gateway](../../02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway.mdx)
+- Verify VPN tunnel status: `az network vpn-connection show --name <connection-name> -g <rg>`
+
+---
+
+## Next Steps
+
+After completing Part 1, proceed to [Part 2: Azure Foundation](../../02-azure-foundation/) to establish the Azure cloud infrastructure including landing zones, networking, and security resources.
+
+---
+
+## References
+
+- [CI/CD Runner Module | azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit)
+- [Discovery Checklist — CI/CD Infrastructure Sizing](../../../planning/02-discovery-checklist.mdx)
+- [GitHub Actions Self-Hosted Runners](https://docs.github.com/en/actions/hosting-your-own-runners)
+- [GitLab Runner Documentation](https://docs.gitlab.com/runner/)
+- [Azure DevOps Self-Hosted Agents](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/agents)
+- [Azure VPN Gateway Overview](https://learn.microsoft.com/en-us/azure/vpn-gateway/vpn-gateway-about-vpngateways)
+- [Azure ExpressRoute Overview](https://learn.microsoft.com/en-us/azure/expressroute/expressroute-introduction)
+- [OpenGear Documentation](https://opengear.com/support/documentation/)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

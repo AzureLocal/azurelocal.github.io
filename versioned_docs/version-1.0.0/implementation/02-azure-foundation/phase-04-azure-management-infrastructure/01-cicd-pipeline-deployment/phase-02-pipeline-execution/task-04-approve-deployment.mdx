@@ -1,0 +1,198 @@
+---
+title: "Task 04: Approve Deployment"
+sidebar_label: "Task 04: Approve Deployment"
+sidebar_position: 4
+description: "Approve the deployment to proceed with infrastructure provisioning"
+category: "Runbook"
+scope: "Approve the deployment to proceed with infrastructure provisioning"
+purpose: "Approve the deployment to proceed with infrastructure provisioning"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - azure-foundation
+  - management-infrastructure
+keywords:
+  - Approve
+  - Deployment
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Approve Deployment
+
+> **Objective**: Review and approve the Terraform plan to authorize deployment 
+> **Manual Gate**: Requires authorized user approval
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Approve the deployment to proceed with infrastructure provisioning
+> **PURPOSE**: Approve the deployment to proceed with infrastructure provisioning
+> **MASTER REFERENCE**: [Azure Pipelines Approvals](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/approvals)
+
+**Status**: Active
+
+## What Happens
+
+The approval gate:
+- Pauses pipeline execution
+- Requires manual review and approval
+- Provides audit trail of who approved
+- Prevents unauthorized deployments
+
+---
+
+## Procedure
+
+### 1. Review Plan Summary
+
+Before approving, verify:
+- [ ] Terraform plan reviewed in Task 03
+- [ ] Resource changes are expected
+- [ ] Network configuration is correct
+- [ ] No resources being destroyed unexpectedly
+- [ ] Deployment timing is acceptable (45-90 min for management mode)
+
+### 2. Approve Deployment
+
+1. In the pipeline view, find the **approve** stage
+2. Click the **play button** (▶️) next to the approval job
+3. Confirm approval when prompted
+
+### 3. Document Approval
+
+Optional but recommended:
+```
+Approval Notes:
+- Reviewed Terraform plan: 45 resources to add
+- Network: VNet 10.100.1.0/24, VPN Gateway VpnGw2AZ
+- Deployment authorized by: [Your Name]
+- Timestamp: [YYYY-MM-DD HH:MM]
+```
+
+---
+
+## Who Can Approve
+
+Approval requires one of:
+- Project Maintainer role
+- Azure Local Cloud deployment engineer
+- Customer designated approver (if configured)
+
+---
+
+## Approval Decision Checklist
+
+| Check | Status |
+|-------|--------|
+| Terraform plan reviewed | ☐ |
+| Resource count reasonable | ☐ |
+| Network configuration verified | ☐ |
+| VPN settings confirmed with network team | ☐ |
+| Deployment window acceptable | ☐ |
+| Stakeholders notified | ☐ |
+| Change ticket open (if required) | ☐ |
+
+---
+
+## If You Need to Reject
+
+**Don't approve if:**
+- Resource changes are unexpected
+- Network configuration looks incorrect
+- VPN settings don't match network team's documentation
+- Deployment timing conflicts with other activities
+
+**To reject and fix:**
+1. Do not click approve
+2. Cancel the pipeline (or let it time out)
+3. Make necessary configuration changes
+4. Commit and push again to restart pipeline
+
+---
+
+## Validation
+
+- [ ] Plan reviewed thoroughly
+- [ ] Approval decision documented
+- [ ] Pipeline approved and continuing to apply stage
+
+---
+
+---
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitHub Actions.
+
+See procedure steps above for GitHub-specific guidance.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitLab CI/CD.
+
+See procedure steps for GitLab-specific guidance.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on Azure DevOps Pipelines.
+
+See procedure steps for Azure DevOps-specific guidance.
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 03 - Plan Stage](./task-03-review-plan-stage.mdx) | [Phase 02 - Execution](./index.mdx) | [Task 05 - Apply Stage](./task-05-monitor-apply-stage.mdx) |
+
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Approval Group | `cicd.pipeline.approval_group` | `platform-approvers` |
+| Approval Timeout | `cicd.pipeline.approval_timeout_hours` | `72` |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Approval request not received | Notification settings misconfigured | Verify approver notification channels and permissions |
+| Approval timeout | Approver unavailable within configured window | Extend approval timeout or add alternate approvers |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |

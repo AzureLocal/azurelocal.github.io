@@ -1,0 +1,298 @@
+---
+title: "Task 01: Enable Azure Hybrid Benefit"
+sidebar_label: "Task 01: Azure Hybrid Benefit"
+sidebar_position: 1
+description: "Enable Azure Hybrid Benefit on Azure Local cluster to reduce Windows VM compute costs"
+category: "Runbook"
+scope: "Enable Azure Hybrid Benefit on Azure Local cluster to reduce Windows VM compu..."
+purpose: "Enable Azure Hybrid Benefit on Azure Local cluster to reduce Windows VM compute costs"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - licensing
+keywords:
+  - Enable
+  - Azure
+  - Hybrid
+  - Benefit
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Enable Azure Hybrid Benefit
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Enable Azure Hybrid Benefit on Azure Local cluster to reduce Windows VM compu...
+> **PURPOSE**: Enable Azure Hybrid Benefit on Azure Local cluster to reduce Windows VM compute costs
+> **MASTER REFERENCE**: [Azure Hybrid Benefit for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/azure-hybrid-benefit)
+
+**Status**: Active
+
+:::danger[⚠️ LICENSING REQUIREMENT - NOT A DEFAULT ENTITLEMENT]
+
+**Azure Hybrid Benefit is NOT included by default.** This benefit requires the customer to have:
+
+1. **Windows Server Datacenter licenses** with **active Software Assurance (SA)**, obtained through:
+ - Enterprise Agreement (EA) with active Software Assurance
+ - Cloud Solution Provider (CSP) subscription
+ - Microsoft Customer Agreement (MCA) with qualifying subscription
+
+2. **Sufficient core licenses** - Each Windows Server core license entitles use on **one physical core** of Azure Local. You must allocate enough core licenses to cover **all physical cores** on all servers in the Azure Local cluster.
+
+3. **Ongoing compliance** - Workloads using Azure Hybrid Benefit can run **only during the Software Assurance or subscription license term**. When the term approaches expiration, you must:
+ - Renew your agreement with Software Assurance or subscription license, OR
+ - Disable the Azure Hybrid Benefit functionality, OR
+ - Deprovision workloads using Azure Hybrid Benefit
+
+**⚠️ Microsoft reserves the right to audit customers at any time to verify eligibility for Azure Hybrid Benefit utilization.**
+
+> **Reference**: [Azure Hybrid Benefit for Windows Server](https://learn.microsoft.com/en-us/windows-server/get-started/azure-hybrid-benefit) | [Azure Hybrid Benefit for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/azure-hybrid-benefit)
+
+:::
+
+Azure Hybrid Benefit allows you to use existing Windows Server licenses with Software Assurance to reduce costs for Windows VMs running on Azure Local.
+
+## Overview
+
+Azure Hybrid Benefit provides:
+- Up to 40% savings on Windows VM compute costs
+- License mobility from on-premises to Azure Local
+- Compliance with Microsoft licensing requirements
+
+## Prerequisites
+
+- [ ] Windows Server licenses with active Software Assurance
+- [ ] Azure Local cluster registered with Azure Arc
+- [ ] Owner or Contributor role on the cluster resource
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
+| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
+| `CLUSTER_NAME` | `cluster.name` | `azl-dal-cl01` |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Steps
+
+1. Navigate to the **Azure portal** → **Azure Arc** → **Azure Local**
+2. Select your cluster resource
+3. Go to **Settings** → **Configuration**
+4. Locate **Azure Hybrid Benefit** section
+5. Toggle **Enable Azure Hybrid Benefit** to **On**
+6. Review the licensing attestation
+7. Click **Save**
+
+### Verification
+
+1. Return to the cluster **Overview** page
+2. Confirm **Azure Hybrid Benefit** shows as **Enabled**
+
+</TabItem>
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run this script from the management server to configure Azure Hybrid Benefit remotely.
+
+```powershell title="Enable-AzureHybridBenefit-Orchestrated.ps1 (Run FROM Management Server)"
+#Requires -Modules Az.Accounts, Az.Resources, Az.StackHCI
+
+<#
+.SYNOPSIS
+ Enables Azure Hybrid Benefit on an Azure Local cluster from a management server.
+.DESCRIPTION
+ This script connects to Azure and enables Azure Hybrid Benefit on the specified
+ Azure Local cluster resource.
+.PARAMETER ClusterResourceId
+ The Azure Resource ID of the Azure Local cluster.
+.PARAMETER SubscriptionId
+ The Azure subscription ID containing the cluster.
+.PARAMETER ResourceGroupName
+ The resource group containing the cluster.
+.PARAMETER ClusterName
+ The name of the Azure Local cluster resource.
+#>
+
+[CmdletBinding()]
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ClusterResourceId,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$SubscriptionId,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$ResourceGroupName,
+ 
+ [Parameter(Mandatory = $false)]
+ [string]$ClusterName
+)
+
+$ErrorActionPreference = 'Stop'
+
+# Connect to Azure if not already connected
+$context = Get-AzContext
+if (-not $context) {
+ Write-Host "Connecting to Azure..." -ForegroundColor Yellow
+ Connect-AzAccount
+}
+
+# Build resource ID if not provided
+if (-not $ClusterResourceId) {
+ if (-not $SubscriptionId -or -not $ResourceGroupName -or -not $ClusterName) {
+ throw "Either ClusterResourceId or (SubscriptionId, ResourceGroupName, ClusterName) must be provided"
+ }
+ $ClusterResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.AzureStackHCI/clusters/$ClusterName"
+}
+
+Write-Host "Enabling Azure Hybrid Benefit for: $ClusterResourceId" -ForegroundColor Cyan
+
+# Get current cluster configuration
+$cluster = Get-AzResource -ResourceId $ClusterResourceId
+
+# Update with Azure Hybrid Benefit enabled
+$cluster.Properties.softwareAssuranceProperties = @{
+ softwareAssuranceStatus = "Enabled"
+ softwareAssuranceIntent = "Enable"
+}
+
+$cluster | Set-AzResource -Force
+
+Write-Host "Azure Hybrid Benefit enabled successfully" -ForegroundColor Green
+
+# Verify
+$updatedCluster = Get-AzResource -ResourceId $ClusterResourceId
+Write-Host "Software Assurance Status: $($updatedCluster.Properties.softwareAssuranceProperties.softwareAssuranceStatus)" -ForegroundColor Cyan
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+Copy-paste ready script to enable Azure Hybrid Benefit — no config file, no helpers.
+
+```powershell title="Enable-AzureHybridBenefit-Standalone.ps1"
+# ============================================================================
+# Script: Enable-AzureHybridBenefit-Standalone.ps1
+# Execution: Run anywhere with Az modules — fully self-contained
+# Prerequisites: Az.Accounts, Az.Resources modules; authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Accounts, Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Azure subscription ID
+$ResourceGroupName = "rg-azurelocal-prod" # Resource group with cluster
+$ClusterName = "azl-cluster-01" # Azure Local cluster name
+#endregion CONFIGURATION
+
+$ErrorActionPreference = 'Stop'
+
+# Connect to Azure
+$ctx = Get-AzContext
+if (-not $ctx) { Connect-AzAccount }
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+$ClusterResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.AzureStackHCI/clusters/$ClusterName"
+
+Write-Host "Enabling Azure Hybrid Benefit for: $ClusterName" -ForegroundColor Cyan
+
+$cluster = Get-AzResource -ResourceId $ClusterResourceId
+$cluster.Properties.softwareAssuranceProperties = @{
+ softwareAssuranceStatus = "Enabled"
+ softwareAssuranceIntent = "Enable"
+}
+$cluster | Set-AzResource -Force
+
+Write-Host "✅ Azure Hybrid Benefit enabled" -ForegroundColor Green
+
+# Verify
+$updated = Get-AzResource -ResourceId $ClusterResourceId
+Write-Host "Software Assurance Status: $($updated.Properties.softwareAssuranceProperties.softwareAssuranceStatus)" -ForegroundColor Cyan
+```
+
+:::info No External Dependencies
+This script is completely self-contained. Edit the values in the `#region CONFIGURATION` block and run. No `variables.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Verification
+
+After enabling Azure Hybrid Benefit, verify the configuration:
+
+```powershell
+# On the cluster node
+Get-AzStackHCI | Select-Object ClusterName, AzureHybridBenefit
+
+# From management server
+$cluster = Get-AzResource -ResourceId $ClusterResourceId
+$cluster.Properties.softwareAssuranceProperties
+```
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| "Cluster not connected" | Verify Arc connection with `Get-AzStackHCI` |
+| Permission denied | Ensure Owner or Contributor role on cluster resource |
+| License attestation required | Review and accept the licensing terms in Azure Portal |
+
+## Related Documentation
+
+- [Azure Hybrid Benefit for Azure Local](https://learn.microsoft.com/en-us/azure-stack/hci/concepts/azure-hybrid-benefit)
+- [Software Assurance Benefits](https://www.microsoft.com/en-us/licensing/licensing-programs/software-assurance-default)
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Phase 04: Security & Governance](../phase-04-security-governance/index.mdx) | [Phase 05: Licensing & Telemetry](./index.mdx) | [Task 02: Windows Server Subscription →](./task-02-activate-windows-server-subscription.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

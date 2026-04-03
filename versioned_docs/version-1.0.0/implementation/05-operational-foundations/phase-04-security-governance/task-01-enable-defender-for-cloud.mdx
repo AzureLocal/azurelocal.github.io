@@ -1,0 +1,284 @@
+---
+title: "Task 01: Enable Defender for Cloud"
+sidebar_label: "Task 01: Defender for Cloud"
+sidebar_position: 1
+description: "Enable Microsoft Defender for Cloud with security policy initiatives for Azure Local deployments"
+category: "Runbook"
+scope: "Enable Microsoft Defender for Cloud with security policy initiatives for Azur..."
+purpose: "Enable Microsoft Defender for Cloud with security policy initiatives for Azure Local deployments"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - security-governance
+keywords:
+  - Enable
+  - Defender
+  - Cloud
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Enable Defender for Cloud
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Defender for Cloud enablement   
+> **PURPOSE**: Enable security posture management   
+> **MASTER REFERENCE**: [Microsoft Learn - Defender for Cloud](https://learn.microsoft.com/en-us/azure/defender-for-cloud/defender-for-cloud-introduction)
+
+**Status**: Active
+
+Microsoft Defender for Cloud provides cloud security posture management (CSPM) and cloud workload protection (CWP) for your Azure Local deployment. This step enables Defender plans and configures security policies.
+
+:::tip Azure Local Requirements
+For Azure Local deployments, **Defender for Servers Plan 2** is recommended to provide:
+- Vulnerability assessment for Arc-enabled servers
+- Just-in-time VM access
+- File integrity monitoring
+- Adaptive application controls
+:::
+
+## Overview
+
+| Defender Plan | Purpose | Recommendation |
+|---------------|---------|----------------|
+| **Foundational CSPM** | Free security posture assessment | ✅ Always enabled |
+| **Defender for Servers P2** | Arc-enabled server protection | ✅ Required for Azure Local |
+| **Defender for Key Vault** | Key Vault threat protection | ✅ Recommended |
+| **Defender for Resource Manager** | Management plane protection | ✅ Recommended |
+| **Defender for Storage** | Storage account protection | ⚪ Optional |
+| **Defender for DNS** | DNS threat detection | ⚪ Optional |
+
+## Prerequisites
+
+- Azure subscription with Owner or Security Administrator role
+- Log Analytics workspace created in Stage 06
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
+| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
+| `LOG_ANALYTICS_WORKSPACE_NAME` | `monitoring.log_analytics.workspace_name` | `law-azl-DAL-prod-01` |
+| `SECURITY_CONTACT_EMAIL` | `security.contact_email` | `security-team@contoso.com` |
+
+## Procedure
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Enable Defender for Cloud
+
+1. **Navigate to Defender for Cloud**
+ - In Azure Portal, search for **Microsoft Defender for Cloud**
+ - Click **Environment settings** in the left menu
+
+2. **Select Your Subscription**
+ - Expand your management group hierarchy
+ - Click on your Azure Local subscription
+
+3. **Enable Defender Plans**
+ - Toggle **ON** for the following plans:
+ - **Servers** → Select **Plan 2**
+ - **Key Vault** → Toggle ON
+ - **Resource Manager** → Toggle ON
+ - Click **Save**
+
+4. **Configure Auto-Provisioning**
+ - Click **Settings & monitoring**
+ - Enable **Log Analytics agent** or **Azure Monitor Agent**
+ - Select your Log Analytics workspace from Stage 06
+ - Enable **Vulnerability assessment for machines**
+ - Click **Save**
+
+5. **Configure Security Policies**
+ - Go to **Environment settings** → Your subscription
+ - Click **Security policy**
+ - Ensure **Azure Security Benchmark** is assigned
+ - Click **Add more standards** to add custom initiatives
+
+### Configure Email Notifications
+
+1. **Navigate to Email Notifications**
+ - In Defender for Cloud, go to **Environment settings**
+ - Select your subscription
+ - Click **Email notifications**
+
+2. **Configure Alerts**
+ - Enter email addresses for security alerts
+ - Select alert severity: **High** and **Medium**
+ - Toggle **Also notify subscription owners**
+ - Click **Save**
+
+</TabItem>
+
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Variables
+$subscriptionId = "<your-subscription-id>"
+$resourceGroup = "rg-management-prod-eastus2"
+$workspaceName = "law-azlmgmt-prod-eus2"
+$emailAddress = "security-team@Infinite azurelocal Corp.com"
+
+# Connect and set context
+Connect-AzAccount
+Set-AzContext -SubscriptionId $subscriptionId
+
+# Get workspace resource ID
+$workspace = Get-AzOperationalInsightsWorkspace -ResourceGroupName $resourceGroup -Name $workspaceName
+$workspaceId = $workspace.ResourceId
+
+# Enable Defender for Servers Plan 2
+Set-AzSecurityPricing -Name "VirtualMachines" -PricingTier "Standard"
+Write-Host "✅ Defender for Servers enabled" -ForegroundColor Green
+
+# Enable Defender for Key Vault
+Set-AzSecurityPricing -Name "KeyVaults" -PricingTier "Standard"
+Write-Host "✅ Defender for Key Vault enabled" -ForegroundColor Green
+
+# Enable Defender for Resource Manager
+Set-AzSecurityPricing -Name "Arm" -PricingTier "Standard"
+Write-Host "✅ Defender for Resource Manager enabled" -ForegroundColor Green
+
+# Enable Defender for Storage (optional)
+Set-AzSecurityPricing -Name "StorageAccounts" -PricingTier "Standard"
+Write-Host "✅ Defender for Storage enabled" -ForegroundColor Green
+
+# Configure auto-provisioning
+Set-AzSecurityAutoProvisioningSetting -Name "default" -EnableAutoProvision
+Write-Host "✅ Auto-provisioning enabled" -ForegroundColor Green
+
+# Configure workspace
+Set-AzSecurityWorkspaceSetting -Name "default" -Scope "/subscriptions/$subscriptionId" -WorkspaceId $workspaceId
+Write-Host "✅ Workspace configured" -ForegroundColor Green
+
+# Configure security contact
+Set-AzSecurityContact `
+ -Name "default1" `
+ -Email $emailAddress `
+ -AlertAdmin $true `
+ -NotifyOnAlert $true
+Write-Host "✅ Security contact configured" -ForegroundColor Green
+
+Write-Host "`n✅ Defender for Cloud configuration complete" -ForegroundColor Green
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+## Validation
+
+```powershell
+# Check Defender pricing tiers
+$pricingTiers = Get-AzSecurityPricing
+Write-Host "Defender Plan Status:" -ForegroundColor Cyan
+$pricingTiers | Where-Object { $_.PricingTier -eq "Standard" } | Format-Table Name, PricingTier -AutoSize
+
+# Check auto-provisioning
+$autoProvision = Get-AzSecurityAutoProvisioningSetting
+Write-Host "`nAuto-Provisioning: $($autoProvision.AutoProvision)" -ForegroundColor Cyan
+
+# Check workspace setting
+$workspaceSetting = Get-AzSecurityWorkspaceSetting
+Write-Host "Workspace: $($workspaceSetting.WorkspaceId)" -ForegroundColor Cyan
+```
+
+## Expected Output
+
+```
+Defender Plan Status:
+Name PricingTier
+---- -----------
+VirtualMachines Standard
+KeyVaults Standard
+Arm Standard
+StorageAccounts Standard
+
+Auto-Provisioning: On
+Workspace: /subscriptions/.../workspaces/law-azlmgmt-prod-eus2
+```
+
+## Cost Considerations
+
+| Plan | Cost Model | Estimated Monthly Cost |
+|------|------------|----------------------|
+| Defender for Servers P2 | Per server/hour | ~$15/server/month |
+| Defender for Key Vault | Per 10K transactions | ~$0.02/10K transactions |
+| Defender for Resource Manager | Per subscription | ~$4/subscription/month |
+
+:::note
+Costs vary based on usage. Use [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) for accurate estimates.
+:::
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Defender plans not visible in portal | Subscription not registered for Microsoft.Security provider | Register provider: `Register-AzResourceProvider -ProviderNamespace Microsoft.Security`; wait 5 minutes |
+| Email notifications not received | Action Group email not configured or in spam | Verify Action Group configuration in Monitor > Alerts > Action Groups; check spam/junk folders |
+| Defender shows no recommendations | Initial scan not yet complete | Wait 24 hours after enabling plans for the first assessment cycle to complete |
+
+## Next Steps
+
+Proceed to [Task 3: Apply Azure Policy Initiatives](./task-02-apply-azure-policy-initiatives.mdx) to enforce compliance policies.
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Phase 02: Monitoring & Observability](../phase-02-monitoring-observability/index.mdx) | [Phase 04: Security & Governance](./index.mdx) | [Task 02: Azure Policy →](./task-02-apply-azure-policy-initiatives.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

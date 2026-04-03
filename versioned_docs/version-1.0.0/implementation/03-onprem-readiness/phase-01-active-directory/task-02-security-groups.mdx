@@ -1,0 +1,303 @@
+---
+title: "Task 02: Security Groups"
+sidebar_label: "Task 02: Security Groups"
+sidebar_position: 2
+description: "Step 2 - Security Groups (task-02-security-groups.mdx)"
+category: "Runbook"
+scope: Active Directory security groups
+purpose: Create role-based access control groups
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-03
+version: "1.1.0"
+tags:
+  - azure-local
+  - active-directory
+  - security-groups
+  - rbac
+keywords:
+  - security groups
+  - AD groups
+  - RBAC
+  - role-based access
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Security Groups
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Active Directory security groups   
+> **PURPOSE**: Create role-based access control groups   
+> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory) 
+
+**Status**: Active
+
+## Overview
+
+Create optional security groups for role-based access control in Azure Local administration.
+
+### What This Accomplishes
+
+- Role-based access control for Azure Local operations
+- Delegated administration capabilities
+- Separation of duties for different administrative roles
+
+:::info
+
+The active directory information in these documents should have been decided in the [planning phase](../../../planning/) and discovery phases. These are just examples. Please update your scripts with the right OU information, right security groups, DNS, etc.
+
+:::
+
+## Prerequisites
+
+- Security Groups OU exists in Active Directory
+- Domain admin access for group creation
+- Understanding of group scope and security requirements
+
+## Variables from variables.yml
+
+| Variable Path | Type | Description |
+|--------------|------|-------------|
+| `identity.active_directory.ad_security_groups_ou_path` | string | OU path for security group creation |
+| `identity.active_directory.security_groups.org_prefix` | string | Organization prefix for group naming |
+| `identity.active_directory.security_groups.cluster_id` | string | Cluster identifier for group naming |
+| `identity.active_directory.security_groups.<key>.name` | string | Full security group name per role |
+| `identity.active_directory.security_groups.<key>.description` | string | Security group description |
+
+---
+
+## Security Group Model
+
+Group names follow the convention `SG-{org_prefix}-{cluster_id}-AZL-{role}`, built dynamically from two fields in `active_directory.security_groups` in `variables.yml`. The `cluster_id` suffix makes groups unique per cluster in the same domain.
+
+| YAML Key | Role Suffix | Local Group Assignments | Purpose |
+|---|---|---|---|
+| `azure_local_admins` | `AZL-Administrators` | `Administrators` | Full admin access to cluster nodes |
+| `operations` | `AZL-Operations` | `Remote Management Users`, `Remote Desktop Users` | PSRemoting + RDP; no full admin |
+| `read_only` | `AZL-ReadOnly` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` | View-only; cannot change config |
+| `wac_admins` | `AZL-WAC-Administrators` | _(WAC server only)_ | WAC full admin; not applied to cluster nodes |
+| `wac_users` | `AZL-WAC-Users` | _(WAC server only)_ | WAC standard users; not applied to cluster nodes |
+| `hyperv_admins` | `AZL-HyperV-Administrators` | `Hyper-V Administrators`, `Remote Management Users` | VM management via PSRemoting |
+| `storage_admins` | `AZL-Storage-Administrators` | `Administrators` | CSV and S2D management |
+
+## Security Group Creation
+
+Core Azure Local instance security groups in the enterprise Security Groups OU (pre-determined OU for security groups).
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Active Directory Users and Computers" default>
+
+1. Open **Active Directory Users and Computers**.
+2. Navigate to the enterprise Security Groups OU (for example, `OU=Security Groups,OU=IAM,DC=azurelocal,DC=cloud`).
+3. Right‑click OU → New → Group.
+4. Create each group (Global / Security) — replace `IIC` with your `org_prefix` and `azurelocal-clus01` with your `cluster_id`:
+ - `SG-IIC-azurelocal-clus01-AZL-Administrators`
+ - `SG-IIC-azurelocal-clus01-AZL-Operations`
+ - `SG-IIC-azurelocal-clus01-AZL-ReadOnly`
+ - `SG-IIC-azurelocal-clus01-AZL-WAC-Administrators`
+ - `SG-IIC-azurelocal-clus01-AZL-WAC-Users`
+ - `SG-IIC-azurelocal-clus01-AZL-HyperV-Administrators`
+ - `SG-IIC-azurelocal-clus01-AZL-Storage-Administrators`
+5. For each group: Properties → Protection: enable "Protect object from accidental deletion".
+6. Document intended membership policy (who owns adds/removals).
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Managing from a domain-joined management server — config-driven via variables.yml
+
+#### Script
+
+**Primary**: scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-02-security-groups/powershell/Invoke-ADSecurityGroups.ps1
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-02-security-groups/azure-cli/Invoke-ADSecurityGroups.ps1 |
+| Bash | scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-02-security-groups/bash/invoke-ad-security-groups.sh |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Invoke-ADSecurityGroups.ps1
+# Execution: Run FROM management server — reads variables.yml
+# Prerequisites: powershell-yaml module, ActiveDirectory RSAT, domain access
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath
+)
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($ConfigPath) {
+ $ConfigFile = $ConfigPath
+} else {
+ $ConfigFile = Join-Path $ScriptDir "..\..\..\..\config\variables.yml"
+}
+if (!(Test-Path $ConfigFile)) { throw "variables.yml not found at $ConfigFile" }
+
+Import-Module powershell-yaml -ErrorAction Stop
+Import-Module ActiveDirectory
+
+$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
+$groupsOu = $config["active_directory"]["ad_security_groups_ou_path"] # active_directory.ad_security_groups_ou_path
+$sgConfig = $config["active_directory"]["security_groups"] # active_directory.security_groups
+
+# Skip scalar metadata keys — only process entries that are hashtable objects (the 7 group keys)
+$groupKeys = $sgConfig.Keys | Where-Object { $sgConfig[$_] -is [System.Collections.IDictionary] }
+
+Write-Host "[1/2] Creating security groups in: $groupsOu" -ForegroundColor Cyan
+
+foreach ($key in $groupKeys) {
+ $groupName = $sgConfig[$key]["name"] # active_directory.security_groups.<key>.name
+ $groupDesc = $sgConfig[$key]["description"] # active_directory.security_groups.<key>.description
+
+ if (-not (Get-ADGroup -LDAPFilter "(cn=$groupName)" -SearchBase $groupsOu -ErrorAction SilentlyContinue)) {
+ New-ADGroup -Name $groupName -SamAccountName $groupName -GroupScope Global `
+ -GroupCategory Security -Path $groupsOu -Description $groupDesc
+ Write-Host " Created: $groupName" -ForegroundColor Green
+ } else {
+ Write-Host " Exists: $groupName" -ForegroundColor Yellow
+ }
+ $adGroup = Get-ADGroup -LDAPFilter "(cn=$groupName)" -SearchBase $groupsOu
+ Set-ADObject -Identity $adGroup.DistinguishedName -ProtectedFromAccidentalDeletion $true
+}
+
+Write-Host "[2/2] Verifying groups..." -ForegroundColor Cyan
+foreach ($key in $groupKeys) {
+ $groupName = $sgConfig[$key]["name"]
+ Get-ADGroup -LDAPFilter "(cn=$groupName)" -SearchBase $groupsOu | Select-Object Name, DistinguishedName
+}
+```
+
+#### Validation
+
+```powershell
+# Re-use $groupsOu and $sgConfig from above
+$groupKeys = $sgConfig.Keys | Where-Object { $sgConfig[$_] -is [System.Collections.IDictionary] }
+foreach ($key in $groupKeys) {
+ $groupName = $sgConfig[$key]["name"]
+ Get-ADGroup -LDAPFilter "(cn=$groupName)" -SearchBase $groupsOu | Select-Object Name
+}
+```
+
+**Validation Script**: `scripts/validation/03-onprem-readiness/phase-01-active-directory/task-02-security-groups/powershell/Test-ADSecurityGroups.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+
+```powershell
+#region CONFIGURATION
+# Group names are built as: SG-{OrgPrefix}-{ClusterId}-AZL-{role}
+$OrgPrefix = "IIC" # customer org abbreviation
+$ClusterId = "azurelocal-clus01" # cluster short name
+$GroupsOuDN = "OU=Security Groups,OU=IAM,DC=azurelocal,DC=cloud"
+#endregion
+
+Import-Module ActiveDirectory
+
+$groups = @(
+ @{ Name="SG-$OrgPrefix-$ClusterId-AZL-Administrators"; Desc="Full administrative access to cluster nodes" },
+ @{ Name="SG-$OrgPrefix-$ClusterId-AZL-Operations"; Desc="RDP and PSRemoting — manage services and monitor nodes; no full admin" },
+ @{ Name="SG-$OrgPrefix-$ClusterId-AZL-ReadOnly"; Desc="RDP view, perf counters, event logs — cannot PSRemote or change config" },
+ @{ Name="SG-$OrgPrefix-$ClusterId-AZL-WAC-Administrators"; Desc="WAC full admin — assigned on WAC server only, NOT on cluster nodes" },
+ @{ Name="SG-$OrgPrefix-$ClusterId-AZL-WAC-Users"; Desc="WAC standard users — assigned on WAC server only, NOT on cluster nodes" },
+ @{ Name="SG-$OrgPrefix-$ClusterId-AZL-HyperV-Administrators"; Desc="Hyper-V VM management via PSRemoting — no node-level admin rights" },
+ @{ Name="SG-$OrgPrefix-$ClusterId-AZL-Storage-Administrators"; Desc="CSV and Storage Spaces Direct management — requires local admin" }
+)
+
+foreach ($g in $groups) {
+ if (-not (Get-ADGroup -LDAPFilter "(cn=$($g.Name))" -SearchBase $GroupsOuDN -EA SilentlyContinue)) {
+ New-ADGroup -Name $g.Name -SamAccountName $g.Name -GroupScope Global -GroupCategory Security `
+ -Path $GroupsOuDN -Description $g.Desc
+ Write-Host "Created: $($g.Name)" -ForegroundColor Green
+ }
+ Set-ADObject -Identity (Get-ADGroup $g.Name).DistinguishedName -ProtectedFromAccidentalDeletion $true
+}
+# Verify all 7 groups
+Get-ADGroup -LDAPFilter "(cn=SG-$OrgPrefix-$ClusterId-AZL-*)" -SearchBase $GroupsOuDN | Select-Object Name, DistinguishedName
+```
+
+
+</TabItem>
+</Tabs>
+
+## Verification
+
+```powershell
+# Replace IIC / azurelocal-clus01 with your org_prefix / cluster_id
+Get-ADGroup -LDAPFilter "(cn=SG-IIC-azurelocal-clus01-AZL-*)" -SearchBase $GroupsOuDn | Select-Object Name
+```
+
+## Validation Checklist
+
+- [ ] Security Groups OU accessible
+- [ ] All required security groups created
+- [ ] Groups configured as Global/Security scope
+- [ ] Protection from accidental deletion enabled
+- [ ] Membership policies documented
+
+## Next Steps
+
+After creating security groups, proceed to [Task 3 - DNS Node A Records](./task-03-dns-node-a-records) for optional DNS record creation.
+
+## Troubleshooting
+
+### Common Issues
+
+**Group Creation Fails**: Check permissions and OU access.
+
+**Scope Configuration**: Ensure Global scope is appropriate for your domain structure.
+
+**Protection Setting**: Verify "Protect object from accidental deletion" is enabled.
+
+### Support Resources
+
+- [Active Directory Security Groups](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-groups)
+- [Group Scope Guidelines](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-groups#group-scope)
+
+---
+
+*Data verified with internal source [Azure Local Provisioning Runbook] and Docusaurus documentation release note dated 2025-12-08.*
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 01: OU Creation](./task-01-ou-creation-pre-creation-artifacts.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Task 03: DNS Node A Records →](./task-03-dns-node-a-records.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Standardized runbook format |
+
+---
+
+*End of Task*

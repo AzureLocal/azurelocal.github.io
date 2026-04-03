@@ -1,0 +1,271 @@
+---
+title: "Task 02: Test Connectivity"
+sidebar_label: "Task 02: Test Connectivity"
+sidebar_position: 2
+description: "Test network connectivity including VPN, Bastion, and DNS"
+category: "Runbook"
+scope: "Test network connectivity including VPN, Bastion, and DNS"
+purpose: "Test network connectivity including VPN, Bastion, and DNS"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - azure-foundation
+  - management-infrastructure
+keywords:
+  - Test
+  - Connectivity
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Test Connectivity
+
+> **Objective**: Verify network connectivity for VPN, Bastion, and DNS resolution
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Test network connectivity including VPN, Bastion, and DNS
+> **PURPOSE**: Test network connectivity including VPN, Bastion, and DNS
+> **MASTER REFERENCE**: [Azure Local Network Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements)
+
+**Status**: Active
+
+## VPN Connectivity Tests
+
+### 1. Check VPN Connection Status
+
+**Azure Portal Method:**
+1. Navigate to **Virtual network gateways**
+2. Select the VPN Gateway
+3. Click **Connections**
+4. Verify connection shows **Connected**
+
+**Azure CLI Method:**
+```bash
+az network vpn-connection show \
+ --name conn-{cid}-cluster-{instance} \
+ --resource-group rg-{cid}-{env}-{region}-management \
+ --query connectionStatus
+```
+
+Expected: `"Connected"`
+
+### 2. Verify BGP Peering
+
+**Azure Portal:**
+1. Virtual network gateways → VPN Gateway
+2. Select **BGP peers**
+3. Verify:
+ - [ ] On-premises BGP peer shows **Connected**
+ - [ ] Routes are being learned
+ - [ ] Peer IP matches on-prem configuration
+
+**Azure CLI:**
+```bash
+az network vnet-gateway list-bgp-peer-status \
+ --name vpngw-{cid}-{env}-{region} \
+ --resource-group rg-{cid}-{env}-{region}-management
+```
+
+Expected output shows peer with `"connectedDuration"` value.
+
+### 3. Test Connectivity to On-Premises
+
+If VPN connection is established and you have access to on-premises:
+
+```bash
+# From Azure VM or Cloud Shell
+ping 10.0.0.1 # Replace with actual on-prem management IP
+```
+
+:::info BGP Convergence Time
+BGP peering may take 5-15 minutes after VPN connection is established. If status shows "Connecting," wait and recheck.
+:::
+
+---
+
+## Bastion Connectivity Tests
+
+### 1. Verify Bastion Status
+
+**Azure Portal:**
+1. Navigate to **Bastions**
+2. Select the Bastion host
+3. Verify **Status: Succeeded**
+
+### 2. Test Bastion Connection (if VMs deployed)
+
+If optional NDM or Utility servers were deployed:
+
+1. Azure Portal → Virtual machines
+2. Select the VM
+3. Click **Connect** → **Bastion**
+4. Enter credentials
+5. Verify successful connection
+
+---
+
+## DNS Resolution Tests
+
+### 1. Verify DNS Resolver
+
+**Azure Portal:**
+1. Navigate to **Private DNS zones**
+2. Select the management DNS zone
+3. Check **Virtual network links**
+4. Verify linked to management VNet
+
+### 2. Test DNS Resolution
+
+**From Azure Cloud Shell:**
+
+```bash
+# Test DNS resolver for cluster nodes
+nslookup c01-n01-prd-ral.azlocal.internal 10.100.1.164
+
+# Replace with:
+# - Your cluster node hostname
+# - Your DNS resolver IP (from dns subnet)
+```
+
+Expected: Returns the node's IP address.
+
+**From Windows VM (if deployed):**
+
+```powershell
+# Test DNS resolution
+Resolve-DnsName c01-n01-prd-ral.azlocal.internal
+
+# Test DNS forwarding
+Resolve-DnsName google.com
+```
+
+### 3. Verify DNS A Records
+
+**Azure Portal:**
+1. Private DNS zones → Select zone
+2. Click **Record sets**
+3. Verify A records for all cluster nodes:
+
+| Name | Type | IP Address |
+|------|------|------------|
+| c01-n01-prd-ral | A | 10.100.3.101 |
+| c01-n02-prd-ral | A | 10.100.3.102 |
+| c01-n03-prd-ral | A | 10.100.3.103 |
+
+---
+
+## Validation Checklist
+
+### VPN Connectivity
+- [ ] VPN connection status is **Connected**
+- [ ] BGP peering established
+- [ ] Routes learned from on-premises
+- [ ] On-prem gateway can reach Azure VNet (if testable)
+
+### Bastion Connectivity
+- [ ] Bastion host status is **Succeeded**
+- [ ] Can connect to VMs via Bastion (if VMs deployed)
+- [ ] No connectivity errors
+
+### DNS Resolution
+- [ ] Private DNS zone linked to VNet
+- [ ] DNS resolver deployed and running
+- [ ] A records created for all cluster nodes
+- [ ] DNS resolution working from Azure resources
+- [ ] Conditional forwarding working (if configured)
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Target Endpoints | `azure.validation.connectivity_targets` | `10.0.0.1, 10.0.1.1` |
+| Test Ports | `azure.validation.test_ports` | `443, 3389, 5985` |
+
+---
+
+## Troubleshooting
+
+**VPN shows "Connecting" for extended time:**
+- Verify on-prem gateway configuration matches Azure settings
+- Check pre-shared key (PSK) matches both sides
+- Confirm on-prem firewall allows IKE/IPsec (UDP 500, 4500)
+
+**BGP peering not establishing:**
+- Verify BGP ASN correct on both sides
+- Check BGP IP addresses match configuration
+- Confirm no ACLs blocking BGP (TCP port 179)
+
+**Bastion connection fails:**
+- Verify VM is running
+- Check NSG allows inbound from Bastion subnet
+- Confirm credentials are correct
+
+**DNS resolution not working:**
+- Verify DNS resolver deployed in correct subnet
+- Check VNet link exists for Private DNS zone
+- Confirm A records created with correct IPs
+
+---
+
+---
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitHub Actions.
+
+See procedure steps above for GitHub-specific guidance.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitLab CI/CD.
+
+See procedure steps for GitLab-specific guidance.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on Azure DevOps Pipelines.
+
+See procedure steps for Azure DevOps-specific guidance.
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01 - Verify Resources](./task-01-verify-resources.mdx) | [Phase 03 - Validation](./index.mdx) | [Task 03 - Validate Configuration](./task-03-validate-configuration.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |

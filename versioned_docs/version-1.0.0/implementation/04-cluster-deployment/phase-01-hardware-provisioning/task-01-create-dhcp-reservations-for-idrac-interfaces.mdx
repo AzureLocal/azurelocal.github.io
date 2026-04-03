@@ -1,0 +1,337 @@
+---
+title: "Task 01: Create DHCP Reservations for iDRAC Interfaces"
+sidebar_label: "Task 01: iDRAC DHCP Reservations"
+sidebar_position: 1
+description: "Create DHCP reservations for iDRAC out-of-band management interfaces using MAC addresses and planned IPs from variables.yml before hardware arrives on site."
+category: "Runbook"
+scope: Azure Local hardware provisioning
+purpose: Pre-stage DHCP reservations so iDRAC interfaces receive consistent IP addresses from the moment hardware is powered on
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-01
+updated: 2026-03-04
+version: "1.1.0"
+tags:
+  - azure-local
+  - dhcp
+  - idrac
+  - hardware-provisioning
+  - fortigate
+  - windows-dhcp
+keywords:
+  - DHCP reservation
+  - iDRAC IP
+  - out-of-band management
+  - FortiGate DHCP
+  - Windows DHCP
+  - MAC address
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Create DHCP Reservations for iDRAC Interfaces
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
+
+[![Optional](https://img.shields.io/badge/Task-Optional-yellow?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Azure Local hardware provisioning   
+> **PURPOSE**: Pre-stage DHCP reservations so iDRAC interfaces receive consistent IP addresses from the moment hardware is powered on   
+> **MASTER REFERENCE**: [Phase 01: Hardware Provisioning](./index.mdx)
+
+**Status**: Active
+
+## Overview
+
+Create DHCP reservations for iDRAC out-of-band management interfaces using MAC addresses and planned IPs from `variables.yml`. This task is performed **before hardware arrives on site** — MAC addresses come from the Dell order documentation (packing slip or TechDirect), not from a discovery scan.
+
+:::info iDRAC Interfaces Only
+This task configures DHCP reservations for **iDRAC (out-of-band) interfaces only**. Management NIC (in-band) reservations are an optional separate task (Task 03). Management NIC static IPs are configured during OS installation.
+
+This task may be skipped if iDRACs have already been assigned static IP addresses prior to deployment.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Description | Source |
+|-------------|-------------|--------|
+| DHCP Server Access | FortiGate admin rights, Windows DHCP admin, or customer DHCP contact | Network team |
+| OOB Network Subnet | Out-of-band VLAN and DHCP scope configured | `variables.yml: network.vlans.oob.cidr` |
+| Node MAC Addresses | iDRAC MAC addresses from Dell order documentation | `variables.yml: nodes.<name>.macs.idrac` |
+| Planned iDRAC IPs | Assigned iDRAC IP per node | `variables.yml: nodes.<name>.idrac_ip` |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `network.vlans.oob.cidr` | string | OOB management network CIDR (e.g., `10.100.64.0/24`) |
+| `network.vlans.oob.dhcp.provider` | string | DHCP provider type (e.g., `fortigate`, `windows`) |
+| `network.vlans.oob.dhcp.server` | string | DHCP server hostname or IP |
+| `nodes.<name>.idrac_ip` | string | Planned iDRAC IP address per node |
+| `nodes.<name>.hostname` | string | Node hostname |
+| `nodes.<name>.service_tag` | string | Dell service tag |
+| `nodes.<name>.macs.idrac` | string | iDRAC MAC address from order documentation |
+
+---
+
+## Execution Options
+
+Select the tab matching your DHCP infrastructure:
+
+<Tabs groupId="device-type">
+<TabItem value="fortigate" label="FortiGate DHCP" default>
+
+> **When to use**: Azure Local Cloud-managed environments using FortiGate firewalls for DHCP
+
+### FortiGate Web UI
+
+1. Open browser to `https://<fortigate-ip>` and log in with admin credentials
+2. Navigate to **Policy & Objects** → **DHCP Server**
+3. Select the DHCP server for the OOB management network and click **Edit**
+4. In the **Reserved Addresses** section, click **Create New** for each node:
+ - **IP Address**: `nodes.<name>.idrac_ip` from `variables.yml`
+ - **MAC Address**: `nodes.<name>.macs.idrac` from `variables.yml`
+ - **Description**: `<hostname>-iDRAC (Service Tag: <service-tag>)`
+5. Click **OK** to save
+
+### FortiOS CLI (from Management Server)
+
+Connect via SSH from the management server and run the following for each node. Replace values with actual entries from `variables.yml`.
+
+```bash
+# ============================================================================
+# FortiGate DHCP Reservation — FortiOS CLI
+# Execution: SSH FROM management server TO FortiGate
+# Prerequisites: SSH access to FortiGate, admin rights
+# ============================================================================
+
+ssh admin@<fortigate-ip>
+
+config system dhcp server
+ edit "<OOB-DHCP-Server-Name>"
+ config reserved-address
+ edit "<hostname>-iDRAC"
+ set ip <nodes.<name>.idrac_ip>
+ set mac <nodes.<name>.macs.idrac>
+ set description "iDRAC for <hostname> (ST: <service_tag>)"
+ next
+ end
+ next
+end
+
+save config
+exit
+```
+
+Repeat the `edit` block for each node.
+
+### Validation
+
+```bash
+# Verify reservations on FortiGate
+show system dhcp server | grep -A5 "iDRAC"
+```
+
+</TabItem>
+<TabItem value="windows-dhcp" label="Windows DHCP Server">
+
+> **When to use**: Azure Local Cloud-managed environments using Windows Server DHCP
+
+### Windows DHCP Console
+
+1. Run `dhcpmgmt.msc` on the DHCP server or an admin workstation with RSAT installed
+2. Connect to the DHCP server
+3. Expand server → **IPv4** → **Scope [OOB Network]** → **Reservations**
+4. Right-click **Reservations** → **New Reservation** for each node:
+ - **Reservation name**: `<hostname>-iDRAC`
+ - **IP address**: `nodes.<name>.idrac_ip` from `variables.yml`
+ - **MAC address**: `nodes.<name>.macs.idrac` from `variables.yml`
+ - **Description**: `iDRAC for <hostname> (Service Tag: <service-tag>)`
+ - Click **Add**
+
+### Orchestrated Script (Mgmt Server)
+
+`scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-01-create-dhcp-reservations-for-idrac-interfaces/powershell/Invoke-iDRACDHCPReservations.ps1`
+
+```powershell
+#Requires -Version 7.0
+# ============================================================================
+# Script: Invoke-iDRACDHCPReservations.ps1
+# Execution: Run FROM management server — PSRemoting to Windows DHCP server
+# Prerequisites: powershell-yaml, PSRemoting to DHCP server, DHCP admin rights
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath = ".\config\variables.yml",
+
+ [Parameter(Mandatory = $false)]
+ [string]$DHCPServerOverride
+)
+
+Import-Module powershell-yaml -ErrorAction Stop
+$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+$iDRACScopeId = ($config.network.vlans.oob.cidr -split '/')[0]
+$DHCPServer = if ($DHCPServerOverride) { $DHCPServerOverride } else { $config.network.vlans.oob.dhcp.server }
+
+Write-Host "Creating iDRAC DHCP reservations on $DHCPServer (Scope: $iDRACScopeId)..." -ForegroundColor Cyan
+
+foreach ($nodeKey in $config.nodes.Keys) {
+ $node = $config.nodes[$nodeKey]
+ $macFmt = $node.macs.idrac -replace ':', '-'
+ $resName = "$($node.hostname)-iDRAC"
+ $resDesc = "iDRAC for $($node.hostname) (ST: $($node.service_tag))"
+
+ Write-Host " $resName -> $($node.idrac_ip)" -ForegroundColor Yellow
+
+ Invoke-Command -ComputerName $DHCPServer -ScriptBlock {
+ param($ScopeId, $IP, $MAC, $Name, $Desc)
+ Add-DhcpServerv4Reservation `
+ -ScopeId $ScopeId `
+ -IPAddress $IP `
+ -ClientId $MAC `
+ -Name $Name `
+ -Description $Desc
+ } -ArgumentList $iDRACScopeId, $node.idrac_ip, $macFmt, $resName, $resDesc
+
+ Write-Host " Created" -ForegroundColor Green
+}
+
+Write-Host "Done." -ForegroundColor Green
+```
+
+### Standalone Script
+
+```powershell
+#Requires -Version 5.1
+# ============================================================================
+# Script: Invoke-iDRACDHCPReservations-Standalone.ps1
+# Execution: Run FROM any workstation with DHCP admin rights
+# Prerequisites: RSAT-DHCP or run directly on DHCP server
+# ============================================================================
+
+#region CONFIGURATION
+$DHCPServer = "dhcp01.corp.example.com" # Windows DHCP server hostname
+$iDRACScopeId = "10.100.64.0" # OOB scope network address
+
+$nodes = @(
+ @{ Hostname = "azlocal-node01"; iDRACIP = "10.100.64.11"; iDRACMAC = "AA-BB-CC-DD-EE-01"; ServiceTag = "ABCDE01" },
+ @{ Hostname = "azlocal-node02"; iDRACIP = "10.100.64.12"; iDRACMAC = "AA-BB-CC-DD-EE-02"; ServiceTag = "ABCDE02" },
+ @{ Hostname = "azlocal-node03"; iDRACIP = "10.100.64.13"; iDRACMAC = "AA-BB-CC-DD-EE-03"; ServiceTag = "ABCDE03" },
+ @{ Hostname = "azlocal-node04"; iDRACIP = "10.100.64.14"; iDRACMAC = "AA-BB-CC-DD-EE-04"; ServiceTag = "ABCDE04" }
+)
+#endregion
+
+foreach ($node in $nodes) {
+ $resName = "$($node.Hostname)-iDRAC"
+ $resDesc = "iDRAC for $($node.Hostname) (ST: $($node.ServiceTag))"
+ Write-Host "Creating: $resName -> $($node.iDRACIP)" -ForegroundColor Yellow
+ Add-DhcpServerv4Reservation `
+ -ComputerName $DHCPServer `
+ -ScopeId $iDRACScopeId `
+ -IPAddress $node.iDRACIP `
+ -ClientId $node.iDRACMAC `
+ -Name $resName `
+ -Description $resDesc
+ Write-Host " Created" -ForegroundColor Green
+}
+
+Write-Host "Done." -ForegroundColor Green
+```
+
+</TabItem>
+<TabItem value="customer" label="Customer-Managed DHCP">
+
+> **When to use**: DHCP infrastructure is managed by the customer network team
+
+### Information to Provide to Customer
+
+Extract and provide the following from `variables.yml`:
+
+| Field | variables.yml Path | Example |
+|-------|------------------------|---------|
+| iDRAC MAC address | `nodes.<name>.macs.idrac` | `AA:BB:CC:DD:EE:01` |
+| Planned iDRAC IP | `nodes.<name>.idrac_ip` | `10.100.64.11` |
+| Reservation name | Derived: `<hostname>-iDRAC` | `azlocal-node01-iDRAC` |
+| Description | Derived | `iDRAC for azlocal-node01 (ST: ABCDE01)` |
+| DHCP scope | `network.vlans.oob.cidr` | `10.100.64.0/24` |
+
+### Coordination Steps
+
+1. Extract node data from `variables.yml`
+2. Submit request to customer network team with the table above
+3. Confirm scope and VLAN with network team
+4. Obtain confirmation that reservations have been created
+5. Validate (see below)
+
+### Validation
+
+- [ ] Customer confirms all reservations created
+- [ ] IP addresses match `variables.yml: nodes.<name>.idrac_ip`
+- [ ] MAC addresses match `variables.yml: nodes.<name>.macs.idrac`
+- [ ] Reservation names follow convention: `<hostname>-iDRAC`
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Checklist
+
+- [ ] DHCP reservation created for every node (one per node)
+- [ ] IP addresses match `nodes.<name>.idrac_ip` in `variables.yml`
+- [ ] MAC addresses match `nodes.<name>.macs.idrac` in `variables.yml`
+- [ ] Reservation names follow convention: `<hostname>-iDRAC`
+- [ ] Reservation descriptions include hostname and service tag
+- [ ] All reservations in the correct OOB DHCP scope
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `DhcpServer module not found` | RSAT not installed | `Install-WindowsFeature RSAT-DHCP` or run directly on DHCP server |
+| `Duplicate reservation` | Reservation already exists | Remove existing: `Remove-DhcpServerv4Reservation` then re-add |
+| `Scope not found` | Wrong scope ID | Verify: `Get-DhcpServerv4Scope -ComputerName $DHCPServer` |
+| `Access denied` | Insufficient rights | Run as DHCP Administrator role member |
+| `FortiGate SSH access denied` | SSH not enabled or wrong credentials | Enable SSH on FortiGate admin interface |
+| `DHCP server unreachable` | Network connectivity | Verify management server can reach DHCP server |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Phase 01 Overview](./index.mdx) | [↑ Phase 01: Hardware Provisioning](./index.mdx) | [Task 02: Hardware Discovery →](./task-02-hardware-discovery-via-dell-redfish-api.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-01 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-04 | Azure Local Cloud Azure Local Cloudnology | Fix tab labels, script paths, standards alignment |

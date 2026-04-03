@@ -1,0 +1,871 @@
+---
+title: "Task 02: VMFleet Storage Performance Testing"
+sidebar_label: "Task 02: VMFleet Storage Testing"
+sidebar_position: 2
+description: "Deploy VMFleet for comprehensive storage performance testing and baseline documentation"
+category: "Runbook"
+scope: "Deploy VMFleet for comprehensive storage performance testing and baseline doc..."
+purpose: "Deploy VMFleet for comprehensive storage performance testing and baseline documentation"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - azure-local
+  - cluster-validation
+keywords:
+  - VMFleet
+  - Storage
+  - Performance
+  - Testing
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: VMFleet Storage Performance Testing
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Storage performance baseline   
+> **PURPOSE**: Deploy VMFleet, run storage tests, create performance baseline for customer handover   
+> **MASTER REFERENCE**: [VMFleet Storage Testing Framework](https://github.com/microsoft/diskspd/tree/master/Frameworks/VMFleet)
+> **MASTER REFERENCES**:
+> - [Microsoft VMFleet GitHub](https://github.com/microsoft/diskspd/tree/master/Frameworks/VMFleet)
+> - [VMFleet 2.0 Quick Start Guide](https://techcommunity.microsoft.com/blog/azurestackblog/vmfleet-2-0---quick-start-guide/2824778)
+> - [VMFleet Workload Profiles](https://techcommunity.microsoft.com/blog/azurestackblog/vmfleets-predefined-workload-profiles/2804130)
+
+**Status**: Active 
+**VMFleet Version**: 2.1.0.0 (April 2024)
+
+---
+
+## Overview
+
+**VMFleet** is Microsoft's official storage load generation tool for Storage Spaces Direct (S2D) environments. It deploys a fleet of VMs across all cluster nodes, each running DiskSpd to generate I/O load. This creates a realistic, distributed storage workload to validate performance and establish baselines.
+
+:::tip Monitoring During Testing
+VMFleet includes a built-in real-time dashboard (`Watch-FleetCluster`). For historical data and visualization, use the **Azure Local Insights workbook** configured in [Phase 18: Monitoring & Observability](../05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights.mdx). The Insights workbook provides IOPS, throughput, latency, and health metrics collected via Azure Monitor.
+:::
+
+### Purpose of This Step
+
+1. **Validate storage performance** under load across all nodes
+2. **Document baseline metrics** (IOPS, throughput, latency) for customer handover
+3. **Verify storage health** under stress conditions
+4. **Generate reports** for consolidated validation package
+
+:::warning Maintenance Window Required
+VMFleet generates significant I/O load. Run during a maintenance window when no production workloads are active.
+:::
+
+## Prerequisites
+
+- [ ] Infrastructure health validation completed (Step 1)
+- [ ] Windows Server 2022 Core VHD available (sysprepped)
+- [ ] At least 100GB free space on each node's Fleet volume
+- [ ] Maintenance window scheduled (4-6 hours)
+- [ ] No production VMs running during test
+
+## Variables from variables.yml
+
+| Variable Path | Type | Description |
+|---|---|---|
+| `platform.cluster_name` | String | Cluster name used in report headers |
+| `compute.nodes[].name` | String | Node hostnames for per-node fleet VM distribution |
+| `storage.pool_name` | String | Storage pool name for volume creation |
+
+## Report Output
+
+All results are saved to:
+```
+\\<ClusterName>\ClusterStorage$\Collect\validation-reports\
+├── 02-vmfleet-storage-baseline-YYYYMMDD.csv
+└── 02-vmfleet-storage-summary-YYYYMMDD.txt
+```
+
+---
+
+## Part 1: Install VMFleet Module
+
+### 1.1 Install from PowerShell Gallery
+
+```powershell
+# Install VMFleet module (current version: 2.1.0.0)
+Install-Module -Name VMFleet -Force -Scope AllUsers
+
+# Verify installation
+Get-Module -Name VMFleet -ListAvailable
+Import-Module VMFleet
+
+# Check available commands
+Get-Command -Module VMFleet
+```
+
+**Expected output**: Module version **2.1.0.0** (released April 2024) with commands including:
+- `Install-Fleet` - Create folder structure and copy binaries
+- `New-Fleet` - Deploy fleet VMs
+- `Start-Fleet` / `Stop-Fleet` - Control fleet operations
+- `Remove-Fleet` - Cleanup fleet VMs
+- `Watch-FleetCluster` - Real-time performance dashboard
+- `Measure-FleetCoreWorkload` - Run 4 pre-defined workload profiles
+- `Start-FleetSweep` - Run custom workload profiles
+- `Get-FleetVolumeEstimate` - Calculate recommended volume sizes
+
+:::info VMFleet Version History
+| Version | Release Date | Notes |
+|---------|--------------|-------|
+| **2.1.0.0** | April 2024 | Current - Arc VM support, bug fixes |
+| 2.0.2.2 | Jan 2022 | Previous stable |
+| 2.0.0.0 | Sept 2021 | Major rewrite with `Measure-FleetCoreWorkload` |
+:::
+
+### 1.2 Verify DiskSpd Availability
+
+VMFleet uses DiskSpd internally. Verify it's accessible:
+
+```powershell
+# DiskSpd is bundled with VMFleet, but verify
+$DiskSpd = Get-Command diskspd.exe -ErrorAction SilentlyContinue
+if (-not $DiskSpd) {
+ Write-Host "DiskSpd will be deployed by VMFleet during installation"
+}
+```
+
+---
+
+## Part 2: Prepare Storage Volumes
+
+### 2.1 Calculate Recommended Volume Sizes
+
+VMFleet includes a helper command to calculate optimal volume sizes based on your cluster configuration:
+
+```powershell
+# Calculate recommended volume sizes for your cluster
+Get-FleetVolumeEstimate
+```
+
+**Example output**:
+```
+MirrorType VolumeSize Description
+---------- ---------- -----------
+2-way Mirror 500GB For 2-node clusters
+3-way Mirror 350GB For 3+ node clusters
+Mirror-Accel 400GB For mirror-accelerated parity
+```
+
+### 2.2 Create Collect Volume
+
+The **Collect** volume stores VMFleet configuration, results, and the template VHD. Create it on shared storage visible to all nodes.
+
+```powershell
+# Create Collect volume (single volume, accessible from all nodes)
+# Recommended: 200GB minimum for VHD + results
+
+$CollectVolumeName = "Collect"
+$CollectVolumeSize = 200GB
+
+# Check if volume already exists
+$ExistingVolume = Get-ClusterSharedVolume | Where-Object { $_.SharedVolumeInfo.FriendlyVolumeName -like "*$CollectVolumeName*" }
+
+if (-not $ExistingVolume) {
+ # Create the virtual disk and volume
+ New-Volume -StoragePoolFriendlyName "S2D on $((Get-Cluster).Name)" `
+ -FriendlyName $CollectVolumeName `
+ -FileSystem CSVFS_ReFS `
+ -Size $CollectVolumeSize
+ 
+ Write-Host "Created Collect volume: $CollectVolumeSize" -ForegroundColor Green
+} else {
+ Write-Host "Collect volume already exists" -ForegroundColor Yellow
+}
+
+# Verify volume path
+$CollectPath = "C:\ClusterStorage\$CollectVolumeName"
+Test-Path $CollectPath
+```
+
+### 2.3 Create Per-Node Fleet Volumes
+
+Each node needs its own **Fleet** volume to host VMFleet VMs. Use the size from `Get-FleetVolumeEstimate`:
+
+```powershell
+# Get cluster nodes
+$Nodes = (Get-ClusterNode).Name
+
+# Use volume size from Get-FleetVolumeEstimate or manual calculation
+# Rule of thumb: ~10GB per fleet VM + overhead
+$FleetVolumeSize = 500GB # Adjust based on VM count and resiliency
+
+foreach ($Node in $Nodes) {
+ $FleetVolumeName = "Fleet-$Node"
+ 
+ # Check if volume exists
+ $ExistingFleet = Get-ClusterSharedVolume | Where-Object { 
+ $_.SharedVolumeInfo.FriendlyVolumeName -like "*$FleetVolumeName*" 
+ }
+ 
+ if (-not $ExistingFleet) {
+ # Create Fleet volume for this node
+ New-Volume -StoragePoolFriendlyName "S2D on $((Get-Cluster).Name)" `
+ -FriendlyName $FleetVolumeName `
+ -FileSystem CSVFS_ReFS `
+ -Size $FleetVolumeSize
+ 
+ Write-Host "Created Fleet volume for $Node" -ForegroundColor Green
+ } else {
+ Write-Host "Fleet volume for $Node already exists" -ForegroundColor Yellow
+ }
+}
+
+# List all volumes
+Get-ClusterSharedVolume | Format-Table Name, SharedVolumeInfo
+```
+
+### 2.4 Prepare Windows Server Core VHD
+
+Copy a sysprepped Windows Server 2022 Core VHDX to the Collect volume:
+
+```powershell
+# Source VHD location (update with your path)
+$SourceVHD = "C:\ClusterStorage\Library\WindowsServer2022-Core-Sysprep.vhdx"
+
+# Destination in Collect volume
+$CollectPath = "C:\ClusterStorage\Collect"
+$FleetVHD = "$CollectPath\FleetImage.vhdx"
+
+# Copy VHD if not already present
+if (-not (Test-Path $FleetVHD)) {
+ Write-Host "Copying template VHD to Collect volume..." -ForegroundColor Yellow
+ Copy-Item -Path $SourceVHD -Destination $FleetVHD -Force
+ Write-Host "VHD copied successfully" -ForegroundColor Green
+} else {
+ Write-Host "Fleet VHD already exists at $FleetVHD" -ForegroundColor Yellow
+}
+
+# Verify VHD
+Get-VHD -Path $FleetVHD | Format-Table VhdFormat, VhdType, Size, FileSize
+```
+
+---
+
+## Part 3: Install and Deploy VMFleet
+
+### 3.1 Install Fleet Infrastructure
+
+```powershell
+# Install VMFleet infrastructure
+# This creates necessary folder structure and copies binaries
+
+Install-Fleet -CollectVolumePath "C:\ClusterStorage\Collect"
+
+# Verify installation
+Get-ChildItem "C:\ClusterStorage\Collect" -Directory
+```
+
+**Expected folders**:
+- `control` - Fleet control scripts
+- `result` - Test results output
+- `tools` - DiskSpd and other tools
+- `vhd` - VHD storage
+
+### 3.2 Create Fleet VMs
+
+```powershell
+# Create the VM fleet
+# Parameters:
+# -VMs: Total number of VMs across cluster (4-8 per node recommended)
+# -AdminPass: Local admin password for VMs
+# -ConnectPass: Password for VM connection
+# -BaseVHD: Path to template VHD
+
+$TotalNodes = (Get-ClusterNode).Count
+$VMsPerNode = 6 # Adjust based on available resources
+$TotalVMs = $TotalNodes * $VMsPerNode
+
+$AdminPassword = ConvertTo-SecureString "P@ssw0rd123!" -AsPlainText -Force
+
+New-Fleet -BaseVHD "C:\ClusterStorage\Collect\FleetImage.vhdx" `
+ -VMs $TotalVMs `
+ -AdminPass $AdminPassword `
+ -ConnectPass $AdminPassword `
+ -DVDISO $null # No additional ISO needed
+
+Write-Host "Created $TotalVMs VMFleet VMs across $TotalNodes nodes" -ForegroundColor Green
+```
+
+### 3.3 Verify Fleet Deployment
+
+```powershell
+# Check fleet VMs
+Get-FleetVM | Format-Table Name, State, ComputerName
+
+# Verify VMs are distributed across nodes
+Get-FleetVM | Group-Object ComputerName | Format-Table Name, Count
+
+# Check all VMs are running
+$RunningVMs = (Get-FleetVM | Where-Object State -eq "Running").Count
+$TotalFleetVMs = (Get-FleetVM).Count
+
+Write-Host "Fleet Status: $RunningVMs of $TotalFleetVMs VMs running" -ForegroundColor $(if($RunningVMs -eq $TotalFleetVMs){"Green"}else{"Yellow"})
+```
+
+---
+
+## Part 4: Start Fleet and Monitor Dashboard
+
+### 4.1 Start the Fleet
+
+```powershell
+# Start all fleet VMs and begin monitoring
+Start-Fleet
+
+# Wait for VMs to fully boot and respond
+Write-Host "Waiting for fleet VMs to boot (60 seconds)..." -ForegroundColor Yellow
+Start-Sleep -Seconds 60
+
+# Verify fleet is ready
+$FleetStatus = Get-FleetVM | Where-Object State -eq "Running"
+Write-Host "Fleet ready: $($FleetStatus.Count) VMs online" -ForegroundColor Green
+```
+
+### 4.2 Launch Monitoring Dashboard
+
+```powershell
+# Watch-FleetCluster provides real-time performance dashboard
+# Run this in a separate PowerShell window for monitoring
+
+Watch-FleetCluster
+
+# Dashboard shows:
+# - IOPS per node
+# - Throughput (MB/s)
+# - Latency (ms)
+# - CPU utilization
+# - Storage health
+```
+
+**Dashboard Interpretation**:
+| Metric | Description | Healthy Range |
+|--------|-------------|---------------|
+| **IOPS** | I/O operations per second | Varies by workload |
+| **Throughput** | MB/s read/write | Varies by workload |
+| **Latency** | Average response time | < 10ms typical |
+| **CPU** | Cluster CPU utilization | < 80% during test |
+| **Health** | Storage pool status | All healthy |
+
+### 4.3 Azure Monitor Integration
+
+If Azure Local Insights was configured in [Phase 18](../05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights.mdx), you can monitor VMFleet testing through the Azure portal:
+
+#### Available Azure Workbooks During Testing
+
+| Workbook | What It Shows | Access Path |
+|----------|---------------|-------------|
+| **Azure Local Insights** | Cluster health, storage IOPS/latency, node CPU/memory | Azure Portal → Azure Local → Cluster → Insights |
+| **Performance History** | Historical storage metrics via `Get-ClusterPerformanceHistory` | PowerShell |
+
+#### Real-Time Performance Queries (Log Analytics)
+
+```kusto
+// Storage performance during VMFleet testing
+Perf
+| where ObjectName == "Cluster CSV File System"
+| where CounterName in ("Read Bytes/sec", "Write Bytes/sec", "Reads/sec", "Writes/sec")
+| where TimeGenerated > ago(1h)
+| summarize avg(CounterValue) by CounterName, bin(TimeGenerated, 1m)
+| render timechart
+```
+
+```kusto
+// CPU utilization during test
+Perf
+| where ObjectName == "Processor"
+| where CounterName == "% Processor Time"
+| where InstanceName == "_Total"
+| where TimeGenerated > ago(1h)
+| summarize avg(CounterValue) by Computer, bin(TimeGenerated, 1m)
+| render timechart
+```
+
+:::tip Capture Before/During/After Metrics
+Run these queries **before**, **during**, and **after** VMFleet testing to document the performance impact and baseline. Export the results to include in the customer handover package.
+:::
+
+---
+
+## Part 5: Run Core Workload Tests
+
+### 5.1 Run Measure-FleetCoreWorkload
+
+The `Measure-FleetCoreWorkload` command runs four industry-standard storage profiles:
+
+```powershell
+# Run comprehensive storage performance tests
+# This runs General, Peak, VDI, and SQL profiles sequentially
+
+# Initialize report
+$DateStamp = Get-Date -Format "yyyyMMdd"
+$ReportPath = "C:\ClusterStorage\Collect\validation-reports"
+$SummaryFile = "$ReportPath\02-vmfleet-storage-summary-$DateStamp.txt"
+$CSVFile = "$ReportPath\02-vmfleet-storage-baseline-$DateStamp.csv"
+
+New-Item -Path $ReportPath -ItemType Directory -Force -ErrorAction SilentlyContinue
+
+$ReportHeader = @"
+================================================================================
+VMFLEET STORAGE PERFORMANCE BASELINE REPORT
+================================================================================
+Cluster: $((Get-Cluster).Name)
+Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Fleet Size: $((Get-FleetVM).Count) VMs
+Nodes: $((Get-ClusterNode).Count)
+Generated By: $(whoami)
+================================================================================
+
+"@
+$ReportHeader | Out-File $SummaryFile -Encoding UTF8
+
+# Run core workload measurement
+# Duration: ~30 minutes per profile (2+ hours total)
+Write-Host "Starting core workload tests (estimated 2+ hours)..." -ForegroundColor Yellow
+
+$CoreResults = Measure-FleetCoreWorkload -Verbose
+
+# Save results
+$CoreResults | Export-Csv -Path $CSVFile -NoTypeInformation
+$CoreResults | Format-Table | Out-String | Add-Content $SummaryFile
+
+Write-Host "Core workload tests complete. Results saved to $CSVFile" -ForegroundColor Green
+```
+
+### 5.2 Workload Profile Details
+
+The `Measure-FleetCoreWorkload` command runs four industry-standard profiles with VM-CSV alignment testing at both 30% and 100%:
+
+| Profile | Block Size | Threads | Queue Depth | Read/Write | I/O Pattern | CPU Cap | Purpose |
+|---------|------------|---------|-------------|------------|-------------|---------|--------|
+| **General** | 4K | 1 | 32 | 100/0, 90/10, 70/30 | Working set distribution | 40% | Realistic mixed workload |
+| **Peak** | 4K | 4 | 32 | 100/0 | 100% Random | None | Maximum IOPS (hero number) |
+| **VDI** | 8K read, 32K write | 1 | 8 | 80/20 | 80% random, 20% sequential | None | Virtual desktop workload |
+| **SQL** | 8K OLTP, 32K Log | 4/2 | 8/1 | 70/30 OLTP, 0/100 Log | Random OLTP, Sequential Log | None | OLTP database workload |
+
+:::info Working Set Distribution
+The **General** profile uses a realistic working set distribution (`-rdpct95/5:4/10:1/85`) where:
+- 95% of I/O targets 5% of the file (hot data)
+- 4% of I/O targets 10% of the file (warm data)
+- 1% of I/O targets 85% of the file (cold data)
+
+This simulates real-world data access patterns better than uniform random I/O.
+:::
+
+### 5.3 Run Individual Workload Profiles
+
+For targeted testing, run individual profiles:
+
+```powershell
+# Peak IOPS test (4K random read)
+Start-FleetSweep -b 4k -t 4 -o 32 -w 0 -r -d 300
+
+# Throughput test (512K sequential read)
+Start-FleetSweep -b 512k -t 2 -o 16 -w 0 -d 300
+
+# Mixed workload (8K random, 70% read)
+Start-FleetSweep -b 8k -t 4 -o 16 -w 30 -r -d 300
+
+# Latency-focused (4K random read, low queue depth)
+Start-FleetSweep -b 4k -t 1 -o 1 -w 0 -r -d 300
+```
+
+**DiskSpd Parameter Reference**:
+| Parameter | Description | Example |
+|-----------|-------------|--------|
+| `-b` | Block size | `-b4k`, `-b8k`, `-b64k`, `-b512k` |
+| `-t` | Threads per target | `-t4` = 4 threads |
+| `-o` | Outstanding I/O queue depth per thread | `-o32` = 32 outstanding IOs |
+| `-w` | Write percentage (0-100) | `-w0` = read only, `-w30` = 70/30 read/write |
+| `-r` | Random I/O (omit for sequential) | `-r` = random |
+| `-rs` | Mixed random/sequential | `-rs80` = 80% random, 20% sequential |
+| `-d` | Duration in seconds | `-d300` = 5 minutes |
+| `-Suw` | Disable software and hardware write cache | Recommended for accurate results |
+| `-Z10m` | Random write buffer (defeats compression/dedup) | `-Z10m` = 10MB random buffer |
+| `-rdpct` | Working set distribution | `-rdpct95/5:4/10:1/85` = hot/warm/cold |
+| `-g<n>i` | IOPS limit per thread | `-g750i` = 750 IOPS cap |
+
+:::note DiskSpd 2.2 Changes
+DiskSpd 2.2 (June 2024) includes changes to the async I/O loop that improve latency measurement at high queue depths. If comparing results to older tests, results may need rebaselining.
+:::
+
+---
+
+## Part 6: Collect and Analyze Results
+
+### 6.1 Parse Results to CSV
+
+```powershell
+# Get all result files
+$ResultPath = "C:\ClusterStorage\Collect\result"
+$ResultFiles = Get-ChildItem -Path $ResultPath -Filter "*.xml" -Recurse
+
+# Parse results
+$AllResults = foreach ($File in $ResultFiles) {
+ [xml]$Xml = Get-Content $File.FullName
+ 
+ $Result = $Xml.Results.TimeSpan.Iops
+ 
+ [PSCustomObject]@{
+ Timestamp = $File.LastWriteTime
+ TotalIOPS = [math]::Round($Result.Total, 0)
+ ReadIOPS = [math]::Round($Result.Read, 0)
+ WriteIOPS = [math]::Round($Result.Write, 0)
+ ReadMBps = [math]::Round($Xml.Results.TimeSpan.Throughput.Read / 1MB, 2)
+ WriteMBps = [math]::Round($Xml.Results.TimeSpan.Throughput.Write / 1MB, 2)
+ AvgLatencyMs = [math]::Round($Xml.Results.TimeSpan.Latency.Average, 2)
+ MaxLatencyMs = [math]::Round($Xml.Results.TimeSpan.Latency.Max, 2)
+ }
+}
+
+# Append to CSV
+$AllResults | Export-Csv -Path $CSVFile -Append -NoTypeInformation
+
+# Display summary
+$AllResults | Format-Table -AutoSize
+```
+
+### 6.2 Generate Performance Summary
+
+```powershell
+# Calculate aggregate statistics
+$Stats = @"
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+
+IOPS METRICS:
+ Peak IOPS (4K Random Read): $($AllResults | Where-Object {$_.WriteIOPS -eq 0} | Measure-Object TotalIOPS -Maximum).Maximum
+ Sustained IOPS (Mixed): $($AllResults | Measure-Object TotalIOPS -Average).Average | [math]::Round(0))
+ Minimum IOPS: $(($AllResults | Measure-Object TotalIOPS -Minimum).Minimum)
+
+THROUGHPUT METRICS:
+ Peak Read Throughput: $(($AllResults | Measure-Object ReadMBps -Maximum).Maximum) MB/s
+ Peak Write Throughput: $(($AllResults | Measure-Object WriteMBps -Maximum).Maximum) MB/s
+ Average Throughput: $(([math]::Round(($AllResults | Measure-Object ReadMBps -Average).Average + ($AllResults | Measure-Object WriteMBps -Average).Average, 2))) MB/s
+
+LATENCY METRICS:
+ Average Latency: $(([math]::Round(($AllResults | Measure-Object AvgLatencyMs -Average).Average, 2))) ms
+ Maximum Latency: $(($AllResults | Measure-Object MaxLatencyMs -Maximum).Maximum) ms
+ Latency Target (< 10ms): $(if(($AllResults | Measure-Object AvgLatencyMs -Average).Average -lt 10){"PASS"}else{"REVIEW"})
+
+"@
+
+$Stats | Add-Content $SummaryFile
+Write-Host $Stats
+```
+
+### 6.3 Expected Performance Ranges
+
+Reference values for healthy Azure Local clusters:
+
+| Configuration | Peak IOPS (4K) | Throughput (MB/s) | Latency (ms) |
+|---------------|----------------|-------------------|--------------|
+| 2-node, NVMe | 200,000+ | 3,000+ | < 5 |
+| 3-node, NVMe | 400,000+ | 5,000+ | < 5 |
+| 4-node, NVMe | 600,000+ | 8,000+ | < 5 |
+| 2-node, SSD | 50,000+ | 1,000+ | < 10 |
+| 4-node, SSD | 150,000+ | 3,000+ | < 10 |
+
+:::note
+Performance varies based on drive type, count, and configuration. Use these as reference only.
+:::
+
+### 6.4 Understanding Result Columns
+
+The `result.tsv` file from `Measure-FleetCoreWorkload` contains detailed metrics:
+
+| Column | Description |
+|--------|-------------|
+| **RunLabel** | Unique identifier for the test run |
+| **Workload** | Profile name (General, Peak, VDI, SQL) |
+| **VMAlignmentPct** | Percentage of VMs aligned to CSV owner (30% or 100%) |
+| **IOPS** | Total I/O operations per second across all VMs |
+| **AverageCPU** | Average cluster CPU utilization |
+| **AverageCSVReadIOPS** | Read IOPS from CSV host perspective |
+| **AverageCSVWriteIOPS** | Write IOPS from CSV host perspective |
+| **AverageCSVReadMilliseconds** | Read latency from host |
+| **AverageCSVWriteMilliseconds** | Write latency from host |
+| **AverageReadMilliseconds** | Read latency from VM perspective |
+| **AverageWriteMilliseconds** | Write latency from VM perspective |
+| **ReadMilliseconds50/90/99** | Read latency percentiles |
+| **WriteMilliseconds50/90/99** | Write latency percentiles |
+| **CutoffType** | Why test stopped (No, ReadLatency, WriteLatency, Scale) |
+
+:::tip 30% vs 100% Alignment
+- **100% Alignment**: All VMs are on the node that owns their CSV (best-case scenario)
+- **30% Alignment**: VMs are distributed across nodes (realistic production scenario)
+
+Both values should be documented as they represent different operating conditions.
+:::
+
+---
+
+## Part 7: Stop and Cleanup Fleet
+
+### 7.1 Stop Fleet VMs
+
+```powershell
+# Stop all fleet operations
+Stop-Fleet
+
+# Verify all VMs stopped
+Get-FleetVM | Where-Object State -ne "Off" | Stop-VM -Force
+
+# Check status
+Get-FleetVM | Format-Table Name, State
+```
+
+### 7.2 Remove Fleet (Cleanup)
+
+```powershell
+# Remove all fleet VMs and configurations
+# WARNING: This deletes all fleet VMs and their disks
+
+Remove-Fleet -Force
+
+# Verify removal
+$RemainingFleet = Get-VM -Name "Fleet*" -ErrorAction SilentlyContinue
+if ($RemainingFleet) {
+ Write-Host "Warning: $($RemainingFleet.Count) fleet VMs still exist" -ForegroundColor Yellow
+} else {
+ Write-Host "Fleet cleanup complete" -ForegroundColor Green
+}
+```
+
+### 7.3 Cleanup Fleet Volumes (Optional)
+
+```powershell
+# Remove Fleet volumes if no longer needed
+# Keep Collect volume for future testing
+
+$FleetVolumes = Get-ClusterSharedVolume | Where-Object { $_.Name -like "*Fleet-*" }
+
+foreach ($Volume in $FleetVolumes) {
+ # Remove the volume (WARNING: destroys data)
+ # Remove-VirtualDisk -FriendlyName $Volume.SharedVolumeInfo.FriendlyVolumeName -Confirm:$false
+ 
+ Write-Host "Would remove: $($Volume.Name)" -ForegroundColor Yellow
+}
+
+# Uncomment to actually remove:
+# $FleetVolumes | ForEach-Object { Remove-VirtualDisk -FriendlyName $_.SharedVolumeInfo.FriendlyVolumeName -Confirm:$false }
+```
+
+---
+
+## Part 8: Document Baseline for Customer Handover
+
+### 8.1 Create Baseline Statement
+
+```powershell
+$Baseline = @"
+
+================================================================================
+STORAGE PERFORMANCE BASELINE STATEMENT
+================================================================================
+
+Cluster: $((Get-Cluster).Name)
+Test Date: $(Get-Date -Format "yyyy-MM-dd")
+Test Duration: Approximately 4 hours
+Test Tool: VMFleet with DiskSpd
+VMs Deployed: $TotalVMs VMs across $TotalNodes nodes
+
+BASELINE PERFORMANCE METRICS:
+
+| Workload Profile | IOPS | Throughput | Avg Latency |
+|------------------|------|------------|-------------|
+| Peak (4K Random) | XXX,XXX | X,XXX MB/s | X.X ms |
+| General (8K Mixed) | XXX,XXX | X,XXX MB/s | X.X ms |
+| VDI (8K 80/20) | XXX,XXX | X,XXX MB/s | X.X ms |
+| SQL (64K Seq) | XXX,XXX | X,XXX MB/s | X.X ms |
+
+HEALTH DURING TEST:
+ Storage Pool Status: Healthy
+ Virtual Disks: All Healthy
+ Cluster Nodes: All Online
+ No errors or faults observed
+
+NOTES:
+ - Performance metrics establish baseline for this specific cluster
+ - Actual workload performance depends on application characteristics
+ - Recommend monitoring during production workload onboarding
+ - Contact Azure Local Cloud for performance optimization if needed
+
+================================================================================
+Validated By: _________________________ Date: ____________
+================================================================================
+
+"@
+
+$Baseline | Add-Content $SummaryFile
+Write-Host "Baseline statement added to report" -ForegroundColor Green
+Write-Host "Report location: $SummaryFile" -ForegroundColor Cyan
+```
+
+### 8.2 Finalize Report
+
+```powershell
+# Add report footer
+$Footer = @"
+
+================================================================================
+END OF VMFLEET STORAGE PERFORMANCE REPORT
+================================================================================
+Report Files:
+ Summary: $SummaryFile
+ Raw Data: $CSVFile
+================================================================================
+
+"@
+
+$Footer | Add-Content $SummaryFile
+
+# Display report location
+Write-Host "`n`nVMFleet testing complete!" -ForegroundColor Green
+Write-Host "Summary Report: $SummaryFile" -ForegroundColor Cyan
+Write-Host "CSV Data: $CSVFile" -ForegroundColor Cyan
+```
+
+---
+
+## Validation Checklist
+
+| Category | Requirement | Status |
+|----------|-------------|--------|
+| **Setup** | VMFleet module installed | ☐ |
+| **Setup** | Collect volume created | ☐ |
+| **Setup** | Fleet volumes created (per node) | ☐ |
+| **Setup** | Template VHD copied | ☐ |
+| **Fleet** | Fleet VMs deployed | ☐ |
+| **Fleet** | All VMs running | ☐ |
+| **Testing** | Core workload profiles run | ☐ |
+| **Testing** | Results collected to CSV | ☐ |
+| **Performance** | IOPS within expected range | ☐ |
+| **Performance** | Latency < 10ms average | ☐ |
+| **Performance** | No storage faults during test | ☐ |
+| **Cleanup** | Fleet VMs removed | ☐ |
+| **Report** | Baseline statement documented | ☐ |
+
+---
+
+## Troubleshooting
+
+### Fleet VMs Won't Start
+
+```powershell
+# Check for resource issues
+Get-ClusterResource | Where-Object State -ne "Online"
+
+# Verify VHD is accessible
+Test-Path "C:\ClusterStorage\Collect\FleetImage.vhdx"
+
+# Check event log
+Get-WinEvent -LogName "Microsoft-Windows-Hyper-V-VMMS-Admin" -MaxEvents 20
+```
+
+### Poor Performance Results
+
+```powershell
+# Check storage health
+Get-StorageSubSystem | Get-StorageHealthReport
+
+# Verify RDMA is working
+Get-SmbMultichannelConnection
+
+# Check for throttling
+Get-StorageQoSFlow | Where-Object { $_.Status -ne "Ok" }
+```
+
+### Results Not Collected
+
+```powershell
+# Verify result path
+Test-Path "C:\ClusterStorage\Collect\result"
+
+# Check for result files
+Get-ChildItem "C:\ClusterStorage\Collect\result" -Recurse
+```
+
+---
+
+## Next Step
+
+Proceed to [Task 3: Network & RDMA Validation](task-03-network-rdma-validation.mdx) once VMFleet testing is complete.
+
+---
+
+---
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual" default>
+
+> **When to use**: Use this option for manual step-by-step execution.
+
+See procedure steps above for manual execution guidance.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository.
+:::
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 1: Infrastructure Health Validation](task-01-infrastructure-health-validation.mdx) | [Testing & Validation](index.mdx) | [Task 3: Network & RDMA Validation →](task-03-network-rdma-validation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |

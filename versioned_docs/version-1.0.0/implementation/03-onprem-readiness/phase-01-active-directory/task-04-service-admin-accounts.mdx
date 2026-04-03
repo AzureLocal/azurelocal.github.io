@@ -1,0 +1,320 @@
+---
+title: "Task 04: Service & Admin Accounts"
+sidebar_label: "Task 04: Service & Admin Accounts"
+sidebar_position: 4
+description: "Step 4 - Service & Admin Accounts (task-04-service-admin-accounts.mdx)"
+category: "Runbook"
+scope: Service and administrative accounts
+purpose: Create break-glass and gMSA accounts
+author: Azure Local Cloud Azure Local Cloudnology
+created: 2026-01-31
+updated: 2026-03-03
+version: "1.1.0"
+tags:
+  - azure-local
+  - active-directory
+  - service-accounts
+  - break-glass
+  - gmsa
+keywords:
+  - break-glass account
+  - gMSA
+  - service account
+  - LCM user
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Service & Admin Accounts
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Service and administrative accounts   
+> **PURPOSE**: Create break-glass and gMSA accounts   
+> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory) 
+
+**Status**: Active
+
+## Overview
+
+Create supplemental break-glass admin accounts and optional gMSA scaffold for enterprise environments.
+
+### What This Accomplishes
+
+- Break-glass administrative accounts for emergency access
+- Group Managed Service Accounts (gMSA) for secure service authentication
+- Secure password management and storage
+- Account configuration following security best practices
+
+:::info
+
+The active directory information in these documents should have been decided in the [planning phase](../../../planning/) and discovery phases. These are just examples. Please update your scripts with the right OU information, right security groups, DNS, etc.
+
+:::
+
+## Prerequisites
+
+- OU structure created (Step 1)
+- KDS Root Key replicated (from Step 1)
+- Domain admin access for account creation
+- Secure password storage solution (vault)
+
+## Variables from variables.yml
+
+| Variable Path | Type | Description |
+|--------------|------|-------------|
+| `identity.active_directory.ad_service_accounts_ou_path` | string | OU path for service account creation |
+| `identity.active_directory.ad_security_groups_ou_path` | string | OU path for gMSA readers group |
+| `identity.accounts.account_lcm_username` | string | LCM account name (cluster ID extracted) |
+| `platform.kv_platform_name` | string | Key Vault name for break-glass password storage |
+
+---
+
+## Account Creation
+
+Lifecycle Manager (LCM) user created in Step 1. Add break‑glass admin and optional gMSA scaffold.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Active Directory Users and Computers" default>
+
+1. In **Active Directory Users and Computers**, inside instance OU create user: `adm-AzureLocal-BreakGlass-<clusterId>`.
+2. Set: Password never expires; User cannot change password; store password securely (vault).
+3. (Optional gMSA) After KDS root key replication completes, create gMSA via AD Administrative Center (if supported) targeting computer principals later.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Managing from a domain-joined management server — config-driven via variables.yml
+
+#### Script
+
+**Primary**: `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts/powershell/Invoke-ADServiceAccounts.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| Azure CLI | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts/azure-cli/Invoke-ADServiceAccounts.ps1` |
+| Bash | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts/bash/invoke-ad-service-accounts.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Invoke-ADServiceAccounts.ps1
+# Execution: Run FROM management server — reads variables.yml
+# Prerequisites: powershell-yaml module, ActiveDirectory RSAT, Key Vault access
+# ============================================================================
+
+param(
+ [Parameter(Mandatory = $false)]
+ [string]$ConfigPath
+)
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($ConfigPath) {
+ $ConfigFile = $ConfigPath
+} else {
+ $ConfigFile = Join-Path $ScriptDir "..\..\..\..\config\variables.yml"
+}
+if (!(Test-Path $ConfigFile)) { throw "variables.yml not found at $ConfigFile" }
+
+Import-Module powershell-yaml -ErrorAction Stop
+Import-Module ActiveDirectory
+Import-Module Az.KeyVault -ErrorAction Stop
+
+$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
+$svcOu = $config["active_directory"]["ad_service_accounts_ou_path"]
+$clusterId = ($config["accounts"]["account_lcm_username"] -split '-' | Select-Object -Skip 2 -First 1)
+$kvName = $config["platform"]["kv_platform_name"]
+
+Write-Host "[1/3] Creating break-glass admin account..." -ForegroundColor Cyan
+$breakGlassSam = "adm-AzureLocal-BreakGlass-$clusterId"
+
+if (-not (Get-ADUser -LDAPFilter "(sAMAccountName=$breakGlassSam)" -SearchBase $svcOu -ErrorAction SilentlyContinue)) {
+ # Generate secure random password
+ $chars = ([char[]]((48..57)+(65..90)+(97..122)+[int][char]'!',[int][char]'#',[int][char]'$',[int][char]'@',[int][char]'_'))
+ $plain = -join (1..24 | ForEach-Object { $chars | Get-Random })
+ $secure = ConvertTo-SecureString $plain -AsPlainText -Force
+
+ New-ADUser -Name $breakGlassSam -SamAccountName $breakGlassSam -Path $svcOu `
+ -Enabled $true -AccountPassword $secure `
+ -PasswordNeverExpires $true -CannotChangePassword $true `
+ -Description "Break-glass admin for Azure Local $clusterId"
+
+ # Store password in Key Vault
+ Set-AzKeyVaultSecret -VaultName $kvName -Name "bg-$clusterId-password" `
+ -SecretValue $secure -ContentType "text/plain"
+ Write-Host " Created: $breakGlassSam — password stored in Key Vault '$kvName'" -ForegroundColor Green
+} else {
+ Write-Host " Exists: $breakGlassSam" -ForegroundColor Yellow
+}
+
+Write-Host "[2/3] Creating optional gMSA scaffold..." -ForegroundColor Cyan
+$gmsaName = "gMSA-AzureLocal-$clusterId"
+if (-not (Get-ADServiceAccount -LDAPFilter "(sAMAccountName=$gmsaName)" -ErrorAction SilentlyContinue)) {
+ $gmsaReaders = "SG-AzureLocal-gMSA-Readers-$clusterId"
+ $grpOu = $config["active_directory"]["ad_security_groups_ou_path"]
+ if (-not (Get-ADGroup -LDAPFilter "(cn=$gmsaReaders)" -ErrorAction SilentlyContinue)) {
+ New-ADGroup -Name $gmsaReaders -SamAccountName $gmsaReaders `
+ -GroupScope Global -GroupCategory Security -Path $grpOu `
+ -Description "Principals allowed to retrieve managed password for $gmsaName"
+ }
+ New-ADServiceAccount -Name $gmsaName -Enabled $true -Path $svcOu `
+ -PrincipalsAllowedToRetrieveManagedPassword (Get-ADGroup $gmsaReaders)
+ Write-Host " Created gMSA: $gmsaName" -ForegroundColor Green
+} else {
+ Write-Host " Exists: $gmsaName" -ForegroundColor Yellow
+}
+
+Write-Host "[3/3] Verifying accounts..." -ForegroundColor Cyan
+Get-ADUser -LDAPFilter "(sAMAccountName=adm-AzureLocal-BreakGlass-*)" -SearchBase $svcOu | Select-Object SamAccountName, Enabled
+Get-ADServiceAccount -LDAPFilter "(sAMAccountName=gMSA-AzureLocal-*)" | Select-Object Name, Enabled
+```
+
+#### Validation
+
+```powershell
+Get-ADUser -LDAPFilter "(sAMAccountName=adm-AzureLocal-BreakGlass-*)" -SearchBase | Select-Object SamAccountName, Enabled
+Get-ADServiceAccount -LDAPFilter "(sAMAccountName=gMSA-AzureLocal-*)" | Select-Object Name, Enabled
+```
+
+**Validation Script**: `scripts/validation/03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts/powershell/Test-ADServiceAccounts.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+
+```powershell
+#region CONFIGURATION
+$ClusterId = "clus01"
+$OuPath = "OU=clus01,OU=AzureLocal,OU=Clusters,OU=Servers,OU=MGMT,DC=hybrid,DC=mgmt"
+$GrpOuPath = "OU=Security Groups,OU=IAM,DC=hybrid,DC=mgmt"
+#endregion
+
+Import-Module ActiveDirectory
+
+# --- Break-glass admin account ---
+$breakGlassSam = "adm-AzureLocal-BreakGlass-$ClusterId"
+if (-not (Get-ADUser -LDAPFilter "(sAMAccountName=$breakGlassSam)" -SearchBase $OuPath -EA SilentlyContinue)) {
+ $chars = (48..57)+(65..90)+(97..122)+[int][char]'!',[int][char]'#',[int][char]'$',[int][char]'@',[int][char]'_' | ForEach-Object {[char]$_}
+ $plain = -join (1..24 | ForEach-Object { $chars | Get-Random })
+ $secure = ConvertTo-SecureString $plain -AsPlainText -Force
+ New-ADUser -Name $breakGlassSam -SamAccountName $breakGlassSam -Path $OuPath -Enabled $true `
+ -AccountPassword $secure -PasswordNeverExpires $true -CannotChangePassword $true
+ # Export password to file — transfer to vault immediately, then delete
+ $plain | Out-File -FilePath ".\$breakGlassSam.credential" -Encoding UTF8
+ Write-Warning "Password written to .\$breakGlassSam.credential — store in vault and DELETE this file."
+ Write-Host " Created: $breakGlassSam" -ForegroundColor Green
+} else {
+ Write-Host " Exists: $breakGlassSam" -ForegroundColor Yellow
+}
+
+# --- Optional gMSA scaffold ---
+$gmsaName = "gMSA-AzureLocal-$ClusterId"
+$gmsaReaders = "SG-AzureLocal-gMSA-Readers-$ClusterId"
+if (-not (Get-ADServiceAccount -LDAPFilter "(sAMAccountName=$gmsaName`$)" -EA SilentlyContinue)) {
+ # Create readers group if it doesn't exist
+ if (-not (Get-ADGroup -LDAPFilter "(cn=$gmsaReaders)" -SearchBase $GrpOuPath -EA SilentlyContinue)) {
+ New-ADGroup -Name $gmsaReaders -SamAccountName $gmsaReaders -GroupScope Global `
+ -GroupCategory Security -Path $GrpOuPath `
+ -Description "Principals allowed to retrieve managed password for $gmsaName"
+ Write-Host " Created group: $gmsaReaders" -ForegroundColor Green
+ }
+ New-ADServiceAccount -Name $gmsaName -Enabled $true -Path $OuPath `
+ -PrincipalsAllowedToRetrieveManagedPassword (Get-ADGroup $gmsaReaders)
+ Write-Host " Created gMSA: $gmsaName" -ForegroundColor Green
+} else {
+ Write-Host " Exists: $gmsaName" -ForegroundColor Yellow
+}
+
+# --- Verify ---
+Get-ADUser -LDAPFilter "(sAMAccountName=adm-AzureLocal-BreakGlass-*)" -SearchBase $OuPath | Select-Object SamAccountName, Enabled
+Get-ADServiceAccount -LDAPFilter "(sAMAccountName=gMSA-AzureLocal-*)" | Select-Object Name, Enabled
+```
+
+
+</TabItem>
+</Tabs>
+
+## Verification
+
+```powershell
+Get-ADUser -LDAPFilter "(sAMAccountName=adm-AzureLocal-BreakGlass-*)" -SearchBase $OuPath | Select SamAccountName,Enabled
+Get-ADServiceAccount -LDAPFilter "(sAMAccountName=gMSA-AzureLocal-*)" -SearchBase $OuPath | Select Name,Enabled
+```
+
+## Notes
+
+- LCM user is created in Step 1; this step adds supplemental accounts
+- Break-glass accounts should have passwords stored securely in a vault
+- gMSA requires KDS root key replication to complete first
+- Use unique cluster IDs to avoid naming conflicts
+
+## Validation Checklist
+
+- [ ] Break-glass admin account created
+- [ ] Password stored securely in vault
+- [ ] Account properties configured correctly
+- [ ] gMSA created if required
+- [ ] Retrievers group configured for gMSA
+- [ ] Accounts enabled and accessible
+
+## Next Steps
+
+After creating accounts, proceed to [Task 5 - Group Assignments](./task-05-group-assignments) to assign accounts to security groups.
+
+## Troubleshooting
+
+### Common Issues
+
+**Account Creation Fails**: Check OU permissions and naming policies.
+
+**gMSA Creation Fails**: Ensure KDS root key has replicated.
+
+**Password Storage**: Verify vault access and security policies.
+
+### Support Resources
+
+- [Active Directory User Accounts](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/manage-users)
+- [Group Managed Service Accounts](https://learn.microsoft.com/en-us/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview)
+
+---
+
+*Data verified with internal source [Azure Local Provisioning Runbook] and Docusaurus documentation release note dated 2025-12-08.*
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 03: DNS Node A Records](./task-03-dns-node-a-records.mdx) | [↑ Part 3: On-Premises Readiness](./index.mdx) | [Task 05: Group Assignments →](./task-05-group-assignments.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-31 | Azure Local Cloud Azure Local Cloudnology | Initial document |
+| 1.1 | 2026-03-03 | Azure Local Cloud Azure Local Cloudnology | Standardized runbook format |
+
+---
+
+*End of Task*

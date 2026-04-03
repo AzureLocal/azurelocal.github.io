@@ -1,0 +1,398 @@
+---
+title: "Task 01: Configure Azure Backup"
+sidebar_label: "Task 01: Configure Azure Backup"
+sidebar_position: 1
+description: "Configure Azure Backup for Azure Local VM protection"
+category: "Runbook"
+scope: "Configure Azure Backup for Azure Local VM protection"
+purpose: "Configure Azure Backup for Azure Local VM protection"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - backup-dr
+keywords:
+  - Configure
+  - Azure
+  - Backup
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Configure Azure Backup
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: VM backup configuration with Azure Backup   
+> **PURPOSE**: Deploy and configure Azure Backup for Azure Local VM protection   
+> **MASTER REFERENCE**: [Microsoft Learn - Back up Azure Local VMs with Azure Backup](https://learn.microsoft.com/en-us/azure/backup/back-up-azure-stack-hyperconverged-infrastructure-virtual-machines) 
+> **DESIGN REFERENCE**: [Azure Backup Appliance LLD](../../../design/lld.mdx)
+
+**Status**: Active
+
+Azure Backup provides enterprise backup capabilities for Azure Local VMs with both local disk retention for fast recovery and Azure integration for offsite protection. This step covers Azure Backup deployment, agent installation, and protection group configuration.
+
+## Prerequisites
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| backup server VM | Dedicated VM on cluster with sufficient storage | 80 TB recommended for 800 VMs |
+| Azure Backup Software | Azure Backup V4 or later | Supports Azure Local 22H2+ |
+| Recovery Services Vault | Azure vault for online protection | Created in Azure subscription |
+| Network Connectivity | Azure Backup to Azure (443), Azure Backup to nodes (445, 135, dynamic RPC) | Firewall rules configured |
+| Cluster Access | Domain account with local admin on all nodes | CredSSP or Kerberos delegation |
+| Integration Components | Same version on guest VMs and hosts | Required for backup consistency |
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
+| `RECOVERY_VAULT_NAME` | `backup.recovery_vault_name` | `rsv-azl-dal-prod-01` |
+| `BACKUP_SERVER_NAME` | `backup.server_name` | `azl-dal-mabs-01` |
+| `CLUSTER_STORAGE_PATH` | `storage.cluster_storage_path` | `C:\ClusterStorage\Volume01` |
+| `MANAGEMENT_VIRTUAL_SWITCH` | `networking.management.virtual_switch` | `ConvergedSwitch(mgmt_compute)` |
+
+## Architecture Overview
+
+Azure Backup supports two backup approaches:
+
+| Approach | Description | Use Case |
+|----------|-------------|----------|
+| **Host-level backup** | Agent on cluster nodes, backs up entire VMs at hypervisor level | Full VM recovery, OS-agnostic, no guest agent required |
+| **Guest-level backup** | Agent inside each VM, application-aware backups | SQL, Exchange, SharePoint item-level recovery |
+
+:::tip Azure Local Cloud Recommendation
+Use **both approaches**: Host-level for full VM recovery and guest-level for critical application workloads requiring item-level recovery.
+:::
+
+:::info Hardware Specifications
+For detailed hardware specifications, storage configuration, and appliance sizing, see the [Azure Backup Appliance Low Level Design](../../../design/lld.mdx).
+
+**Key Storage Design**: The BOSS card contains only OS (C:) and Azure Backup/SQL (E:) partitions. All staging (G:) and storage pool (S:) volumes must reside on RAID controller-attached drives.
+:::
+
+## Configuration Steps
+
+### Step 1.1: Deploy backup server VM
+
+1. Create a dedicated VM on the Azure Local cluster:
+
+```powershell
+# Create Azure Backup VM
+$VMName = "{{BACKUP_SERVER_NAME}}"
+$VMPath = "{{CLUSTER_STORAGE_PATH}}\VMs"
+$SwitchName = "{{MANAGEMENT_VIRTUAL_SWITCH}}"
+
+New-VM -Name $VMName `
+ -MemoryStartupBytes 16GB `
+ -Generation 2 `
+ -Path $VMPath `
+ -SwitchName $SwitchName
+
+# Configure VM resources
+Set-VMProcessor -VMName $VMName -Count 8
+Set-VMMemory -VMName $VMName -DynamicMemoryEnabled $false
+
+# Add storage for Azure Backup disk pool (minimum 1.5x protected data size)
+$StorageDisk = New-VHD -Path "$VMPath\$VMName\Storage.vhdx" -SizeBytes 10TB -Dynamic
+Add-VMHardDiskDrive -VMName $VMName -Path $StorageDisk.Path
+```
+
+2. Install Windows Server 2022 on the VM
+3. Join to domain and configure static IP
+4. Format storage disk for Azure Backup disk pool
+
+### Step 1.2: Install Azure Backup
+
+1. Download Azure Backup V4 from [Microsoft Evaluation Center](https://www.microsoft.com/en-us/evalcenter/evaluate-microsoft-azure-backup-server)
+
+2. Run the installer and select required components:
+ - SQL Server (bundled or use existing)
+ - Azure Backup Server
+
+3. Register with Recovery Services Vault:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Recovery Services vault** → **Properties** → **Backup Credentials**
+2. Click **Download** to get vault credentials file
+3. Copy to backup server
+4. During Azure Backup setup, specify the vault credentials file
+
+</TabItem>
+
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Connect to Azure
+Connect-AzAccount
+
+# Get Recovery Services vault
+$vault = Get-AzRecoveryServicesVault `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -Name "{{RECOVERY_VAULT_NAME}}"
+
+# Generate vault credentials file
+$credentialsPath = "C:\Temp"
+Get-AzRecoveryServicesVaultSettingsFile `
+ -Vault $vault `
+ -Backup `
+ -Path $credentialsPath
+```
+
+</TabItem>
+</Tabs>
+
+### Step 1.3: Configure Azure Backup Storage Pool
+
+1. Open **Azure Backup Administrator Console**
+2. Navigate to **Management** → **Disk Storage**
+3. Click **Add** to add storage disks
+4. Select the storage disk attached to Azure Backup VM
+5. Configure storage allocation:
+
+| Recommendation | Size Formula |
+|----------------|--------------|
+| Replica volume | Protected data size × 2 |
+| Recovery point volume | Protected data size × retention days × daily change rate |
+
+### Step 1.4: Install Protection Agent on Cluster Nodes
+
+:::warning Application Control
+If Azure Benefits is enabled with WDAC, temporarily switch to **Audit** mode before agent installation.
+:::
+
+<Tabs groupId="deployment-method">
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+1. In backup console, navigate to **Management** → **Agents**
+2. Click **Install** in the toolbar
+3. Select **Install agents**
+4. Enter cluster node names or browse Active Directory
+5. Provide credentials with local admin rights
+6. Complete installation wizard
+
+</TabItem>
+
+</Tabs>
+
+After agent installation, re-enable WDAC if it was disabled.
+
+### Step 1.5: Create Protection Group for VMs
+
+1. In backup console, select **Protection** → **Create protection group**
+
+2. Select protection type: **Servers**
+
+3. Select group members:
+ - **Highly Available VMs**: Select from cluster for clustered VMs
+ - **Hyper-V (Unmanaged) VMs**: Select from individual nodes
+
+4. Configure **Data Protection Method**:
+ - Name: `{{PROTECTION_GROUP_NAME}}`
+ - Enable: **I want short-term protection using Disk**
+ - Enable: **I want online protection** (for Azure backup)
+
+5. Configure **Short-Term Goals**:
+ - Retention range: `{{BACKUP_RETENTION_DAYS}}` days
+ - Synchronization frequency: Every 15 minutes or before recovery point
+
+6. Configure **Disk Allocation**:
+ - Review and accept default allocations
+ - Enable **Automatically grow the volumes** if needed
+
+7. Configure **Online Protection**:
+ - Select data for online protection
+ - Configure online backup schedule (daily/weekly)
+ - Set online retention policy (up to 99 years)
+
+8. Review and create protection group
+
+### Step 1.6: Configure Backup Schedules
+
+Example protection schedule:
+
+| Schedule Type | Frequency | Time | Retention |
+|--------------|-----------|------|-----------|
+| Express full backup | Daily | 9:00 PM | 14 days (disk) |
+| Online backup | Daily | 11:00 PM | 30 days (Azure) |
+| Weekly full | Sunday | 2:00 AM | 5 weeks (Azure) |
+| Monthly | 1st Sunday | 2:00 AM | 12 months (Azure) |
+
+```powershell
+# Example: Modify protection group schedule via PowerShell
+$pg = Get-DPMProtectionGroup -DPMServerName "{{BACKUP_SERVER_NAME}}" | 
+ Where-Object { $_.FriendlyName -eq "{{PROTECTION_GROUP_NAME}}" }
+
+# Set synchronization schedule
+$sched = Get-DPMPolicySchedule -ProtectionGroup $pg -ShortTerm
+
+# Modify as needed and commit
+Set-DPMPolicySchedule -ProtectionGroup $pg -Schedule $sched
+```
+
+## Validation
+
+### Verify Agent Status
+
+```powershell
+# On backup server - check agent status
+Get-DPMProductionServer -DPMServerName "{{BACKUP_SERVER_NAME}}" | 
+ Select-Object Name, ServerProtectionState, AgentVersion
+```
+
+Expected output shows all cluster nodes with **Valid** protection state.
+
+### Run Test Backup
+
+1. In backup console, select a protected VM
+2. Right-click → **Create recovery point**
+3. Select **Online protection** to test Azure connectivity
+4. Monitor job in **Monitoring** → **Jobs**
+
+### Verify Azure Recovery Points
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Recovery Services vault** → **Backup items**
+2. Select **Azure Backup Server**
+3. Verify VMs appear with recent recovery points
+
+</TabItem>
+
+</Tabs>
+
+### Validation Checklist
+
+| Component | Verification | Expected Result |
+|-----------|--------------|-----------------|
+| Azure Backup Service | `Get-Service MSDPM` | Running |
+| Protection Agent | Agent status in console | Valid on all nodes |
+| Protection Group | Group status | OK, no warnings |
+| Disk Recovery Points | Latest recovery point | Within last 24 hours |
+| Online Recovery Points | Azure portal check | Synced to Azure |
+
+## Recovery Procedures
+
+### Recover Entire VM (Host-Level)
+
+1. Navigate to **Recovery** → Select date with recovery point
+2. Expand server → Select VM
+3. Right-click → **Recover**
+4. Select recovery type:
+ - **Recover to original instance**: Replaces existing VM
+ - **Recover as virtual machine to any host**: New location
+ - **Copy to a network folder**: Export VHD files
+
+### Recover Files (Item-Level Recovery)
+
+:::note Hyper-V Role Required
+Item-level recovery requires Hyper-V role on backup server.
+:::
+
+1. Select VM recovery point
+2. Right-click → **Recover**
+3. Select **Copy to a network folder**
+4. Browse recovered VHD and extract files
+
+### Cross-Cluster Recovery
+
+When restoring a VM to a different cluster:
+
+1. Recover VM to alternate location
+2. VM will be **unmanaged** (not Arc-connected)
+3. Re-register with Azure Arc:
+
+```powershell
+
+Register-AzStackHCI -SubscriptionId "{{AZURE_SUBSCRIPTION_ID}}" `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -ArcServerResourceGroupName "{{ARC_RESOURCE_GROUP}}"
+```
+
+:::info 45-Day Window
+If restoring to the same cluster, Azure Arc connection is maintained automatically if within the 45-day reconnection window.
+:::
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Resolution |
+|---------|--------------|------------|
+| Agent installation fails | WDAC blocking | Switch to Audit mode, install, then re-enable |
+| WMI query timeout | Firewall blocking | Disable `AzsHci-ImdsAttestation-Block-TCP-In` |
+| Backup fails for HA VMs | Cluster not selected | Select VMs from cluster node, not individual hosts |
+| Online backup slow | Bandwidth limited | Configure throttling in Azure Backup or schedule off-hours |
+| Recovery point missing | Replica invalid | Run consistency check on protection group |
+
+## Capacity Planning
+
+| Protected Data | Azure Backup Disk Storage | Azure Storage |
+|----------------|-------------------|---------------|
+| 10 TB | 30 TB | Varies by retention |
+| 50 TB | 150 TB | Varies by retention |
+| 100 TB | 300 TB | Varies by retention |
+
+:::tip Storage Formula
+Azure Backup storage = (Protected data × 2) + (Protected data × retention days × daily change rate)
+:::
+
+## Variables Reference
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{BACKUP_SERVER_NAME}}` | backup server hostname | `Azure Backup-dal-01` |
+| `{{PROTECTION_GROUP_NAME}}` | Protection group name | `AzureLocal-VMs-Prod` |
+| `{{RECOVERY_VAULT_NAME}}` | Recovery Services vault name | `rsv-azl-dal-prod-01` |
+| `{{BACKUP_RETENTION_DAYS}}` | Local disk retention days | `14` |
+
+## Next Steps
+
+After configuring Azure Backup:
+
+1. ➡️ **[Task 2: Configure Site Recovery](./task-02-configure-site-recovery.mdx)** — Set up VM replication to Azure
+2. Document protection group assignments
+3. Configure email notifications for backup failures
+4. Schedule regular restore tests
+
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| --- | [Phase 03: Backup & DR](./index.mdx) | [Task 02: Configure Site Recovery ->](./task-02-configure-site-recovery.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

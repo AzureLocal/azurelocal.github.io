@@ -1,0 +1,371 @@
+---
+title: "Task 09: Log Analytics Workspace"
+sidebar_label: "Task 09: Log Analytics"
+sidebar_position: 9
+description: "Create a Log Analytics workspace for centralized monitoring and log collection across management infrastructure."
+category: "Runbook"
+scope: Log Analytics Workspace deployment
+purpose: Establish centralized monitoring and logging
+author: Hybrid Cloud Solutions
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags:
+  - azure-local
+  - log-analytics
+  - monitoring
+  - observability
+keywords:
+  - Log Analytics
+  - Azure Monitor
+  - workspace
+  - logging
+  - diagnostics
+  - retention
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 09: Log Analytics Workspace
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Log Analytics Workspace deployment   
+> **PURPOSE**: Establish centralized monitoring and logging   
+> **MASTER REFERENCE**: [Microsoft Learn - Log Analytics](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/log-analytics-workspace-overview)
+
+**Status**: Active
+
+## Overview
+
+This task creates a Log Analytics workspace that serves as the centralized log destination for all management infrastructure — VMs, networking resources, Key Vault, and eventually the Azure Local cluster itself. Diagnostic settings for other resources will reference this workspace.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::info Terraform Reference
+**Module:** `azurelocal-toolkit` 
+**File:** `log.tf` 
+**Mode:** Management
+:::
+
+### Components Created
+
+| Resource | Name Pattern | Purpose |
+|----------|-------------|---------|
+| Log Analytics Workspace | `log-azrlmgmt-{env}-{region}-01` | Centralized log collection |
+
+### Workspace Configuration
+
+| Setting | Value | Source |
+|---------|-------|--------|
+| Name | `log-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.log_analytics.management.name` |
+| SKU | PerGB2018 | `azure_infrastructure.log_analytics.management.sku` |
+| Retention | 90 days | `azure_infrastructure.log_analytics.management.retention_days` |
+
+## Prerequisites
+
+- [ ] Resource group exists
+- [ ] Log Analytics contributor role on target resource group
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example (IIC) |
+|----------|-------------|---------------|
+| Subscription ID | `azure.subscriptions.<name>.id` | *(per environment)* |
+| Resource Group | `azure_infrastructure.log_analytics.management.resource_group` | `rg-azrlmgmt-azl-eus-01` |
+| Workspace Name | `azure_infrastructure.log_analytics.management.name` | `log-azrlmgmt-azl-eus-01` |
+| SKU | `azure_infrastructure.log_analytics.management.sku` | `PerGB2018` |
+| Retention (days) | `azure_infrastructure.log_analytics.management.retention_days` | `90` |
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.log_analytics.management.resource_group` |
+| Workspace Name | `log-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.log_analytics.management.name` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure
+
+1. **Create Log Analytics Workspace**:
+ - Search for **Log Analytics workspaces** → **+ Create**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | `log-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.log_analytics.management.name` |
+ | Subscription | Target subscription | `azure.subscriptions.<name>.id` |
+ | Resource Group | Management RG | `azure_infrastructure.log_analytics.management.resource_group` |
+ | Region | Your region | `azure.region` |
+
+2. **Configure Pricing Tier** (optional):
+ - Go to **Usage and estimated costs** → Select **Pay-As-You-Go (Per GB 2018)**
+
+3. **Configure Retention**:
+ - Go to **Usage and estimated costs** → **Data Retention** → Set to value from config
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Retention | 90 days | `azure_infrastructure.log_analytics.management.retention_days` |
+
+4. **Review + create**: Verify → Click **Create**
+
+#### Validation
+
+- [ ] Workspace provisioning state: **Succeeded**
+- [ ] SKU is PerGB2018
+- [ ] Retention set to configured value
+- [ ] Workspace ID can be retrieved
+
+#### Links
+
+- [Microsoft Learn: Create Workspace](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/quick-create-workspace)
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-09-log-analytics/powershell/New-LogAnalyticsWorkspace.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| PowerShell + Azure CLI | `task-09-log-analytics/azure-cli/New-LogAnalyticsWorkspace.azcli.ps1` |
+| Bash + Azure CLI | `task-09-log-analytics/bash/invoke-log-analytics.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-LogAnalyticsWorkspace.ps1
+# Execution: Run from management workstation — reads variables.yml
+# Prerequisites: Az.OperationalInsights module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.OperationalInsights, Az.Resources
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "config/variables.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+$SubscriptionId = $config.azure.subscriptions.($config.azure_infrastructure.log_analytics.management.subscription).id
+$ResourceGroup = $config.azure_infrastructure.log_analytics.management.resource_group
+$WorkspaceName = $config.azure_infrastructure.log_analytics.management.name
+$Location = $config.network.azure_vnets.management.location
+$RetentionDays = $config.azure_infrastructure.log_analytics.management.retention_days
+$Sku = $config.azure_infrastructure.log_analytics.management.sku
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+Write-LogInfo "Creating Log Analytics workspace: $WorkspaceName"
+$workspace = New-AzOperationalInsightsWorkspace `
+ -ResourceGroupName $ResourceGroup `
+ -Name $WorkspaceName `
+ -Location $Location `
+ -Sku $Sku `
+ -RetentionInDays $RetentionDays
+
+Write-LogSuccess "Log Analytics workspace created: $($workspace.Name)"
+Write-LogInfo "Workspace ID: $($workspace.CustomerId)"
+$workspace
+```
+
+#### Validation
+
+```powershell
+Get-AzOperationalInsightsWorkspace -ResourceGroupName $ResourceGroup -Name $WorkspaceName | Format-List Name, Sku, RetentionInDays, ProvisioningState, CustomerId
+```
+
+**Validation Script**: `scripts/validation/02-azure-foundation/phase-04/Test-LogAnalytics.ps1`
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers needed.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: New-LogAnalyticsWorkspace-Standalone.ps1
+# Execution: Run anywhere — fully self-contained
+# Prerequisites: Az.OperationalInsights module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.OperationalInsights, Az.Resources
+
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000"
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
+$WorkspaceName = "log-azrlmgmt-azl-eus-01"
+$Location = "eastus"
+$RetentionDays = 90
+$Sku = "PerGB2018"
+#endregion CONFIGURATION
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+Write-Host "Creating Log Analytics workspace: $WorkspaceName" -ForegroundColor Cyan
+$workspace = New-AzOperationalInsightsWorkspace -ResourceGroupName $ResourceGroup `
+ -Name $WorkspaceName -Location $Location -Sku $Sku -RetentionInDays $RetentionDays
+
+Write-Host "Workspace '$WorkspaceName' created — ID: $($workspace.CustomerId)" -ForegroundColor Green
+```
+
+:::info No External Dependencies
+Self-contained. Edit the `#region CONFIGURATION` block and run.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Workspace provisioned
+- [ ] SKU: PerGB2018
+- [ ] Retention: 90 days (or configured value)
+- [ ] Workspace ID retrievable
+
+---
+
+## CAF/WAF Landing Zone Model
+
+In the CAF/WAF model, the Log Analytics workspace is deployed in the **Management subscription** for centralized observability.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Management** subscription | `azure.subscriptions.management.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.log_analytics.management.resource_group` |
+| Workspace Name | `log-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.log_analytics.management.name` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+Follow the same procedure as [Single Subscription → Azure Portal](#azure-portal), targeting the **Management** subscription.
+
+#### Validation
+
+- [ ] Workspace in **Management** subscription
+- [ ] Cross-subscription diagnostic settings can target this workspace
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### Azure CLI / PowerShell
+
+:::tip Same Script — Different Config
+The orchestrated script is identical. `variables.yml` references the correct Management subscription for CAF/WAF.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+Update `#region CONFIGURATION` for Management subscription:
+
+```powershell
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Management subscription
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
+# ...
+#endregion CONFIGURATION
+```
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Workspace in **Management** subscription
+- [ ] Diagnostic settings from other subscriptions can send logs here
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| Workspace name already taken | Names are globally unique | Choose a different name or check for soft-deleted workspace |
+| Data not appearing | Diagnostic settings not configured | Configure diagnostic settings on source resources |
+| Retention change not applied | UI caching | Refresh portal; verify via CLI |
+| Cost unexpectedly high | High data ingestion volume | Review data collection rules and reduce unnecessary tables |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 08: Arc Gateway](./task-08-arc-gateway) | [Manual Deployment Index](./index.mdx) | [Task 10: Key Vault](./task-10-key-vault) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-03 by Hybrid Cloud Solutions
+- Version: 4.0.0
+- Tags: azure-local, log-analytics, monitoring, observability
+- Keywords: Log Analytics, Azure Monitor, workspace, logging, diagnostics, retention
+- Author: Hybrid Cloud Solutions
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

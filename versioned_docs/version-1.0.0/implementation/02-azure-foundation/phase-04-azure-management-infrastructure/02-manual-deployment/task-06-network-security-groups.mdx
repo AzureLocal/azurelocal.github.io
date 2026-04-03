@@ -1,0 +1,497 @@
+---
+title: "Task 06: Network Security Groups"
+sidebar_label: "Task 06: NSGs"
+sidebar_position: 6
+description: "Create and associate Network Security Groups for the management subnet and AzureBastionSubnet."
+category: "Runbook"
+scope: NSG deployment and association
+purpose: Secure management and bastion subnets with NSG rules
+author: Hybrid Cloud Solutions
+created: 2025-09-15
+updated: 2026-03-03
+version: 4.0.0
+tags:
+  - azure-local
+  - nsg
+  - networking
+  - security
+keywords:
+  - NSG
+  - network security group
+  - firewall rules
+  - subnet security
+  - Bastion NSG
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 06: Network Security Groups
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: NSG deployment and association   
+> **PURPOSE**: Secure management and bastion subnets with NSG rules   
+> **MASTER REFERENCE**: [Microsoft Learn - NSG Overview](https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview)
+
+**Status**: Active
+
+## Overview
+
+This task creates two Network Security Groups (NSGs) and associates them with the management subnet and AzureBastionSubnet. These NSGs enforce least-privilege network access for Bastion traffic, CI/CD runner access, and on-premises connectivity.
+
+:::info Task Classification
+**Execution Target**: Azure-Only (control-plane API operation) 
+**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+:::
+
+:::info Terraform Reference
+**Module:** `azurelocal-toolkit` 
+**File:** `nsg.tf` 
+**Mode:** Management
+:::
+
+### Components Created
+
+| Resource | Name Pattern | Purpose |
+|----------|-------------|---------|
+| NSG (Management) | `nsg-azrl-{env}-{region}-01` | Management subnet security |
+| NSG (Bastion) | `nsg-bastion-{env}-{region}-01` | AzureBastionSubnet security |
+| Subnet Association (2x) | — | Bind NSGs to subnets |
+
+### Management NSG Rules
+
+| Priority | Name | Direction | Source | Destination Ports | Action |
+|----------|------|-----------|--------|-------------------|--------|
+| 110 | Bastion-SSH-RDP-Inbound | Inbound | AzureBastionSubnet CIDR | 22, 3389 | Allow |
+| 120 | Azure Local Cloud-Runners-SSH-Inbound | Inbound | CI/CD runner subnet | 22 | Allow |
+| 130 | Azure-Local-OnPrem-Inbound | Inbound | On-prem mgmt + OOB CIDRs | * | Allow |
+
+### Bastion NSG Rules (Microsoft Required)
+
+| Priority | Name | Direction | Source | Destination Ports | Action |
+|----------|------|-----------|--------|-------------------|--------|
+| 120 | AllowHttpsInbound | Inbound | Internet | 443 | Allow |
+| 130 | AllowGatewayManagerInbound | Inbound | GatewayManager | 443 | Allow |
+| 140 | AllowAzureLoadBalancerInbound | Inbound | AzureLoadBalancer | 443 | Allow |
+| 150 | AllowBastionHostCommunicationInbound | Inbound | VirtualNetwork | 80, 5701 | Allow |
+| 120 | AllowSSHRDPOutbound | Outbound | * | 22, 3389 | Allow |
+| 130 | AllowAzureCloudOutbound | Outbound | * | 443 | Allow |
+| 140 | AllowBastionCommunicationOutbound | Outbound | VirtualNetwork | 5701, 8080 | Allow |
+| 150 | AllowSessionOutbound | Outbound | * | 80 | Allow |
+| 4090 | DenyAllOutbound | Outbound | * | * | Deny |
+
+## Prerequisites
+
+- [ ] [Task 01: Virtual Network](./task-01-virtual-network) completed — Subnets exist
+- [ ] On-premises management and OOB CIDRs confirmed
+- [ ] CI/CD runner subnet CIDR confirmed (if applicable)
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example (IIC) |
+|----------|-------------|---------------|
+| Subscription ID | `azure.subscriptions.<name>.id` | *(per environment)* |
+| Resource Group | `network.azure_vnets.management.resource_group` | `rg-azrlmgmt-azl-eus-01` |
+| Bastion Subnet CIDR | `network.azure_vnets.management.subnets.bastion.cidr` | `10.250.1.64/26` |
+| Management Subnet CIDR | `network.azure_vnets.management.subnets.management.cidr` | `10.250.1.32/27` |
+
+---
+
+## Single Subscription Model
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+| Management NSG | `nsg-azrl-{env}-{region}-01` | Derived from naming convention |
+| Bastion NSG | `nsg-bastion-{env}-{region}-01` | Derived from naming convention |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: Learning Azure Local, single deployment, prefer visual interface
+
+#### Procedure — Management NSG
+
+1. **Create NSG**:
+ - Search for **Network security groups** → **+ Create**
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Name | `nsg-azrl-{env}-{region}-01` | Naming convention |
+ | Region | Your region | `azure.region` |
+ | Resource Group | Management RG | `network.azure_vnets.management.resource_group` |
+
+2. **Add Inbound Rules** — Navigate to **Inbound security rules** → **+ Add** for each:
+
+ **Rule 1: Bastion SSH/RDP**
+ | Field | Value |
+ |-------|-------|
+ | Source | IP Addresses |
+ | Source IP | AzureBastionSubnet CIDR |
+ | Destination port ranges | 22, 3389 |
+ | Protocol | Any |
+ | Action | Allow |
+ | Priority | 110 |
+ | Name | Bastion-SSH-RDP-Inbound |
+
+ **Rule 2: CI/CD Runners SSH**
+ | Field | Value |
+ |-------|-------|
+ | Source | IP Addresses |
+ | Source IP | CI/CD runner subnet CIDR |
+ | Destination port ranges | 22 |
+ | Priority | 120 |
+ | Name | Azure Local Cloud-Runners-SSH-Inbound |
+
+ **Rule 3: On-Prem Inbound**
+ | Field | Value |
+ |-------|-------|
+ | Source | IP Addresses |
+ | Source IPs | On-prem mgmt CIDR, OOB CIDR |
+ | Destination port ranges | * |
+ | Priority | 130 |
+ | Name | Azure-Local-OnPrem-Inbound |
+
+3. **Associate NSG to Management Subnet**:
+ - NSG → **Subnets** → **+ Associate** → Select VNet and management subnet
+
+#### Procedure — Bastion NSG
+
+4. **Create Bastion NSG**:
+ - Create second NSG named `nsg-bastion-{env}-{region}-01`
+
+5. **Add Required Bastion Rules**: Add all inbound/outbound rules per the Bastion NSG Rules table above. These are **Microsoft-required** for Bastion to function.
+
+6. **Associate NSG to AzureBastionSubnet**:
+ - NSG → **Subnets** → **+ Associate** → Select AzureBastionSubnet
+
+#### Validation
+
+- [ ] Both NSGs created with correct rules
+- [ ] Management NSG associated with management subnet
+- [ ] Bastion NSG associated with AzureBastionSubnet
+- [ ] Bastion connectivity still works (Task 05)
+
+#### Links
+
+- [Microsoft Learn: Create NSG](https://learn.microsoft.com/en-us/azure/virtual-network/manage-network-security-group)
+- [Bastion NSG Requirements](https://learn.microsoft.com/en-us/azure/bastion/bastion-nsg)
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### Azure CLI / PowerShell
+
+> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
+
+#### Script
+
+**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-06-network-security-groups/powershell/Deploy-LighthouseNsg.ps1`
+
+**Alternatives**:
+| Variant | Path |
+|---------|------|
+| PowerShell + Azure CLI | `task-06-network-security-groups/azure-cli/Deploy-LighthouseNsg.azcli.ps1` |
+| Bash + Azure CLI | `task-06-network-security-groups/bash/invoke-network-security-groups.sh` |
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Deploy-LighthouseNsg.ps1
+# Execution: Run from management workstation — reads variables.yml
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+param(
+ [Parameter(Mandatory = $false)]
+ [ValidateScript({Test-Path $_})]
+ [string]$ConfigPath = "config/variables.yml"
+)
+
+$ErrorActionPreference = "Stop"
+$scriptRoot = $PSScriptRoot
+
+. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
+. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
+
+$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
+
+# Extract values
+$SubscriptionId = $config.azure.subscriptions.($config.network.azure_vnets.management.subscription).id
+$ResourceGroup = $config.network.azure_vnets.management.resource_group
+$Location = $config.network.azure_vnets.management.location
+$VNetName = $config.network.azure_vnets.management.name
+$BastionSubnetCidr = $config.network.azure_vnets.management.subnets.bastion.cidr
+$MgmtSubnetName = $config.network.azure_vnets.management.subnets.management.name
+$OnPremMgmtCidr = $config.network.vlans.management.cidr
+$OnPremOobCidr = $config.network.vlans.oob.cidr
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# ── Management NSG ──
+$mgmtNsgName = "nsg-azrl-$($config.azure.environment)-$($config.azure.region_abbreviation)-01"
+Write-LogInfo "Creating Management NSG: $mgmtNsgName"
+
+$rule1 = New-AzNetworkSecurityRuleConfig -Name "Bastion-SSH-RDP-Inbound" -Priority 110 `
+ -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix $BastionSubnetCidr `
+ -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange @("22","3389")
+
+$rule2 = New-AzNetworkSecurityRuleConfig -Name "Azure Local Cloud-Runners-SSH-Inbound" -Priority 120 `
+ -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix $config.network.azure_vnets.cicd.subnets.cicd.cidr `
+ -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "22"
+
+$rule3 = New-AzNetworkSecurityRuleConfig -Name "Azure-Local-OnPrem-Inbound" -Priority 130 `
+ -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix @($OnPremMgmtCidr, $OnPremOobCidr) `
+ -SourcePortRange "*" -DestinationAddressPrefix $config.network.azure_vnets.management.subnets.management.cidr `
+ -DestinationPortRange "*"
+
+$mgmtNsg = New-AzNetworkSecurityGroup -Name $mgmtNsgName -ResourceGroupName $ResourceGroup `
+ -Location $Location -SecurityRules @($rule1, $rule2, $rule3)
+
+# ── Bastion NSG ──
+$bastionNsgName = "nsg-bastion-$($config.azure.environment)-$($config.azure.region_abbreviation)-01"
+Write-LogInfo "Creating Bastion NSG: $bastionNsgName"
+
+$bastionRules = @(
+ (New-AzNetworkSecurityRuleConfig -Name "AllowHttpsInbound" -Priority 120 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "Internet" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowGatewayManagerInbound" -Priority 130 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "GatewayManager" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowAzureLoadBalancerInbound" -Priority 140 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "AzureLoadBalancer" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowBastionHostCommunicationInbound" -Priority 150 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "VirtualNetwork" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("80","5701")),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowSSHRDPOutbound" -Priority 120 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("22","3389")),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowAzureCloudOutbound" -Priority 130 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "AzureCloud" -DestinationPortRange "443"),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowBastionCommunicationOutbound" -Priority 140 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "VirtualNetwork" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("5701","8080")),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowSessionOutbound" -Priority 150 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "80"),
+ (New-AzNetworkSecurityRuleConfig -Name "DenyAllOutbound" -Priority 4090 -Direction Outbound -Access Deny -Protocol "*" -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "*")
+)
+
+$bastionNsg = New-AzNetworkSecurityGroup -Name $bastionNsgName -ResourceGroupName $ResourceGroup `
+ -Location $Location -SecurityRules $bastionRules
+
+# ── Associate NSGs to Subnets ──
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+
+Write-LogInfo "Associating Management NSG to subnet: $MgmtSubnetName"
+$mgmtSubnet = Get-AzVirtualNetworkSubnetConfig -Name $MgmtSubnetName -VirtualNetwork $vnet
+Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name $MgmtSubnetName `
+ -AddressPrefix $mgmtSubnet.AddressPrefix -NetworkSecurityGroupId $mgmtNsg.Id | Out-Null
+
+Write-LogInfo "Associating Bastion NSG to AzureBastionSubnet"
+Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name "AzureBastionSubnet" `
+ -AddressPrefix $config.network.azure_vnets.management.subnets.bastion.cidr `
+ -NetworkSecurityGroupId $bastionNsg.Id | Out-Null
+
+$vnet | Set-AzVirtualNetwork | Out-Null
+
+Write-LogSuccess "NSGs created and associated successfully"
+```
+
+#### Validation
+
+```powershell
+Get-AzNetworkSecurityGroup -ResourceGroupName $ResourceGroup | Format-Table Name, @{N="Rules";E={$_.SecurityRules.Count}}, ProvisioningState
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready script — no config file, no helpers needed.
+
+#### Code
+
+```powershell
+# ============================================================================
+# Script: Deploy-NetworkSecurityGroups-Standalone.ps1
+# Execution: Run anywhere — fully self-contained
+# Prerequisites: Az.Network module, authenticated to Azure
+# ============================================================================
+
+#Requires -Modules Az.Network, Az.Resources
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+$SubscriptionId = "00000000-0000-0000-0000-000000000000"
+$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
+$Location = "eastus"
+$VNetName = "vnet-azrl-azl-eus-01"
+$MgmtNsgName = "nsg-azrl-azl-eus-01"
+$BastionNsgName = "nsg-bastion-azl-eus-01"
+$MgmtSubnetName = "snet-azrl-azl-eus-01"
+$BastionSubnetCidr = "10.250.1.64/26"
+$MgmtSubnetCidr = "10.250.1.32/27"
+$OnPremMgmtCidr = "192.168.203.0/24"
+$OnPremOobCidr = "10.245.64.0/24"
+$CicdSubnetCidr = "10.250.0.0/24"
+#endregion CONFIGURATION
+
+Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
+
+# Management NSG
+Write-Host "Creating Management NSG: $MgmtNsgName" -ForegroundColor Cyan
+$r1 = New-AzNetworkSecurityRuleConfig -Name "Bastion-SSH-RDP-Inbound" -Priority 110 -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix $BastionSubnetCidr -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange @("22","3389")
+$r2 = New-AzNetworkSecurityRuleConfig -Name "Azure Local Cloud-Runners-SSH-Inbound" -Priority 120 -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix $CicdSubnetCidr -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "22"
+$r3 = New-AzNetworkSecurityRuleConfig -Name "Azure-Local-OnPrem-Inbound" -Priority 130 -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix @($OnPremMgmtCidr,$OnPremOobCidr) -SourcePortRange "*" -DestinationAddressPrefix $MgmtSubnetCidr -DestinationPortRange "*"
+$mgmtNsg = New-AzNetworkSecurityGroup -Name $MgmtNsgName -ResourceGroupName $ResourceGroup -Location $Location -SecurityRules @($r1,$r2,$r3)
+
+# Bastion NSG (Microsoft-required rules)
+Write-Host "Creating Bastion NSG: $BastionNsgName" -ForegroundColor Cyan
+$br = @(
+ (New-AzNetworkSecurityRuleConfig -Name "AllowHttpsInbound" -Priority 120 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "Internet" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowGatewayManagerInbound" -Priority 130 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "GatewayManager" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowAzureLoadBalancerInbound" -Priority 140 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "AzureLoadBalancer" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowBastionHostCommunicationInbound" -Priority 150 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "VirtualNetwork" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("80","5701")),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowSSHRDPOutbound" -Priority 120 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("22","3389")),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowAzureCloudOutbound" -Priority 130 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "AzureCloud" -DestinationPortRange "443"),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowBastionCommunicationOutbound" -Priority 140 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "VirtualNetwork" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("5701","8080")),
+ (New-AzNetworkSecurityRuleConfig -Name "AllowSessionOutbound" -Priority 150 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "80"),
+ (New-AzNetworkSecurityRuleConfig -Name "DenyAllOutbound" -Priority 4090 -Direction Outbound -Access Deny -Protocol "*" -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "*")
+)
+$bastionNsg = New-AzNetworkSecurityGroup -Name $BastionNsgName -ResourceGroupName $ResourceGroup -Location $Location -SecurityRules $br
+
+# Associate
+$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
+Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name $MgmtSubnetName -AddressPrefix $MgmtSubnetCidr -NetworkSecurityGroupId $mgmtNsg.Id | Out-Null
+Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name "AzureBastionSubnet" -AddressPrefix $BastionSubnetCidr -NetworkSecurityGroupId $bastionNsg.Id | Out-Null
+$vnet | Set-AzVirtualNetwork | Out-Null
+
+Write-Host "NSGs created and associated" -ForegroundColor Green
+```
+
+:::info No External Dependencies
+Self-contained. Edit the `#region CONFIGURATION` block and run.
+:::
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] Management NSG has 3 inbound rules
+- [ ] Bastion NSG has all required rules (9 rules)
+- [ ] Both NSGs associated with correct subnets
+- [ ] Bastion connectivity still works
+
+---
+
+## CAF/WAF Landing Zone Model
+
+In the CAF/WAF model, NSGs follow the same pattern but are deployed in the **Connectivity subscription** where the VNet resides.
+
+### Landing Zone Placement
+
+| Field | Value | Config Path |
+|-------|-------|-------------|
+| Subscription | **Connectivity** subscription | `azure.subscriptions.connectivity.id` |
+| Resource Group | `rg-azrlconn-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+
+### Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+Follow the same procedure as [Single Subscription → Azure Portal](#azure-portal), targeting the **Connectivity** subscription.
+
+#### Validation
+
+- [ ] NSGs in **Connectivity** subscription
+- [ ] Associated with correct subnets
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### Azure CLI / PowerShell
+
+:::tip Same Script — Different Config
+The orchestrated script is identical. `variables.yml` references the correct Connectivity subscription for CAF/WAF.
+:::
+
+See the [Single Subscription → Azure CLI / PowerShell](#azure-cli--powershell) tab.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+Update the `#region CONFIGURATION` block for Connectivity subscription:
+
+```powershell
+#region CONFIGURATION
+$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Connectivity subscription ID
+$ResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
+# ... remaining values same as single-sub
+#endregion CONFIGURATION
+```
+
+</TabItem>
+</Tabs>
+
+### Validation
+
+- [ ] NSGs deployed in **Connectivity** subscription
+- [ ] Subnet associations correct
+
+---
+
+## Troubleshooting
+
+| Issue | Root Cause | Remediation |
+|-------|-----------|-------------|
+| Bastion stops working after NSG | Missing required Bastion rules | Add all Microsoft-required Bastion inbound/outbound rules |
+| SSH from runner fails | Priority or CIDR mismatch | Verify CI/CD subnet CIDR in rule 120 |
+| On-prem cannot reach Azure VMs | NSG blocking on-prem to mgmt | Verify on-prem CIDRs in rule 130 |
+| DenyAllOutbound blocks Bastion | Bastion outbound rules missing | Ensure outbound rules 120-150 exist before DenyAll at 4090 |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 05: Azure Bastion](./task-05-azure-bastion) | [Manual Deployment Index](./index.mdx) | [Task 07: NAT Gateway](./task-07-nat-gateway) |
+
+---
+
+**Version Control**
+
+- Created: 2025-09-15 by Hybrid Cloud Solutions
+- Last Updated: 2026-03-03 by Hybrid Cloud Solutions
+- Version: 4.0.0
+- Tags: azure-local, nsg, networking, security
+- Keywords: NSG, network security group, firewall rules, subnet security, Bastion NSG
+- Author: Hybrid Cloud Solutions
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

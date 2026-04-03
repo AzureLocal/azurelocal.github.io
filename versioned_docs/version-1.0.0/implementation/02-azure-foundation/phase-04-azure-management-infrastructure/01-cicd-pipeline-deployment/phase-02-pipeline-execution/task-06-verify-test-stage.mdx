@@ -1,0 +1,247 @@
+---
+title: "Task 06: Verify Test Stage"
+sidebar_label: "Task 06: Verify Test Stage"
+sidebar_position: 6
+description: "Verify automated tests confirm successful deployment"
+category: "Runbook"
+scope: "Verify automated tests confirm successful deployment"
+purpose: "Verify automated tests confirm successful deployment"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - azure-foundation
+  - management-infrastructure
+keywords:
+  - Verify
+  - Test
+  - Stage
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 06: Verify Test Stage
+
+> **Objective**: Verify automated tests validate successful infrastructure deployment 
+> **Duration**: ~5 minutes
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Verify automated tests confirm successful deployment
+> **PURPOSE**: Verify automated tests confirm successful deployment
+> **MASTER REFERENCE**: [Azure Local Deployment Overview](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-introduction)
+
+**Status**: Active
+
+## What Happens
+
+The test stage runs automated validation:
+1. **Resource Existence Checks** - Verify all resources were created
+2. **Configuration Validation** - Confirm settings match specification
+3. **Connectivity Tests** - Basic reachability checks
+4. **State Verification** - Confirm resources are in expected state
+
+---
+
+## Procedure
+
+### 1. Watch Test Job
+
+Click the **test** job in the pipeline to see test execution.
+
+### 2. Review Test Results
+
+Example test output:
+```
+Running validation tests...
+
+✓ Resource Group exists: rg-iic-prd-eus-management
+✓ Virtual Network exists: vnet-iic-prd-eus-hub
+✓ VPN Gateway exists and is provisioned
+✓ VPN Gateway BGP is configured
+✓ Azure Bastion exists and is running
+✓ Key Vault exists and is accessible
+✓ Log Analytics Workspace exists
+✓ All required subnets created
+✓ NSGs attached to subnets
+✓ Private DNS Zone created
+
+All tests passed! ✓
+```
+
+### 3. Check for Failed Tests
+
+If any test fails:
+```
+✗ VPN Gateway BGP peering not established
+ Expected: Connected
+ Actual: Connecting
+```
+
+Some tests may show warnings on first run (e.g., BGP peering takes additional time).
+
+---
+
+## Test Categories
+
+### Resource Existence (Critical)
+- ✅ All resource groups created
+- ✅ VNet and subnets exist
+- ✅ VPN Gateway provisioned
+- ✅ Bastion host exists
+- ✅ Key Vault accessible
+- ✅ Storage accounts created
+
+### Configuration (Important)
+- ✅ VPN Gateway SKU correct
+- ✅ Subnet sizes match specification
+- ✅ Key Vault policies configured
+- ✅ NSGs attached
+
+### State (Nice-to-have)
+- ⚠️ VPN Gateway connections (may not be complete yet)
+- ⚠️ BGP peering status (takes additional time)
+
+---
+
+## Expected Results
+
+### Management Mode
+```
+Tests Run: 35
+Passed: 35
+Failed: 0
+Warnings: 2 (VPN connectivity - BGP peering establishing)
+```
+
+### Cluster Mode
+```
+Tests Run: 15
+Passed: 15
+Failed: 0
+Warnings: 0
+```
+
+---
+
+## If Tests Fail
+
+**Critical failures:**
+- Resource groups missing
+- VPN Gateway failed to create
+- Key Vault not accessible
+
+**Action:** Review apply stage logs, check Azure Portal, see troubleshooting in Phase 03.
+
+**Warning/Info items:**
+- VPN BGP not yet connected (will establish within 10-15 min)
+- Optional servers not deployed (expected if disabled)
+
+**Action:** Continue to Phase 03 validation.
+
+---
+
+## Validation
+
+- [ ] Test stage completed
+- [ ] Critical tests passed (resource existence)
+- [ ] Configuration tests passed
+- [ ] Any failures understood and documented
+- [ ] Pipeline shows green success status
+
+---
+
+## Pipeline Complete
+
+**If all stages passed:**
+```
+✓ Validate (2 min)
+✓ Plan (3 min)
+✓ Approve (manual)
+✓ Apply (45-90 min)
+✓ Test (5 min)
+
+Pipeline Status: PASSED ✓
+```
+
+Deployment complete! Proceed to Phase 03 for detailed validation.
+
+---
+
+---
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitHub Actions.
+
+See procedure steps above for GitHub-specific guidance.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitLab CI/CD.
+
+See procedure steps for GitLab-specific guidance.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on Azure DevOps Pipelines.
+
+See procedure steps for Azure DevOps-specific guidance.
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 05 - Apply Stage](./task-05-monitor-apply-stage.mdx) | [Phase 02 - Execution](./index.mdx) | [Phase 03 - Validation](../phase-03-validation/) |
+
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Test Suite | `cicd.pipeline.test_suite` | `infrastructure-validation` |
+| Test Timeout | `cicd.pipeline.test_timeout` | `60` |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Test stage failures | Deployed resources not matching expected configuration | Compare test assertions against actual resource state |
+| Connectivity tests fail | Network security rules blocking test traffic | Verify NSG rules allow test connectivity |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |

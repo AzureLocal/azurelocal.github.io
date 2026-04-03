@@ -1,0 +1,282 @@
+---
+title: "Task 02: Manage Network Security Groups"
+sidebar_label: "Task 02: Manage NSGs"
+sidebar_position: 2
+description: "Day 2 management of Network Security Groups — add/remove rules, associate/dissociate, and troubleshoot"
+category: "Runbook"
+scope: "Day 2 management of Network Security Groups on Azure Local"
+purpose: "Day 2 management of Network Security Groups on Azure Local"
+author: "AzureLocal"
+created: 2025-03-25
+updated: 2025-07-25
+version: "2.0.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - sdn
+keywords:
+  - Manage
+  - Network
+  - Security
+  - Groups
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Manage Network Security Groups
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Day 2 NSG management
+> **PURPOSE**: Manage NSG rules, associations, and troubleshooting for Azure Local VMs
+> **MASTER REFERENCE**: [SDN Network Security Groups](https://learn.microsoft.com/en-us/azure/azure-local/manage/use-datacenter-firewall-powershell)
+> **INITIAL SETUP**: See [Phase 06 — Task 07: Configure NSGs](../../04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs.mdx)
+
+**Status**: Active
+
+## Overview
+
+This document covers **Day 2 operations** for NSGs that were initially created during
+[Phase 06 — Post-Deployment Task 07](../../04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs.mdx)
+and associated with logical networks during
+[Task 08 — Logical Network Creation](../../04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation.mdx).
+
+Day 2 operations include:
+- Adding or removing security rules
+- Associating or dissociating NSGs from logical networks and VM NICs
+- Troubleshooting connectivity issues related to NSG rules
+
+---
+
+## Common NSG Patterns
+
+### Web Server NSG
+
+| Rule | Direction | Port | Source | Action |
+|------|-----------|------|--------|--------|
+| Allow-HTTPS | Inbound | 443 | * | Allow |
+| Allow-HTTP | Inbound | 80 | * | Allow |
+| Allow-RDP-Mgmt | Inbound | 3389 | Management CIDR | Allow |
+| Deny-All | Inbound | * | * | Deny |
+
+### Database Server NSG
+
+| Rule | Direction | Port | Source | Action |
+|------|-----------|------|--------|--------|
+| Allow-SQL | Inbound | 1433 | App Server CIDR | Allow |
+| Allow-RDP-Mgmt | Inbound | 3389 | Management CIDR | Allow |
+| Deny-All | Inbound | * | * | Deny |
+
+### Application Server NSG
+
+| Rule | Direction | Port | Source | Action |
+|------|-----------|------|--------|--------|
+| Allow-App-Port | Inbound | 8080 | Web Server CIDR | Allow |
+| Allow-RDP-Mgmt | Inbound | 3389 | Management CIDR | Allow |
+| Deny-All | Inbound | * | * | Deny |
+
+---
+
+## NIC Configuration Note
+
+:::warning Multiple NICs on Azure Local VMs
+If you provision multiple static NICs on an Azure Local VM, all NICs receive the default gateway by default.
+
+**Resolution**: Remove the default gateway from secondary NICs to prevent:
+- Asymmetric networking
+- Packet loss
+- Unpredictable network behavior
+
+```powershell
+# Inside the VM - remove default gateway from secondary NIC
+Remove-NetRoute -InterfaceAlias "Ethernet 2" -DestinationPrefix "0.0.0.0/0" -Confirm:$false
+```
+:::
+
+---
+
+## Day 2 Operations
+
+### Add a Rule to an Existing NSG
+
+```bash
+az stack-hci-vm network nsg rule create \
+  --nsg-name nsg-iic-production \
+  --resource-group rg-iic-platform-01 \
+  --subscription <subscription-id> \
+  --name "Allow-SQL-AppTier" \
+  --priority 300 \
+  --direction Inbound \
+  --access Allow \
+  --protocol Tcp \
+  --source-address-prefixes "10.200.0.0/24" \
+  --source-port-ranges "*" \
+  --destination-address-prefixes "*" \
+  --destination-port-ranges "1433"
+```
+
+### Remove a Rule
+
+```bash
+az stack-hci-vm network nsg rule delete \
+  --nsg-name nsg-iic-production \
+  --resource-group rg-iic-platform-01 \
+  --subscription <subscription-id> \
+  --name "Allow-SQL-AppTier"
+```
+
+### Associate NSG with VM NIC
+
+1. Navigate to **Azure Arc** → **Azure Local** → **Virtual Machines**
+2. Select the target VM
+3. Go to **Networking**
+4. Select the target NIC
+5. Click **Network Security Group**
+6. Choose the NSG to associate
+7. Click **Save**
+
+### Dissociate NSG from a Logical Network
+
+To change or remove an NSG from a logical network, the network must be recreated. NSG association
+is set at logical network creation time.
+
+---
+
+## NIC Configuration Note
+
+:::warning Multiple NICs on Azure Local VMs
+If you provision multiple static NICs on an Azure Local VM, all NICs receive the default gateway by default.
+
+**Resolution**: Remove the default gateway from secondary NICs to prevent:
+- Asymmetric networking
+- Packet loss
+- Unpredictable network behavior
+
+```powershell
+# Inside the VM - remove default gateway from secondary NIC
+Remove-NetRoute -InterfaceAlias "Ethernet 2" -DestinationPrefix "0.0.0.0/0" -Confirm:$false
+```
+:::
+
+---
+
+## Verification
+
+### List NSG Rules
+
+```bash
+az stack-hci-vm network nsg rule list \
+  --nsg-name nsg-iic-management \
+  --resource-group rg-iic-platform-01 \
+  --subscription <subscription-id> -o table
+```
+
+### Verify NSG Association
+
+1. Navigate to **Azure Portal** → **Azure Arc** → **Azure Local**
+2. Check **Logical Networks** for NSG association
+3. Check **Virtual Machines** → **Networking** for NIC NSG association
+
+### Test Connectivity
+
+```powershell
+# From a test VM, verify rules are working
+Test-NetConnection -ComputerName <target-vm-ip> -Port 443
+Test-NetConnection -ComputerName <target-vm-ip> -Port 3389
+```
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| NSG not applying | Verify VM was deployed from Azure interfaces |
+| Rules not blocking | Check rule priority (lower = processed first) |
+| Connectivity lost | Verify management access rules exist |
+| NSG not visible | Ensure SDN is enabled on the cluster |
+
+## Related Documentation
+
+- [Phase 06 — Task 07: Configure NSGs (Initial Setup)](../../04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs.mdx)
+- [Phase 06 — Task 08: Logical Network Creation](../../04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation.mdx)
+- [NSG Overview - Azure](https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview)
+- [SDN Overview - Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/sdn-overview)
+
+---
+
+---
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Manual" default>
+
+> **When to use**: Use this option for manual step-by-step execution.
+
+See procedure steps above for manual execution guidance.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository.
+:::
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Variables from variables.yml
+
+The following variables from \\ariables.yml\\ are used by this task:
+
+| Variable Path | Type | Description |
+|--------------|------|-------------|
+| See variables.yml | Various | Refer to the variables.yml configuration file |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 01: Validate Prerequisites](./task-01-validate-sdn-prerequisites.mdx) | [Phase 01: SDN Operations](./index.mdx) | [Phase 02: Monitoring & Observability →](../phase-02-monitoring-observability/index.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | AzureLocal | Initial release |
+| 1.1.0 | 2026-04-01 | AzureLocal | Align naming conventions, remove consulting language |
+| 2.0.0 | 2025-07-25 | AzureLocal | Repurpose as Day 2 management — initial creation moved to Phase 06 Task 07 |

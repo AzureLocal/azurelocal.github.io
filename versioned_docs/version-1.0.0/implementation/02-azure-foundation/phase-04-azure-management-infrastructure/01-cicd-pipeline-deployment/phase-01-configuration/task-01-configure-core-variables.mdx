@@ -1,0 +1,257 @@
+---
+title: "Task 01: Configure Core Variables"
+sidebar_label: "Task 01: Configure Core Variables"
+sidebar_position: 1
+description: "Define customer and CI/CD Infrastructure integration variables"
+category: "Runbook"
+scope: "Define customer and CI/CD Infrastructure integration variables"
+purpose: "Define customer and CI/CD Infrastructure integration variables"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - azure-foundation
+  - management-infrastructure
+keywords:
+  - Configure
+  - Core
+  - Variables
+status: "Active"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Configure Core Variables
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-green?style=flat-square)](../../index.mdx)
+[![Terraform](https://img.shields.io/badge/Tool-Terraform-purple?style=flat-square&logo=terraform)](https://terraform.io)
+
+> **DOCUMENT CATEGORY**: Task   
+> **SCOPE**: Core Terraform variable configuration   
+> **PURPOSE**: Define customer and CI/CD integration variables  
+> **MASTER REFERENCE**: [azurelocal-toolkit Variables](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/terraform/variables.tf)
+
+**Status**: Active 
+**Last Updated**: 2026-02-07
+
+---
+
+## Objective
+
+Configure the core Terraform variables required for all CI/CD deployments, including customer details, environment settings, and CI/CD Infrastructure integration.
+
+---
+
+## Prerequisites
+
+- [ ] Customer short name (from project naming convention)
+- [ ] Azure tenant ID
+- [ ] Azure subscription ID
+- [ ] CI/CD Infrastructure runner principal ID (from [Part 1: CI/CD Infrastructure](../../../../01-cicd-infra/))
+- [ ] Azure Local Entra ID group object ID (from [Part 1: CI/CD Infrastructure](../../../../01-cicd-infra/))
+
+---
+
+## Procedure
+
+### 1. Open Terraform Variables File
+
+Navigate to your source control project and open the Terraform variables file:
+
+```bash
+# Typically located at:
+terraform/environments/<environment>/terraform.tfvars
+# or
+terraform.tfvars
+```
+
+### 2. Configure Customer Variables
+
+Add the core customer variables:
+
+```hcl
+# Customer Configuration
+customer_name = "iic"        # Customer short name (lowercase, hyphens)
+environment   = "prd"        # Environment: prd, dev, stg (max 3 chars)
+location      = "eastus"     # Azure region (eastus, westus, centralus, etc.)
+tenant_id     = "12345678-1234-1234-1234-123456789012" # Customer Azure tenant ID
+```
+
+### 3. Configure CI/CD Infrastructure Integration
+
+Add the CI/CD Infrastructure variables from Part 2:
+
+```hcl
+# CI/CD Infrastructure (from Part 1)
+azurelocal_cicd = {
+  runner_principal_id = "87654321-4321-4321-4321-210987654321" # CI/CD runner service principal
+}
+
+# Azure Local Entra ID Group (from Part 1)
+azurelocal_group_object_id = "abcdef12-3456-7890-abcd-ef1234567890" # Azure Local management group
+```
+
+### 4. Add Optional Tags (Recommended)
+
+```hcl
+# Optional: Resource tags
+tags = {
+ Customer = "Customer Name"
+ Environment = "Production"
+ ManagedBy = "Azure Local Cloud CI/CD"
+ CostCenter = "IT Infrastructure"
+}
+```
+
+---
+
+## Variable Reference
+
+| Variable | Type | Description | Required | Example |
+|----------|------|-------------|----------|---------|
+| `customer_name` | string | Customer short name | ✅ | `"iic"` |
+| `environment` | string | Environment identifier (max 3 chars) | ✅ | `"prd"`, `"dev"`, `"stg"` |
+| `location` | string | Azure region for resource deployment | ✅ | `"eastus"`, `"westus"` |
+| `tenant_id` | string | Customer Azure tenant ID (GUID) | ✅ | `"12345678-1234-..."` |
+| `azurelocal_cicd.runner_principal_id` | string | CI/CD runner service principal ID | ✅ | `"87654321-4321-..."` |
+| `azurelocal_group_object_id` | string | Azure Local Entra ID group object ID | ✅ | `"abcdef12-3456-..."` |
+| `tags` | map(string) | Optional resource tags | ❌ | `{ Customer = "..." }` |
+
+---
+
+## Validation
+
+After configuration, verify:
+
+- [ ] Customer name follows naming convention
+- [ ] Environment code is valid (3 characters maximum)
+- [ ] Azure region is correct and available
+- [ ] Tenant ID is correct customer tenant GUID
+- [ ] Runner principal ID matches CI/CD pipeline service principal from Part 1
+- [ ] Azure Local group object ID matches Entra ID group from Part 1
+- [ ] No syntax errors in HCL configuration
+
+---
+
+## Example Complete Configuration
+
+```hcl
+# terraform.tfvars
+
+# Customer Configuration
+customer_name = "acme"
+environment   = "prd"
+location      = "eastus"
+tenant_id     = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+# CI/CD Infrastructure
+azurelocal_cicd = {
+  runner_principal_id = "11223344-5566-7788-99aa-bbccddeeff00"
+}
+
+# Azure Local Entra ID Group
+azurelocal_group_object_id = "ffeeddcc-bbaa-9988-7766-554433221100"
+
+# Optional Tags
+tags = {
+  Customer    = "Acme Corporation"
+  Environment = "Production"
+  ManagedBy   = "Azure Local CI/CD"
+  CostCenter  = "IT-Infrastructure"
+  Project     = "Azure Local Deployment"
+}
+```
+
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Subscription ID | `azure.subscription.id` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| Resource Group | `azure.resource_groups.management.name` | `rg-management-01` |
+| Location | `azure.location` | `eastus` |
+| Environment | `azure.environment` | `production` |
+
+---
+
+## Troubleshooting
+
+**Issue**: Invalid customer_name format 
+**Solution**: Customer name must be lowercase with hyphens only (e.g., `acme`, `global-tech`)
+
+**Issue**: Invalid environment value 
+**Solution**: Environment must be 3 characters or less: `prd`, `dev`, `stg`, `qa`, etc.
+
+**Issue**: Azure region not available 
+**Solution**: Verify region name with `az account list-locations -o table`
+
+**Issue**: Cannot find runner principal ID 
+**Solution**: Check Part 1 CI/CD Infrastructure deployment outputs or CI/CD pipeline variables
+
+---
+
+## Next Steps
+
+Proceed to [Task 02 - Configure Management Mode](./task-02-configure-management-mode.mdx) to define network configuration.
+
+---
+
+---
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitHub Actions.
+
+See procedure steps above for GitHub-specific guidance.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on GitLab CI/CD.
+
+See procedure steps for GitLab-specific guidance.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+> **When to use**: Use this tab if your CI/CD pipeline runs on Azure DevOps Pipelines.
+
+See procedure steps for Azure DevOps-specific guidance.
+
+</TabItem>
+</Tabs>
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Phase 01 - Configuration](./index.mdx) | [Phase 01 - Configuration](./index.mdx) | [Task 02 - Management Mode](./task-02-configure-management-mode.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |

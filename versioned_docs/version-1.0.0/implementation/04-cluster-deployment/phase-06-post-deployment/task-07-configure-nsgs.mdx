@@ -1,0 +1,599 @@
+---
+title: "Task 07: Configure Network Security Groups"
+sidebar_label: "Task 07: Configure NSGs"
+sidebar_position: 7
+description: "Create Azure Local NSGs for logical network micro-segmentation before network provisioning"
+category: "Runbook"
+scope: "Create Azure Local NSGs for logical network micro-segmentation"
+purpose: "Create Azure Local NSGs for logical network micro-segmentation before network provisioning"
+author: "Azure Local Cloudnology Team"
+created: 2025-07-25
+updated: 2025-07-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - post-deployment
+  - sdn
+keywords:
+  - Network
+  - Security
+  - Groups
+  - NSG
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 07 — Configure Network Security Groups
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../../index.mdx)
+[![Phase 06](https://img.shields.io/badge/Phase-06%20Post--Deployment-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook — Task
+> **SCOPE**: Phase 06 — Post-Deployment | Azure Local
+> **PURPOSE**: Create NSGs that will be associated with logical networks in Task 08
+> **MASTER REFERENCE**: [Network Security Groups](https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview)
+> **PREREQUISITE**: SDN must be enabled (Task 01)
+
+**Status**: Active
+
+## Overview
+
+With SDN enabled (Task 01), Network Security Groups provide micro-segmentation for Azure Local
+VMs. NSGs must be created **before** logical networks so they can be associated at logical network
+creation time (Task 08) using the `--network-security-group` parameter.
+
+:::note Scope Limitation
+NSGs only apply to **Azure Local VMs** deployed from Azure interfaces (Azure Portal, Azure CLI, ARM Templates).
+
+NSGs do **NOT** apply to:
+- Hyper-V VMs deployed locally
+- VMs managed by SCVMM
+- AKS workloads
+:::
+
+## NSG Concepts
+
+### Rule Components
+
+| Component | Description |
+|-----------|-------------|
+| Priority | 100-4096 (lower = higher priority) |
+| Direction | Inbound or Outbound |
+| Source | IP address, CIDR, Service Tag, or * |
+| Destination | IP address, CIDR, Service Tag, or * |
+| Protocol | TCP, UDP, ICMP, or * |
+| Port | Single port, range, or * |
+| Action | Allow or Deny |
+
+### Default Rules
+
+NSGs include implicit default rules:
+- **AllowVnetInBound** (Priority 65000) — Allow intra-VNet traffic
+- **AllowAzureLoadBalancerInBound** (Priority 65001) — Allow health probes
+- **DenyAllInBound** (Priority 65500) — Deny all other inbound
+- **AllowVnetOutBound** (Priority 65000) — Allow outbound to VNet
+- **AllowInternetOutBound** (Priority 65001) — Allow outbound to Internet
+- **DenyAllOutBound** (Priority 65500) — Deny all other outbound
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
+| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-iic-platform-01` |
+| `AZURE_REGION` | `azure.resource_group.location` | `eastus2` |
+| `CUSTOM_LOCATION` | `compute.azure_local.custom_location` | `/subscriptions/.../customLocations/cl-iic-clus01` |
+| NSG definitions | `networking.nsgs[]` | See config/variables.example.yml |
+
+---
+
+## IIC NSG Design
+
+Three NSGs aligned with the IIC logical networks:
+
+### nsg-iic-management
+
+For `ln-iic01-management-100` — admin access only from management CIDR.
+
+| Rule | Priority | Direction | Port | Source | Action |
+|------|----------|-----------|------|--------|--------|
+| Allow-RDP-Management | 100 | Inbound | 3389 | 10.100.0.0/24 | Allow |
+| Allow-WinRM | 110 | Inbound | 5985-5986 | 10.100.0.0/24 | Allow |
+| Allow-SSH | 120 | Inbound | 22 | 10.100.0.0/24 | Allow |
+| Allow-HTTPS-WAC | 130 | Inbound | 443 | 10.100.0.0/24 | Allow |
+| Deny-All-Inbound | 4000 | Inbound | * | * | Deny |
+
+### nsg-iic-production
+
+For `ln-iic01-production-200` — web traffic from any, RDP from management only.
+
+| Rule | Priority | Direction | Port | Source | Action |
+|------|----------|-----------|------|--------|--------|
+| Allow-HTTPS | 100 | Inbound | 443 | * | Allow |
+| Allow-HTTP | 110 | Inbound | 80 | * | Allow |
+| Allow-RDP-Management | 200 | Inbound | 3389 | 10.100.0.0/24 | Allow |
+| Deny-All-Inbound | 4000 | Inbound | * | * | Deny |
+
+### nsg-iic-avd
+
+For `ln-iic01-avd-300` — RDP from management, outbound for AVD agent.
+
+| Rule | Priority | Direction | Port | Source | Action |
+|------|----------|-----------|------|--------|--------|
+| Allow-RDP-Internal | 100 | Inbound | 3389 | 10.100.0.0/24 | Allow |
+| Allow-AVD-Agent | 110 | Outbound | 443 | * | Allow |
+| Deny-All-Inbound | 4000 | Inbound | * | * | Deny |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Create a Network Security Group
+
+1. Navigate to **Azure Portal** → **Azure Arc** → **Azure Local** → your cluster
+2. Go to **Networking** → **Network Security Groups**
+3. Click **+ Create**
+4. Configure:
+   - **Name**: `nsg-iic-management`
+   - **Custom Location**: Select the cluster's custom location
+5. Click **Review + Create** → **Create**
+
+### Add Security Rules
+
+1. Open the NSG resource
+2. Go to **Settings** → **Inbound security rules**
+3. Click **+ Add**
+4. Configure each rule per the tables above
+5. Click **Add**
+
+Repeat for `nsg-iic-production` and `nsg-iic-avd`.
+
+:::tip
+NSGs will be associated with logical networks in [Task 08 — Logical Network Creation](./task-08-logical-network-creation.mdx).
+:::
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+**When to use:** Automated or repeatable deployment. Reads all NSG definitions from
+`networking.nsgs[]` in `variables.yml` and creates every enabled entry with all rules.
+Run from the management server (toolkit repo root).
+
+**Script:**
+[`Invoke-ConfigureNSGs-Orchestrated.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/Invoke-ConfigureNSGs-Orchestrated.ps1)
+
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+  task-07-configure-nsgs/powershell/Invoke-ConfigureNSGs-Orchestrated.ps1
+```
+
+```powershell title="Invoke-ConfigureNSGs-Orchestrated.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+  Orchestrated: creates all NSGs defined in variables.yml networking.nsgs[].
+
+.DESCRIPTION
+  Phase 06 — Post-Deployment | Task 07 — Configure Network Security Groups
+
+  Reads every entry from networking.nsgs[] in the infrastructure YAML and calls
+  az stack-hci-vm network nsg create for each one, then adds all rules defined
+  in the rules[] array. NSGs that already exist are skipped.
+
+.PARAMETER ConfigPath
+  Path to infrastructure YAML. Defaults to config\variables.yml in CWD.
+
+.PARAMETER WhatIf
+  Dry-run mode: logs all planned operations without making any changes.
+
+.PARAMETER LogPath
+  Override log file path. Default: logs\task-07-configure-nsgs\
+  <YYYY-MM-DD_HHmmss>_ConfigureNSGs.log (relative to CWD).
+
+.EXAMPLE
+  # Run from repo root with default config:
+  .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-configure-nsgs\powershell\Invoke-ConfigureNSGs-Orchestrated.ps1
+
+.EXAMPLE
+  # Dry-run:
+  .\...\Invoke-ConfigureNSGs-Orchestrated.ps1 -WhatIf
+
+.NOTES
+  Requires: powershell-yaml module (Install-Module powershell-yaml -Scope CurrentUser)
+  Requires: az CLI authenticated (az login)
+  Requires: az stack-hci-vm extension (az extension add --name stack-hci-vm)
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+  [string] $ConfigPath = "",
+  [switch] $WhatIf,
+  [string] $LogPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region LOGGING -----------------------------------------------------------------
+$taskFolderName = "task-07-configure-nsgs"
+$timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+
+if ([string]::IsNullOrEmpty($LogPath)) {
+  $logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
+  $LogPath = Join-Path $logDir "${timestamp}_ConfigureNSGs.log"
+}
+
+$logDir = Split-Path $LogPath -Parent
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+function Write-Log {
+  param(
+    [string]$Message,
+    [ValidateSet("INFO", "WARN", "ERROR", "SUCCESS")]
+    [string]$Level = "INFO"
+  )
+  $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+  $entry = "[$ts] [$Level] $Message"
+  $color = switch ($Level) {
+    "ERROR"   { "Red" }
+    "WARN"    { "Yellow" }
+    "SUCCESS" { "Green" }
+    default   { "Cyan" }
+  }
+  $entry | Tee-Object -FilePath $LogPath -Append | Out-Null
+  Write-Host $entry -ForegroundColor $color
+}
+
+Write-Log "======================================================="
+Write-Log "  Task 07 — Configure Network Security Groups (Orchestrated)"
+Write-Log "  Log: $LogPath"
+if ($WhatIf) { Write-Log "  [WhatIf] Dry-run mode — no changes will be made" "WARN" }
+Write-Log "======================================================="
+#endregion
+
+#region CONFIG LOADING ----------------------------------------------------------
+if ([string]::IsNullOrEmpty($ConfigPath)) {
+  $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
+}
+
+if (-not (Test-Path $ConfigPath)) {
+  throw "Config file not found: $ConfigPath"
+}
+
+Write-Log "Loading config: $ConfigPath"
+$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+$subscriptionId = $config.azure.subscription.id
+$resourceGroup  = $config.azure.resource_group.name
+$location       = $config.azure.resource_group.location
+$customLocation = $config.compute.azure_local.custom_location
+$nsgs           = $config.networking.nsgs
+
+if (-not $nsgs -or $nsgs.Count -eq 0) {
+  Write-Log "No NSGs defined in networking.nsgs[] — nothing to create" "WARN"
+  return
+}
+
+Write-Log "Subscription : $subscriptionId"
+Write-Log "Resource Group: $resourceGroup"
+Write-Log "Location      : $location"
+Write-Log "NSGs to create: $($nsgs.Count)"
+#endregion
+
+#region NSG CREATION ------------------------------------------------------------
+$created = 0; $skipped = 0; $failed = 0
+
+foreach ($nsg in $nsgs) {
+  $nsgName = $nsg.name
+  Write-Log ""
+  Write-Log "── NSG: $nsgName ────────────────────────────────────"
+
+  # Check if NSG already exists
+  $existingJson = az stack-hci-vm network nsg show `
+    --name $nsgName `
+    --resource-group $resourceGroup `
+    --subscription $subscriptionId `
+    --output json 2>$null
+
+  if ($LASTEXITCODE -eq 0 -and $existingJson) {
+    Write-Log "  NSG '$nsgName' already exists — skipping creation" "WARN"
+    $skipped++
+  } else {
+    if ($WhatIf) {
+      Write-Log "  [WhatIf] Would create NSG: $nsgName" "WARN"
+    } else {
+      Write-Log "  Creating NSG: $nsgName"
+      az stack-hci-vm network nsg create `
+        --name $nsgName `
+        --resource-group $resourceGroup `
+        --subscription $subscriptionId `
+        --custom-location $customLocation `
+        --output none
+
+      if ($LASTEXITCODE -ne 0) {
+        Write-Log "  FAILED to create NSG: $nsgName" "ERROR"
+        $failed++
+        continue
+      }
+      Write-Log "  NSG created successfully" "SUCCESS"
+      $created++
+    }
+  }
+
+  # Add rules
+  if ($nsg.rules -and $nsg.rules.Count -gt 0) {
+    foreach ($rule in $nsg.rules) {
+      if ($WhatIf) {
+        Write-Log "  [WhatIf] Would add rule: $($rule.name) (priority $($rule.priority))" "WARN"
+      } else {
+        Write-Log "  Adding rule: $($rule.name) (priority $($rule.priority), $($rule.direction), $($rule.access))"
+        az stack-hci-vm network nsg rule create `
+          --nsg-name $nsgName `
+          --resource-group $resourceGroup `
+          --subscription $subscriptionId `
+          --name $rule.name `
+          --priority $rule.priority `
+          --direction $rule.direction `
+          --access $rule.access `
+          --protocol $rule.protocol `
+          --source-address-prefixes $rule.source_address_prefix `
+          --source-port-ranges "*" `
+          --destination-address-prefixes "*" `
+          --destination-port-ranges $rule.destination_port_range `
+          --output none
+
+        if ($LASTEXITCODE -ne 0) {
+          Write-Log "  FAILED to add rule: $($rule.name)" "ERROR"
+          $failed++
+        } else {
+          Write-Log "  ✓ $($rule.name)" "SUCCESS"
+        }
+      }
+    }
+  }
+}
+#endregion
+
+#region SUMMARY -----------------------------------------------------------------
+Write-Log ""
+Write-Log "======================================================="
+Write-Log "  Summary: Created=$created  Skipped=$skipped  Failed=$failed"
+Write-Log "======================================================="
+
+if ($WhatIf) {
+  Write-Log "Dry-run complete. Re-run without -WhatIf to apply." "WARN"
+}
+
+if ($failed -gt 0) {
+  throw "$failed NSG operation(s) failed. Review log: $LogPath"
+}
+#endregion
+```
+
+**Run from the toolkit repo root:**
+
+```powershell title="Run Orchestrated script"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-configure-nsgs\powershell\Invoke-ConfigureNSGs-Orchestrated.ps1
+
+# Dry-run first:
+.\...\Invoke-ConfigureNSGs-Orchestrated.ps1 -WhatIf
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+**When to use:** One-off creation from any workstation, sharing with a customer, or when
+running outside the toolkit. All values are hardcoded in the `#region CONFIGURATION` block.
+No YAML file or toolkit clone required.
+
+**Script:**
+[`New-NSGs-Standalone.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NSGs-Standalone.ps1)
+
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+  task-07-configure-nsgs/powershell/New-NSGs-Standalone.ps1
+```
+
+```powershell title="New-NSGs-Standalone.ps1"
+# ============================================================================
+# Script:  New-NSGs-Standalone.ps1
+# Purpose: Create Azure Local NSGs with rules — fully self-contained
+# Prereqs: Azure CLI (az login), az stack-hci-vm extension, contributor access
+# ============================================================================
+
+#region CONFIGURATION -----------------------------------------------------------
+$subscription_id  = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+$resource_group   = "rg-iic-platform-01"
+$custom_location  = "/subscriptions/$subscription_id/resourceGroups/$resource_group/providers/Microsoft.ExtendedLocation/customLocations/cl-iic-clus01"
+$management_cidr  = "10.100.0.0/24"
+
+$nsgs = @(
+  @{
+    name  = "nsg-iic-management"
+    rules = @(
+      @{ name = "Allow-RDP-Management"; priority = 100; direction = "Inbound"; access = "Allow"; protocol = "Tcp"; source = $management_cidr; destPort = "3389" }
+      @{ name = "Allow-WinRM";          priority = 110; direction = "Inbound"; access = "Allow"; protocol = "Tcp"; source = $management_cidr; destPort = "5985-5986" }
+      @{ name = "Allow-SSH";            priority = 120; direction = "Inbound"; access = "Allow"; protocol = "Tcp"; source = $management_cidr; destPort = "22" }
+      @{ name = "Allow-HTTPS-WAC";      priority = 130; direction = "Inbound"; access = "Allow"; protocol = "Tcp"; source = $management_cidr; destPort = "443" }
+      @{ name = "Deny-All-Inbound";     priority = 4000; direction = "Inbound"; access = "Deny"; protocol = "*";  source = "*";              destPort = "*" }
+    )
+  }
+  @{
+    name  = "nsg-iic-production"
+    rules = @(
+      @{ name = "Allow-HTTPS";          priority = 100; direction = "Inbound"; access = "Allow"; protocol = "Tcp"; source = "*";              destPort = "443" }
+      @{ name = "Allow-HTTP";           priority = 110; direction = "Inbound"; access = "Allow"; protocol = "Tcp"; source = "*";              destPort = "80" }
+      @{ name = "Allow-RDP-Management"; priority = 200; direction = "Inbound"; access = "Allow"; protocol = "Tcp"; source = $management_cidr; destPort = "3389" }
+      @{ name = "Deny-All-Inbound";     priority = 4000; direction = "Inbound"; access = "Deny"; protocol = "*";  source = "*";              destPort = "*" }
+    )
+  }
+  @{
+    name  = "nsg-iic-avd"
+    rules = @(
+      @{ name = "Allow-RDP-Internal";   priority = 100; direction = "Inbound";  access = "Allow"; protocol = "Tcp"; source = $management_cidr; destPort = "3389" }
+      @{ name = "Allow-AVD-Agent";      priority = 110; direction = "Outbound"; access = "Allow"; protocol = "Tcp"; source = "*";              destPort = "443" }
+      @{ name = "Deny-All-Inbound";     priority = 4000; direction = "Inbound"; access = "Deny";  protocol = "*";  source = "*";              destPort = "*" }
+    )
+  }
+)
+#endregion CONFIGURATION
+
+$ErrorActionPreference = "Stop"
+
+foreach ($nsg in $nsgs) {
+  Write-Host "`n── Creating NSG: $($nsg.name) ──────────────────────────" -ForegroundColor Cyan
+
+  az stack-hci-vm network nsg create `
+    --name $nsg.name `
+    --resource-group $resource_group `
+    --subscription $subscription_id `
+    --custom-location $custom_location `
+    --output none
+
+  if ($LASTEXITCODE -ne 0) { throw "Failed to create NSG: $($nsg.name)" }
+  Write-Host "  ✓ NSG created" -ForegroundColor Green
+
+  foreach ($rule in $nsg.rules) {
+    az stack-hci-vm network nsg rule create `
+      --nsg-name $nsg.name `
+      --resource-group $resource_group `
+      --subscription $subscription_id `
+      --name $rule.name `
+      --priority $rule.priority `
+      --direction $rule.direction `
+      --access $rule.access `
+      --protocol $rule.protocol `
+      --source-address-prefixes $rule.source `
+      --source-port-ranges "*" `
+      --destination-address-prefixes "*" `
+      --destination-port-ranges $rule.destPort `
+      --output none
+
+    if ($LASTEXITCODE -ne 0) { throw "Failed to add rule: $($rule.name) to $($nsg.name)" }
+    Write-Host "  ✓ $($rule.name) (priority $($rule.priority))" -ForegroundColor Green
+  }
+}
+
+Write-Host "`n✅ All NSGs created. Associate with logical networks in Task 08." -ForegroundColor Cyan
+```
+
+:::info No External Dependencies
+This script is completely self-contained. Edit the values in the `#region CONFIGURATION` block and run.
+No `variables.yml`, no config-loader, no helpers required.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Common NSG Patterns
+
+### Web Server NSG
+
+| Rule | Direction | Port | Source | Action |
+|------|-----------|------|--------|--------|
+| Allow-HTTPS | Inbound | 443 | * | Allow |
+| Allow-HTTP | Inbound | 80 | * | Allow |
+| Allow-RDP-Mgmt | Inbound | 3389 | Management CIDR | Allow |
+| Deny-All | Inbound | * | * | Deny |
+
+### Database Server NSG
+
+| Rule | Direction | Port | Source | Action |
+|------|-----------|------|--------|--------|
+| Allow-SQL | Inbound | 1433 | App Server CIDR | Allow |
+| Allow-RDP-Mgmt | Inbound | 3389 | Management CIDR | Allow |
+| Deny-All | Inbound | * | * | Deny |
+
+### Application Server NSG
+
+| Rule | Direction | Port | Source | Action |
+|------|-----------|------|--------|--------|
+| Allow-App-Port | Inbound | 8080 | Web Server CIDR | Allow |
+| Allow-RDP-Mgmt | Inbound | 3389 | Management CIDR | Allow |
+| Deny-All | Inbound | * | * | Deny |
+
+---
+
+## NIC Configuration Note
+
+:::warning Multiple NICs on Azure Local VMs
+If you provision multiple static NICs on an Azure Local VM, all NICs receive the default gateway by default.
+
+**Resolution**: Remove the default gateway from secondary NICs to prevent:
+- Asymmetric networking
+- Packet loss
+- Unpredictable network behavior
+
+```powershell
+# Inside the VM - remove default gateway from secondary NIC
+Remove-NetRoute -InterfaceAlias "Ethernet 2" -DestinationPrefix "0.0.0.0/0" -Confirm:$false
+```
+:::
+
+---
+
+## Verification
+
+### List NSGs
+
+```bash
+az stack-hci-vm network nsg list --resource-group rg-iic-platform-01 --subscription <subscription-id> -o table
+```
+
+### List NSG Rules
+
+```bash
+az stack-hci-vm network nsg rule list --nsg-name nsg-iic-management --resource-group rg-iic-platform-01 --subscription <subscription-id> -o table
+```
+
+---
+
+## Day 2 Operations
+
+For ongoing NSG management (adding/removing rules, associating/dissociating from networks,
+troubleshooting), see [Phase 01: SDN Operations — Task 02: Configure NSGs](../../05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups.mdx).
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Troubleshooting
+
+| Issue | Possible Cause | Resolution |
+|-------|----------------|------------|
+| Configuration fails | Incorrect parameters | Verify variable values in variables.yml |
+| Permission denied | Insufficient RBAC role | Check Azure role assignments |
+
+## Navigation
+
+| | |
+|---|---|
+| ← Previous | [Task 06 — VM Image Downloads](./task-06-image-downloads.mdx) |
+| ↑ Phase Index | [Phase 06 — Post-Deployment Index](./index.mdx) |
+| → Next | [Task 08 — Logical Network Creation](./task-08-logical-network-creation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-07-25 | Azure Local Cloudnology Team | Initial release — NSG creation before logical networks |

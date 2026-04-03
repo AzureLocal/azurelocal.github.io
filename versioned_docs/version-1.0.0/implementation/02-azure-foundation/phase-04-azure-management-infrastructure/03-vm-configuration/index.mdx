@@ -1,0 +1,118 @@
+---
+title: "Management Servers"
+sidebar_label: "Management Servers"
+sidebar_position: 3
+description: "Management server definitions — domain controllers, jumpbox, WAC, and syslog server. Deployment-agnostic variable capture."
+category: Reference
+scope: Management server variable capture
+purpose: Define management server variables for use across all deployment phases
+author: "Hybrid Cloud Solutions"
+created: 2025-09-15
+updated: 2026-04-02
+version: 4.0.0
+tags: [azure-local, management-servers, variables, domain-controllers, wac, jumpbox, syslog]
+keywords: [management servers, domain controllers, jumpbox, utility server, WAC, Windows Admin Center, NDM, syslog]
+status: active
+---
+
+# Management Servers
+
+[![Reference](https://img.shields.io/badge/Type-Reference-informational?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference  
+> **SCOPE**: Management server definitions (deployment-agnostic)  
+> **PURPOSE**: Capture server details as variables for use across deployment phases  
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+**Status**: Active
+
+## Overview
+
+Management servers support Azure Local operations regardless of where they are deployed. Each server may live in Azure (IaaS VM), Azure Local (AzureStack HCI VM), or on-premises (physical or virtual). Variable capture happens here; server-specific configuration steps live in the phases that consume each server.
+
+:::info Deployment-Agnostic Design
+These servers are **not required to be Azure VMs**. Use whatever deployment target fits your environment:
+- **`azure`** — Azure IaaS VM (recommended for greenfield deployments)
+- **`azurelocal`** — VM running on an Azure Local cluster
+- **`onprem`** — Physical server or VM in an on-premises environment
+:::
+
+## Management Server Inventory
+
+| Server | Variable Key | Role | Configuration Phase |
+|--------|-------------|------|---------------------|
+| Domain Controller 1 | `compute.vms.management.dc1` | Active Directory, DNS | Environment-specific |
+| Domain Controller 2 | `compute.vms.management.dc2` | Active Directory (secondary), DNS | Environment-specific |
+| Jumpbox / Utility | `compute.vms.management.jumpbox` | Admin jump server, line-of-sight to cluster | [Part 5, Phase 02, Task 05](../../../05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-wac.mdx) |
+| Windows Admin Center | `compute.vms.management.wac` | Web-based cluster management portal | [Part 5, Phase 02, Task 05](../../../05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-wac.mdx) |
+| Syslog / NDM | `compute.vms.management.syslog` | Syslog + SNMP receiver → Azure Monitor | [Part 5, Phase 02, Task 07](../../../05-operational-foundations/phase-02-monitoring-observability/task-06-configure-network-device-logging.mdx) |
+
+## Variable Capture
+
+Capture server details in `config/variables.yml` under `compute.vms.management`. These variables are referenced by automation scripts across all phases.
+
+### Domain Controllers
+
+```yaml
+compute:
+  vms:
+    management:
+      dc1:
+        dc1_hostname: "dc01"
+        dc1_ip: "10.20.1.10"
+        dc1_fqdn: "dc01.corp.example.com"
+        dc1_deployment_target: "azure"    # azure | azurelocal | onprem
+      dc2:
+        dc2_hostname: "dc02"
+        dc2_ip: "10.20.1.11"
+        dc2_fqdn: "dc02.corp.example.com"
+        dc2_deployment_target: "azure"    # azure | azurelocal | onprem
+```
+
+### Jumpbox / Utility Server
+
+```yaml
+      jumpbox:
+        jumpbox_hostname: "jumpbox01"
+        jumpbox_ip: "10.20.1.20"
+        jumpbox_fqdn: "jumpbox01.corp.example.com"
+        jumpbox_deployment_target: "azure"  # azure | azurelocal | onprem
+```
+
+### Windows Admin Center
+
+```yaml
+      wac:
+        wac_hostname: "wac01"
+        wac_ip: "10.20.1.21"
+        wac_fqdn: "wac01.corp.example.com"
+        wac_port: 443
+        wac_deployment_target: "azure"    # azure | azurelocal | onprem
+```
+
+### Syslog / NDM Server
+
+```yaml
+      syslog:
+        syslog_hostname: "syslog01"
+        syslog_ip: "10.20.1.50"
+        syslog_fqdn: "syslog01.corp.example.com"
+        syslog_deployment_target: "azure"   # azure | azurelocal | onprem
+```
+
+## Configuration Phases
+
+Management server **deployment and configuration** is intentionally split from variable capture:
+
+- **Domain Controllers** — Setup is environment-specific. If deploying new DCs in Azure, follow Microsoft's [Deploy AD DS on Azure VMs](https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/identity/adds-extend-domain) guide. If DCs already exist on-premises, record their details in variables and move on.
+- **Windows Admin Center + Jumpbox** — Configured in [Part 5, Phase 02, Task 05: Deploy WAC](../../../05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-wac.mdx). Jumpbox server requirements are documented inline there.
+- **Syslog / NDM Server** — Configured in [Part 5, Phase 02, Task 07: Network Device Logging](../../../05-operational-foundations/phase-02-monitoring-observability/task-06-configure-network-device-logging.mdx). Syslog server requirements are documented inline there.
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Manual Deployment](../02-manual-deployment/) | [Phase 04: Management Infrastructure](../index.mdx) | [Phase 05: Identity & Access Management](../../phase-05-identity-security/) |

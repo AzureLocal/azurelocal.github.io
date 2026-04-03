@@ -1,0 +1,138 @@
+---
+title: "Part 7 - Cluster Testing & Validation"
+sidebar_label: "Part 7: Testing & Validation"
+sidebar_position: 7
+description: "Comprehensive testing and validation of Azure Local cluster for production readiness and customer handover"
+---
+
+# Part 7: Cluster Testing & Validation
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Production readiness validation   
+> **PURPOSE**: Validate cluster for production workloads and customer handover   
+> **MASTER REFERENCE**: [Microsoft Learn - Validate Deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/validate)
+
+**Status**: Active
+
+## Overview
+
+This section covers **comprehensive technical validation** of the Azure Local cluster to ensure production readiness before customer handover. Each step generates a validation report that feeds into the consolidated handover documentation.
+
+### Purpose
+
+- **Validate all cluster components** are functioning correctly
+- **Document performance baselines** for storage and network
+- **Test high availability** and disaster recovery capabilities
+- **Verify security posture** and compliance
+- **Generate reports** for customer handover package
+
+---
+
+## Validation Steps
+
+| Step | Description | Duration | Deliverable |
+|------|-------------|----------|-------------|
+| 1 | [Infrastructure Health Validation](./task-01-infrastructure-health-validation.mdx) | 1-2 hours | Health validation report |
+| 2 | [VMFleet Storage Performance Testing](./task-02-vmfleet-storage-testing.mdx) | 4-6 hours | Storage performance baseline report |
+| 3 | [Network & RDMA Validation](./task-03-network-rdma-validation.mdx) | 1-2 hours | Network validation report |
+| 4 | [High Availability Testing](./task-04-high-availability-testing.mdx) | 2-4 hours | HA/failover test results, RTO documentation |
+| 5 | [Security & Compliance Validation](./task-05-security-compliance-validation.mdx) | 1-2 hours | Security posture report |
+| 6 | [Backup & DR Validation](./task-06-backup-dr-validation.mdx) | 2-4 hours | Backup/restore test results |
+
+**Total Estimated Duration: 12-20 hours** (steps can be parallelized)
+
+---
+
+## Prerequisites
+
+Before starting validation:
+
+- [ ] All cluster deployment stages complete (Parts 1-6)
+- [ ] Administrative access to all cluster nodes
+- [ ] Windows Server 2022 Core VHD available (for VMFleet)
+- [ ] Maintenance window scheduled (VMFleet creates significant I/O load)
+- [ ] Test VMs will be created during validation (deleted after)
+
+---
+
+## Test Environment Setup
+
+Dedicated test VMs are created during Step 4 (HA Testing):
+
+| Test VM | OS | Purpose | Delete After |
+|---------|-----|---------|--------------|
+| `TEST-WIN-01` | Windows Server 2022 | HA testing, backup testing, connectivity | Yes |
+| `TEST-WIN-02` | Windows Server 2022 | Live migration target, failover testing | Yes |
+| `TEST-LNX-01` | Ubuntu 22.04 LTS | Cross-platform validation, network testing | Yes |
+
+---
+
+## Validation Reports
+
+Each step generates a separate report stored in a central location:
+
+```
+\\<ClusterName>\ClusterStorage$\Collect\validation-reports\
+├── 01-infrastructure-health-report-YYYYMMDD.txt
+├── 02-vmfleet-storage-baseline-YYYYMMDD.csv
+├── 02-vmfleet-storage-summary-YYYYMMDD.txt
+├── 03-network-rdma-validation-YYYYMMDD.txt
+├── 04-ha-failover-test-results-YYYYMMDD.txt
+├── 05-security-compliance-report-YYYYMMDD.txt
+├── 06-backup-dr-validation-YYYYMMDD.txt
+└── CONSOLIDATED-VALIDATION-REPORT-YYYYMMDD.pdf
+```
+
+### Consolidated Handover Report
+
+After all steps complete, generate consolidated report:
+
+```powershell
+# Script to consolidate all validation reports
+# Located in: scripts/validation/New-ConsolidatedValidationReport.ps1
+```
+
+The consolidated report includes:
+- Executive summary (pass/fail status for each category)
+- Storage performance baseline metrics
+- Network performance metrics
+- HA/failover test results with RTO/RPO
+- Security compliance status
+- Backup validation results
+- Recommendations and known issues
+
+---
+
+## Success Criteria
+
+### Production Readiness Checklist
+
+| Category | Criteria | Status |
+|----------|----------|--------|
+| **Infrastructure** | All nodes healthy, Test-Cluster passes, no health faults | ☐ |
+| **Storage** | VMFleet baseline documented, performance within expected range | ☐ |
+| **Network** | RDMA operational, DCB configured, all VLANs accessible | ☐ |
+| **High Availability** | Live migration < 5s, node failover < 2 min, quorum maintained | ☐ |
+| **Security** | Defender score > 80%, no critical recommendations, RBAC verified | ☐ |
+| **Backup** | Backup job successful, restore test passed, RPO/RTO documented | ☐ |
+
+### Validation Sign-Off
+
+| Role | Name | Date | Signature |
+|------|------|------|-----------|
+| Azure Local Cloud Engineer | | | |
+| Azure Local Cloud QA | | | |
+| Project Manager | | | |
+
+---
+
+## Next Steps
+
+After all validation steps complete with passing status:
+
+1. Generate consolidated validation report
+2. Archive individual reports to handover package
+3. Clean up test VMs and VMFleet resources

@@ -1,0 +1,618 @@
+---
+title: "Task 02: Cluster Quorum Configuration"
+sidebar_label: "Task 02: Cluster Quorum"
+sidebar_position: 2
+description: "Configure cluster quorum — validate and provision the cloud witness storage account, then set quorum via Cloud Witness, File Share Witness, or Disk Witness"
+category: "Runbook"
+scope: "Configure cluster quorum — validate and provision the cloud witness storage a..."
+purpose: "Configure cluster quorum — validate and provision the cloud witness storage account, then set quorum via Cloud Witness, File Share Witness, or Disk Witness"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - post-deployment
+keywords:
+  - Cluster
+  - Quorum
+  - Configuration
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Cluster Quorum Configuration
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../../../index.mdx)
+[![Cluster Deployment](https://img.shields.io/badge/Stage-04%20Cluster%20Deployment-orange?style=flat-square)](../../index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook  
+> **SCOPE**: Azure Local, WSFC (S2D / SAN), and standalone Hyper-V clusters  
+> **PURPOSE**: Validate the witness storage account exists (create if absent), then configure cluster quorum
+> **MASTER REFERENCE**: [Cluster Quorum Configuration](https://learn.microsoft.com/en-us/windows-server/failover-clustering/manage-cluster-quorum)
+
+**Status**: Active
+
+Configure cluster quorum for high availability and split-brain prevention. Cloud Witness is the recommended type for all cluster scenarios — the orchestrated and standalone scripts validate the witness storage account in Azure and create it automatically when missing before configuring quorum.
+
+---
+
+## Quorum Options
+
+| Quorum Type | Best For | Requirements |
+|-------------|----------|--------------|
+| **Cloud Witness** | Azure Local, WSFC (S2D/SAN), Hyper-V — recommended | Azure Storage Account, internet access |
+| **File Share Witness** | Air-gapped or on-premises environments | Domain-joined file server — not a cluster node |
+| **Disk Witness** | Legacy WSFC/SAN only | Shared disk visible to all nodes; incompatible with S2D and Azure Local |
+
+:::tip Recommended Configuration
+**Cloud Witness** is the recommended quorum type for all cluster scenarios. It requires an Azure Storage Account — the scripts below validate the account exists and create it automatically if missing before setting quorum.
+:::
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `storage_accounts.storage_accounts.cluster_witness.name` | string | Witness storage account name |
+| `storage_accounts.storage_accounts.cluster_witness.resource_group` | string | Witness resource group |
+| `storage_accounts.storage_accounts.cluster_witness.sku` | string | Storage SKU (ZRS/LRS) |
+| `azure_platform.region` | string | Azure region |
+| `compute.cluster_nodes[].management_ip` | string | Node management IPs |
+
+---
+
+## Execution Options
+
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Failover Cluster Manager" default>
+
+### Failover Cluster Manager
+
+> **When to use**: Single cluster, prefer GUI-based configuration, or verifying an existing quorum setting
+
+#### Step 1 — Verify or Create the Cloud Witness Storage Account
+
+Before configuring quorum, ensure the storage account exists in Azure.
+
+1. Open **Azure Portal** → search for **Storage accounts**
+2. Verify `storage_accounts.storage_accounts.cluster_witness.name` exists in the correct resource group
+3. If absent, create it:
+ | Field | Value | Source |
+ |-------|-------|--------|
+ | Subscription | _(deployment subscription)_ | `storage_accounts.storage_accounts.cluster_witness.subscription` |
+ | Resource group | _(cluster resource group)_ | `storage_accounts.storage_accounts.cluster_witness.resource_group` |
+ | Name | _(witness SA name)_ | `storage_accounts.storage_accounts.cluster_witness.name` |
+ | Region | _(cluster region)_ | `azure_platform.region` |
+ | Redundancy | Standard ZRS or LRS | `storage_accounts.storage_accounts.cluster_witness.sku` |
+
+4. After creation, navigate to the storage account → **Security + networking** → **Access keys**
+5. Copy **key1** — you will need it for the quorum configuration below
+
+#### Step 2 — Configure Quorum via Failover Cluster Manager
+
+**Cloud Witness (recommended):**
+
+1. Open **Failover Cluster Manager** on a management server or cluster node
+2. Connect to the cluster
+3. Right-click the cluster name → **More Actions** → **Configure Cluster Quorum Settings...**
+4. Click **Next** on the wizard welcome screen
+5. Select **Select the quorum witness** → **Next**
+6. Select **Configure a cloud witness** → **Next**
+7. Enter:
+ - **Azure storage account name**: `<cluster_witness.name from variables.yml>`
+ - **Azure storage account key**: _(key1 from Azure Portal)_
+ - **Azure service endpoint**: leave default (`core.windows.net`)
+8. Click **Next** → **Next** → **Finish**
+
+**File Share Witness (air-gapped / alternative):**
+
+1. On a domain-joined file server (**not** a cluster node), create a shared folder
+2. Grant the **cluster computer account** Full Control on the share
+3. In Failover Cluster Manager: **More Actions** → **Configure Cluster Quorum Settings...**
+4. Select **Configure a file share witness**
+5. Enter the UNC path: `\\<file-server>\<share-name>`
+6. Click **Next** → **Finish**
+
+#### Validation
+
+- [ ] Quorum witness shown in Failover Cluster Manager under the cluster summary
+- [ ] Cluster Events show no quorum-related warnings or errors
+- [ ] `Get-ClusterQuorum` returns expected `QuorumType` and `QuorumResource`
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### Orchestrated Script (Mgmt Server)
+
+> **When to use**: Config-driven automation from a management server or jump box — reads `variables.yml`, validates/creates the storage account in Azure, then configures quorum via PSRemoting
+
+#### Script
+
+**Primary**: `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1`
+
+#### Code
+
+```powershell title="Invoke-ConfigureClusterQuorum-Orchestrated.ps1"
+# ==============================================================================
+# Script : Invoke-ConfigureClusterQuorum-Orchestrated.ps1
+# Purpose: Validate or create the cloud witness storage account, then configure
+# cluster quorum (Cloud Witness / File Share Witness / Disk Witness)
+# Run : From management server — reads variables.yml, uses PSRemoting
+# Prereqs: Az.Accounts, Az.Storage modules; authenticated to Azure
+# ==============================================================================
+
+#Requires -Modules Az.Accounts, Az.Storage
+
+[CmdletBinding()]
+param(
+ [string]$ConfigPath = "", # Path to variables.yml; CWD-relative default
+ [PSCredential]$Credential, # Override credential resolution
+ [string[]]$TargetNode = @(), # Limit to specific nodes; empty = first cluster node
+ [switch]$WhatIf, # Dry-run — validate only, no changes
+ [string]$LogPath = "", # Override log file path
+
+ # YAML-overridable parameters
+ [string]$WitnessType = $null, # Override: compute.azure_local.cluster_witness_type
+ [string]$WitnessAccountName = $null, # Override: storage_accounts.storage_accounts.cluster_witness.name
+ [string]$WitnessResourceGroup = $null, # Override: storage_accounts.storage_accounts.cluster_witness.resource_group
+ [string]$WitnessSubscription = $null, # Override: storage_accounts.storage_accounts.cluster_witness.subscription
+ [string]$WitnessSku = $null, # Override: storage_accounts.storage_accounts.cluster_witness.sku
+ [string]$FileSharePath = $null # Override: compute.azure_local.cluster_witness_file_share_path
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+$taskFolderName = "task-02-cluster-quorum-configuration"
+if (-not $LogPath) {
+ $logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
+ $logFile = Join-Path $logDir ("{0}_{1}_ConfigureClusterQuorum.log" -f (Get-Date -Format 'yyyy-MM-dd'), (Get-Date -Format 'HHmmss'))
+} else {
+ $logDir = Split-Path $LogPath
+ $logFile = $LogPath
+}
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+function Write-Log {
+ param([string]$Message, [string]$Level = 'INFO')
+ $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+ $line = "[$ts][$Level] $Message"
+ Write-Host $line -ForegroundColor $(switch ($Level) { 'WARN' { 'Yellow' } 'ERROR' { 'Red' } default { 'Cyan' } })
+ Add-Content -Path $logFile -Value $line
+}
+
+Write-Log "Invoke-ConfigureClusterQuorum-Orchestrated started"
+Write-Log "Log: $logFile"
+
+# ── Config loading ────────────────────────────────────────────────────────────
+if (-not $ConfigPath) {
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
+}
+if (-not (Test-Path $ConfigPath)) {
+ Write-Log "Config file not found: $ConfigPath" 'ERROR'
+ throw "Config file not found: $ConfigPath"
+}
+
+Write-Log "Loading config: $ConfigPath"
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+# ── Extract values from config (with parameter overrides) ─────────────────────
+$clusterName = $cfg.compute.azure_local.cluster_name # compute.azure_local.cluster_name
+$witnessType = if ($WitnessType) { $WitnessType } else { $cfg.compute.azure_local.cluster_witness_type } # compute.azure_local.cluster_witness_type
+$witnessAcctName = if ($WitnessAccountName) { $WitnessAccountName } else { $cfg.storage_accounts.storage_accounts.cluster_witness.name } # storage_accounts.storage_accounts.cluster_witness.name
+$witnessRg = if ($WitnessResourceGroup) { $WitnessResourceGroup } else { $cfg.storage_accounts.storage_accounts.cluster_witness.resource_group } # storage_accounts.storage_accounts.cluster_witness.resource_group
+$witnessSub = if ($WitnessSubscription) { $WitnessSubscription } else { $cfg.storage_accounts.storage_accounts.cluster_witness.subscription } # storage_accounts.storage_accounts.cluster_witness.subscription
+$witnessSku = if ($WitnessSku) { $WitnessSku } else { $cfg.storage_accounts.storage_accounts.cluster_witness.sku } # storage_accounts.storage_accounts.cluster_witness.sku
+$witnessRegion = $cfg.azure_platform.region # azure_platform.region
+$fileSharePath = if ($FileSharePath) { $FileSharePath } else { $cfg.compute.azure_local.cluster_witness_file_share_path } # compute.azure_local.cluster_witness_file_share_path
+
+# ── Determine target node ─────────────────────────────────────────────────────
+$targetNode = if ($TargetNode.Count) {
+ $TargetNode[0]
+} else {
+ ($cfg.compute.nodes.Keys | Select-Object -First 1) # compute.nodes.<first-key>
+}
+
+Write-Log "Cluster : $clusterName"
+Write-Log "Witness Type : $witnessType"
+Write-Log "Target Node : $targetNode"
+
+# ── WhatIf guard ──────────────────────────────────────────────────────────────
+if ($WhatIf) {
+ Write-Log "[WhatIf] Would configure $witnessType quorum on cluster '$clusterName' via node '$targetNode'" 'WARN'
+ if ($witnessType -eq 'cloud_witness') {
+ Write-Log "[WhatIf] Would validate/create storage account '$witnessAcctName' in RG '$witnessRg'" 'WARN'
+ }
+ Write-Log "WhatIf complete — no changes made" 'WARN'
+ return
+}
+
+# ── Cloud Witness: validate or create storage account ─────────────────────────
+$witnessKey = $null
+
+if ($witnessType -eq 'cloud_witness') {
+ Write-Log "Checking Azure context..."
+ $ctx = Get-AzContext
+ if (-not $ctx) {
+ Write-Log "Not authenticated to Azure — run Connect-AzAccount first" 'ERROR'
+ throw "Azure authentication required"
+ }
+
+ if ($witnessSub) {
+ Write-Log "Setting subscription context: $witnessSub"
+ Set-AzContext -Subscription $witnessSub | Out-Null
+ }
+
+ Write-Log "Checking storage account: $witnessAcctName (RG: $witnessRg)"
+ $sa = Get-AzStorageAccount -ResourceGroupName $witnessRg -Name $witnessAcctName -ErrorAction SilentlyContinue
+
+ if (-not $sa) {
+ Write-Log "Storage account not found — creating '$witnessAcctName'" 'WARN'
+ Write-Log " Resource Group : $witnessRg"
+ Write-Log " Region : $witnessRegion"
+ Write-Log " SKU : $witnessSku"
+
+ $sa = New-AzStorageAccount `
+ -ResourceGroupName $witnessRg `
+ -Name $witnessAcctName `
+ -Location $witnessRegion `
+ -SkuName $witnessSku `
+ -Kind 'StorageV2' `
+ -AccessTier 'Hot' `
+ -EnableHttpsTrafficOnly $true `
+ -MinimumTlsVersion 'TLS1_2' `
+ -AllowBlobPublicAccess $false
+
+ Write-Log "Storage account created: $($sa.Id)"
+ } else {
+ Write-Log "Storage account exists: $($sa.Id)"
+ }
+
+ Write-Log "Retrieving storage account key..."
+ $keys = Get-AzStorageAccountKey -ResourceGroupName $witnessRg -Name $witnessAcctName
+ $witnessKey = $keys[0].Value
+ Write-Log "Storage account key retrieved"
+}
+
+# ── Configure quorum via PSRemoting ───────────────────────────────────────────
+Write-Log "Configuring quorum on cluster '$clusterName' via node '$targetNode'..."
+
+$credParam = @{}
+if ($Credential) { $credParam['Credential'] = $Credential }
+
+$result = Invoke-Command -ComputerName $targetNode @credParam -ScriptBlock {
+ param($Cluster, $WType, $AccountName, $AccountKey, $SharePath)
+
+ $out = [System.Collections.Generic.List[string]]::new()
+
+ try {
+ switch ($WType) {
+ 'cloud_witness' {
+ if (-not $AccountName -or -not $AccountKey) {
+ throw "cloud_witness requires AccountName and AccountKey"
+ }
+ Set-ClusterQuorum -Cluster $Cluster -CloudWitness -AccountName $AccountName -AccessKey $AccountKey -ErrorAction Stop
+ $out.Add("Set-ClusterQuorum: cloud_witness configured")
+ }
+ 'file_share_witness' {
+ if (-not $SharePath) {
+ throw "file_share_witness requires SharePath"
+ }
+ Set-ClusterQuorum -Cluster $Cluster -FileShareWitness $SharePath -ErrorAction Stop
+ $out.Add("Set-ClusterQuorum: file_share_witness configured")
+ }
+ 'disk_witness' {
+ throw "disk_witness requires a shared disk resource name — use Set-ClusterQuorum -DiskWitness manually"
+ }
+ default {
+ throw "Unknown witness type: $WType"
+ }
+ }
+
+ $quorum = Get-ClusterQuorum -Cluster $Cluster
+ $state = (Get-Cluster -Name $Cluster).QuorumState
+
+ return [PSCustomObject]@{
+ Success = $true
+ QuorumType = $quorum.QuorumType
+ QuorumResource = $quorum.QuorumResource.Name
+ QuorumState = $state
+ Log = $out
+ }
+ } catch {
+ return [PSCustomObject]@{
+ Success = $false
+ Error = $_.Exception.Message
+ Log = $out
+ }
+ }
+
+} -ArgumentList $clusterName, $witnessType, $witnessAcctName, $witnessKey, $fileSharePath
+
+# ── Results ───────────────────────────────────────────────────────────────────
+foreach ($line in $result.Log) { Write-Log $line }
+
+if ($result.Success) {
+ Write-Log "Quorum configured successfully"
+ Write-Log " Quorum Type : $($result.QuorumType)"
+ Write-Log " Quorum Resource: $($result.QuorumResource)"
+ Write-Log " Quorum State : $($result.QuorumState)"
+
+ if ($result.QuorumState -ne 'Normal') {
+ Write-Log "Quorum state is '$($result.QuorumState)' — expected 'Normal'" 'WARN'
+ }
+} else {
+ Write-Log "Quorum configuration failed: $($result.Error)" 'ERROR'
+ throw $result.Error
+}
+
+Write-Log "Invoke-ConfigureClusterQuorum-Orchestrated complete"
+
+return [PSCustomObject]@{
+ Cluster = $clusterName
+ WitnessType = $witnessType
+ QuorumType = $result.QuorumType
+ QuorumState = $result.QuorumState
+ Success = $result.Success
+}
+```
+
+#### Usage Examples
+
+```powershell title="Example: Cloud Witness (config-driven)"
+# Reads all values from variables.yml — validates/creates SA automatically
+.\Invoke-ConfigureClusterQuorum-Orchestrated.ps1 `
+ -ConfigPath "config\variables.yml"
+
+# Dry-run first
+.\Invoke-ConfigureClusterQuorum-Orchestrated.ps1 `
+ -ConfigPath "config\variables.yml" `
+ -WhatIf
+
+# Override witness account name
+.\Invoke-ConfigureClusterQuorum-Orchestrated.ps1 `
+ -ConfigPath "config\variables.yml" `
+ -WitnessAccountName "stwitness01custom"
+```
+
+#### Validation
+
+```powershell
+# Verify quorum from management server
+Invoke-Command -ComputerName <node> -ScriptBlock {
+ Get-ClusterQuorum | Format-List
+ (Get-Cluster).QuorumState
+}
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+### Standalone Script
+
+> **When to use**: Copy-paste ready — no `variables.yml`, no helpers, no external dependencies. Run from a management server, laptop, or jump box. All values are defined in the `#region CONFIGURATION` block.
+
+#### Code
+
+```powershell title="Invoke-ConfigureClusterQuorum-Standalone.ps1"
+# ==============================================================================
+# Script : Invoke-ConfigureClusterQuorum-Standalone.ps1
+# Purpose: Validate or create the cloud witness storage account, then configure
+# cluster quorum — fully self-contained, no external dependencies
+# Run : From a management server with Az.Storage and FailoverClusters modules
+# Prereqs: Az.Accounts, Az.Storage, FailoverClusters; authenticated to Azure
+# ==============================================================================
+
+#Requires -Modules Az.Accounts, Az.Storage
+
+#region CONFIGURATION
+# ── Edit these values to match your environment ──────────────────────────────
+
+# Cluster
+$ClusterName = "iic-01-clus01" # Cluster name or IP
+
+# Witness type: cloud_witness | file_share_witness
+$WitnessType = "cloud_witness"
+
+# Cloud Witness — used when $WitnessType = "cloud_witness"
+$WitnessAccountName = "stiiccluster01witness" # Storage account name (3-24 chars, lowercase alphanumeric)
+$WitnessResourceGroup = "rg-iic-cluster-eus-01" # Storage account resource group
+$WitnessSubscription = "sub-iic-azure-local" # Azure subscription name or ID
+$WitnessRegion = "eastus" # Azure region for SA creation
+$WitnessSku = "Standard_LRS" # Standard_LRS | Standard_ZRS | Standard_GRS
+
+# File Share Witness — used when $WitnessType = "file_share_witness"
+$FileSharePath = "\\\\fileserver.azurelocal.cloud\\ClusterWitness\\iic-01-clus01"
+
+# Cluster node to run Set-ClusterQuorum on (first node is sufficient)
+$TargetNode = "iic-01-n01"
+
+# Credentials for PSRemoting (leave $null to use current session)
+$Credential = $null
+
+#endregion CONFIGURATION
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+Write-Host "================================================================"
+Write-Host " Cluster Quorum Configuration — Standalone"
+Write-Host " Cluster : $ClusterName"
+Write-Host " Witness Type: $WitnessType"
+Write-Host " Target Node : $TargetNode"
+Write-Host "================================================================"
+
+# ── Cloud Witness: validate or create storage account ─────────────────────────
+$witnessKey = $null
+
+if ($WitnessType -eq 'cloud_witness') {
+ Write-Host ""
+ Write-Host "-- Step 1: Validate cloud witness storage account"
+
+ $ctx = Get-AzContext
+ if (-not $ctx) {
+ Write-Host "ERROR: Not authenticated to Azure. Run Connect-AzAccount first."
+ exit 1
+ }
+
+ if ($WitnessSubscription) {
+ Write-Host " Setting subscription: $WitnessSubscription"
+ Set-AzContext -Subscription $WitnessSubscription | Out-Null
+ }
+
+ Write-Host " Checking: $WitnessAccountName (RG: $WitnessResourceGroup)"
+ $sa = Get-AzStorageAccount -ResourceGroupName $WitnessResourceGroup -Name $WitnessAccountName -ErrorAction SilentlyContinue
+
+ if (-not $sa) {
+ Write-Host " Storage account NOT FOUND — creating..."
+ Write-Host " Name : $WitnessAccountName"
+ Write-Host " RG : $WitnessResourceGroup"
+ Write-Host " Region: $WitnessRegion"
+ Write-Host " SKU : $WitnessSku"
+
+ $sa = New-AzStorageAccount `
+ -ResourceGroupName $WitnessResourceGroup `
+ -Name $WitnessAccountName `
+ -Location $WitnessRegion `
+ -SkuName $WitnessSku `
+ -Kind 'StorageV2' `
+ -AccessTier 'Hot' `
+ -EnableHttpsTrafficOnly $true `
+ -MinimumTlsVersion 'TLS1_2' `
+ -AllowBlobPublicAccess $false
+
+ Write-Host " Storage account created: $($sa.Id)"
+ } else {
+ Write-Host " Storage account OK: $($sa.Id)"
+ }
+
+ Write-Host " Retrieving storage account key..."
+ $keys = Get-AzStorageAccountKey -ResourceGroupName $WitnessResourceGroup -Name $WitnessAccountName
+ $witnessKey = $keys[0].Value
+ Write-Host " Key retrieved"
+}
+
+# ── Configure quorum via PSRemoting ───────────────────────────────────────────
+Write-Host ""
+Write-Host "-- Step 2: Configure cluster quorum"
+Write-Host " Node: $TargetNode"
+
+$credParam = @{}
+if ($Credential) { $credParam['Credential'] = $Credential }
+
+$result = Invoke-Command -ComputerName $TargetNode @credParam -ScriptBlock {
+ param($Cluster, $WType, $AccountName, $AccountKey, $SharePath)
+
+ try {
+ switch ($WType) {
+ 'cloud_witness' {
+ Set-ClusterQuorum -Cluster $Cluster -CloudWitness -AccountName $AccountName -AccessKey $AccountKey -ErrorAction Stop
+ }
+ 'file_share_witness' {
+ Set-ClusterQuorum -Cluster $Cluster -FileShareWitness $SharePath -ErrorAction Stop
+ }
+ 'disk_witness' {
+ throw "disk_witness requires a shared disk resource — use Set-ClusterQuorum -DiskWitness manually"
+ }
+ default {
+ throw "Unknown witness type: $WType"
+ }
+ }
+
+ $quorum = Get-ClusterQuorum -Cluster $Cluster
+ return [PSCustomObject]@{
+ Success = $true
+ QuorumType = $quorum.QuorumType
+ QuorumResource = $quorum.QuorumResource.Name
+ QuorumState = (Get-Cluster -Name $Cluster).QuorumState
+ }
+ } catch {
+ return [PSCustomObject]@{
+ Success = $false
+ Error = $_.Exception.Message
+ }
+ }
+
+} -ArgumentList $ClusterName, $WitnessType, $WitnessAccountName, $witnessKey, $FileSharePath
+
+# ── Results ───────────────────────────────────────────────────────────────────
+Write-Host ""
+if ($result.Success) {
+ Write-Host "================================================================"
+ Write-Host " Quorum Configuration Complete"
+ Write-Host " Quorum Type : $($result.QuorumType)"
+ Write-Host " Quorum Resource: $($result.QuorumResource)"
+ Write-Host " Quorum State : $($result.QuorumState)"
+ Write-Host "================================================================"
+
+ if ($result.QuorumState -ne 'Normal') {
+ Write-Host "WARNING: Quorum state is '$($result.QuorumState)' — expected 'Normal'" -ForegroundColor Yellow
+ }
+} else {
+ Write-Host "ERROR: Quorum configuration failed: $($result.Error)" -ForegroundColor Red
+ exit 1
+}
+```
+
+:::info No External Dependencies
+All values are defined in the `#region CONFIGURATION` block at the top. Edit those values and run — no `variables.yml`, no config-loader, no helpers required. Requires `Az.Accounts` and `Az.Storage` PowerShell modules and an active `Connect-AzAccount` session.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation Summary
+
+| Check | Command | Expected Result |
+|-------|---------|----------------|
+| Quorum type | `Get-ClusterQuorum \| Select QuorumType` | `NodeAndCloudWitness` or `NodeAndFileShareMajority` |
+| Quorum state | `(Get-Cluster).QuorumState` | `Normal` |
+| Witness resource | `Get-ClusterResource \| Where-Object ResourceType -match "Witness"` | `State: Online` |
+| Storage account | `Get-AzStorageAccount -Name <name> -ResourceGroupName <rg>` | `ProvisioningState: Succeeded` |
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `Set-ClusterQuorum` fails with access denied | Insufficient permissions on cluster or storage account | Run as cluster administrator; verify SPN has `Storage Account Key Operator Service Role` on the witness storage account |
+| Quorum state shows `NotConfigured` | Cloud witness storage account key is incorrect or rotated | Re-configure with fresh key: `Set-ClusterQuorum -CloudWitness -AccountName <name> -AccessKey <newkey>` |
+| Witness resource shows `Failed` | Storage account firewall blocking cluster node IPs | Add cluster node public IPs to the storage account firewall allow list or enable `Allow trusted Microsoft services` |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01: Deploy SDN](./task-01-deploy-sdn.mdx) | [Phase 06 Index](./index.mdx) | [Task 03: Security Groups](./task-03-security-groups-applied-to-nodes.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

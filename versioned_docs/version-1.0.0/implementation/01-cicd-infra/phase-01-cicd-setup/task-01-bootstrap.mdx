@@ -1,0 +1,267 @@
+---
+title: "Task 01: Bootstrap"
+sidebar_label: "Task 01: Bootstrap"
+sidebar_position: 1
+description: "Create the CI/CD service principal and configure Azure access"
+category: "Runbook"
+scope: "Create the CI/CD service principal and configure Azure access"
+purpose: "Create the CI/CD service principal and configure Azure access"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cicd-infrastructure
+  - implementation
+keywords:
+  - Bootstrap
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Bootstrap
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure-0078D4?style=flat-square&logo=microsoftazure)](https://portal.azure.com)
+
+> **DOCUMENT CATEGORY**: Runbook Step  
+> **SCOPE**: CI/CD service principal bootstrap  
+> **PURPOSE**: Create an Entra ID app registration and service principal for CI/CD pipeline authentication
+> **MASTER REFERENCE**: [Azure Pipelines Agent Documentation](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/agents)
+
+**Status**: Active
+
+## Objective
+
+Create an Entra ID app registration and service principal in the target tenant so CI/CD pipelines can authenticate to Azure and manage resources.
+
+---
+
+## Prerequisites
+
+- [ ] Azure CLI installed and authenticated (`az login`)
+- [ ] Signed in to the **target tenant** (verify with `az account show`)
+- [ ] **Application Administrator** or **Global Administrator** role in Entra ID
+- [ ] **Owner** or **User Access Administrator** on each target subscription
+- [ ] Target subscription ID(s) available
+
+---
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| Tenant ID | `azure.tenant_id` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| Target Subscription ID | `azure.subscription.id` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+
+---
+
+## Procedure
+
+### Step 1: Create the App Registration and Service Principal
+
+```bash
+# Set variables
+APP_NAME="azurelocal-cicd"
+SUBSCRIPTION_IDS=("subscription-id-1" "subscription-id-2")
+
+# Create app registration with a 2-year secret
+az ad app create --display-name "$APP_NAME"
+APP_ID=$(az ad app list --display-name "$APP_NAME" --query "[0].appId" -o tsv)
+
+# Create service principal
+az ad sp create --id "$APP_ID"
+
+# Create client secret (2-year expiry)
+SECRET=$(az ad app credential reset --id "$APP_ID" --years 2 --query "password" -o tsv)
+
+# Get tenant ID
+TENANT_ID=$(az account show --query "tenantId" -o tsv)
+
+echo "ARM_CLIENT_ID:     $APP_ID"
+echo "ARM_CLIENT_SECRET: $SECRET"
+echo "ARM_TENANT_ID:     $TENANT_ID"
+```
+
+> **Important:** Save the `ARM_CLIENT_SECRET` immediately — it cannot be retrieved again.
+
+### Step 2: Assign RBAC Roles
+
+Assign roles on each target subscription:
+
+```bash
+for SUB_ID in "${SUBSCRIPTION_IDS[@]}"; do
+  # Contributor — manage resources
+  az role assignment create \
+    --assignee "$APP_ID" \
+    --role "Contributor" \
+    --scope "/subscriptions/$SUB_ID"
+
+  # User Access Administrator — manage RBAC assignments
+  az role assignment create \
+    --assignee "$APP_ID" \
+    --role "User Access Administrator" \
+    --scope "/subscriptions/$SUB_ID"
+done
+```
+
+### Step 3: Register Providers and Features
+
+```bash
+for SUB_ID in "${SUBSCRIPTION_IDS[@]}"; do
+  az account set --subscription "$SUB_ID"
+
+  # Register the Compute provider
+  az provider register --namespace "Microsoft.Compute"
+
+  # Enable EncryptionAtHost feature
+  az feature register \
+    --namespace "Microsoft.Compute" \
+    --name "EncryptionAtHost"
+done
+```
+
+### Step 4: Add API Permissions
+
+```bash
+# Add Microsoft Graph — RoleManagement.ReadWrite.Directory (Application)
+GRAPH_APP_ID="00000003-0000-0000-c000-000000000000"
+ROLE_MGMT_ID="9e3f62cf-ca93-4989-b6ce-bf83c28f9fe8"
+
+az ad app permission add \
+  --id "$APP_ID" \
+  --api "$GRAPH_APP_ID" \
+  --api-permissions "$ROLE_MGMT_ID=Role"
+```
+
+### Step 5: Grant Admin Consent
+
+Grant admin consent via the **Azure Portal** or CLI:
+
+<Tabs>
+<TabItem value="portal" label="Portal">
+
+1. Navigate to **Entra ID** → **App registrations** → **azurelocal-cicd**
+2. Select **API permissions**
+3. Click **Grant admin consent for \<tenant\>**
+
+</TabItem>
+<TabItem value="cli" label="Azure CLI">
+
+```bash
+az ad app permission admin-consent --id "$APP_ID"
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Verification
+
+- [ ] App registration `azurelocal-cicd` exists in Entra ID
+- [ ] Service principal created
+- [ ] `Contributor` and `User Access Administrator` roles assigned on all target subscriptions
+- [ ] `Microsoft.Compute` provider registered
+- [ ] `EncryptionAtHost` feature enabled
+- [ ] Admin consent granted for API permissions
+- [ ] Credentials saved securely (will be stored in CI/CD platform in [Task 05](task-05-configure-variables.mdx))
+
+
+---
+
+---
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+> **When to use**: Use if running GitHub Actions pipeline.
+
+See the procedure steps above for GitHub-specific configuration.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+> **When to use**: Use if running GitLab CI/CD pipeline.
+
+See procedure steps for GitLab-specific configuration.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+> **When to use**: Use if running Azure DevOps Pipelines.
+
+See procedure steps for Azure DevOps-specific configuration.
+
+</TabItem>
+</Tabs>
+
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| --- | [Phase 01: CI/CD Setup](./index.mdx) | [Task 02: Create source control project ->](./task-02-create-project.mdx) |
+
+---
+
+## Troubleshooting
+
+**App already exists:**
+```
+An app registration with the name "azurelocal-cicd" already exists.
+```
+→ Delete the existing app registration first: `az ad app delete --id <APP_ID>`
+
+**Insufficient permissions:**
+```
+Insufficient privileges to complete the operation.
+```
+→ Ensure you have **Application Administrator** role in Entra ID and **Owner** on the target subscription(s)
+
+**Feature registration pending:**
+```
+Feature "EncryptionAtHost" is in "Registering" state.
+```
+→ Wait a few minutes, then check status: `az feature show --namespace Microsoft.Compute --name EncryptionAtHost`
+
+---
+
+## References
+
+- [Register an application with Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)
+- [Assign Azure roles using Azure CLI](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-cli)
+- [Azure CLI — az ad app](https://learn.microsoft.com/en-us/cli/azure/ad/app)
+
+---
+
+## Next Steps
+
+[Create Source Control Project](task-02-create-project.mdx)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

@@ -1,0 +1,366 @@
+---
+title: "Task 04: Setup Alerting"
+sidebar_label: "Task 04: Alerting"
+sidebar_position: 4
+description: "Configure alert rules and action groups for Azure Local monitoring and notifications"
+category: "Runbook"
+scope: "Configure alert rules and action groups for Azure Local monitoring and notifi..."
+purpose: "Configure alert rules and action groups for Azure Local monitoring and notifications"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - monitoring
+keywords:
+  - Setup
+  - Alerting
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Setup Alerting
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Azure alerting configuration   
+> **PURPOSE**: Configure proactive alerts for cluster health, performance, and hardware issues   
+> **MASTER REFERENCE**: [Microsoft Learn - Azure Alerts](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-overview)
+
+**Status**: Active
+
+Azure Monitor alerts provide proactive notification when cluster health degrades, performance thresholds are exceeded, or critical events occur. This step configures action groups for notifications and alert rules for common Azure Local scenarios.
+
+## Prerequisites
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Log Analytics Workspace | Data collection active | Queries return data |
+| HCI Insights | Enabled (Step 3) | Workbook shows data |
+| Notification Targets | Email addresses, Teams webhooks, etc. | Contact list prepared |
+| RBAC Permissions | Monitoring Contributor | Role assignment verified |
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
+| `AZURE_SUBSCRIPTION_NAME` | `azure.subscription.name` | `Azure Local Production` |
+| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
+| `SITE_CODE` | `site.code` | `DAL` |
+| `NOC_EMAIL` | `alerting.noc_email` | `noc@contoso.com` |
+| `CUSTOMER_EMAIL` | `alerting.customer_email` | `ops@customer.com` |
+| `TEAMS_WEBHOOK_URL` | `alerting.teams_webhook_url` | `https://outlook.office.com/webhook/...` |
+
+## Action Groups
+
+Action groups define **who** and **how** to notify when alerts fire. Create these before creating alert rules.
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Azure Monitor** → **Alerts** → **Action groups**
+2. Click **+ Create**
+3. Configure **Basics**:
+
+| Setting | Value |
+|---------|-------|
+| **Subscription** | `{{AZURE_SUBSCRIPTION_NAME}}` |
+| **Resource Group** | `{{AZURE_RESOURCE_GROUP}}` |
+| **Action group name** | `ag-azl-{{SITE_CODE}}-critical` |
+| **Display name** | `AZL Critical` |
+
+4. Configure **Notifications**:
+
+| Notification Type | Name | Target |
+|-------------------|------|--------|
+| Email/SMS/Push/Voice | Azure Local Cloud NOC | `{{NOC_EMAIL}}` |
+| Email/SMS/Push/Voice | Customer Contact | `{{CUSTOMER_EMAIL}}` |
+
+5. Configure **Actions** (optional):
+
+| Action Type | Name | Configuration |
+|-------------|------|---------------|
+| Webhook | Teams Channel | `{{TEAMS_WEBHOOK_URL}}` |
+| Azure Function | Auto-Remediation | Function App URL |
+
+6. Click **Review + create** → **Create**
+
+</TabItem>
+
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+#Requires -Modules Az.Monitor
+
+# Variables
+$SubscriptionId = "{{AZURE_SUBSCRIPTION_ID}}"
+$ResourceGroup = "{{AZURE_RESOURCE_GROUP}}"
+$SiteCode = "{{SITE_CODE}}"
+$NocEmail = "{{NOC_EMAIL}}"
+$CustomerEmail = "{{CUSTOMER_EMAIL}}"
+
+# Connect to Azure
+Connect-AzAccount -Subscription $SubscriptionId
+
+# Create email receivers
+$nocReceiver = New-AzActionGroupReceiver `
+ -Name "Azure Local Cloud-NOC" `
+ -EmailReceiver `
+ -EmailAddress $NocEmail
+
+$customerReceiver = New-AzActionGroupReceiver `
+ -Name "Customer-Contact" `
+ -EmailReceiver `
+ -EmailAddress $CustomerEmail
+
+# Create Critical Action Group
+$criticalAG = Set-AzActionGroup `
+ -ResourceGroupName $ResourceGroup `
+ -Name "ag-azl-$SiteCode-critical" `
+ -ShortName "AZLCrit" `
+ -Receiver $nocReceiver, $customerReceiver `
+ -Tag @{
+ Environment = "Production"
+ Application = "AzureLocal"
+ Severity = "Critical"
+ }
+
+Write-Host "✅ Action Group created: $($criticalAG.Id)" -ForegroundColor Green
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+## Recommended Alert Rules
+
+### Cluster Health Alerts
+
+Create alerts based on HCI health events and metrics:
+
+#### Alert 1: Node Health Critical
+
+```kusto
+// Alert when a cluster node reports unhealthy
+Event
+| where Source == "Microsoft-Windows-SDDC-Management"
+| where EventID == 3000
+| extend HealthData = parse_json(RenderedDescription)
+| where HealthData.HealthState != "Healthy"
+| project TimeGenerated, Computer, HealthState = tostring(HealthData.HealthState)
+```
+
+| Setting | Value |
+|---------|-------|
+| **Alert Rule Name** | `Node Health - Critical` |
+| **Severity** | Sev 1 - Critical |
+| **Evaluation Frequency** | Every 5 minutes |
+| **Lookback Period** | 5 minutes |
+| **Threshold** | Greater than 0 |
+| **Action Group** | `ag-azl-{{SITE_CODE}}-critical` |
+
+#### Alert 2: Storage Volume Unhealthy
+
+```kusto
+// Alert on storage volume health issues
+Event
+| where Source == "Microsoft-Windows-SDDC-Management"
+| where EventID == 3002
+| extend VolumeData = parse_json(RenderedDescription)
+| where VolumeData.HealthStatus != "Healthy"
+| project TimeGenerated, VolumeName = tostring(VolumeData.Name), 
+ HealthStatus = tostring(VolumeData.HealthStatus)
+```
+
+#### Alert 3: High CPU Utilization
+
+```kusto
+// Alert when CPU exceeds threshold
+Perf
+| where ObjectName == "Processor" and CounterName == "% Processor Time"
+| where InstanceName == "_Total"
+| summarize AvgCPU = avg(CounterValue) by Computer, bin(TimeGenerated, 5m)
+| where AvgCPU > 90
+```
+
+| Setting | Value |
+|---------|-------|
+| **Alert Rule Name** | `High CPU Utilization` |
+| **Severity** | Sev 2 - Warning |
+| **Threshold** | CPU > 90% for 15 minutes |
+
+#### Alert 4: Low Available Memory
+
+```kusto
+// Alert when available memory drops below threshold
+Perf
+| where ObjectName == "Memory" and CounterName == "Available Bytes"
+| extend AvailableGB = CounterValue / 1073741824
+| summarize AvgAvailableGB = avg(AvailableGB) by Computer, bin(TimeGenerated, 5m)
+| where AvgAvailableGB < 16 // Alert if less than 16 GB available
+```
+
+### Create Alert Rule (Portal)
+
+1. Navigate to **Azure Monitor** → **Alerts** → **Alert rules**
+2. Click **+ Create**
+3. Select **Scope**: Your Log Analytics workspace
+4. Configure **Condition**:
+ - Signal type: **Custom log search**
+ - Paste the KQL query
+ - Set threshold logic
+5. Configure **Actions**: Select action group
+6. Configure **Details**:
+ - Alert rule name
+ - Severity
+ - Resource group
+7. Click **Review + create** → **Create**
+
+### PowerShell: Create Log Alert Rule
+
+```powershell
+# Create a scheduled query rule for node health
+$workspace = Get-AzOperationalInsightsWorkspace `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -Name "{{LOG_ANALYTICS_WORKSPACE_NAME}}"
+
+$actionGroup = Get-AzActionGroup `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -Name "ag-azl-{{SITE_CODE}}-critical"
+
+$query = @"
+Event
+| where Source == "Microsoft-Windows-SDDC-Management"
+| where EventID == 3000
+| extend HealthData = parse_json(RenderedDescription)
+| where HealthData.HealthState != "Healthy"
+| summarize Count = count() by Computer
+"@
+
+# Note: Use New-AzScheduledQueryRule for full implementation
+Write-Host "Alert rule configuration prepared" -ForegroundColor Cyan
+Write-Host "Query: $query"
+Write-Host "Action Group: $($actionGroup.Id)"
+```
+
+## Recommended Alert Summary
+
+| Alert Name | Severity | Condition | Action |
+|------------|----------|-----------|--------|
+| Node Health Critical | Sev 1 | Node unhealthy event | Email + Teams |
+| Storage Volume Unhealthy | Sev 1 | Volume status != Healthy | Email + Teams |
+| High CPU Utilization | Sev 2 | CPU > 90% for 15 min | Email |
+| Low Available Memory | Sev 2 | Memory < 16 GB | Email |
+| VM Failed | Sev 2 | VM state = Failed | Email |
+| Storage Latency High | Sev 3 | Write latency > 100ms | Email |
+| Arc Connectivity Lost | Sev 1 | No heartbeat > 30 min | Email + Teams |
+
+## Validation
+
+### Test Alert Rule
+
+1. Navigate to **Azure Monitor** → **Alerts** → **Alert rules**
+2. Select your alert rule
+3. Click **Test action group** to verify notifications work
+
+### Check Alert History
+
+```powershell
+# Get recent alerts
+Get-AzAlert -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -TimeRange "P1D" | # Last 24 hours
+ Select-Object Name, Severity, MonitorCondition, ResolvedTime |
+ Format-Table -AutoSize
+```
+
+### Verify Action Group
+
+```kusto
+// Check for alert notifications in Activity Log
+AzureActivity
+| where CategoryValue == "Alert"
+| where TimeGenerated > ago(24h)
+| project TimeGenerated, OperationName, Status, Description
+| order by TimeGenerated desc
+```
+
+## Troubleshooting
+
+| Issue | Possible Cause | Resolution |
+|-------|---------------|------------|
+| No alerts firing | Query returns no results | Test query in Log Analytics |
+| Email not received | Email in spam | Check spam folder, add to safe senders |
+| Action group error | Invalid webhook URL | Verify Teams/webhook URL format |
+| Alert fires repeatedly | Threshold too sensitive | Adjust threshold or aggregation period |
+
+## Variables Reference
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{NOC_EMAIL}}` | Azure Local Cloud NOC email | `noc@azurelocal.cloud` |
+| `{{CUSTOMER_EMAIL}}` | Customer contact | `admin@customer.com` |
+| `{{TEAMS_WEBHOOK_URL}}` | Teams channel webhook | `https://outlook.office.com/webhook/...` |
+
+## Next Steps
+
+After setting up alerting:
+
+1. ➡️ **[Task 5: Deploy OMIMSWAC Monitoring](./task-05-deploy-omimswac-monitoring.mdx)** — Hardware monitoring
+2. Review alert rules weekly and adjust thresholds as needed
+3. Create runbooks for common alert responses
+4. Document escalation procedures for critical alerts
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 03: HCI Insights](./task-03-enable-hci-insights.mdx) | [Phase 02: Monitoring & Observability](./index.mdx) | [Phase 04: Security & Governance →](../phase-04-security-governance/index.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-03-24 | Azure Local Cloudnology Team | Initial release |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

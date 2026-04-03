@@ -1,0 +1,436 @@
+---
+title: "Task 02: Configure Site Recovery"
+sidebar_label: "Task 02: Configure Site Recovery"
+sidebar_position: 2
+description: "Configure Azure Site Recovery for Azure Local VM disaster recovery to Azure"
+category: "Runbook"
+scope: "Configure Azure Site Recovery for Azure Local VM disaster recovery to Azure"
+purpose: "Configure Azure Site Recovery for Azure Local VM disaster recovery to Azure"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - operational-foundations
+  - backup-dr
+keywords:
+  - Configure
+  - Site
+  - Recovery
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Configure Site Recovery
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: VM replication to Azure for disaster recovery   
+> **PURPOSE**: Configure Azure Site Recovery for Azure Local VMs   
+> **MASTER REFERENCE**: [Microsoft Learn - Hyper-V to Azure DR Architecture](https://learn.microsoft.com/en-us/azure/site-recovery/hyper-v-azure-architecture)
+
+**Status**: Active
+
+Azure Site Recovery (ASR) provides disaster recovery capabilities by replicating Azure Local VMs to Azure. During a disaster, VMs can fail over to Azure and run as Azure VMs until the on-premises environment is restored.
+
+## Prerequisites
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| Recovery Services Vault | Azure vault for ASR (same or different from backup) | Created in target Azure region |
+| Azure Storage Account | Standard storage for replicated data | General-purpose v2 or Premium |
+| Azure Virtual Network | Target network for failed-over VMs | Configured with appropriate subnets |
+| Outbound Connectivity | Cluster nodes to Azure endpoints | Ports 443, 9443 |
+| Hyper-V Integration | Integration components on all VMs | Current version |
+| Cluster Nodes | Windows Server 2019 or later | Domain-joined |
+
+## Variables from variables.yml
+
+| Variable | Config Path | Example |
+|----------|-------------|---------|
+| `AZURE_SUBSCRIPTION_NAME` | `azure.subscription.name` | `Azure Local Production` |
+| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
+| `AZURE_REGION` | `azure.resource_group.location` | `eastus2` |
+| `RECOVERY_VAULT_NAME` | `dr.recovery_vault_name` | `rsv-azl-dal-dr-01` |
+| `DR_STORAGE_ACCOUNT` | `dr.storage_account` | `stazldaldr01` |
+| `DR_VNET_NAME` | `dr.vnet_name` | `vnet-dr-dal-prod` |
+| `DR_VNET_CIDR` | `dr.vnet_cidr` | `10.100.0.0/16` |
+| `DR_SUBNET_NAME` | `dr.subnet_name` | `snet-dr-workloads` |
+| `DR_SUBNET_CIDR` | `dr.subnet_cidr` | `10.100.1.0/24` |
+| `HYPERV_SITE_NAME` | `dr.hyperv_site_name` | `AzureLocal-DAL-Site` |
+| `REPLICATION_POLICY_NAME` | `dr.replication_policy_name` | `rep-policy-dal-24hr` |
+| `DR_RESOURCE_GROUP` | `dr.resource_group` | `rg-dr-dal-prod-eus2` |
+| `MANAGEMENT_NETWORK_NAME` | `networking.management.network_name` | `mgmt-vlan100` |
+| `RECOVERY_PLAN_NAME` | `dr.recovery_plan_name` | `RP-CriticalApps-DAL` |
+| `DR_NOTIFICATION_EMAIL` | `dr.notification_email` | `dr-team@contoso.com` |
+
+## Architecture Overview
+
+Site Recovery uses two main components on Azure Local:
+
+| Component | Description | Location |
+|-----------|-------------|----------|
+| **Azure Site Recovery Provider** | Orchestrates replication with ASR service | Each cluster node |
+| **Recovery Services Agent** | Handles data replication to Azure | Each cluster node |
+
+:::info VMM Optional
+System Center VMM is optional. Azure Local clusters can be registered directly as a **Hyper-V site** without VMM.
+:::
+
+### Replication Flow
+
+1. Initial replication creates VM snapshot and replicates full disks to Azure Storage
+2. Delta replication tracks changes via Hyper-V Replica and sends incremental data
+3. During failover, Azure VMs are created from replicated data
+4. Failback reverses the process after on-premises recovery
+
+## Configuration Steps
+
+### Step 2.1: Create Recovery Services Vault
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to **Create a resource** → **Recovery Services vault**
+2. Configure:
+ - Name: `{{RECOVERY_VAULT_NAME}}`
+ - Resource Group: `{{AZURE_RESOURCE_GROUP}}`
+ - Region: `{{AZURE_REGION}}` (target region for DR)
+3. Click **Review + create**
+
+</TabItem>
+
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Create Recovery Services vault
+New-AzRecoveryServicesVault `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -Name "{{RECOVERY_VAULT_NAME}}" `
+ -Location "{{AZURE_REGION}}"
+
+# Set vault context
+$vault = Get-AzRecoveryServicesVault `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -Name "{{RECOVERY_VAULT_NAME}}"
+Set-AzRecoveryServicesAsrVaultContext -Vault $vault
+```
+
+</TabItem>
+
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+
+**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+
+:::note Content Pending
+Orchestrated script content references the toolkit repository.
+:::
+
+</TabItem>
+</Tabs>
+
+### Step 2.2: Prepare Azure Resources
+
+Create target resources for failed-over VMs:
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. **Storage Account**:
+ - Navigate to **Storage accounts** → **Create**
+ - Name: `{{DR_STORAGE_ACCOUNT}}`
+ - Performance: Standard (or Premium for production)
+ - Replication: LRS or GRS based on requirements
+
+2. **Virtual Network**:
+ - Navigate to **Virtual networks** → **Create**
+ - Name: `{{DR_VNET_NAME}}`
+ - Address space: `{{DR_VNET_CIDR}}`
+ - Subnet: `{{DR_SUBNET_NAME}}` with appropriate CIDR
+
+</TabItem>
+
+</Tabs>
+
+### Step 2.3: Create Hyper-V Site
+
+1. Navigate to **Recovery Services vault** → **Site Recovery** → **Prepare Infrastructure**
+
+2. Select **Protection goal**:
+ - Where are your machines located? **On-premises**
+ - Where do you want to replicate? **To Azure**
+ - Are your machines virtualized? **Yes, with Hyper-V**
+ - Are you using VMM? **No**
+
+3. Create **Hyper-V site**:
+ - Name: `{{HYPERV_SITE_NAME}}`
+ - Click **OK**
+
+### Step 2.4: Download and Install Provider
+
+1. Download the **Azure Site Recovery Provider** installer from the vault
+2. Download the **vault registration key** (valid 5 days)
+
+3. On **each cluster node**, install the Provider:
+
+```powershell
+# Run on each cluster node
+$InstallerPath = "C:\Temp\AzureSiteRecoveryProvider.exe"
+$RegistrationKey = "C:\Temp\VaultCreds.VaultCredentials"
+
+# Install Provider silently
+Start-Process -FilePath $InstallerPath `
+ -ArgumentList "/x:C:\Temp\ASRInstall /q" `
+ -Wait
+
+# Run setup
+Start-Process -FilePath "C:\Temp\ASRInstall\setupdr.exe" `
+ -ArgumentList "/i" `
+ -Wait
+
+# Register with vault
+$FriendlyName = $env:COMPUTERNAME
+$RegistrationCmd = "C:\Program Files\Microsoft Azure Site Recovery Provider\DRConfigurator.exe"
+
+& $RegistrationCmd `
+ /r /Credentials $RegistrationKey `
+ /FriendlyName $FriendlyName
+```
+
+4. Verify registration in Azure Portal → **Site Recovery Infrastructure** → **Hyper-V Hosts**
+
+### Step 2.5: Configure Replication Policy
+
+1. Navigate to vault → **Site Recovery** → **Replication policies**
+2. Click **Create replication policy**
+3. Configure:
+
+| Setting | Recommended Value | Description |
+|---------|-------------------|-------------|
+| Name | `{{REPLICATION_POLICY_NAME}}` | Policy identifier |
+| Copy frequency | 5 minutes | How often to replicate changes |
+| Recovery point retention | 24 hours | How long to keep recovery points |
+| App-consistent snapshot frequency | 4 hours | VSS-based snapshots |
+| Initial replication start time | Immediately or scheduled | Off-hours recommended |
+
+4. Click **OK** to create policy
+
+5. Associate policy with Hyper-V site:
+ - Navigate to **Site Recovery Infrastructure** → **Hyper-V Sites**
+ - Select site → **Replication policy** → Associate created policy
+
+### Step 2.6: Enable Replication for VMs
+
+1. Navigate to vault → **Replicated items** → **Replicate**
+
+2. Configure source:
+ - Source: Your Hyper-V site
+ - Hyper-V host: Select cluster nodes
+
+3. Configure target:
+ - Subscription: `{{AZURE_SUBSCRIPTION_NAME}}`
+ - Post-failover resource group: `{{DR_RESOURCE_GROUP}}`
+ - Post-failover deployment model: **Resource Manager**
+ - Storage account: `{{DR_STORAGE_ACCOUNT}}`
+ - Azure network: Configure after failover or select `{{DR_VNET_NAME}}`
+
+4. Select virtual machines to replicate
+
+5. Configure VM properties:
+ - OS type: Windows/Linux
+ - OS disk: Select boot disk
+ - Data disks: Select additional disks
+
+6. Review and enable replication
+
+### Step 2.7: Configure Network Mapping
+
+Map on-premises networks to Azure virtual networks:
+
+1. Navigate to vault → **Site Recovery Infrastructure** → **Network Mapping**
+2. Click **Add network mapping**
+3. Configure:
+ - Source network: `{{MANAGEMENT_NETWORK_NAME}}`
+ - Target network: `{{DR_VNET_NAME}}`
+4. Repeat for additional networks
+
+### Step 2.8: Configure Recovery Plans
+
+Recovery plans orchestrate failover of multiple VMs:
+
+1. Navigate to vault → **Recovery Plans** → **Create recovery plan**
+2. Configure:
+ - Name: `{{RECOVERY_PLAN_NAME}}`
+ - Source: Hyper-V site
+ - Target: Azure
+ - Select items: Choose VMs to include
+
+3. Customize groups:
+ - **Group 1**: Critical infrastructure (domain controllers)
+ - **Group 2**: Database servers
+ - **Group 3**: Application servers
+ - **Group 4**: Web servers
+
+4. Add pre/post actions:
+ - Scripts to run before/after group failover
+ - Manual actions for verification steps
+
+## Validation
+
+### Verify Replication Health
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+1. Navigate to vault → **Replicated items**
+2. Verify each VM shows:
+ - Replication health: **Healthy**
+ - Status: **Protected**
+ - RPO: Within policy threshold
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+```powershell
+# Get replication status
+$vault = Get-AzRecoveryServicesVault `
+ -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
+ -Name "{{RECOVERY_VAULT_NAME}}"
+
+Set-AzRecoveryServicesAsrVaultContext -Vault $vault
+
+# List protected items
+Get-AzRecoveryServicesAsrReplicationProtectedItem | 
+ Select-Object FriendlyName, ProtectionState, ReplicationHealth, LastHeartbeat |
+ Format-Table
+```
+
+</TabItem>
+</Tabs>
+
+### Check Initial Replication
+
+```powershell
+# Monitor initial replication progress
+Get-AzRecoveryServicesAsrReplicationProtectedItem | 
+ Where-Object { $_.ReplicationProvider -eq "HyperVReplica2012R2" } |
+ Select-Object FriendlyName, 
+ @{N='Progress';E={$_.ProviderSpecificDetails.InitialReplicationDetails.InitialReplicationProgressPercentage}},
+ @{N='Status';E={$_.ProviderSpecificDetails.InitialReplicationDetails.InitialReplicationStatus}}
+```
+
+### Validation Checklist
+
+| Component | Verification | Expected Result |
+|-----------|--------------|-----------------|
+| Provider installed | All nodes in vault | Registered and connected |
+| Replication policy | Policy associated | Active on Hyper-V site |
+| VMs replicating | Replicated items list | Healthy, Protected |
+| Initial sync | Progress percentage | 100% complete |
+| RPO compliance | RPO column | Within policy threshold |
+
+## Monitoring
+
+### Configure Alerts
+
+1. Navigate to vault → **Alerts** → **Alert rules**
+2. Create rules for:
+ - Replication health critical
+ - RPO threshold breach (e.g., > 30 minutes)
+ - Test failover not run in 90 days
+
+### Email Notifications
+
+1. Navigate to vault → **Site Recovery Events**
+2. Click **Email notifications**
+3. Configure:
+ - Enable notifications: **On**
+ - Recipients: `{{DR_NOTIFICATION_EMAIL}}`
+ - Events: Critical, Warning
+
+## Outbound Connectivity Requirements
+
+Ensure firewall allows these URLs:
+
+| URL | Purpose |
+|-----|---------|
+| `*.blob.core.windows.net` | Data replication to storage |
+| `login.microsoftonline.com` | Authentication |
+| `*.hypervrecoverymanager.windowsazure.com` | Site Recovery service |
+| `*.servicebus.windows.net` | Monitoring and diagnostics |
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Resolution |
+|---------|--------------|------------|
+| Provider registration fails | Connectivity or expired key | Check firewall, regenerate key |
+| Initial replication slow | Network bandwidth | Schedule off-hours, check throttling |
+| RPO exceeds threshold | High change rate or connectivity | Increase frequency, check network |
+| Resync required | Connectivity interruption | Will auto-resume; verify network |
+| VM not appearing | Agent not installed | Install integration components on VM |
+
+### Force Resynchronization
+
+If delta replication fails:
+
+1. Navigate to vault → **Replicated items** → Select VM
+2. Click **Resynchronize**
+3. Monitor progress in **Jobs**
+
+## Variables Reference
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{HYPERV_SITE_NAME}}` | Hyper-V site name | `AzureLocal-Dallas-Site` |
+| `{{REPLICATION_POLICY_NAME}}` | Replication policy name | `AzureLocal-5min-RPO` |
+| `{{DR_VNET_NAME}}` | DR virtual network name | `vnet-dr-eastus2-01` |
+| `{{DR_STORAGE_ACCOUNT}}` | Replication storage account | `stdreastus201` |
+
+## Next Steps
+
+After configuring Site Recovery:
+
+1. ➡️ **[Task 3: Test DR Procedures](./task-03-test-dr-procedures.mdx)** — Validate failover with test failover
+2. Document recovery time objectives (RTO)
+3. Schedule regular test failovers (quarterly recommended)
+4. Create runbooks for failover procedures
+
+
+---
+
+
+:::info Toolkit Reference
+Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [← Task 01: Configure Azure Backup](./task-01-configure-azure-backup.mdx) | [Phase 03: Backup & DR](./index.mdx) | [Task 03: Test DR Procedures ->](./task-03-test-dr-procedures.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

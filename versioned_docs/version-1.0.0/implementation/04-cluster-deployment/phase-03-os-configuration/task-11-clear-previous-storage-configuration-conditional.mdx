@@ -1,0 +1,211 @@
+---
+title: "Task 11: Clear Previous Storage Configuration (Conditional)"
+sidebar_label: "Task 11: Clear Storage"
+sidebar_position: 11
+description: "Clear previous Storage Spaces Direct configuration if redeploying on existing hardware"
+category: "Runbook"
+scope: "Clear previous Storage Spaces Direct configuration if redeploying on existing..."
+purpose: "Clear previous Storage Spaces Direct configuration if redeploying on existing hardware"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - os-configuration
+keywords:
+  - Clear
+  - Previous
+  - Storage
+  - Configuration
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 11: Clear Previous Storage Configuration (Conditional)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Clear previous Storage Spaces Direct configuration if redeploying on existing...
+> **PURPOSE**: Clear previous Storage Spaces Direct configuration if redeploying on existing hardware
+> **MASTER REFERENCE**: [Azure Local Storage Spaces Direct](https://learn.microsoft.com/en-us/azure/azure-local/concepts/storage-spaces-direct-overview)
+
+**Status**: Active
+
+## Overview
+
+If nodes have previously been used with Storage Spaces Direct, all existing storage pools, virtual disks, and disk metadata must be cleared before Azure Local deployment.
+
+:::danger Data Loss Warning
+This step **DESTROYS ALL DATA** on data disks. Ensure all data is backed up before proceeding. This is irreversible.
+:::
+
+---
+
+## When to Run
+
+| Scenario | Run? |
+|---|---|
+| New hardware, first deployment | ❌ Skip |
+| Redeployment on existing hardware | ✅ Yes |
+| Hardware with previous S2D config | ✅ Yes |
+| Disks showing `CanPool = False` | ✅ Yes |
+| After a failed deployment | ✅ Yes |
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Tasks 01–10 complete | Hostname configured, nodes restarted |
+| Data backed up | All important data saved — this cannot be undone |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `cluster_nodes[].management_ip` | string | PSRemoting target IP (orchestrated mode) |
+| `cluster_nodes[].hostname` | string | Node display name for logging |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run on each node individually via console, KVM, or RDP.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional/powershell/Clear-StorageConfiguration-Direct.ps1`
+
+```powershell
+# Task 11 - Clear Previous Storage Configuration (run locally on target node)
+
+Update-StorageProviderCache
+Get-StoragePool | ? IsPrimordial -eq $false | Set-StoragePool -IsReadOnly:$false -ErrorAction SilentlyContinue
+Get-StoragePool | ? IsPrimordial -eq $false | Get-VirtualDisk | Remove-VirtualDisk -Confirm:$false -ErrorAction SilentlyContinue
+Get-StoragePool | ? IsPrimordial -eq $false | Remove-StoragePool -Confirm:$false -ErrorAction SilentlyContinue
+Get-PhysicalDisk | Reset-PhysicalDisk -ErrorAction SilentlyContinue
+Get-Disk | ? Number -ne $null | ? IsBoot -ne $true | ? IsSystem -ne $true | ? PartitionStyle -ne RAW | ? BusType -ne USB | % {
+ $_ | Set-Disk -isoffline:$false
+ $_ | Set-Disk -isreadonly:$false
+ $_ | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
+ $_ | Set-Disk -isreadonly:$true
+ $_ | Set-Disk -isoffline:$true
+}
+Get-Disk | Where Number -Ne $Null | Where IsBoot -Ne $True | Where IsSystem -Ne $True | Where PartitionStyle -Eq RAW | Group -NoElement -Property FriendlyName
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run from the management server against all nodes.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional/powershell/Invoke-ClearStorage-Orchestrated.ps1`
+
+```powershell
+# Task 11 - Clear Previous Storage Configuration (orchestrated, all nodes)
+# variables.yml variables:
+# cluster_nodes[].management_ip -> $ServerList
+
+$ConfigPath = "$env:USERPROFILE\variables.yml"
+$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
+ ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+
+Invoke-Command ($ServerList) {
+ Update-StorageProviderCache
+ Get-StoragePool | ? IsPrimordial -eq $false | Set-StoragePool -IsReadOnly:$false -ErrorAction SilentlyContinue
+ Get-StoragePool | ? IsPrimordial -eq $false | Get-VirtualDisk | Remove-VirtualDisk -Confirm:$false -ErrorAction SilentlyContinue
+ Get-StoragePool | ? IsPrimordial -eq $false | Remove-StoragePool -Confirm:$false -ErrorAction SilentlyContinue
+ Get-PhysicalDisk | Reset-PhysicalDisk -ErrorAction SilentlyContinue
+ Get-Disk | ? Number -ne $null | ? IsBoot -ne $true | ? IsSystem -ne $true | ? PartitionStyle -ne RAW | ? BusType -ne USB | % {
+ $_ | Set-Disk -isoffline:$false
+ $_ | Set-Disk -isreadonly:$false
+ $_ | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
+ $_ | Set-Disk -isreadonly:$true
+ $_ | Set-Disk -isoffline:$true
+ }
+ Get-Disk | Where Number -Ne $Null | Where IsBoot -Ne $True | Where IsSystem -Ne $True | Where PartitionStyle -Eq RAW | Group -NoElement -Property FriendlyName
+} | Sort -Property PsComputerName, Count
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+```powershell
+# Verify all data disks are CanPool = True
+$ServerList = @("<node1-ip>", "<node2-ip>")
+Invoke-Command ($ServerList) {
+ Get-PhysicalDisk | Where-Object { $_.BusType -ne 'USB' } |
+ Select-Object FriendlyName, CanPool, CannotPoolReason, BusType, MediaType
+} | Format-Table -AutoSize
+```
+
+**Expected:** All data disks show `CanPool = True`. Boot disk shows `CannotPoolReason = Insufficient Capacity` — this is expected.
+
+---
+
+## Validation Checklist
+
+- [ ] Script ran without errors on all nodes
+- [ ] All data disks show `CanPool = True`
+- [ ] Boot disk excluded (shows `Insufficient Capacity` — expected)
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|---|---|
+| `CanPool = False` after running | Re-run `Reset-PhysicalDisk` |
+| Storage pool still exists | Remove from cluster first, then re-run |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+[← Task 10: Configure Hostname](./task-10-configure-hostname.mdx) · [↑ Phase 03](./index.mdx) · [Task 12: Combined Script →](./task-12-complete-combined-script-all-steps.mdx)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |

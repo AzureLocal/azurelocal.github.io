@@ -1,0 +1,504 @@
+---
+title: "Task 06: VM Image Downloads"
+sidebar_label: "Task 06: VM Image Downloads"
+sidebar_position: 6
+description: "Download Azure Marketplace VM images to the Azure Local cluster for Arc VM deployment"
+category: "Runbook"
+scope: "Download Azure Marketplace VM images to the Azure Local cluster for Arc VM de..."
+purpose: "Download Azure Marketplace VM images to the Azure Local cluster for Arc VM deployment"
+author: "Azure Local Cloudnology Team"
+created: 2025-03-25
+updated: 2025-03-25
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - post-deployment
+keywords:
+  - Image
+  - Downloads
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 06 — VM Image Downloads
+
+> **DOCUMENT CATEGORY**: Implementation Guide  
+> **SCOPE**: Phase 06 — Post-Deployment | Azure Local  
+> **PURPOSE**: Register standard Azure Marketplace VM images on the cluster so they are
+> **MASTER REFERENCE**: [Azure Local VM Images](https://learn.microsoft.com/en-us/azure/azure-local/manage/virtual-machine-image-azure-marketplace)
+> available for Arc VM deployment
+
+**Status**: Active
+
+[![Phase](https://img.shields.io/badge/Phase-06%20Post--Deployment-blue)](.)
+[![Status](https://img.shields.io/badge/Status-Active-green)](.)
+
+**Objective:** Download and register the three standard Azure Marketplace VM images on the
+Azure Local cluster. Once registered, images are stored on the cluster's CSV storage and
+available for Arc VM provisioning.
+
+:::info Custom images are documented separately
+This task covers **Azure Marketplace image downloads only**. Workflows for creating custom
+images (sysprep, generalize, upload, or convert from VHDX/VHD) are covered in a dedicated
+appendix or in the custom image management section of this documentation.
+:::
+
+**Prerequisites:**
+
+- Azure Local cluster deployed and Arc-enabled (Phase 05 complete)
+- CSV volumes created and healthy (Task 05 complete)
+- Azure identity authenticated: `az login` or Az PowerShell `Connect-AzAccount`
+- `az stack-hci-vm` CLI extension installed (`az extension add --name stack-hci-vm`)
+- `marketplace_images` block populated in `variables.yml`
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `marketplace_images.images[].offer` | string | Marketplace image offer |
+| `marketplace_images.images[].publisher` | string | Image publisher |
+| `marketplace_images.images[].sku` | string | Image SKU |
+| `marketplace_images.images[].name` | string | Image resource name |
+| `marketplace_images.images[].storage_path` | string | Storage path for download |
+| `azure_platform.resource_groups.cluster.name` | string | Resource group |
+| `compute.azure_local.custom_location` | string | Custom location |
+
+---
+
+## Download Images
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+**When to use:** Single image creation, visual confirmation of marketplace offer details,
+or when CLI access is unavailable.
+
+**Prerequisites:** Access to the Azure Portal with Contributor rights on the resource group.
+
+---
+
+**Steps (repeat for each image):**
+
+1. Navigate to your Azure Local cluster resource: **Azure Portal** → **Azure Local** →
+ `iic-clus01`
+
+2. In the left navigation, select **Resources** → **VM images**
+
+3. Click **+ Add VM image** → **Add VM image from Azure Marketplace**
+
+4. Search for the image and select it:
+
+ | Image | Search term |
+ |-------|-------------|
+ | Windows Server 2025 Datacenter Azure Edition Gen 2 | `Windows Server 2025 Datacenter Azure Edition` |
+ | Windows Server 2022 Datacenter Azure Edition Hotpatch Gen 2 | `Windows Server 2022 Datacenter Azure Edition` |
+ | Windows 11 Enterprise Multi-Session 25H2 + Microsoft 365 Apps Gen 2 | `Windows 11 Enterprise multi-session` |
+
+ :::warning Select the correct generation
+ Confirm **Gen 2** in the image name before selecting. Gen 1 images are not supported on
+ Azure Local Arc VMs and will fail to deploy.
+ :::
+
+5. On the **Create VM image** blade, fill in:
+ - **Subscription:** `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+ - **Resource group:** `rg-iic01-azl-eus-01`
+ - **Custom location:** `cl-iic01`
+ - **Image name:** e.g. `img-iic01-ws2025-azedition-g2`
+ - **Image version:** `latest` (or a specific version)
+ - **Storage path:** select a registered storage path (e.g. `sp-iic01-clus01-m2-vmstore-prd-01`)
+
+6. Click **Review + create** → **Create**
+
+7. Image download starts immediately. Progress is visible on the VM images blade. A 40–60 GB image typically takes 15–30 minutes depending on cluster network speed.
+
+8. Repeat for the remaining two images.
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+**When to use:** Automated or repeatable deployment. Reads image definitions from
+`variables.yml` and creates all images in sequence. Run from the management server.
+
+**Script:**
+[`Invoke-MarketplaceImages-Orchestrated.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/Invoke-MarketplaceImages-Orchestrated.ps1)
+
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+ task-06-image-downloads/powershell/Invoke-MarketplaceImages-Orchestrated.ps1
+```
+
+```powershell title="Invoke-MarketplaceImages-Orchestrated.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+ Orchestrated: downloads all marketplace_images entries from variables.yml
+ to the Azure Local cluster as gallery images.
+
+.DESCRIPTION
+ Phase 06 — Post-Deployment | Task 06 — VM Image Downloads
+
+ Reads each image definition from marketplace_images.images[] and calls
+ az stack-hci-vm image create for each one. Images that already exist are
+ skipped. Supports -WhatIf for dry-run validation.
+
+.PARAMETER ConfigPath
+ Path to infrastructure YAML. Defaults to config\variables.yml in CWD.
+
+.PARAMETER Credential
+ Not used for image creation (uses current az CLI / Az PowerShell session).
+ Included for parameter contract compliance.
+
+.PARAMETER TargetNode
+ Not used for image creation (ARM operation — no PSRemoting).
+ Included for parameter contract compliance.
+
+.PARAMETER WhatIf
+ Log planned actions without making any changes.
+
+.PARAMETER LogPath
+ Override log directory. Default: logs\task-06-image-downloads\ in CWD.
+
+.NOTES
+ Run from the toolkit repo root.
+ Requires: az CLI authenticated (az login) and stack-hci-vm extension installed.
+ (az extension add --name stack-hci-vm)
+ Requires: powershell-yaml module (Install-Module powershell-yaml)
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+ [string] $ConfigPath = "",
+ [PSCredential]$Credential = $null,
+ [string[]] $TargetNode = @(),
+ [switch] $WhatIf,
+ [string] $LogPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region LOGGING -----------------------------------------------------------------
+$taskFolderName = "task-06-image-downloads"
+$timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+
+if ([string]::IsNullOrEmpty($LogPath)) {
+ $LogPath = Join-Path (Get-Location).Path "logs\$taskFolderName"
+}
+if (-not (Test-Path $LogPath)) { New-Item -ItemType Directory -Path $LogPath -Force | Out-Null }
+$logFile = Join-Path $LogPath "${timestamp}_MarketplaceImages.log"
+
+function Write-Log {
+ param([string]$Message, [string]$Level = "INFO")
+ $entry = "[{0}] [{1,-5}] {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Message
+ $entry | Tee-Object -FilePath $logFile -Append | Out-Null
+ $color = switch ($Level) {
+ "ERROR" { "Red" }; "WARN" { "Yellow" }; "OK" { "Green" }; default { "Cyan" }
+ }
+ Write-Host $entry -ForegroundColor $color
+}
+#endregion
+
+#region CONFIG LOADING ----------------------------------------------------------
+if ([string]::IsNullOrEmpty($ConfigPath)) {
+ $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
+}
+if (-not (Test-Path $ConfigPath)) {
+ Write-Log "Config not found: $ConfigPath" -Level "ERROR"; throw "Config not found"
+}
+
+Import-Module powershell-yaml -ErrorAction Stop
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+
+$imgConfig = $cfg.marketplace_images # marketplace_images
+
+if (-not $imgConfig.enabled) {
+ Write-Log "marketplace_images.enabled is false — nothing to do." -Level "WARN"
+ exit 0
+}
+
+$images = $imgConfig.images # marketplace_images.images[]
+$subscriptionId = $cfg.azure_platform.subscription_id # azure_platform.subscription_id
+$resourceGroup = $cfg.azure_platform.resource_group # azure_platform.resource_group
+$location = $cfg.azure_platform.location # azure_platform.location
+$customLocation = $cfg.compute.azure_local.custom_location_name # compute.azure_local.custom_location_name
+
+$customLocationId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup" +
+ "/providers/Microsoft.ExtendedLocation/customLocations/$customLocation"
+
+Write-Log "Subscription : $subscriptionId"
+Write-Log "Resource group : $resourceGroup"
+Write-Log "Custom location: $customLocation"
+Write-Log "Images defined : $($images.Count)"
+Write-Log "WhatIf : $WhatIf"
+#endregion
+
+#region IMAGE CREATION ----------------------------------------------------------
+foreach ($img in $images) {
+ $imgName = $img.name # marketplace_images.images[].name
+ $publisher = $img.publisher # marketplace_images.images[].publisher
+ $offer = $img.offer # marketplace_images.images[].offer
+ $sku = $img.sku # marketplace_images.images[].sku
+ $version = if ($img.version) { $img.version } else { "latest" }
+ $osType = $img.os_type # marketplace_images.images[].os_type
+
+ Write-Log "Image: $imgName ($publisher / $offer / $sku / $version)"
+
+ if ($WhatIf) {
+ Write-Log " [WhatIf] Would create gallery image '$imgName'" -Level "WARN"
+ continue
+ }
+
+ # Check if image already exists
+ $existing = az stack-hci-vm image show `
+ --subscription $subscriptionId `
+ --resource-group $resourceGroup `
+ --name $imgName 2>$null
+
+ if ($LASTEXITCODE -eq 0 -and $existing) {
+ Write-Log " Already exists — skipped" -Level "WARN"
+ continue
+ }
+
+ try {
+ Write-Log " Creating (this may take 15–30 minutes per image)..."
+
+ az stack-hci-vm image create `
+ --subscription $subscriptionId `
+ --resource-group $resourceGroup `
+ --custom-location $customLocationId `
+ --location $location `
+ --name $imgName `
+ --os-type $osType `
+ --offer $offer `
+ --publisher $publisher `
+ --sku $sku `
+ --version $version `
+ --output none
+
+ if ($LASTEXITCODE -ne 0) { throw "az stack-hci-vm image create exited $LASTEXITCODE" }
+ Write-Log " Created successfully" -Level "OK"
+ }
+ catch {
+ Write-Log " Failed: $_" -Level "ERROR"
+ }
+}
+#endregion
+
+Write-Log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Write-Log "Done. Validate with: az stack-hci-vm image list --resource-group <rg>" -Level "OK"
+Write-Log "Log: $logFile"
+```
+
+**Run from the toolkit repo root:**
+
+```powershell title="Run Orchestrated script"
+.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-06-image-downloads\powershell\Invoke-MarketplaceImages-Orchestrated.ps1
+
+# Dry-run first:
+.\...\Invoke-MarketplaceImages-Orchestrated.ps1 -WhatIf
+
+# Explicit config path:
+.\...\Invoke-MarketplaceImages-Orchestrated.ps1 -ConfigPath configs\infrastructure-iic01.yml
+```
+
+:::warning Image creation takes time
+Each image download is 40–60 GB and typically takes 15–30 minutes. The script processes
+images sequentially. Plan for up to 90 minutes for all three images on a standard cluster
+uplink. The script is safe to re-run — existing images are skipped.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+**When to use:** When deploying without `variables.yml` — external sharing, one-off
+deployments, or demos. All values are hardcoded in the `#region CONFIGURATION` block.
+
+**Script:**
+[`New-MarketplaceImages-Standalone.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-MarketplaceImages-Standalone.ps1)
+
+```
+scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
+ task-06-image-downloads/powershell/New-MarketplaceImages-Standalone.ps1
+```
+
+```powershell title="New-MarketplaceImages-Standalone.ps1"
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+ Standalone: creates Azure Local gallery images from Azure Marketplace.
+
+.DESCRIPTION
+ Phase 06 — Post-Deployment | Task 06 — VM Image Downloads
+
+ Fill in the #region CONFIGURATION block with your environment values.
+ No variables.yml or toolkit dependency. Safe to copy and share.
+
+.NOTES
+ Requires: az CLI authenticated (az login) and stack-hci-vm extension.
+ (az extension add --name stack-hci-vm)
+#>
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+#region CONFIGURATION -----------------------------------------------------------
+$subscription_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890" # azure_platform.subscription_id
+$resource_group = "rg-iic01-azl-eus-01" # azure_platform.resource_group
+$location = "eastus" # azure_platform.location
+$custom_location_id = "/subscriptions/$subscription_id/resourceGroups/$resource_group" +
+ "/providers/Microsoft.ExtendedLocation/customLocations/cl-iic01"
+ # compute.azure_local.custom_location_name
+
+$images = @(
+ @{
+ name = "img-iic01-ws2025-azedition-g2"
+ publisher = "MicrosoftWindowsServer"
+ offer = "WindowsServer"
+ sku = "2025-datacenter-azure-edition-g2"
+ version = "latest"
+ os_type = "Windows"
+ },
+ @{
+ name = "img-iic01-ws2022-azedition-hotpatch-g2"
+ publisher = "MicrosoftWindowsServer"
+ offer = "WindowsServer"
+ sku = "2022-datacenter-azure-edition-hotpatch-g2"
+ version = "latest"
+ os_type = "Windows"
+ },
+ @{
+ name = "img-iic01-win11-25h2-avd-m365-g2"
+ publisher = "MicrosoftWindowsDesktop"
+ offer = "office-365"
+ sku = "win11-25h2-avd-m365"
+ version = "latest"
+ os_type = "Windows"
+ }
+)
+#endregion
+
+#region IMAGE CREATION ----------------------------------------------------------
+foreach ($img in $images) {
+ Write-Host "[INFO] Creating: $($img.name) ($($img.publisher) / $($img.offer) / $($img.sku))" -ForegroundColor Cyan
+ Write-Host " (this may take 15-30 minutes per image...)"
+
+ $existing = az stack-hci-vm image show `
+ --subscription $subscription_id `
+ --resource-group $resource_group `
+ --name $img.name 2>$null
+
+ if ($LASTEXITCODE -eq 0 -and $existing) {
+ Write-Host "[WARN] Already exists — skipped" -ForegroundColor Yellow
+ continue
+ }
+
+ az stack-hci-vm image create `
+ --subscription $subscription_id `
+ --resource-group $resource_group `
+ --custom-location $custom_location_id `
+ --location $location `
+ --name $img.name `
+ --os-type $img.os_type `
+ --offer $img.offer `
+ --publisher $img.publisher `
+ --sku $img.sku `
+ --version $img.version `
+ --output none
+
+ if ($LASTEXITCODE -ne 0) {
+ Write-Host "[ERROR] Failed to create $($img.name)" -ForegroundColor Red
+ } else {
+ Write-Host "[OK] Created: $($img.name)" -ForegroundColor Green
+ }
+}
+#endregion
+
+Write-Host ""
+Write-Host "Done. Validate with: az stack-hci-vm image list --resource-group $resource_group" -ForegroundColor Green
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+After all images are created, confirm they are in a **Succeeded** provisioning state and
+are visible on the cluster's VM images blade.
+
+```powershell title="List all gallery images in the resource group"
+az stack-hci-vm image list `
+ --subscription a1b2c3d4-e5f6-7890-abcd-ef1234567890 `
+ --resource-group rg-iic01-azl-eus-01 `
+ --output table
+```
+
+```powershell title="Check a specific image status"
+az stack-hci-vm image show `
+ --subscription a1b2c3d4-e5f6-7890-abcd-ef1234567890 `
+ --resource-group rg-iic01-azl-eus-01 `
+ --name img-iic01-ws2025-azedition-g2 `
+ --query "{Name:name, State:provisioningState, OS:properties.osType}" `
+ --output table
+```
+
+**Expected results:**
+
+| Name | State | OS |
+|------|-------|-----|
+| `img-iic01-ws2025-azedition-g2` | Succeeded | Windows |
+| `img-iic01-ws2022-azedition-hotpatch-g2` | Succeeded | Windows |
+| `img-iic01-win11-25h2-avd-m365-g2` | Succeeded | Windows |
+
+:::warning Image stuck in "Downloading" or "Failed"
+If an image stays in `Downloading` for more than 60 minutes or enters `Failed` state:
+1. Check cluster storage health — CSV volumes must be online and have sufficient free space
+2. Verify the cluster has outbound internet access to `*.blob.core.windows.net` (image source)
+3. Delete the failed image and re-run: `az stack-hci-vm image delete --name <img> --resource-group <rg> --yes`
+:::
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| Image stuck in `Downloading` for over 60 minutes | Insufficient CSV free space or blocked outbound connectivity | Check CSV free space: `Get-ClusterSharedVolume`; verify outbound to `*.blob.core.windows.net` on port 443 |
+| Image provisioning state is `Failed` | Invalid image source URL or Arc resource bridge issue | Delete and recreate: `az stack-hci-vm image delete --name <img> --resource-group <rg> --yes`; verify bridge health first |
+| Image not visible in Azure portal | Sync delay between cluster and Azure | Wait 10-15 minutes; if still missing, verify the custom location resource is healthy: `az customlocation show` |
+
+---
+
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+## Navigation
+
+| | |
+|---|---|
+| ← Previous | [Task 05 — Storage Configuration](./task-05-storage-configuration.mdx) |
+| ↑ Phase Index | [Phase 06 — Post-Deployment Index](./index.mdx) |
+| → Next | [Task 07 — Configure NSGs](./task-07-configure-nsgs.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2025-03-25 | Azure Local Cloudnology Team | Initial release |
