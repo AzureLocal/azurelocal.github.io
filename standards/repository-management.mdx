@@ -1,0 +1,253 @@
+# Repository Management Standard
+
+> **Canonical reference:** [Repository Management Standard (full)](https://azurelocal.cloud/standards/repository-management/)  
+> **Applies to:** All AzureLocal repositories  
+> **Last Updated:** 2026-04-03
+
+---
+
+## Overview
+
+This standard defines how the AzureLocal repositories are managed as a coordinated portfolio.
+
+Each repository is a **standalone deliverable** with its own README, issues, releases, workflows, and branch protections. At the same time, each repository participates in a shared governance model where `azurelocal.github.io` acts as the central source for standards, portfolio-level guidance, and shared repository management practices.
+
+The intent is to avoid two failure modes:
+
+1. treating every repo as completely independent and allowing standards drift
+2. treating every repo as if it were just a subfolder of the docs repo
+
+The correct model is: **independent repositories, centrally governed standards**.
+
+---
+
+## Portfolio Model
+
+### Repository Roles
+
+| Repository Type | Role | Notes |
+|-----------------|------|-------|
+| `azurelocal.github.io` | Central standards, documentation portal, and governance source | Holds canonical standards and shared repo governance references |
+| `azurelocal-toolkit` | Reference implementation and shared automation toolkit | Primary implementation repo for deployment, validation, and automation assets |
+| Solution repositories | Standalone solution delivery repos | Must be independently usable while following org-wide standards |
+| Supporting repositories | Utilities, training, migration, demos, or experiments | May have lighter content, but still follow the governance baseline |
+
+### Governance Principle
+
+All repositories must be understandable and usable on their own, but they must not invent their own governance model.
+
+The central repository governance source is:
+
+- standards and governance guidance in `azurelocal.github.io`
+- shared labels and repo rules in `.github/`
+- portfolio-level planning and cross-repo coordination in `repo-management/`
+
+---
+
+## Repo Management Contract
+
+Every repository must have a root-level `repo-management/` folder.
+
+This folder is for **repository operations and planning**, not published product documentation.
+
+### Standard Layout
+
+| Path | Purpose |
+|------|---------|
+| `repo-management/README.md` | Entry point for the folder and local repo-management conventions |
+| `repo-management/plans/` | Implementation plans, design notes, scoped initiatives |
+| `repo-management/checklists/` | Audit checklists, migration lists, operational gates |
+| `repo-management/roadmaps/` | Milestones, phased plans, and release horizons |
+| `repo-management/reports/` | Discovery outputs, coverage reports, validation summaries |
+| `repo-management/scripts/` | Helper scripts used for repo-management or governance tasks |
+| `repo-management/working/` | Drafts, temporary notes, and working material not yet promoted |
+
+### Allowed Content
+
+The `repo-management/` folder may contain:
+
+- repo-specific project management notes
+- migration plans
+- governance helper scripts
+- repo audits and reports
+- roadmap and planning documents
+- working drafts for repo operations
+
+The `repo-management/` folder must not become a replacement for:
+
+- `README.md` at the repo root
+- canonical standards under `standards/`
+- published user-facing documentation in repos that use GitHub Pages
+
+---
+
+## Standards vs Repo Management
+
+Use the following split consistently:
+
+| Location | Purpose |
+|----------|---------|
+| `standards/` | Canonical rules and standards that multiple repos are expected to follow |
+| `repo-management/` | Planning, governance operations, scripts, roadmaps, checklists, and repo-local execution artifacts |
+| `README.md` | Primary entry point for humans using the repo |
+| `docs/` | Published documentation only, when the repo actually uses a docs site |
+
+If a document describes rules that all repos should follow, it belongs in `standards/`.
+
+If a document describes how a specific repo is being organized, tracked, migrated, or improved, it belongs in `repo-management/`.
+
+---
+
+## Baseline Requirements For All Repositories
+
+Unless explicitly exempted, every repository should follow the baseline below.
+
+### Core Repo Files
+
+- `README.md`
+- `CONTRIBUTING.md`
+- `CHANGELOG.md`
+- `LICENSE`
+- `.github/CODEOWNERS`
+- `.github/pull_request_template.md` or equivalent PR template
+- `.github/ISSUE_TEMPLATE/` set
+- `release-please-config.json`
+- `.release-please-manifest.json`
+- `repo-management/README.md`
+
+### GitHub Governance
+
+- `main` branch protected
+- admins allowed to bypass when needed for urgent maintenance or portfolio management
+- required review and status checks configured where appropriate
+- CODEOWNERS aligned to the shared ownership model
+- labels synchronized to the central label set
+
+### Release Automation
+
+- release-please configured
+- changelog generated from conventional commits
+- tags and releases consistent with org conventions
+
+### Pages / Documentation Expectations
+
+| Repo Type | Expectation |
+|-----------|-------------|
+| `azurelocal.github.io` | Docusaurus-based central portal |
+| `azurelocal-toolkit` | No repo-local docs site; root README is primary documentation |
+| Most solution repos | MkDocs + GitHub Pages enabled |
+| Minimal/supporting repos | May omit docs site if a docs site adds no value, but must still have a complete README |
+
+### Workflow Expectations
+
+Most repositories should include automation for:
+
+- release-please
+- docs deployment when the repo has a docs site
+- linting or validation workflows appropriate to the repo type
+- repo structure validation where useful
+
+---
+
+## Exceptions And Special Cases
+
+### `azurelocal.github.io`
+
+This repo is not just another solution repo. It is the central docs and standards authority.
+
+Special responsibilities:
+
+- maintain canonical standards
+- maintain shared label and repo governance references
+- host central docs and portfolio guidance
+- drive cross-repo governance changes
+
+### `azurelocal-toolkit`
+
+This repo is the implementation and automation reference repo.
+
+Special responsibilities:
+
+- hold shared automation assets
+- act as the primary implementation reference
+- keep the root README as the primary user-facing entry point
+- avoid carrying a repo-local docs site just for symmetry
+
+---
+
+## Documentation Responsibilities
+
+The following rules apply to repo documentation:
+
+1. The root `README.md` must explain the repo clearly on its own.
+2. User-facing published docs belong in `docs/` only if that repo actually operates a docs site.
+3. Governance and planning artifacts belong in `repo-management/`.
+4. Cross-repo rules belong in `standards/`.
+5. A repo must not depend on hidden tribal knowledge from another repo to be understandable.
+
+---
+
+## Branch Protection Model
+
+The standard default for AzureLocal repositories is:
+
+- protect `main`
+- require reviews where appropriate
+- require status checks where appropriate
+- prevent casual direct pushes
+- allow administrator bypass for controlled maintenance and portfolio management work
+
+This balances governance with operational reality for a small centrally managed portfolio.
+
+---
+
+## CODEOWNERS Model
+
+All repositories should use a substantially similar CODEOWNERS structure unless there is a real reason to diverge.
+
+The objective is consistency of ownership, not needless uniqueness.
+
+At minimum:
+
+- every repo must have a `.github/CODEOWNERS`
+- ownership should reflect the actual maintainers
+- shared governance repos should not use a radically different ownership pattern without justification
+
+---
+
+## Repo Management Scripts
+
+`repo-management/scripts/` is the approved place for scripts that support repository governance and maintenance, for example:
+
+- repo audit scripts
+- branch protection validation helpers
+- label sync helpers
+- documentation sync helpers
+- migration scripts for folder structure or standards adoption
+
+These scripts should not be mixed into product/runtime automation folders unless they are actually part of the solution runtime.
+
+---
+
+## Design Rule For Future Changes
+
+When adding a new repo-level practice, ask:
+
+1. Is this a rule all repos should follow?
+2. Is this a planning or operational artifact for one repo?
+3. Is this user-facing documentation?
+
+Then place it accordingly:
+
+- org-wide rule: `standards/`
+- repo operations artifact: `repo-management/`
+- end-user content: `README.md` or published `docs/`
+
+---
+
+## Related References
+
+- [Infrastructure Standards](infrastructure)
+- [Automation Interoperability](automation)
+- [Documentation Standards](documentation)
+- [Variable Standards](variables)

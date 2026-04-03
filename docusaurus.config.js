@@ -87,6 +87,9 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
+      docs: {
+        versionPersistence: 'none',
+      },
       // Replace with your project's social card
       image: 'img/azure-local-social-card.jpg',
       navbar: {
@@ -100,11 +103,11 @@ const config = {
             type: 'docsVersionDropdown',
             position: 'left',
             dropdownActiveClassDisabled: true,
+            versions: ['1.0.0', 'current'],
           },
           {
-            type: 'docsVersion',
-            position: 'left',
             to: '/docs/',
+            position: 'left',
             label: 'Docs',
           },
           { to: '/working', label: 'Blog', position: 'left' },
@@ -132,15 +135,15 @@ const config = {
                   },
                   {
                     label: 'Azure App Services',
-                    href: '/docs/next/azure-services/app-services-on-azure-local',
+                    href: '/docs/azure-services/app-services-on-azure-local',
                   },
                   {
                     label: 'Machine Learning and AI',
-                    href: '/docs/next/azure-services/ml-ai-on-azure-local',
+                    href: '/docs/azure-services/ml-ai-on-azure-local',
                   },
                   {
                     label: 'SQL Managed Instance',
-                    href: '/docs/next/azure-services/sql-managed-instance-on-azure-local',
+                    href: '/docs/azure-services/sql-managed-instance-on-azure-local',
                   },
                   { type: 'html', value: '<strong>Operations</strong>' },
                   {

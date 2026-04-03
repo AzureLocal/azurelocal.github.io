@@ -1,152 +1,137 @@
-# AzureLocal Repository Standard
+# AzureLocal Repository Audit Standard
 
-Gold-standard checklist for every repository in the [AzureLocal](https://github.com/AzureLocal) organization. Use this as both documentation and an audit tool when onboarding new repos or reviewing existing ones.
+Actionable audit and onboarding checklist for repositories in the [AzureLocal](https://github.com/AzureLocal) organization.
+
+This file is intentionally shorter than the canonical standards. Use it as a practical repo review checklist, not as the primary place where portfolio-wide governance is defined.
 
 ---
 
-## Required Files
+## Canonical Sources
 
-Every AzureLocal repo **must** have the following files:
+Use these as the source of truth:
 
-| File | Location | Notes |
-|------|----------|-------|
-| `LICENSE` | root | MIT license |
-| `README.md` | root | Project overview, badges, quick start |
-| `CODEOWNERS` | `.github/CODEOWNERS` | Always in `.github/`, not root |
-| `CONTRIBUTING.md` | root | PowerShell style section shared; adapt per repo |
-| `CHANGELOG.md` | root | [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format |
-| `release-please-config.json` | root | Standard categories (see below) |
-| `.release-please-manifest.json` | root | Version tracking |
-| `release-please.yml` | `.github/workflows/` | Release automation workflow |
-| `bug_report.md` | `.github/ISSUE_TEMPLATE/` | Bug report template |
-| `feature_request.md` | `.github/ISSUE_TEMPLATE/` | Feature request template |
-| `docs_issue.md` | `.github/ISSUE_TEMPLATE/` | Documentation issue template |
-| `config.yml` | `.github/ISSUE_TEMPLATE/` | Template chooser with external links |
-| `pull_request_template.md` | `.github/` | PR template |
-| `project_management/README.md` | `project_management/` | Points to central plans |
+- Repository management standard: `standards/repository-management.mdx`
+- Label definitions: [labels.yml](labels.yml)
+- Repo-management contract: `repo-management/README.md`
 
-## Labels
+---
 
-Every repo must have the labels defined in [labels.yml](labels.yml). See that file for the full list including type, solution, priority, status, and release-please labels.
+## Portfolio Model
 
-## Naming Conventions
+AzureLocal repositories are managed as a coordinated portfolio.
 
-### Issue Titles
+- Each repo is a standalone repository with its own README, releases, issues, workflows, and branch protection.
+- `azurelocal.github.io` is the central governance and standards source.
+- `azurelocal-toolkit` is the implementation and automation reference repo.
+- Solution and supporting repos follow the shared baseline, with documented exceptions where needed.
 
-Format: `[TYPE] Short description`
+---
 
-- `[FEATURE] Add Cloud Cache support to FSLogix configuration`
-- `[BUG] S2D pool creation fails on 3-node cluster`
-- `[DOCS] Add troubleshooting guide for NTFS permissions`
-- `[INFRA] Add release-please workflow to avd repo`
+## Baseline Requirements
 
-### Branch Names
+### Core Files
 
-Format: `<type>/<short-description>`
+Every repo should have:
 
-| Type | When |
-|------|------|
-| `feat/` | New feature |
-| `fix/` | Bug fix |
-| `docs/` | Documentation |
-| `infra/` | CI/CD, workflows, config |
-| `refactor/` | Code improvement |
-| `release/` | Release branch (auto by release-please) |
+- `README.md`
+- `CONTRIBUTING.md`
+- `CHANGELOG.md`
+- `LICENSE`
+- `.github/CODEOWNERS`
+- `.github/pull_request_template.md` or equivalent
+- `.github/ISSUE_TEMPLATE/` set
+- `release-please-config.json`
+- `.release-please-manifest.json`
+- `repo-management/README.md`
 
-### Commit Messages (Conventional Commits)
+### Governance
 
-Format: `<type>(<scope>): <description>`
+Every repo should have:
 
-| Type | CHANGELOG Category |
-|------|-------------------|
-| `feat` | Features |
-| `fix` | Bug Fixes |
-| `docs` | Documentation |
-| `infra` | Infrastructure |
-| `chore` | Miscellaneous |
-| `refactor` | Miscellaneous |
-| `test` | Miscellaneous |
+- protected `main`
+- administrator bypass allowed for controlled maintenance
+- review and status checks configured as appropriate
+- CODEOWNERS aligned with actual maintainers
+- labels aligned to [labels.yml](labels.yml)
 
-Scope is optional but recommended — use the module/area name:
+### Release Automation
 
-- `feat(terraform): add Cloud Cache variables`
-- `fix(ansible): correct S2D timeout handling`
-- `docs(architecture): add capacity planning section`
+Every repo should have:
 
-### PR Titles
+- release-please configured
+- conventional commits in use
+- changelog and release flow aligned to org conventions
 
-Same as commit messages (conventional commits). Release-please uses the PR title as the squash-merge commit message.
+---
 
-## Release-Please Configuration
+## Documentation Expectations
 
-Standard `release-please-config.json` for all repos:
+Documentation requirements vary by repo type.
 
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "simple",
-  "packages": {
-    ".": {
-      "changelog-path": "CHANGELOG.md",
-      "include-component-in-tag": false,
-      "categories": [
-        { "title": "Features", "labels": ["feat"] },
-        { "title": "Bug Fixes", "labels": ["fix"] },
-        { "title": "Documentation", "labels": ["docs"] },
-        { "title": "Infrastructure", "labels": ["infra"] },
-        { "title": "Miscellaneous", "labels": ["chore", "ci", "refactor", "style", "test"] }
-      ]
-    }
-  }
-}
-```
+| Repo Type | Expectation |
+|----------|-------------|
+| `azurelocal.github.io` | Docusaurus-based central portal |
+| `azurelocal-toolkit` | No repo-local docs site; root README is the primary documentation entry point |
+| Most solution repos | MkDocs and GitHub Pages enabled |
+| Minimal or supporting repos | May omit a docs site if it adds no value, but must still have a complete README |
 
-## GitHub Actions Workflows
+---
 
-| Workflow | Purpose | Required? |
-|----------|---------|:---------:|
-| `release-please.yml` | Automates releases and CHANGELOG | YES |
-| `deploy-docs.yml` | Builds and deploys MkDocs site | YES (solution repos) |
-| `lint-docs.yml` | Vale linting on PR | Recommended |
+## Workflow Expectations
 
-## Documentation Site
+Use workflows appropriate to the repo type.
 
-All solution repos use **MkDocs Material** with the golden configuration. See [plan-docsSiteStandardization.prompt.md](workspace/plan-docsSiteStandardization.prompt.md) for details.
+| Workflow | Expectation |
+|----------|-------------|
+| `release-please.yml` | Required |
+| docs deployment workflow | Required only when the repo actually has a docs site |
+| validation or lint workflow | Recommended |
+| repo structure validation | Recommended where useful |
 
-The community portal (`azurelocal.cloud`) uses **Docusaurus**.
+---
 
-## CODEOWNERS
+## CODEOWNERS Expectation
 
-Standard `.github/CODEOWNERS`:
+There must be a `.github/CODEOWNERS` file.
 
-```
-# Default owner for everything
-* @kristopherjturner
-```
+The ownership model should be broadly consistent across the portfolio, but it does not need to be byte-for-byte identical if a repo has a justified reason to differ.
 
-Always place in `.github/`, never at the repo root.
+---
+
+## Repo-Management Expectation
+
+Every repo must have a root-level `repo-management/` folder with a `README.md`.
+
+Use `repo-management/` for:
+
+- plans
+- checklists
+- roadmaps
+- reports
+- repo-management scripts
+- working notes
+
+Do not use `repo-management/` as the canonical location for cross-repo standards.
 
 ---
 
 ## Per-Repo Audit Checklist
 
-Use this when onboarding a new repo or auditing an existing one:
+Use this when auditing or onboarding a repo:
 
-- [ ] `LICENSE` (MIT) exists at root
-- [ ] `README.md` has badges, description, quick start
-- [ ] `.github/CODEOWNERS` exists (not at root)
-- [ ] `CONTRIBUTING.md` exists at root
-- [ ] `CHANGELOG.md` exists (Keep a Changelog format)
-- [ ] `release-please-config.json` exists with standard categories
+- [ ] `README.md` exists and clearly explains the repo
+- [ ] `CONTRIBUTING.md` exists
+- [ ] `CHANGELOG.md` exists
+- [ ] `LICENSE` exists
+- [ ] `.github/CODEOWNERS` exists
+- [ ] PR template exists
+- [ ] issue templates exist
+- [ ] `release-please-config.json` exists
 - [ ] `.release-please-manifest.json` exists
-- [ ] `.github/workflows/release-please.yml` exists
-- [ ] `.github/ISSUE_TEMPLATE/bug_report.md` exists
-- [ ] `.github/ISSUE_TEMPLATE/feature_request.md` exists
-- [ ] `.github/ISSUE_TEMPLATE/docs_issue.md` exists
-- [ ] `.github/ISSUE_TEMPLATE/config.yml` exists
-- [ ] `.github/pull_request_template.md` exists
-- [ ] `project_management/README.md` points to central plans
-- [ ] All labels from `labels.yml` are applied
-- [ ] GitHub Pages configured (source: GitHub Actions)
-- [ ] `mkdocs.yml` uses golden config baseline
-- [ ] `.github/workflows/deploy-docs.yml` exists
+- [ ] release-please workflow exists
+- [ ] `repo-management/README.md` exists
+- [ ] labels are aligned to [labels.yml](labels.yml)
+- [ ] `main` is protected
+- [ ] administrator bypass is configured as intended
+- [ ] docs deployment exists only if the repo actually uses a docs site
+- [ ] root README is treated as the primary repo entry point
