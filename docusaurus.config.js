@@ -66,6 +66,10 @@ const config = {
         theme: {
           customCss: './src/css/custom.css',
         },
+        gtag: {
+          trackingID: 'G-2D9XDHSXJW',
+          anonymizeIP: true,
+        },
       }),
     ],
   ],
@@ -273,10 +277,6 @@ const config = {
           },
         ],
         copyright: `Copyright © ${new Date().getFullYear()} Azure Local. Designed by <a href="https://www.hybridsolutions.cloud" target="_blank">Hybrid Cloud Solutions</a> and built with Docusaurus.`,
-      },
-      gtag: {
-        trackingID: 'G-2D9XDHSXJW',
-        anonymizeIP: true,
       },
       prism: {
         theme: prismThemes.github,
