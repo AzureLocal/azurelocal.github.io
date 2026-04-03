@@ -205,19 +205,19 @@ const config = {
               },
               {
                 label: 'Contact',
-                to: '/working',  // Links to /contact page
+                to: '/contact',
               },
               {
                 label: 'FAQ',
-                to: '/working',  // Links to /faq page
+                to: '/faq',
               },
               {
                 label: 'Links',
-                to: '/working',  // Links to /faq page
+                to: '/links',
               },
               {
                 label: 'Resources',
-                to: '/working',  // Links to /faq page
+                to: '/resources',
               },
             ],
           },
