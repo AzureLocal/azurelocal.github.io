@@ -274,6 +274,10 @@ const config = {
         ],
         copyright: `Copyright © ${new Date().getFullYear()} Azure Local. Designed by <a href="https://www.hybridsolutions.cloud" target="_blank">Hybrid Cloud Solutions</a> and built with Docusaurus.`,
       },
+      gtag: {
+        trackingID: 'G-XXXXXXXXXX', // Replace with your GA4 Measurement ID
+        anonymizeIP: true,
+      },
       prism: {
         theme: prismThemes.github,
         darkTheme: prismThemes.dracula,
