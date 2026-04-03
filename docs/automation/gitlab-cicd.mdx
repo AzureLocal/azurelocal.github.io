@@ -15,20 +15,131 @@ description: "CI/CD pipeline pipeline configurations for Azure Local"
 > **PURPOSE**: Document CI/CD pipelines for Azure Local deployments 
 > **MASTER REFERENCE**: [CI/CD pipeline Documentation](https://docs.gitlab.com/ee/ci/)
 
-**Status**: Draft
+**Status**: Active
 
 ---
 
 ## Overview
 
-CI/CD pipeline pipeline configurations for Azure Local automation. This is the primary CI/CD platform used for Azure Local Cloud deployments.
+GitLab CI/CD is the primary pipeline platform for Azure Local deployments. The pipeline uses modular stage includes with reusable templates, manual approval gates between phases, and artifact passing between jobs.
 
-## Available Pipelines
+## Pipeline Architecture
 
-| Pipeline | Purpose |
-|----------|---------|
-| Infrastructure Deployment | Deploy Azure landing zone resources |
-| Drift Detection | Monitor for configuration drift |
-| Validation | Pre-deployment validation checks |
+```
+validate → plan → deploy-foundation → configure-onprem → deploy-cluster → configure-operations → validate-deployment
+```
 
-*Content to be added.*
+| Stage | Tool | Runner | Trigger |
+|---|---|---|---|
+| **validate** | Terraform validate, Ansible lint, config validation | Cloud (shared) | Automatic |
+| **plan** | Terraform plan | Cloud (shared) | Automatic |
+| **deploy-foundation** | Terraform apply, output export | Cloud (shared) | Manual approval |
+| **configure-onprem** | Ansible playbooks (AD, OS, Arc) | Self-hosted | Manual approval |
+| **deploy-cluster** | Azure CLI (ARM) | Cloud (shared) | Manual approval |
+| **configure-operations** | Ansible playbooks (monitoring, WAC, syslog) | Self-hosted | Manual approval |
+| **validate-deployment** | Connectivity tests, compliance checks | Self-hosted | Manual |
+
+## Pipeline Structure
+
+```
+pipelines/gitlab/
+├── .gitlab-ci.yml              # Master pipeline definition
+├── stages/
+│   ├── validate.yml            # Lint, schema validate, plan
+│   ├── deploy-foundation.yml   # Terraform apply
+│   ├── configure-onprem.yml    # AD prep, OS config, Arc registration
+│   ├── deploy-cluster.yml      # ARM cluster deployment
+│   ├── configure-operations.yml # Monitoring, WAC, Syslog
+│   └── validate-deployment.yml # Post-deployment tests
+└── templates/
+    ├── terraform-plan-apply.yml # Reusable TF plan/apply template
+    └── ansible-playbook.yml     # Reusable Ansible run template
+```
+
+## Configuration
+
+### Required CI/CD Variables
+
+| Variable | Type | Description |
+|---|---|---|
+| `ARM_CLIENT_ID` | Secret | Service Principal Application ID |
+| `ARM_CLIENT_SECRET` | Secret | Service Principal Secret |
+| `ARM_TENANT_ID` | Secret | Azure AD Tenant ID |
+| `ARM_SUBSCRIPTION_ID` | Secret | Target Azure Subscription ID |
+| `DOMAIN_ADMIN_PASSWORD` | Secret | On-premises domain admin password |
+| `CLUSTER_NAME` | Variable | Azure Local cluster name |
+| `CLUSTER_RESOURCE_GROUP` | Variable | Cluster resource group |
+| `CI_ENVIRONMENT_NAME` | Variable | Target environment (lab/staging/production) |
+
+### Runner Requirements
+
+The **configure-onprem** and **configure-operations** stages require a self-hosted GitLab Runner with:
+
+- **Network access**: WinRM (5986), LDAP (389), Kerberos (88) to on-premises infrastructure
+- **Software**: Python 3.10+, Ansible >= 2.15, PowerShell >= 7.0, Azure CLI
+- **Tags**: `azurelocal`, `self-hosted`
+
+### Stage Details
+
+#### Validate Stage
+- `terraform:validate` — `terraform init -backend=false && terraform validate && terraform fmt -check`
+- `ansible:lint` — `ansible-lint playbooks/ roles/` and `ansible-playbook --syntax-check`
+- `config:validate` — Load and verify `variables.yml` via PowerShell helper
+
+#### Plan Stage
+- `terraform:plan` — Generates a plan artifact passed to the apply job
+
+#### Deploy Foundation Stage
+- `terraform:apply` — Applies the plan with manual approval gate
+- `terraform:outputs` — Exports outputs as JSON artifact for downstream stages
+
+#### Configure On-Prem Stage (sequential with manual gates)
+- `ad:preparation` — `playbooks/01-ad-preparation.yml`
+- `os:configuration` — `playbooks/02-os-configuration.yml` (depends on AD prep)
+- `arc:registration` — `playbooks/03-arc-registration.yml` (depends on OS config)
+
+#### Deploy Cluster Stage
+- `cluster:validate` — Checks cluster readiness via Azure CLI
+- `cluster:deploy` — Initiates cluster deployment (long-running, 45-90 minutes)
+
+#### Configure Operations Stage
+- `monitoring:setup` — `playbooks/04-monitoring-setup.yml`
+- `management:vms` — `playbooks/05-management-vms.yml`
+
+#### Validate Deployment Stage
+- `validate:connectivity` — Post-deployment connectivity tests
+- `validate:compliance` — Azure Policy and Defender compliance checks
+
+## Reusable Templates
+
+### terraform-plan-apply.yml
+
+Extends `.terraform:plan` and `.terraform:apply` with backend configuration:
+
+```yaml
+include:
+  - local: 'pipelines/gitlab/templates/terraform-plan-apply.yml'
+
+my-plan:
+  extends: .terraform:plan
+  variables:
+    TF_ROOT: src/terraform/environments/azure-local
+```
+
+### ansible-playbook.yml
+
+Extends `.ansible:playbook` for consistent collection installation and execution:
+
+```yaml
+include:
+  - local: 'pipelines/gitlab/templates/ansible-playbook.yml'
+
+my-playbook:
+  extends: .ansible:playbook
+  variables:
+    PLAYBOOK: playbooks/01-ad-preparation.yml
+```
+
+## Repository
+
+Source: `azurelocal-toolkit/pipelines/gitlab/`

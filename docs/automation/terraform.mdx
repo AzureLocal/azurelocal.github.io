@@ -15,30 +15,182 @@ description: "Terraform modules for Azure Local infrastructure deployment"
 > **PURPOSE**: Document reusable Terraform modules for Azure Local 
 > **MASTER REFERENCE**: [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
 
-**Status**: Draft
+**Status**: Active
 
 ---
 
 ## Overview
 
-Reusable Terraform modules for deploying Azure infrastructure supporting Azure Local.
+Six Terraform modules provision the Azure foundation for Azure Local deployments. These modules handle management groups, networking, identity, monitoring, security, and management VMs. Guest OS and on-premises configuration is handled separately by PowerShell or Ansible.
+
+**Provider Requirements**: `azurerm ~> 4.0`, `azuread ~> 3.0`, `random ~> 3.0`
+
+## Module Architecture
+
+```
+environments/azure-local/main.tf
+    │
+    ├── modules/landing-zone     (Management Groups, Resource Groups)
+    │       ↓
+    ├── modules/networking       (VNet, Subnets, NSGs, VPN, Bastion)
+    │       ↓
+    ├── modules/identity         (Key Vault, RBAC, Managed Identities)
+    │       ↓
+    ├── modules/monitoring       (Log Analytics, Alerts, Action Groups)
+    │       ↓
+    ├── modules/security         (Defender, Azure Policy)
+    │       ↓
+    └── modules/compute          (Management VMs — DC, Jumpbox, WAC, Syslog)
+```
 
 ## Available Modules
 
-| Module | Purpose | Repository |
-|--------|---------|------------|
-| azurelocal-toolkit | Azure Local landing zone | [GitHub](https://github.com/AzureLocal/azurelocal-toolkit) |
-| azurelocal-toolkit (cicd-runner) | CI/CD runner infrastructure | [GitHub](https://github.com/AzureLocal/azurelocal-toolkit) |
+| Module | Purpose | Key Resources |
+|---|---|---|
+| `landing-zone` | Management group hierarchy and resource groups | `azurerm_management_group`, `azurerm_resource_group` |
+| `networking` | Hub VNet with subnets, NSGs, optional VPN/Bastion/NAT | `azurerm_virtual_network`, `azurerm_subnet`, `azurerm_network_security_group` |
+| `identity` | Platform Key Vault, SPN role assignments, managed identities | `azurerm_key_vault`, `azurerm_role_assignment`, `azurerm_user_assigned_identity` |
+| `monitoring` | Log Analytics workspace, solutions, action groups, alerts | `azurerm_log_analytics_workspace`, `azurerm_monitor_action_group` |
+| `security` | Defender for Cloud plans, Azure Policy assignments | `azurerm_security_center_subscription_pricing`, `azurerm_subscription_policy_assignment` |
+| `compute` | Management VMs (domain controllers, jumpbox, WAC, syslog) | `azurerm_windows_virtual_machine`, `azurerm_network_interface` |
 
-## Module Usage
+### Backend Bootstrap
+
+A separate bootstrap module provisions the remote state storage:
+
+```bash
+cd src/terraform/backend
+terraform init
+terraform apply -var="subscription_id=<your-sub-id>" -var="org_code=iic"
+```
+
+Creates: Resource Group, Storage Account (GRS, TLS 1.2, versioning), blob container `tfstate`.
+
+## Usage
+
+### 1. Generate terraform.tfvars from variables.yml
+
+```powershell
+. scripts/common/utilities/helpers/config-loader.ps1
+$config = Get-Config -ConfigPath "config/variables/variables.yml"
+Export-TerraformTfvars -Config $config -OutputPath "src/terraform/environments/azure-local/terraform.tfvars"
+```
+
+### 2. Initialize and Plan
+
+```bash
+cd src/terraform/environments/azure-local
+terraform init
+terraform plan -out=tfplan
+```
+
+### 3. Apply
+
+```bash
+terraform apply tfplan
+```
+
+## Module Details
+
+### landing-zone
+
+Creates a management group hierarchy following Azure Landing Zone patterns:
+
+```
+Root (IIC)
+├── Platform
+│   ├── Identity
+│   ├── Connectivity
+│   ├── Management
+│   └── Security
+└── Landing Zones
+```
+
+Variables: `management_groups` (map of objects), `subscriptions` (map with subscription IDs), `resource_groups` (map with location and tags).
+
+### networking
+
+Provisions the hub virtual network with dynamic subnet and NSG creation:
+
+- NSG rules are flattened from `nsgs[].rules[]` and applied via `for_each`
+- VPN Gateway, NAT Gateway, and Bastion Host are all conditional (`enable_*` booleans)
+- Subnets are created via `for_each` from a map variable
+
+### identity
+
+Manages Key Vault with RBAC authorization and SPN role assignments:
+
+- Platform Key Vault for shared secrets
+- Optional Azure Local cluster Key Vault (conditional)
+- SPN roles at both subscription and resource group scope
+- Managed identities output for use by other modules
+
+### monitoring
+
+Deploys Log Analytics and alerting infrastructure:
+
+- Log Analytics workspace with configurable retention
+- Solutions: Updates, SecurityCenterFree
+- Action group for critical alerts (email + webhook)
+- Optional cluster health metric alert
+
+### security
+
+Configures Defender for Cloud and Azure Policy:
+
+- Defender plans via `for_each` (VirtualMachines, KeyVaults, StorageAccounts, etc.)
+- Policy assignments at subscription and resource group level
+- Security contact email configuration
+
+### compute
+
+Provisions management VM shells (guest OS configuration handled by Ansible/PowerShell):
+
+- Filters VMs by `deployment_target == "azure"` from the variable map
+- Stores admin password as Key Vault secret
+- Outputs VM IDs, private IPs, and managed identity principal IDs
+
+## Variable Mapping
+
+Variables flow from `config/variables/variables.yml` → `terraform.tfvars`:
+
+| YAML Section | Terraform Variable | Example |
+|---|---|---|
+| `azure_platform.management_groups` | `management_groups` | Management group hierarchy |
+| `networking.azure.vnets` | `vnet_*`, `subnets` | Hub VNet configuration |
+| `security.key_vaults` | `key_vault_*` | Key Vault settings |
+| `operations.monitoring` | `log_analytics_*` | Log Analytics config |
+| `security.policies` | `policy_assignments` | Azure Policy |
+| `compute.vms.management` | `management_vms` | VM definitions |
+
+## Remote State
+
+State is stored in Azure Storage with blob lease locking:
 
 ```hcl
-module "azure_local" {
- source = "git::https://github.com/AzureLocal/azurelocal-toolkit.git"
- 
- # Module variables
- # ...
+backend "azurerm" {
+  resource_group_name  = "rg-iic-terraform-01"
+  storage_account_name = "stiictfstatelab"
+  container_name       = "tfstate"
+  key                  = "azurelocal.tfstate"
 }
 ```
 
-*Content to be added.*
+## Repository
+
+Source: `azurelocal-toolkit/src/terraform/`
+
+```
+src/terraform/
+├── backend/                    # State bootstrap
+├── modules/
+│   ├── landing-zone/           # 3 files
+│   ├── networking/             # 3 files
+│   ├── identity/               # 3 files
+│   ├── monitoring/             # 3 files
+│   ├── security/               # 3 files
+│   └── compute/                # 3 files
+├── environments/
+│   └── azure-local/            # Root module (6 files)
+└── README.md
+```

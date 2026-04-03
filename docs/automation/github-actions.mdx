@@ -15,18 +15,85 @@ description: "GitHub Actions workflows for Azure Local automation"
 > **PURPOSE**: Document GitHub Actions for Azure Local deployments 
 > **MASTER REFERENCE**: [GitHub Actions Documentation](https://docs.github.com/en/actions)
 
-**Status**: Draft
+**Status**: Active
 
 ---
 
 ## Overview
 
-GitHub Actions workflows for Azure Local automation.
+GitHub Actions workflow for Azure Local deployments. This is a sample equivalent of the primary GitLab CI/CD pipeline, adapted for GitHub-hosted and self-hosted runners with environment protection rules.
 
-## Available Workflows
+## Workflow
 
-| Workflow | Purpose |
-|----------|---------|
-| TBD | TBD |
+**File**: `pipelines/github-actions/azure-local-deploy.yml`  
+**Copy to**: `.github/workflows/azure-local-deploy.yml` in your repository
 
-*Content to be added.*
+### Jobs
+
+| Job | Runner | Trigger | Description |
+|---|---|---|---|
+| `terraform-validate` | `ubuntu-latest` | Auto (push/PR) | Terraform init, validate, fmt check |
+| `ansible-lint` | `ubuntu-latest` | Auto (push/PR) | Ansible lint, syntax check |
+| `terraform-plan` | `ubuntu-latest` | Auto (main only) | Terraform plan with artifact upload |
+| `terraform-apply` | `ubuntu-latest` | Manual (environment approval) | Terraform apply from plan artifact |
+| `configure-onprem` | `self-hosted, azurelocal` | After apply | AD prep, OS config, Arc registration |
+| `configure-operations` | `self-hosted, azurelocal` | After on-prem | Monitoring, WAC, management VMs |
+
+### Triggers
+
+```yaml
+on:
+  push:
+    branches: [main]
+    paths: ['src/terraform/**', 'src/ansible/**', 'config/variables/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # Manual trigger with deploy_target input
+```
+
+## Setup
+
+### 1. Repository Secrets
+
+| Secret | Description |
+|---|---|
+| `ARM_CLIENT_ID` | Service Principal Application ID |
+| `ARM_CLIENT_SECRET` | Service Principal Secret |
+| `ARM_TENANT_ID` | Azure AD Tenant ID |
+| `ARM_SUBSCRIPTION_ID` | Target Subscription ID |
+
+### 2. Environment Protection
+
+Create a `production` environment with required reviewers for the `terraform-apply` job.
+
+### 3. Self-Hosted Runner
+
+Register a runner with labels `self-hosted` and `azurelocal` that has network access to on-premises infrastructure.
+
+```bash
+# On the runner machine:
+./config.sh --url https://github.com/YOUR_ORG/YOUR_REPO \
+  --token YOUR_TOKEN \
+  --labels azurelocal,self-hosted
+```
+
+### 4. Deploy Workflow
+
+```bash
+cp pipelines/github-actions/azure-local-deploy.yml .github/workflows/
+git add .github/workflows/azure-local-deploy.yml
+git commit -m "Add Azure Local deployment workflow"
+git push
+```
+
+## Key Features
+
+- **OIDC Authentication**: Uses `id-token: write` permission for keyless Azure auth
+- **Environment Protection**: Manual approval via GitHub environment rules
+- **Artifact Passing**: Terraform plan artifact uploaded/downloaded between jobs
+- **Self-Hosted Runner**: On-prem config stages run on runner with network access
+- **Path Filtering**: Only triggers on changes to IaC or config files
+
+## Repository
+
+Source: `azurelocal-toolkit/pipelines/github-actions/`

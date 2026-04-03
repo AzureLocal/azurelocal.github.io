@@ -15,18 +15,172 @@ description: "Ansible playbooks for Azure Local configuration management"
 > **PURPOSE**: Document Ansible playbooks used in Azure Local deployments 
 > **MASTER REFERENCE**: [Ansible Documentation](https://docs.ansible.com/)
 
-**Status**: Draft
+**Status**: Active
 
 ---
 
 ## Overview
 
-Ansible playbooks for Azure Local configuration management and automation.
+Seven Ansible roles and six playbooks handle on-premises and guest OS configuration that Terraform cannot manage. This includes Active Directory preparation, node OS configuration, Azure Arc registration, monitoring agent deployment, and management VM configuration.
 
-## Available Playbooks
+All roles use **Ansible Validated Content** collections: `microsoft.ad`, `ansible.windows`, `community.windows`, and `azure.azcollection`.
 
-| Playbook | Purpose |
-|----------|---------|
-| TBD | TBD |
+## Deployment Paths
 
-*Content to be added.*
+| Path | How Ansible is Used |
+|---|---|
+| **Terraform + Ansible** | Ansible runs after Terraform provisions Azure resources |
+| **Ansible Only** | Ansible manages both Azure resources (via `azure.azcollection`) and on-prem config |
+
+## Playbooks
+
+| Playbook | Deployment Phase | Target Hosts | Description |
+|---|---|---|---|
+| `01-ad-preparation.yml` | Part 3, Phase 1 | `domain_controllers[0]` | OUs, security groups, DNS forwarders, LCM service account |
+| `02-os-configuration.yml` | Part 4, Phase 3 | `cluster_nodes` | Hostname, static IP, NTP, DNS, ICMP, domain join |
+| `03-arc-registration.yml` | Part 4, Phase 4 | `cluster_nodes` | Arc endpoint validation, SPN auth, Arc initialization |
+| `04-monitoring-setup.yml` | Part 5, Phase 2 | `cluster_nodes` | Azure Monitor Agent, Data Collection Rules, HCI Insights |
+| `05-management-vms.yml` | Part 2/5 | `domain_controllers`, `management` | DC promotion, WAC install, syslog config |
+| `site.yml` | All | All groups | Master playbook — runs all phases in order |
+
+### Execution Order
+
+```bash
+# Run all phases sequentially
+ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+
+# Or run individual phases
+ansible-playbook -i inventory/hosts.yml playbooks/01-ad-preparation.yml
+ansible-playbook -i inventory/hosts.yml playbooks/02-os-configuration.yml
+ansible-playbook -i inventory/hosts.yml playbooks/03-arc-registration.yml
+ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
+ansible-playbook -i inventory/hosts.yml playbooks/05-management-vms.yml
+
+# Run specific tags
+ansible-playbook -i inventory/hosts.yml playbooks/site.yml --tags arc-registration
+```
+
+## Roles
+
+### ad-preparation
+Mirrors `scripts/deploy/03-onprem-readiness/phase-01-active-directory/`.
+
+| Task | Module Used |
+|---|---|
+| Create OU hierarchy (AzureLocal → Computers, ServiceAccounts, Groups) | `microsoft.ad.ou` |
+| Create 7 cluster security groups | `microsoft.ad.group` |
+| Configure DNS conditional forwarders for Azure endpoints | `ansible.windows.win_powershell` |
+| Create LCM deployment service account | `microsoft.ad.user` |
+| Pre-stage cluster computer account | `microsoft.ad.computer` |
+| Assign group memberships | `microsoft.ad.group` |
+
+### os-configuration
+Mirrors `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/`.
+
+Runs with `serial: 1` (one node at a time) due to reboots.
+
+| Task | Module Used |
+|---|---|
+| Ensure WinRM is running | `ansible.windows.win_service` |
+| Set hostname | `ansible.windows.win_hostname` |
+| Configure NTP | `ansible.windows.win_powershell` (w32tm) |
+| Set static IP on management NIC | `ansible.windows.win_powershell` |
+| Configure DNS client | `ansible.windows.win_dns_client` |
+| Enable ICMP firewall rule | `community.windows.win_firewall_rule` |
+| Domain join | `microsoft.ad.membership` |
+
+### arc-registration
+Mirrors `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/`.
+
+| Task | Module Used |
+|---|---|
+| Validate Arc endpoint connectivity | `ansible.windows.win_powershell` |
+| Authenticate with SPN and register node | `ansible.windows.win_powershell` (Invoke-AzStackHciArcInitialization) |
+| Verify Arc agent status | `ansible.windows.win_powershell` (azcmagent show) |
+
+### monitoring-agents
+Mirrors `scripts/deploy/05-operational-foundations/phase-02-monitoring/`.
+
+| Task | Module Used |
+|---|---|
+| Install Azure Monitor Agent extension | `ansible.windows.win_powershell` |
+| Create Data Collection Rule (perf counters + event logs) | `azure.azcollection.azure_rm_resource` |
+| Enable HCI Insights | `ansible.windows.win_powershell` |
+
+### domain-controller
+Promotes management VMs as domain controllers.
+
+| Task | Module Used |
+|---|---|
+| Install AD-Domain-Services feature | `ansible.windows.win_feature` |
+| Promote as new forest | `microsoft.ad.domain` |
+| Promote as replica DC | `microsoft.ad.domain_controller` |
+| Store DSRM password in Key Vault | `azure.azcollection.azure_rm_keyvaultsecret` |
+| Configure DNS forwarders | `ansible.windows.win_powershell` |
+
+### wac-server
+Mirrors `scripts/deploy/05-operational-foundations/phase-02-monitoring/task-05-deploy-wac/`.
+
+| Task | Module Used |
+|---|---|
+| Download WAC installer | `ansible.windows.win_get_url` |
+| Silent MSI installation | `ansible.windows.win_package` |
+| Start gateway service | `ansible.windows.win_service` |
+| Configure Kerberos Constrained Delegation | `ansible.windows.win_powershell` |
+
+### syslog-receiver
+Mirrors `scripts/deploy/05-operational-foundations/phase-02-monitoring/task-06-configure-network-device-logging/`.
+
+Supports both Linux (rsyslog/snmpd) and Windows (WEF) receivers.
+
+| Task | Module Used |
+|---|---|
+| Install rsyslog + SNMP (Linux) | `ansible.builtin.apt` |
+| Configure UDP syslog reception | `ansible.builtin.copy` |
+| Configure SNMP trap receiver | `ansible.builtin.copy` |
+| Configure Windows Event Forwarding | `ansible.windows.win_powershell` |
+
+## Required Collections
+
+| Collection | Version | Purpose |
+|---|---|---|
+| `azure.azcollection` | >= 2.4.0 | Azure resource management |
+| `microsoft.ad` | >= 1.5.0 | Active Directory management |
+| `ansible.windows` | >= 2.3.0 | Core Windows modules |
+| `community.windows` | >= 2.2.0 | Extended Windows modules |
+| `community.general` | >= 9.0.0 | General utilities |
+
+```bash
+ansible-galaxy collection install -r src/ansible/collections/requirements.yml
+```
+
+## Inventory
+
+Three host groups are required:
+
+```yaml
+all:
+  children:
+    domain_controllers:   # DCs (for AD prep and DC promotion)
+    management:           # Jumpbox, WAC, Syslog VMs
+    cluster_nodes:        # Physical Azure Local nodes
+```
+
+## Variables
+
+Variables are generated from the central `config/variables/variables.yml`:
+
+```powershell
+Export-AnsibleVars -Config $config -OutputPath "src/ansible/inventory/group_vars/all.yml"
+```
+
+Sensitive values should use Ansible Vault:
+
+```bash
+ansible-vault create inventory/group_vars/vault.yml
+# Required: domain_admin_password, spn_client_secret
+```
+
+## Repository
+
+Source: `azurelocal-toolkit/src/ansible/`
