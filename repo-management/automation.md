@@ -104,3 +104,31 @@ Checks that required files and directories are present on the PR branch. Fails t
 **Notes:**
 - This repo does not have a `config/` directory, so the config check is always skipped here.
 - Failures show as GitHub Annotations in the PR checks panel.
+
+---
+
+## Portfolio Workflow Catalog
+
+The workflows above are specific to this repository (the central docs site). The table below documents which workflow patterns are canonical across the AzureLocal portfolio and which are repo-local adaptations. See [Repository Management Standards — Workflow Patterns](../standards/repository-management#workflow-patterns) for the full policy.
+
+### Canonical Workflows (every qualifying repo)
+
+| Workflow | Pattern Source | Adaptation Notes |
+|----------|---------------|-----------------|
+| `release-please.yml` | This repo | Copy verbatim; update `release-please-config.json` for repo-specific package name |
+| `add-to-project.yml` | This repo | Copy and update the `Set ID field` step prefix (e.g. `RANGER-`, `AVD-`) and add solution option ID mappings |
+
+### Standard Pattern Workflows (adapted per repo type)
+
+| Workflow | MkDocs Repos | Docusaurus Repos | PowerShell Module Repos |
+|----------|-------------|-----------------|------------------------|
+| Docs deployment | `deploy-docs.yml` (Python + `mkdocs build`) | `deploy.yml` (Node.js + `npm run build`) | N/A unless module has docs site |
+| Validation | `validate.yml` (MkDocs build check + structure) | `validate-repo-structure.yml` (structure only) | Module manifest + `Import-Module` check |
+| Label sync | Not needed — labels pushed from central repo or applied manually | `sync-labels.yml` (central repo only) | Not needed |
+
+### Adding a Workflow to a New Repo
+
+1. Copy the canonical workflow file from this repo.
+2. Update repo-specific values (ID prefix, solution option IDs, build commands).
+3. Add required secrets (`ADD_TO_PROJECT_PAT`).
+4. Document the workflow in the new repo's `repo-management/automation.md`.
