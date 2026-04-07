@@ -18,19 +18,22 @@ Documents every GitHub Actions workflow in this repository.
 
 ## add-to-project.yml
 
-**Trigger:** `issues` (opened, labeled) and `pull_request` (opened, labeled)  
+**Trigger:** `issues` (opened, reopened, labeled) and `pull_request` (opened, labeled)  
 **Permissions required:** `ADD_TO_PROJECT_PAT` — classic PAT with `project` scope
 
 **What it does:**
 
 1. **Add to Project** — uses `actions/add-to-project` to add the issue or PR to org project board (`AzureLocal/projects/3`). Outputs the created item ID.
-2. **Set Fields** (issues only, on success of step 1) — calls `gh project item-edit` to set three custom fields on the project board item:
-   - **ID** — sets a text field to `DOCS-{number}`
-   - **Solution** — maps a `solution/*` label to a single-select option (e.g. `solution/docs-site` → option ID `409662e1`)
-   - **Priority** — maps a `priority/*` label to a single-select option (`critical` → `74334e8d`, etc.)
-   - **Category** — maps a `type/*` label to a single-select option (`type/feature` → `7a4fa8ea`, etc.)
+2. **Set Fields** (issues only, on success of step 1) — calls `gh project item-edit` to set custom fields on the project board item:
+   - **ID** — sets a text field to `DOCS-{number}` (or the repo-specific prefix, e.g. `RANGER-{number}`)
+   - **Status** — always set to `Todo` so reopened issues are never left as `Done`
+   - **Solution** — maps a `solution/*` label to a single-select option (e.g. `solution/docs-site` → option ID `7bbdc789`)
+   - **Priority** — maps a `priority/*` label to a single-select option (`critical` → `74334e8d`, `high` → `2e3ede9d`, `medium` → `7709e85d`, `low` → `2182b5f9`)
+   - **Category** — maps a `type/*` label to a single-select option (`type/feature` → `7a4fa8ea`, `type/bug` → `206e624a`, `type/docs` → `355ce6c1`, `type/infra` → `05996f93`, `type/refactor` → `7f5509ab`, `type/security` → `d2af4749`)
 
 **Notes:**
+- The `reopened` trigger ensures that issues re-opened after being closed are reset to `Todo` and all fields are re-applied. Without this, GitHub's built-in project automation leaves reopened issues in `Done`.
+- Priority and Category are only set if the issue has the corresponding `priority/*` or `type/*` label. Issues missing these labels will have empty fields — add the labels to trigger the `labeled` event and the automation will run again.
 - Field IDs and option IDs are project-board-specific constants — do not change unless the project board is re-created.
 - PRs are added to the board but fields are not set (the `set-fields` job has `if: github.event_name == 'issues'`).
 
