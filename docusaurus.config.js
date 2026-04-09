@@ -155,6 +155,14 @@ const config = {
                     href: 'https://azurelocal.github.io/azurelocal-sofs-fslogix/',
                   },
                   {
+                    label: 'Azure Local Ranger',
+                    href: 'https://azurelocal.github.io/azurelocal-ranger/',
+                  },
+                  {
+                    label: 'S2D Cartographer',
+                    href: 'https://azurelocal.github.io/azurelocal-S2DCartographer/',
+                  },
+                  {
                     label: 'Load Testing Framework',
                     href: 'https://azurelocal.github.io/azurelocal-loadtools/',
                   },
