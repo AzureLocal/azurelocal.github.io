@@ -167,7 +167,44 @@ jobs:
 
 ---
 
-## Step 8 — Configure Branch Protection
+## Step 8 — Add Repository Topics
+
+Topics make the repository discoverable on GitHub and signal at a glance what the solution covers. Set them in **Settings → General → Topics**, or via the `gh` CLI:
+
+```bash
+gh api --method PUT repos/AzureLocal/<repo-name>/topics \
+  --input - <<'EOF'
+{"names":["azure-local","azure-stack-hci","azurelocal","azure-arc","powershell","infrastructure-as-code","<solution-specific-tag>"]}
+EOF
+```
+
+**Required topics for every AzureLocal repo:**
+
+| Topic | Purpose |
+|-------|---------|
+| `azure-local` | Primary product name |
+| `azure-stack-hci` | Legacy/alias for discoverability |
+| `azurelocal` | Org tag |
+| `azure-arc` | Platform dependency |
+| `powershell` | Primary scripting language |
+| `infrastructure-as-code` | Deployment model |
+
+**Add solution-specific topics** on top of the required set. Examples:
+
+| Repo | Additional topics |
+|------|-------------------|
+| azurelocal-avd | `avd`, `azure-virtual-desktop`, `virtual-desktop`, `fslogix` |
+| azurelocal-sofs-fslogix | `sofs`, `scale-out-file-server`, `fslogix`, `storage` |
+| azurelocal-ranger | `discovery`, `assessment`, `readiness` |
+| azurelocal-nutanix-migration | `nutanix`, `migration`, `hyper-v` |
+| azurelocal-training | `training`, `lab`, `learning` |
+| azurelocal-loadtools | `load-testing`, `performance-testing`, `benchmarking` |
+| azurelocal-vm-conversion-toolkit | `vm-migration`, `gen1`, `gen2`, `hyper-v` |
+| azurelocal-copilot | `github-copilot`, `ai`, `copilot-instructions`, `developer-tools` |
+
+---
+
+## Step 9 — Configure Branch Protection
 
 In **Settings → Branches**, add a protection rule for `main`:
 
@@ -184,7 +221,7 @@ In **Settings → Branches**, add a protection rule for `main`:
 
 ---
 
-## Step 9 — Add the `ADD_TO_PROJECT_PAT` Secret
+## Step 10 — Add the `ADD_TO_PROJECT_PAT` Secret
 
 The add-to-project workflow requires a PAT with `project` scope.
 
@@ -196,7 +233,7 @@ Paste the shared org PAT when prompted. This token is managed by org admins — 
 
 ---
 
-## Step 10 — Add the Repository to This Standards Page
+## Step 11 — Add the Repository to This Standards Page
 
 Open a PR on `azurelocal.github.io` to:
 
@@ -217,6 +254,7 @@ Open a PR on `azurelocal.github.io` to:
 [ ] release-please.yml slim caller added
 [ ] validate-repo-structure.yml slim caller added
 [ ] release-please-config.json added
+[ ] Repository topics set (required + solution-specific)
 [ ] Branch protection configured for main
 [ ] ADD_TO_PROJECT_PAT secret set
 [ ] Repository listed in repository-management.mdx
