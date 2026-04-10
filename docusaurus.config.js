@@ -164,7 +164,7 @@ const config = {
                   },
                   {
                     label: 'Azure Local Surveyor',
-                    href: 'https://azurelocal.github.io/azurelocal-surveyor/',
+                    href: 'https://azurelocal.cloud/azurelocal-surveyor/',
                   },
                   {
                     label: 'Load Testing Framework',
