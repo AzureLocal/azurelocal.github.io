@@ -163,6 +163,10 @@ const config = {
                     href: 'https://azurelocal.github.io/azurelocal-S2DCartographer/',
                   },
                   {
+                    label: 'Azure Local Surveyor',
+                    href: 'https://surveyor.azurelocal.cloud/',
+                  },
+                  {
                     label: 'Load Testing Framework',
                     href: 'https://azurelocal.github.io/azurelocal-loadtools/',
                   },
