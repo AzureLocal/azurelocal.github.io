@@ -163,8 +163,12 @@ const config = {
                     href: 'https://azurelocal.github.io/azurelocal-S2DCartographer/',
                   },
                   {
+                    label: 'Azure Local Copilot',
+                    href: 'https://azurelocal.github.io/azurelocal-copilot/',
+                  },
+                  {
                     label: 'Azure Local Surveyor',
-                    href: 'https://azurelocal.cloud/azurelocal-surveyor/',
+                    href: 'https://azurelocal.github.io/azurelocal-surveyor/',
                   },
                   {
                     label: 'Load Testing Framework',
@@ -203,6 +207,11 @@ const config = {
                   {
                     label: 'Custom Images',
                     href: 'https://azurelocal.github.io/azurelocal-custom-images/',
+                  },
+                  { type: 'html', value: '<strong>Training &amp; Learning</strong>' },
+                  {
+                    label: 'Azure Local Training',
+                    href: 'https://azurelocal.github.io/azurelocal-training/',
                   },
                 ],
           },
