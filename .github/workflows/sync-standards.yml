@@ -52,12 +52,14 @@ jobs:
       - name: Detect changes
         id: diff
         run: |
-          if git diff --quiet --exit-code -- standards/; then
+          # git diff only sees tracked files; git status --porcelain also catches new/deleted files
+          changes=$(git status --porcelain -- standards/)
+          if [ -z "$changes" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No standards changes — nothing to sync."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            git diff --stat -- standards/
+            echo "$changes"
           fi
 
       - name: Open sync PR
