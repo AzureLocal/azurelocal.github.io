@@ -10,10 +10,9 @@
 
 All examples, sample configurations, and walkthroughs use **one** fictional company: **Infinite Improbability Corp (IIC)**.
 
-:::warning[Mandatory]
-Never use `contoso`, `fabrikam`, `adventure-works`, `woodgrove`, `example.com`, or any real customer name.
+!!! warning "Mandatory"
+    Never use `contoso`, `fabrikam`, `adventure-works`, `woodgrove`, `example.com`, or any real customer name.
     **IIC only** — in every repo, every example, every sample config.
-:::
 
 ---
 

@@ -81,7 +81,7 @@ All tools must produce **identical infrastructure** when given the same configur
 
 The `azurelocal-toolkit` repository is the reference implementation. All other repos follow the same top-level layout where applicable.
 
-```
+```text
 azurelocal-toolkit/
 ├── config/
 │   ├── azure/                    # ARM templates, discovery, iDRAC, service principals, utilities
@@ -121,7 +121,7 @@ azurelocal-toolkit/
 
 Every task folder under `scripts/deploy/` mirrors the path of its corresponding doc in `docs/implementation/` and contains exactly three subdirectories:
 
-```
+```text
 scripts/deploy/<part>/<phase>/<task>/
 ├── azurecli/     # Azure CLI scripts (.ps1 using az commands, or .sh)
 ├── bash/         # Pure Bash scripts (.sh)
