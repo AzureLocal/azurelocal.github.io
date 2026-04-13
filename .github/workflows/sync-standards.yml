@@ -40,13 +40,18 @@ jobs:
           ref: ${{ github.event.inputs.platform_ref || github.event.client_payload.ref || 'main' }}
           path: _platform
 
-      - name: Copy platform/standards/*.mdx → site/standards/
+      - name: Copy platform/docs/standards/*.md → site/standards/ (as .mdx)
         run: |
           set -euo pipefail
           mkdir -p standards
-          # Copy only .mdx (README.md on platform is an index for humans, not a rendered page)
-          find _platform/standards -maxdepth 1 -name "*.mdx" -print0 \
-            | xargs -0 -I{} cp -v "{}" standards/
+          # Source moved to docs/standards/ in platform (MkDocs home).
+          # Copy .md files and rename to .mdx so Docusaurus renders them consistently.
+          for f in _platform/docs/standards/*.md; do
+            base=$(basename "$f" .md)
+            # Skip the how-to pages that live only in platform docs, not in site standards
+            case "$base" in consuming|contributing|propagation|authoring-guide) continue ;; esac
+            cp -v "$f" "standards/${base}.mdx"
+          done
           rm -rf _platform
 
       - name: Detect changes
