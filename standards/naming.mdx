@@ -20,7 +20,7 @@
 
 ## Azure Resource Naming
 
-All resources follow the [IIC naming patterns](examples). For comprehensive CAF-aligned naming patterns used in Azure Local deployments, see [Planning: Naming Standards](../planning/01-naming-standards.mdx):
+All resources follow the [IIC naming patterns](examples). For comprehensive CAF-aligned naming patterns used in Azure Local deployments, see [Planning: Naming Standards](https://azurelocal.cloud/standards/naming):
 
 | Resource Type | Pattern | Example |
 |--------------|---------|---------|
@@ -58,7 +58,7 @@ All resources follow the [IIC naming patterns](examples). For comprehensive CAF-
 
 ## Related Standards
 
-- [Planning: Naming Standards](../planning/01-naming-standards.mdx) — Full CAF-aligned naming conventions for Azure Local deployments
+- [Planning: Naming Standards](https://azurelocal.cloud/standards/naming) — Full CAF-aligned naming conventions for Azure Local deployments
 - [Full Naming Conventions](https://azurelocal.cloud/standards/documentation/naming-conventions)
 - [Repository Structure](https://azurelocal.cloud/standards/repo-structure)
 - [Documentation Standards](documentation)

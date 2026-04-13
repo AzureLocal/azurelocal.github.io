@@ -22,9 +22,8 @@ Each solution maps to an infrastructure type in the [master registry](./variable
 | AI-Assisted Operations | `copilot` | [`azurelocal-copilot`](https://github.com/AzureLocal/azurelocal-copilot) |
 | Azure Local Ranger | `ranger` | [`azurelocal-ranger`](https://github.com/AzureLocal/azurelocal-ranger) |
 
-:::info[Non-IaC Solutions]
-Some solutions (e.g. Ranger, Copilot, Load Testing Tools) are operational or diagnostic tools rather than IaC deployment solutions. They follow the same repository management standards but the IaC tool support, parameter derivation, and multi-tool parity sections below do not apply. Their solution-specific architecture is documented in their own repos.
-:::
+!!! info "Non-IaC Solutions"
+    Some solutions (e.g. Ranger, Copilot, Load Testing Tools) are operational or diagnostic tools rather than IaC deployment solutions. They follow the same repository management standards but the IaC tool support, parameter derivation, and multi-tool parity sections below do not apply. Their solution-specific architecture is documented in their own repos.
 
 ---
 
@@ -40,9 +39,8 @@ Each tool must declare which deployment phases it supports:
 | **PowerShell** | ✅ | ✅ | ✅ | ✅ |
 | **Ansible** | ✅ | ✅ | ✅ | ✅ |
 
-:::warning[Delegates]
-"Delegates" means the tool provisions Azure resources but does not configure the guest OS. A separate tool (PowerShell or Ansible) handles guest configuration.
-:::
+!!! warning "Delegates"
+    "Delegates" means the tool provisions Azure resources but does not configure the guest OS. A separate tool (PowerShell or Ansible) handles guest configuration.
 
 ---
 
