@@ -160,7 +160,7 @@ const config = {
                   },
                   {
                     label: 'S2D Cartographer',
-                    href: 'https://azurelocal.github.io/azurelocal-S2DCartographer/',
+                    href: 'https://azurelocal.github.io/azurelocal-s2d-cartographer/',
                   },
                   {
                     label: 'Azure Local Copilot',
