@@ -1,0 +1,138 @@
+---
+title: "Local Identity - ARM Template Deployment (SAN)"
+sidebar_label: "Local Identity - ARM Template (SAN)"
+sidebar_position: 2
+description: "Deploy a disaggregated Azure Local cluster with local identity authentication and SAN storage using ARM templates"
+category: Runbook
+scope: ARM template SAN cluster deployment with Local Identity
+purpose: Deploy Azure Local cluster using external SAN storage and Local Identity with Azure Key Vault via ARM templates
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "san", "local-identity", "arm-template", "disaggregated", "key-vault"]
+keywords: ["SAN deployment", "Local Identity", "Key Vault", "ARM template", "disaggregated", "infrastructure-as-code"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Local Identity — ARM Template Deployment (SAN)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2604)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: ARM template SAN cluster deployment with Local Identity
+> **PURPOSE**: Deploy Azure Local with external SAN storage and Local Identity (Key Vault) via ARM
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy via ARM (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated?view=azloc-2604)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This runbook deploys a disaggregated Azure Local cluster using ARM templates with:
+- **Storage**: External SAN (Fiber Channel)
+- **Identity**: Local Identity with Azure Key Vault
+
+This is the most automated option for SAN + non-AD deployments, combining infrastructure-as-code repeatability with the simplicity of local identity authentication.
+
+---
+
+## Prerequisites
+
+Complete all items from the [SAN Prerequisites](../index.mdx#prerequisites) and the [Local Identity Prerequisites](../../index.mdx#local-identity-deployment) sections.
+
+---
+
+## Key Parameter Differences
+
+The SAN + Local Identity ARM template combines parameters from both the disaggregated and local identity templates:
+
+| Parameter | Value |
+|-----------|-------|
+| `storageConfiguration` | `"SAN"` |
+| `domainFqdn` | Empty string `""` (no AD) |
+| `adouPath` | Empty string `""` (no AD) |
+| `keyVaultName` | Name of the Azure Key Vault for secrets |
+| `intentList` | Management + Compute only (no storage intent) |
+| `sanNetworkList` | FC fabric network configuration |
+
+---
+
+## Step-by-Step
+
+### Step 1: Obtain the ARM Template
+
+Download the disaggregated ARM template from [Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated?view=azloc-2604).
+
+### Step 2: Create the Parameters File
+
+```json
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "clusterName": { "value": "<cluster-name>" },
+    "location": { "value": "<azure-region>" },
+    "domainFqdn": { "value": "" },
+    "adouPath": { "value": "" },
+    "storageConfiguration": { "value": "SAN" },
+    "networkingPattern": { "value": "managementAndCompute" },
+    "keyVaultName": { "value": "<key-vault-name>" }
+  }
+}
+```
+
+### Step 3: Deploy
+
+```azurecli
+az deployment group create \
+  --resource-group <resource-group> \
+  --template-file azuredeploy.json \
+  --parameters @azuredeploy.parameters.san.local-identity.json
+```
+
+### Step 4: Monitor
+
+```azurecli
+az deployment group show \
+  --resource-group <resource-group> \
+  --name <deployment-name> \
+  --query "properties.provisioningState" -o tsv
+```
+
+---
+
+## Post-Deployment
+
+1. Connect workload LUNs — see [Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+2. Proceed to [Phase 06: Post-Deployment](../../../../phase-06-post-deployment/index.mdx)
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| Template validation fails | Verify `domainFqdn` and `adouPath` are empty strings for Local Identity. Verify `storageConfiguration` is `"SAN"`. |
+| Key Vault access denied | Ensure the deploying identity has Key Vault Contributor and Key Vault Secrets Officer roles. |
+| SAN disks not detected | Verify FC zoning and MPIO on all nodes before deployment. |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Local Identity — Portal (SAN)](./portal-instructions.mdx) | [↑ SAN Deployment](../index.mdx) | [Phase 06: Post-Deployment →](../../../../phase-06-post-deployment/index.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |

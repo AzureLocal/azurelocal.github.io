@@ -1,0 +1,147 @@
+---
+title: "Active Directory - ARM Template Deployment (SAN)"
+sidebar_label: "AD - ARM Template (SAN)"
+sidebar_position: 2
+description: "Deploy a disaggregated Azure Local cluster with Active Directory authentication and SAN storage using ARM templates"
+category: Runbook
+scope: ARM template SAN cluster deployment with Active Directory
+purpose: Deploy Azure Local cluster using external SAN storage and AD authentication via ARM templates
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "san", "active-directory", "arm-template", "disaggregated"]
+keywords: ["SAN deployment", "Active Directory", "ARM template", "disaggregated", "infrastructure-as-code"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Active Directory — ARM Template Deployment (SAN)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2604)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: ARM template SAN cluster deployment with Active Directory
+> **PURPOSE**: Deploy Azure Local with external SAN storage and AD authentication via ARM
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy via ARM (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated?view=azloc-2604)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This runbook deploys a disaggregated Azure Local cluster using ARM templates with:
+- **Storage**: External SAN (Fiber Channel)
+- **Identity**: Active Directory
+
+ARM template deployment provides repeatability, version control, and CI/CD integration. The disaggregated ARM template includes SAN-specific parameters not present in the S2D template.
+
+---
+
+## Prerequisites
+
+Complete all items from the [SAN Prerequisites](../index.mdx#prerequisites) and the [AD Prerequisites](../../index.mdx#active-directory-deployment) sections.
+
+---
+
+## Key Parameter Differences (SAN vs S2D)
+
+The disaggregated ARM template includes parameters specific to SAN deployments:
+
+| Parameter | Description |
+|-----------|-------------|
+| `intentList` | List of deployment intents — **no storage intent** (only management + compute) |
+| `sanNetworkList` | List of SAN networks for the FC fabric |
+| `storageConnectivitySwitchless` | Set to `false` — SAN always uses switched connectivity |
+| `sbeVersion` | Solution Builder Extension version for your hardware |
+| `sbeFamily` | SBE package family |
+| `sbePublisher` | SBE publisher/vendor |
+
+---
+
+## Step-by-Step
+
+### Step 1: Obtain the ARM Template
+
+Download the disaggregated ARM template from:
+- [Microsoft Learn — ARM Template (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated?view=azloc-2604)
+- Or use the [Azure Quickstart Templates](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci)
+
+### Step 2: Create the Parameters File
+
+Create a parameters file with SAN-specific values:
+
+```json
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "clusterName": { "value": "<cluster-name>" },
+    "location": { "value": "<azure-region>" },
+    "domainFqdn": { "value": "<domain.fqdn>" },
+    "adouPath": { "value": "OU=<ou>,DC=<domain>,DC=<tld>" },
+    "storageConfiguration": { "value": "SAN" },
+    "networkingPattern": { "value": "managementAndCompute" }
+  }
+}
+```
+
+:::info Storage Configuration
+Set `storageConfiguration` to `"SAN"` to deploy with external SAN storage. This is the key differentiator from S2D deployments.
+:::
+
+### Step 3: Deploy via Azure CLI
+
+```azurecli
+az deployment group create \
+  --resource-group <resource-group> \
+  --template-file azuredeploy.json \
+  --parameters @azuredeploy.parameters.san.ad.json
+```
+
+### Step 4: Monitor Deployment
+
+```azurecli
+az deployment group show \
+  --resource-group <resource-group> \
+  --name <deployment-name> \
+  --query "properties.provisioningState" -o tsv
+```
+
+---
+
+## Post-Deployment
+
+After cluster deployment completes:
+
+1. Connect workload LUNs — see [Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+2. Proceed to [Phase 06: Post-Deployment](../../../../phase-06-post-deployment/index.mdx)
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| Template validation fails | Verify all SAN-specific parameters are included. Check `storageConfiguration` is set to `"SAN"`. |
+| Deployment fails on storage | Ensure LUNs are visible and in RAW state on all nodes. Verify MPIO is enabled. |
+| SBE parameters invalid | Contact your hardware vendor for correct SBE version, family, and publisher values. |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [AD — Portal (SAN)](./portal-instructions.mdx) | [↑ SAN Deployment](../index.mdx) | [Local Identity — Portal (SAN) →](../local-identity/portal-instructions.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |

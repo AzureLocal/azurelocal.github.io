@@ -1,0 +1,139 @@
+---
+title: "Local Identity - Portal Deployment (SAN)"
+sidebar_label: "Local Identity - Portal (SAN)"
+sidebar_position: 1
+description: "Deploy a disaggregated Azure Local cluster with local identity authentication and SAN storage using the Azure Portal"
+category: Runbook
+scope: Portal-based SAN cluster deployment with Local Identity
+purpose: Deploy Azure Local cluster using external SAN storage and Local Identity with Azure Key Vault via the Azure Portal
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "san", "local-identity", "portal", "disaggregated", "key-vault"]
+keywords: ["SAN deployment", "Local Identity", "Key Vault", "portal", "disaggregated", "Fiber Channel"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Local Identity — Portal Deployment (SAN)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2604)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Portal-based SAN cluster deployment with Local Identity
+> **PURPOSE**: Deploy Azure Local with external SAN storage and Local Identity (Key Vault)
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2604)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This runbook deploys a disaggregated Azure Local cluster using the Azure Portal wizard with:
+- **Storage**: External SAN (Fiber Channel)
+- **Identity**: Local Identity with Azure Key Vault (no Active Directory required)
+
+This combination is ideal for edge or remote deployments using existing SAN infrastructure where AD is not available or desired.
+
+---
+
+## Prerequisites
+
+Complete all items from the [SAN Prerequisites](../index.mdx#prerequisites) and the [Local Identity Prerequisites](../../index.mdx#local-identity-deployment) sections.
+
+Additionally:
+- [ ] Non-built-in local administrator account with identical credentials on ALL nodes
+- [ ] Static IP addresses on all nodes (DHCP not supported with Local Identity)
+- [ ] DNS server with Host A records for each node and the cluster
+- [ ] Azure Key Vault accessible (or will be created during deployment)
+- [ ] FC HBA drivers installed, MPIO enabled, LUNs visible in RAW state
+
+:::warning Disaggregated Cannot Be Rack-Aware
+For disaggregated (SAN) deployments, the "Rack aware" cluster option is **not available**.
+:::
+
+---
+
+## Portal Wizard — Step-by-Step
+
+### Step 1: Start the Wizard
+
+1. In the Azure portal, navigate to **Azure Arc** → **Azure Local**
+2. On the **Get started** tab, select **Create instance**
+
+### Step 2: Basics
+
+1. Select **Subscription** and **Resource group**
+2. Enter the **Instance name**
+3. Select the **Region**
+4. **Cluster options**: Select **Standard** (Rack aware not available for disaggregated)
+5. **Storage options**: Select **Storage Area Network (SAN)**
+6. **Identity provider**: Select **Local identity with Azure Key Vault**
+7. Select **+ Add machines** — machines must NOT be domain-joined
+
+### Step 3: Networking
+
+1. **Storage configuration**: Select **SAN based storage**
+2. Configure **Management** and **Compute** traffic intents
+3. Assign network adapters, VLANs, and subnets
+4. Configure IP allocation
+5. Provide subnet, default gateway, and DNS servers
+
+### Step 4: Management
+
+1. Set the **Custom location name**
+2. Configure the **cloud witness** storage account
+3. Enter **Local administrator** credentials (must match across all nodes, 14+ character complexity requirements)
+4. An Azure Key Vault is provisioned during deployment to store cluster secrets
+
+### Step 5: Advanced — SAN Storage Selection
+
+1. Select the **infrastructure LUN** (≥ 250 GB)
+2. Select the **cluster performance history LUN** (≥ 20 GB)
+
+### Step 6: Validation and Deployment
+
+1. Select **Start validation** — monitor progress
+2. After validation succeeds, select **Create**
+
+---
+
+## Post-Deployment
+
+1. Connect workload LUNs — see [Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+2. Proceed to [Phase 06: Post-Deployment](../../../../phase-06-post-deployment/index.mdx)
+
+:::info Windows Admin Center Not Supported
+Windows Admin Center is **not supported** with Local Identity environments. Use PowerShell or the Azure portal for administrative tasks.
+:::
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| Rack aware option not available | Expected for disaggregated deployments. Use Standard cluster option. |
+| No SAN disks visible | Verify FC zoning, HBA drivers, and MPIO. Run `Get-PhysicalDisk` on each node. |
+| Key Vault creation fails | Verify permissions (Owner or Contributor + RBAC Admin on the resource group). |
+| DNS resolution failures | Ensure Host A records exist for all nodes and the cluster name in your DNS server. |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [AD — ARM Template (SAN)](../active-directory/arm-template-instructions.mdx) | [↑ SAN Deployment](../index.mdx) | [Local Identity — ARM Template (SAN) →](./arm-template-instructions.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |

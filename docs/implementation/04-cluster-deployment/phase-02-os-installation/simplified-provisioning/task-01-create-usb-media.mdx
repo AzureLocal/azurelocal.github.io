@@ -1,0 +1,125 @@
+---
+title: "Task 01: Create USB Installation Media"
+sidebar_label: "Task 01: Create USB Media"
+sidebar_position: 1
+description: "Create a bootable USB drive containing the maintenance environment ISO for simplified machine provisioning"
+category: Runbook
+scope: USB media creation for simplified provisioning
+purpose: Create bootable USB with maintenance environment for FIDO Device Onboarding
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "usb", "maintenance-environment"]
+keywords: ["USB media", "maintenance environment", "usb_prep.exe", "simplified provisioning"]
+status: Active
+---
+
+# Task 01: Create USB Installation Media
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: USB media creation for simplified provisioning
+> **PURPOSE**: Create a bootable USB drive with the maintenance environment
+> **MASTER REFERENCE**: [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2604)
+
+**Status**: Active
+
+:::tip Automated Alternative — azurelocal-ztp
+For a fully automated approach that **bypasses USB media entirely**, see the [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) project. It uses BMC/Redfish (iDRAC, XCC, iLO) to mount the maintenance-environment ISO as virtual media, set the boot source, and reboot — all without physical USB media or anyone in the rack.
+:::
+
+---
+
+## Overview
+
+Use the USB preparation tool to create a bootable USB drive containing the maintenance environment. This USB is used in [Task 02](./task-02-prepare-machines.mdx) to boot each server into the maintenance environment, which generates ownership vouchers for Azure provisioning.
+
+:::warning USB Erasure
+The USB preparation tool **erases all data** on the selected USB drive. Back up any important data before proceeding.
+:::
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Windows 11 PC | With reliable internet connection and USB port |
+| USB flash drive | At least 8 GB of space |
+| Downloaded software | Maintenance environment ISO + USB preparation tool from Azure portal |
+
+---
+
+## Step-by-Step
+
+### Step 1: Download the Software
+
+1. In the Azure portal, navigate to **Azure Arc** → **Azure Local** → **Get started**
+2. On the banner at the top, select **Try provisioning (preview)**
+3. On the **Machine provisioning (preview)** page, select **View Downloads** in the **Download and install** tile
+4. Download:
+   - Maintenance environment ISO image
+   - USB preparation tool (`usb_prep.exe`)
+   - Configurator app (used in later tasks)
+
+### Step 2: Add Defender Exclusion
+
+The USB preparation tool requires a Windows Defender exclusion to run properly:
+
+```powershell
+# Add exclusion for the USB preparation tool
+Add-MpPreference -ExclusionPath "{PATH_TO_EXTRACTED_FOLDER}\usb_prep.exe"
+```
+
+Alternatively: **Windows Security** → **Virus & threat protection** → **Manage settings** → **Exclusions** → **Add an Exclusion** → **File** → select `usb_prep.exe`.
+
+### Step 3: Create the Bootable USB
+
+1. Attach the USB flash drive to your Windows 11 PC
+2. Open an **elevated terminal** (Run as Administrator)
+3. Run the USB preparation tool from the downloaded software package
+4. When prompted, enter the **full path** to the folder containing the maintenance environment ISO
+5. Select the USB drive from the list of available drives
+6. Press **Y** to confirm — this erases all content on the USB drive
+7. Wait for the tool to complete the media creation process
+
+### Step 4: Safely Eject
+
+When the tool completes successfully, safely eject and disconnect the USB flash drive. It is now ready to boot servers in [Task 02](./task-02-prepare-machines.mdx).
+
+---
+
+## Validation
+
+- [ ] USB preparation tool completed without errors
+- [ ] USB drive safely ejected
+- [ ] USB drive is bootable (will be verified when booting servers in Task 02)
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| `usb_prep.exe` blocked by Defender | Add the exclusion path per Step 2. Ensure the exclusion points to the exact file path. |
+| USB tool fails to detect drive | Ensure the USB is at least 8 GB, formatted as FAT32 or NTFS, and not mounted by other software. Try a different USB port. |
+| Tool reports insufficient space | Use a USB drive with at least 8 GB. The maintenance ISO requires significant space. |
+| Permission denied | Run the terminal as Administrator. The tool requires elevated privileges. |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Simplified Provisioning Overview](./index.mdx) | [↑ Phase 02: OS Installation](../index.mdx) | [Task 02: Prepare Machines →](./task-02-prepare-machines.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |

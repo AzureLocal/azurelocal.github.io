@@ -2,16 +2,16 @@
 title: "Phase 02: OS Installation"
 sidebar_label: "Phase 02: OS Installation"
 sidebar_position: 2
-description: "Prepare Dell hardware boot configuration, verify ISO availability, and install Azure Stack HCI OS on each cluster node before OS configuration."
+description: "Install Azure Stack HCI OS on cluster nodes using ISO-based manual installation or Simplified Machine Provisioning (Preview)."
 category: Runbook
 scope: Azure Local cluster OS installation
-purpose: Install Azure Stack HCI OS on all cluster nodes using the Dell Gold Image ISO via iDRAC virtual media and BOSS card preparation
+purpose: Install Azure Stack HCI OS on all cluster nodes using ISO or Simplified Provisioning
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-03-04
-version: 1.1
-tags: ["azure-local", "os-installation", "azure-stack-hci", "dell", "boss", "idrac"]
-keywords: ["Azure Stack HCI OS", "OS installation", "Dell BOSS card", "iDRAC virtual media", "gold image ISO", "Server Core"]
+updated: 2026-05-01
+version: 1.2
+tags: ["azure-local", "os-installation", "azure-stack-hci", "dell", "boss", "idrac", "simplified-provisioning"]
+keywords: ["Azure Stack HCI OS", "OS installation", "Dell BOSS card", "iDRAC virtual media", "gold image ISO", "Server Core", "simplified provisioning", "FDO", "zero touch"]
 status: Active
 ---
 
@@ -26,14 +26,44 @@ import TabItem from '@theme/TabItem';
 
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Azure Local cluster OS installation   
-> **PURPOSE**: Install Azure Stack HCI OS on all cluster nodes using the Dell Gold Image ISO via iDRAC virtual media and BOSS card preparation   
-> **MASTER REFERENCE**: [Microsoft Learn - Deploy Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-introduction)
+> **PURPOSE**: Install Azure Stack HCI OS on all cluster nodes   
+> **MASTER REFERENCE**: [Microsoft Learn - Deploy Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-introduction?view=azloc-2604)
 
 **Status**: Active
 
 ## Overview
 
-Install Azure Stack HCI OS on all cluster nodes. This phase covers ISO mounting via iDRAC virtual media, BOSS card virtual disk preparation, manual OS installation through iDRAC Virtual Console, and post-install verification.
+Azure Local supports two methods for installing the Azure Stack HCI OS on cluster nodes:
+
+1. **ISO-Based Manual Installation** (GA) — Download the ISO, mount via iDRAC/BMC virtual media, and manually run Windows Setup on each node
+2. **Simplified Machine Provisioning** (Preview) — Use a USB-based maintenance environment with FIDO Device Onboarding (FDO) to provision machines from Azure automatically
+
+Choose the method that best fits your environment using the comparison below.
+
+---
+
+## Installation Method Comparison
+
+| Aspect | ISO (Manual) | Simplified Provisioning (Preview) |
+|--------|-------------|-----------------------------------|
+| **Status** | ✅ GA — production supported | ⚠️ Preview — East US only |
+| **OS Installation** | Manual via iDRAC/BMC console | Automated from Azure |
+| **Physical Access** | Required for iDRAC virtual media | Required for initial USB boot |
+| **Network Configuration** | Manual (SConfig or PowerShell) | Automated from Azure portal |
+| **Azure Arc Registration** | Separate step ([Phase 04](../phase-04-arc-registration/index.mdx)) | Included in provisioning flow |
+| **Arc Gateway Support** | ✅ Supported | ❌ Not supported (preview) |
+| **Supported Hardware** | All [Azure Local Catalog](https://aka.ms/AzureStackHCICatalog) hardware | Dell AX-650/750, Lenovo MX650 V3/V4, HPE DL360 Gen11 |
+| **Best For** | Production deployments, all hardware | Automated provisioning of supported SKUs |
+
+:::tip Recommendation
+Use **ISO-based installation** for production deployments until Simplified Provisioning reaches GA. Use Simplified Provisioning for evaluation and supported hardware in East US.
+:::
+
+---
+
+## Method 1: ISO-Based Manual Installation
+
+The traditional approach: prepare Dell BOSS cards, mount the ISO via iDRAC virtual media, and manually install the OS on each node.
 
 :::warning Important Notes
 - **BOSS deletion triggers reboot** — Deleting and recreating BOSS virtual disks creates a configuration job that requires a reboot to apply
@@ -42,9 +72,7 @@ Install Azure Stack HCI OS on all cluster nodes. This phase covers ISO mounting 
 - **Do NOT domain join nodes** — Nodes must remain in workgroup until after Azure Local cluster deployment
 :::
 
----
-
-## Phase 02 — Table of Contents
+### ISO Tasks
 
 | Task | Description | Duration | Link |
 |------|-------------|----------|------|
@@ -55,14 +83,38 @@ Install Azure Stack HCI OS on all cluster nodes. This phase covers ISO mounting 
 
 ---
 
+## Method 2: Simplified Machine Provisioning (Preview)
+
+An automated approach that uses a USB-based maintenance environment with FIDO Device Onboarding to provision machines directly from Azure.
+
+:::warning Preview Feature
+Simplified machine provisioning is **in preview**. Only East US region is supported. Arc Gateway is not supported. Review the [Microsoft preview terms](https://azure.microsoft.com/support/legal/preview-supplemental-terms/) before use.
+:::
+
+### Simplified Provisioning Tasks
+
+| Task | Description | Duration | Link |
+|------|-------------|----------|------|
+| 1 | Create USB Installation Media | 15 min | [Task 1](./simplified-provisioning/task-01-create-usb-media.mdx) |
+| 2 | Prepare Machines | 30 min/machine | [Task 2](./simplified-provisioning/task-02-prepare-machines.mdx) |
+| 3 | Provision Machines from Azure | 15 min + wait | [Task 3](./simplified-provisioning/task-03-provision-from-azure.mdx) |
+| 4 | Monitor Machine Setup | 30–60 min | [Task 4](./simplified-provisioning/task-04-monitor-progress.mdx) |
+| 5 | Verify Azure Arc Connectivity | 10 min | [Task 5](./simplified-provisioning/task-05-verify-arc.mdx) |
+
+For full details, see the [Simplified Provisioning Guide](./simplified-provisioning/index.mdx).
+
+---
+
 ## Prerequisites
 
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Phase 01 Complete | BIOS and iDRAC settings validated and compliant (Tasks 04/05) | [Phase 01](../phase-01-hardware-provisioning/index.mdx) |
-| Dell BOSS Cards | Boot Optimized Storage Solution cards installed in all nodes | Hardware |
-| iDRAC Access | Virtual Console and Virtual Media control available | `variables.yml: nodes.<name>.idrac_ip` |
-| Gold Image ISO | Dell Azure Local Gold Image ISO available on network share or USB | Azure Local Cloud build team |
+| Dell BOSS Cards | Boot Optimized Storage Solution cards installed in all nodes (ISO method) | Hardware |
+| iDRAC Access | Virtual Console and Virtual Media control available (ISO method) | `variables.yml: nodes.<name>.idrac_ip` |
+| Gold Image ISO | Dell Azure Local Gold Image ISO available (ISO method) | Build team |
+| USB Flash Drive | At least 8 GB (Simplified Provisioning method) | Operator |
+| Windows 11 PC | For USB prep tool and Configurator app (Simplified Provisioning method) | Operator |
 
 ---
 
@@ -88,6 +140,7 @@ Azure Local Cloud maintains a Dell Gold Image with pre-configured drivers optimi
 
 ## Validation Checklist
 
+### ISO Method
 - [ ] BOSS virtual disks deleted and recreated on all nodes
 - [ ] Dell Gold Image ISO mounted and verified on all nodes (`Inserted: true`)
 - [ ] Nodes rebooted and booted from ISO after BOSS recreation
@@ -97,15 +150,20 @@ Azure Local Cloud maintains a Dell Gold Image with pre-configured drivers optimi
 - [ ] All nodes boot to Server Core command prompt
 - [ ] OS verified per Task 4 checklist
 
+### Simplified Provisioning Method
+- [ ] USB installation media created successfully
+- [ ] All machines booted from USB and maintenance environment completed
+- [ ] Ownership vouchers collected for all machines
+- [ ] Machines provisioned from Azure portal
+- [ ] All machines show "Ready to cluster" in Azure Arc
+
 ---
 
 ## Outcome
 
-Upon completion of this phase:
+Upon completion of this phase (either method):
 
-- Dell BOSS virtual disks recreated on all nodes per Dell validated practices
 - Azure Stack HCI OS installed on all cluster nodes
-- OS installed to Dell BOSS card M.2 RAID-1 volumes
 - Administrator passwords documented securely in Azure Key Vault
 - All nodes boot to Server Core command prompt
 - Nodes ready for Phase 03: OS Configuration
@@ -116,16 +174,21 @@ Upon completion of this phase:
 
 ```mermaid
 graph TD
- A[Phase 01 Complete] --> B[Task 1: Delete/Recreate BOSS VD]
- B --> C[Task 2: Mount ISO via iDRAC]
- C --> D[Verify ISO Mount Status]
- D --> E[Automatic Reboot to ISO]
- E --> F[Task 3: Manual OS Installation]
- F --> G[Complete Windows Setup]
- G --> H[Task 4: Verify Installation]
- H --> I{All Nodes Complete?}
- I -->|No| B
- I -->|Yes| J[Phase 03: OS Configuration]
+  A[Phase 01 Complete] --> B{Installation Method?}
+  B -->|ISO Manual| C[Task 1: Delete/Recreate BOSS VD]
+  C --> D[Task 2: Mount ISO via iDRAC]
+  D --> E[Task 3: Manual OS Installation]
+  E --> F[Task 4: Verify Installation]
+  F --> G{All Nodes Complete?}
+  G -->|No| C
+  G -->|Yes| H[Phase 03: OS Configuration]
+
+  B -->|Simplified Provisioning| I[Task 1: Create USB Media]
+  I --> J[Task 2: Prepare Machines]
+  J --> K[Task 3: Provision from Azure]
+  K --> L[Task 4: Monitor Progress]
+  L --> M[Task 5: Verify Arc]
+  M --> H
 ```
 
 ---
@@ -161,3 +224,4 @@ $config.nodes.Values | ForEach-Object {
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
 | 1.1 | 2026-03-04 | Azure Local Cloud | Fix frontmatter, badges, stage references, standards alignment |
+| 1.2 | 2026-05-01 | Azure Local Cloud | Add Simplified Machine Provisioning (Preview) section, update to decision page format |

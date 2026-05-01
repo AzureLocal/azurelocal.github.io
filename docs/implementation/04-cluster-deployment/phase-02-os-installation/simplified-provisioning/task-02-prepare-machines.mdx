@@ -1,0 +1,137 @@
+---
+title: "Task 02: Prepare Machines"
+sidebar_label: "Task 02: Prepare Machines"
+sidebar_position: 2
+description: "Boot servers from the USB maintenance environment to generate FIDO Device Onboarding ownership vouchers"
+category: Runbook
+scope: Machine preparation for simplified provisioning
+purpose: Boot servers into maintenance environment and collect ownership vouchers
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "fdo", "ownership-voucher"]
+keywords: ["machine preparation", "maintenance environment", "ownership voucher", "FDO", "boot USB"]
+status: Active
+---
+
+# Task 02: Prepare Machines
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Machine preparation for simplified provisioning
+> **PURPOSE**: Boot servers into the maintenance environment and collect ownership vouchers
+> **MASTER REFERENCE**: [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2604)
+
+**Status**: Active
+
+:::tip Automated Alternative — azurelocal-ztp
+Instead of physically plugging in a USB drive and booting each server manually, you can use the [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) project to mount the maintenance-environment ISO via BMC/Redfish (iDRAC, XCC, iLO) and reboot remotely. This eliminates the need for physical access to the rack.
+:::
+
+---
+
+## Overview
+
+In this task, you boot each server from the USB created in [Task 01](./task-01-create-usb-media.mdx). The maintenance environment installs, generates a FIDO Device Onboarding (FDO) ownership voucher for each machine, and makes the machine ready to be claimed from Azure.
+
+Repeat this process for **every machine** that will join the Azure Local cluster.
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| USB media | Created in [Task 01](./task-01-create-usb-media.mdx) |
+| Physical access | To the server's USB port and power button (or BMC console) |
+| Secure Boot | Enabled in BIOS/UEFI |
+| TPM | Enabled in BIOS/UEFI |
+
+---
+
+## Step-by-Step
+
+### Step 1: Boot from USB
+
+1. Attach the USB flash drive to the server
+2. Power on the server
+3. If the server does not automatically boot from USB, access the BIOS/UEFI boot menu:
+   - Press the appropriate key during POST (typically **F2**, **F12**, **Delete**, or **Esc** depending on your hardware vendor)
+   - Select the USB drive as the boot device
+4. Ensure **Secure Boot** and **TPM** are enabled in BIOS/UEFI settings
+
+### Step 2: Wait for Maintenance Environment Setup
+
+1. The maintenance environment installs and configures automatically
+2. The console displays **"Maintenance environment setup completed successfully"** when done
+3. Expect the machine to **reboot twice** during this process
+4. This typically takes **up to 30 minutes**
+
+### Step 3: Safely Disconnect USB
+
+After the maintenance environment setup completes, you can safely detach the USB drive and move it to the next server.
+
+:::info Disable USB Boot
+After setup, disable USB boot in BIOS/UEFI to prevent accidental reboot from USB in the future.
+:::
+
+### Step 4: Collect Ownership Vouchers
+
+Collect the ownership voucher for each machine using one of two methods:
+
+**Option A — Via Configurator App:**
+
+1. On your Windows 11 PC, open the **Configurator App for Azure Local V2** (Run as Administrator)
+2. Connect to the machine using `<machine-serial-number>.local` or its IP address
+3. Enter the local administrator credentials:
+   - Default username: `edgeuser`
+   - Default password: `Password1`
+4. Download the ownership voucher
+
+**Option B — From USB drive:**
+
+1. Reattach the USB flash drive to your Windows 11 PC
+2. Navigate to `\vouchers\<serial-number>\` on the USB drive
+3. Copy the `.pem` file (named after the machine's serial number)
+
+### Step 5: Repeat for All Machines
+
+Repeat Steps 1–4 for every machine in the cluster.
+
+---
+
+## Validation
+
+- [ ] Each machine displays "Maintenance environment setup completed successfully"
+- [ ] Ownership voucher (`.pem` file) collected for every machine
+- [ ] USB boot disabled in BIOS/UEFI after setup
+- [ ] All vouchers shared with the Azure portal administrator
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| Server does not boot from USB | Check BIOS boot order settings. Ensure USB boot is enabled and the USB is properly seated. Try a different USB port. |
+| Maintenance setup hangs | Ensure Secure Boot and TPM are enabled. Check server firmware is up to date. Power cycle and retry. |
+| Cannot connect via Configurator App | Verify the machine's IP address or use `<serial-number>.local`. Ensure the Windows 11 PC is on the same network. Check that the default credentials haven't been changed. |
+| Missing voucher on USB drive | The voucher is generated during maintenance environment setup. If the `\vouchers\` folder is empty, the setup may not have completed. Re-run the process. |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 01: Create USB Media](./task-01-create-usb-media.mdx) | [↑ Simplified Provisioning](./index.mdx) | [Task 03: Provision from Azure →](./task-03-provision-from-azure.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |
