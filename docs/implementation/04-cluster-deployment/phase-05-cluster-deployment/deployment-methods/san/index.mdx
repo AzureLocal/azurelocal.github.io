@@ -1,0 +1,168 @@
+---
+title: "SAN (Disaggregated) Deployment"
+sidebar_label: "SAN (Disaggregated)"
+sidebar_position: 1
+description: "Deploy Azure Local using Storage Area Network (SAN) external storage — disaggregated architecture with independent scaling of compute and storage."
+category: Runbook
+scope: Azure Local SAN-based deployment
+purpose: Deploy Azure Local clusters using external SAN storage instead of Storage Spaces Direct
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "san", "disaggregated", "fiber-channel", "external-storage"]
+keywords: ["SAN deployment", "disaggregated", "Storage Area Network", "Fiber Channel", "external storage", "FC", "MPIO", "HBA"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# SAN (Disaggregated) Deployment
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2604)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: SAN-based Azure Local cluster deployment
+> **PURPOSE**: Deploy Azure Local using external SAN storage (disaggregated architecture)
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2604)
+
+**Status**: Active
+
+---
+
+## Overview
+
+Starting with Azure Local 2604, you can deploy Azure Local using **Storage Area Network (SAN)** storage — a disaggregated architecture where compute and storage are independent. This is an alternative to the traditional hyperconverged model using [Storage Spaces Direct (S2D)](../index.mdx).
+
+Disaggregated deployments:
+- Support **single machine to 64-machine** clusters
+- Enable **independent scaling** of compute and storage
+- Use existing SAN infrastructure (Fiber Channel)
+- Share a unified management control plane via Azure Arc
+
+---
+
+## S2D vs SAN Comparison
+
+| Aspect | Storage Spaces Direct (S2D) | Storage Area Network (SAN) |
+|--------|----------------------------|---------------------------|
+| **Architecture** | Hyperconverged — storage is local to compute nodes | Disaggregated — external SAN provides storage |
+| **Scaling** | Compute and storage scale together | Compute and storage scale independently |
+| **Max Nodes** | 16 nodes | 64 nodes |
+| **Storage** | Local NVMe/SSD/HDD in each node | External SAN arrays via Fiber Channel |
+| **Network** | RDMA for storage traffic between nodes | FC fabric for storage traffic to SAN |
+| **Hardware** | Standard servers with local drives | Servers with FC HBAs + FC switches + SAN |
+| **Rack Aware** | ✅ Supported | ❌ Not supported for disaggregated |
+| **Use Case** | General purpose, smaller clusters | Large clusters, existing SAN infrastructure |
+
+---
+
+## Supported Fiber Channel Patterns
+
+Azure Local supports four disaggregated networking patterns:
+
+| Pattern | Description | Reference |
+|---------|-------------|-----------|
+| **FC without backup** | Fiber Channel SAN, no backup network | [FC No Backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2604) |
+| **FC with backup** | Fiber Channel SAN with backup network | [FC With Backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2604) |
+| **FCoE without backup** | Fiber Channel over Ethernet, no backup | [Network Patterns Overview](https://learn.microsoft.com/en-us/azure/azure-local/plan/choose-network-pattern-disaggregated?view=azloc-2604) |
+| **FCoE with backup** | Fiber Channel over Ethernet with backup | [Network Patterns Overview](https://learn.microsoft.com/en-us/azure/azure-local/plan/choose-network-pattern-disaggregated?view=azloc-2604) |
+
+---
+
+## Prerequisites
+
+### Hardware
+
+| Requirement | Details |
+|-------------|---------|
+| Validated hardware | From the [Azure Local Catalog](https://aka.ms/AzureStackHCICatalog) — disaggregated-validated SKUs |
+| FC HBAs | Minimum 2 per node (dual-path for redundancy) |
+| FC switches | Two independent fabrics for redundancy |
+| SAN array | External storage with FC connectivity |
+| LUN minimums | **250 GB** for infrastructure volume, **20 GB** for cluster performance history |
+
+### SAN Configuration (Before Cluster Deployment)
+
+The following must be completed **after Arc registration** but **before starting the cluster deployment wizard**:
+
+1. **Install FC HBA drivers** on each node:
+   ```powershell
+   PNPUTIL /add-driver <path-to-driver>\*.inf /install
+   ```
+
+2. **Verify HBA ports** are visible:
+   ```powershell
+   Get-InitiatorPort
+   ```
+
+3. **Enable MPIO** (Multipath I/O):
+   ```powershell
+   Add-WindowsFeature Multipath-IO
+   # Reboot required
+   Enable-MSDSMAutomaticClaim -BusType "FC"
+   ```
+
+4. **Verify SAN disks** are visible and in RAW state:
+   ```powershell
+   Get-PhysicalDisk | Where-Object { $_.BusType -eq 'FibreChannel' }
+   ```
+
+:::warning Do Not Initialize Disks
+SAN disks must remain in **RAW** state. Do **not** initialize, partition, or format them before cluster deployment. The deployment process handles disk initialization.
+:::
+
+:::warning HBA Zoning After Arc Registration
+Configure FC zoning (WWPN-based) **after** Azure Arc registration is complete. Zoning before registration can cause deployment confusion as LUN visibility may interfere with the Arc registration process.
+:::
+
+---
+
+## Deployment Options
+
+| Identity | Method | Link |
+|----------|--------|------|
+| **Active Directory** | Portal | [AD — Portal (SAN)](./active-directory/portal-instructions.mdx) |
+| **Active Directory** | ARM Template | [AD — ARM Template (SAN)](./active-directory/arm-template-instructions.mdx) |
+| **Local Identity** | Portal | [Local Identity — Portal (SAN)](./local-identity/portal-instructions.mdx) |
+| **Local Identity** | ARM Template | [Local Identity — ARM Template (SAN)](./local-identity/arm-template-instructions.mdx) |
+
+---
+
+## Post-Deployment: Connect External Storage
+
+After cluster deployment completes, you must connect the SAN storage to the cluster. See [Microsoft Learn — Connecting an External Storage Array](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604) for the full procedure, which includes:
+
+1. Verify SAN disks are visible on all nodes (`Get-Disk`)
+2. Initialize disks as GPT
+3. Create partitions and format as NTFS
+4. Validate cluster storage configuration (`Test-Cluster`)
+5. Add SAN volumes as Cluster Shared Volumes
+6. Create Storage Paths in the Azure portal
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Deployment Methods](../index.mdx) | [↑ Phase 05: Cluster Deployment](../../index.mdx) | [Post-Deployment →](../../../phase-06-post-deployment/index.mdx) |
+
+---
+
+## References
+
+- [Microsoft Learn — Disaggregated Overview](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2604)
+- [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2604)
+- [Microsoft Learn — Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+- [Microsoft Learn — Network Patterns (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/plan/choose-network-pattern-disaggregated?view=azloc-2604)
+- [Microsoft Learn — Host Network Requirements (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements-disaggregated?view=azloc-2604)
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release — SAN (Disaggregated) deployment |

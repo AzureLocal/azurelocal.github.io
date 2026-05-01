@@ -13,7 +13,7 @@ description: "Azure Local cluster deployment methods - Portal and ARM Template o
 > **DOCUMENT CATEGORY**: Reference   
 > **SCOPE**: Deployment method selection guide   
 > **PURPOSE**: Choose the appropriate deployment method for your environment
-> **MASTER REFERENCE**: [Deploy Azure Local via Azure portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
+> **MASTER REFERENCE**: [Deploy Azure Local via Azure portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2604)
 
 **Status**: Active 
 **Last Updated**: 2026-03-08
@@ -33,10 +33,6 @@ Azure Local clusters can be deployed using different methods and authentication 
 | **Active Directory** | Domain-joined deployment using AD accounts | Enterprise environments with existing AD infrastructure |
 | **Local Identity** | Local Windows accounts with Azure Key Vault integration | Edge deployments or environments without AD |
 
-:::warning Local Identity is in Preview
-Local Identity with Azure Key Vault deployment is currently **in preview**. It is not yet generally available. Review the [Microsoft preview terms](https://azure.microsoft.com/support/legal/preview-supplemental-terms/) before using in production.
-:::
-
 :::tip Azure Local Cloud Recommendation
 For Azure Local Cloud Azure Local deployments, **Active Directory with ARM Template** is the standard approach for consistency and repeatability.
 :::
@@ -45,10 +41,26 @@ For Azure Local Cloud Azure Local deployments, **Active Directory with ARM Templ
 
 ## Deployment Methods Matrix
 
+### Storage Spaces Direct (S2D) — Hyperconverged
+
 | Authentication | Portal | ARM Template | Recommendation |
 |---------------|--------|--------------|----------------|
 | Active Directory | ✅ Supported | ✅ Supported | **ARM Template** for production |
 | Local Identity | ✅ Supported | ✅ Supported | Portal for edge deployments |
+
+### Storage Area Network (SAN) — Disaggregated
+
+| Authentication | Portal | ARM Template | Recommendation |
+|---------------|--------|--------------|----------------|
+| Active Directory | ✅ Supported | ✅ Supported | **ARM Template** for production |
+| Local Identity | ✅ Supported | ✅ Supported | Portal for edge deployments |
+
+:::info Choosing Storage Type
+- **S2D (Hyperconverged)**: Storage is local to each compute node. Scale compute and storage together. Up to 16 nodes.
+- **SAN (Disaggregated)**: External SAN provides storage via Fiber Channel. Scale compute and storage independently. Up to 64 nodes.
+
+For SAN deployment details, see [SAN (Disaggregated) Deployment](./san/index.mdx).
+:::
 
 ---
 
@@ -105,20 +117,41 @@ Deployments using local Windows accounts, suitable for edge scenarios or environ
 
 ```mermaid
 graph TD
- A[Start Deployment] --> B{Active Directory Available?}
- B -->|Yes| C{Need Automation/Repeatability?}
- B -->|No| D[Local Identity]
- C -->|Yes| E[AD - ARM Template]
- C -->|No| F[AD - Portal]
- D --> G{Need Automation?}
- G -->|Yes| H[Local - ARM Template]
- G -->|No| I[Local - Portal]
- 
- E --> J[Production Standard]
- F --> K[Learning/POC]
- H --> L[Automated Edge]
- I --> M[Simple Edge]
+  A[Start Deployment] --> S{Storage Type?}
+  S -->|S2D Hyperconverged| B{Active Directory Available?}
+  S -->|SAN Disaggregated| B2{Active Directory Available?}
+  B -->|Yes| C{Need Automation?}
+  B -->|No| D[Local Identity]
+  C -->|Yes| E[S2D + AD - ARM Template]
+  C -->|No| F[S2D + AD - Portal]
+  D --> G{Need Automation?}
+  G -->|Yes| H[S2D + Local - ARM Template]
+  G -->|No| I[S2D + Local - Portal]
+  B2 -->|Yes| C2{Need Automation?}
+  B2 -->|No| D2[SAN + Local Identity]
+  C2 -->|Yes| E2[SAN + AD - ARM Template]
+  C2 -->|No| F2[SAN + AD - Portal]
+  D2 --> G2{Need Automation?}
+  G2 -->|Yes| H2[SAN + Local - ARM Template]
+  G2 -->|No| I2[SAN + Local - Portal]
 ```
+
+---
+
+## SAN (Disaggregated) Deployment
+
+Deployments using external Storage Area Network (SAN) storage via Fiber Channel. The disaggregated architecture separates compute and storage, supporting up to 64 nodes.
+
+For full details, see [SAN (Disaggregated) Deployment](./san/index.mdx).
+
+### Deployment Options
+
+| Identity | Method | Link |
+|----------|--------|------|
+| **Active Directory** | Portal | [AD — Portal (SAN)](./san/active-directory/portal-instructions.mdx) |
+| **Active Directory** | ARM Template | [AD — ARM Template (SAN)](./san/active-directory/arm-template-instructions.mdx) |
+| **Local Identity** | Portal | [Local Identity — Portal (SAN)](./san/local-identity/portal-instructions.mdx) |
+| **Local Identity** | ARM Template | [Local Identity — ARM Template (SAN)](./san/local-identity/arm-template-instructions.mdx) |
 
 ---
 

@@ -51,14 +51,15 @@ const config = {
           sidebarPath: './sidebars.js',
           editUrl: 'https://github.com/AzureLocal/',
           exclude: ['**/*.drawio'],
-          lastVersion: '1.0.0',
+          lastVersion: '2411',
           versions: {
             current: {
-              label: 'Next',
-              path: 'next',
+              label: '2604',
+              path: '',
             },
-            '1.0.0': {
-              label: '1.0.0',
+            '2411': {
+              label: '2411',
+              path: '2411',
               badge: true,
             },
           },
@@ -107,7 +108,7 @@ const config = {
             type: 'docsVersionDropdown',
             position: 'left',
             dropdownActiveClassDisabled: true,
-            versions: ['1.0.0', 'current'],
+            versions: ['current', '2411'],
           },
           {
             to: '/docs/',

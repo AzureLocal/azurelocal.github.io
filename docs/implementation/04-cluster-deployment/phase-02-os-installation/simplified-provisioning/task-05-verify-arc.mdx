@@ -1,0 +1,116 @@
+---
+title: "Task 05: Verify Azure Arc Connectivity"
+sidebar_label: "Task 05: Verify Arc"
+sidebar_position: 5
+description: "Confirm all provisioned machines are connected to Azure Arc and ready for cluster deployment"
+category: Runbook
+scope: Azure Arc verification for simplified provisioning
+purpose: Verify machines are connected to Azure Arc and ready for clustering
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "azure-arc", "verification"]
+keywords: ["verify Arc", "provisioned machines", "ready to cluster", "Azure Arc connectivity"]
+status: Active
+---
+
+# Task 05: Verify Azure Arc Connectivity
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Azure Arc verification
+> **PURPOSE**: Confirm provisioned machines are Arc-connected and ready for cluster deployment
+> **MASTER REFERENCE**: [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2604)
+
+**Status**: Active
+
+---
+
+## Overview
+
+After provisioning completes, verify that all machines are connected to Azure Arc and show a **"Ready to cluster"** status. This confirms the machines are ready for [Phase 05: Cluster Deployment](../../phase-05-cluster-deployment/index.mdx).
+
+:::info Phase 04 Not Needed
+When using simplified provisioning, Azure Arc registration is handled automatically during the provisioning process. You do **not** need to complete [Phase 04: Arc Registration](../../phase-04-arc-registration/index.mdx) separately — it was done as part of the provisioning flow.
+:::
+
+---
+
+## Step-by-Step
+
+### Step 1: Check Provisioned Machine Status in Azure Portal
+
+1. In the Azure portal, navigate to **Azure Arc** → **Operations** → **Provisioning (preview)**
+2. Select the **Provisioned machines** tab
+3. Locate your machines in the list
+4. Verify each machine's status shows **"Ready to cluster"**
+
+### Step 2: Verify Arc Resource Details
+
+For each machine, select the machine name to view detailed status:
+
+| Check | Expected Value |
+|-------|---------------|
+| **Status** | Ready to cluster |
+| **Azure Arc status** | Connected |
+| **OS** | Azure Stack HCI |
+| **Extensions** | All mandatory extensions installed |
+
+### Step 3: Verify via Azure CLI (Optional)
+
+```azurecli
+# List Arc-connected machines in the resource group
+az connectedmachine list \
+  --resource-group <resource-group-name> \
+  --query "[].{Name:name, Status:status, OS:osName}" \
+  -o table
+```
+
+Expected output: all machines show `Connected` status with `Azure Stack HCI` OS.
+
+---
+
+## Validation
+
+- [ ] All machines show **"Ready to cluster"** in the provisioning portal
+- [ ] All machines show **Connected** in Azure Arc
+- [ ] All mandatory Azure Arc extensions are installed
+- [ ] Machine names match the Arc resource names configured in Task 03
+
+---
+
+## Next Steps
+
+With all machines verified:
+
+- If using **ISO-based installation**, you would continue to [Phase 03: OS Configuration](../../phase-03-os-configuration/index.mdx) and then [Phase 04: Arc Registration](../../phase-04-arc-registration/index.mdx)
+- With **simplified provisioning**, OS configuration and Arc registration are already done — proceed directly to [Phase 05: Cluster Deployment](../../phase-05-cluster-deployment/index.mdx)
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| Machine status not "Ready to cluster" | Check the machine's detailed status for error messages. Common causes: network connectivity issues, DNS resolution failures, or extension installation failures. |
+| Machine shows "Disconnected" in Azure Arc | Verify the machine has outbound internet access. Check firewall rules for required Azure Arc endpoints. Power cycle the machine if needed. |
+| Missing Arc extensions | Extensions install automatically. Wait a few minutes and refresh. If still missing, check the machine's extension status in Azure Arc for error details. |
+| Machine not visible in provisioning portal | Verify the voucher was uploaded correctly in Task 03. Ensure the machine is in the correct resource group. |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 04: Monitor Progress](./task-04-monitor-progress.mdx) | [↑ Simplified Provisioning](./index.mdx) | [Phase 05: Cluster Deployment →](../../phase-05-cluster-deployment/index.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |

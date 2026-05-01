@@ -1,0 +1,115 @@
+---
+title: "Task 04: Monitor Machine Setup"
+sidebar_label: "Task 04: Monitor Progress"
+sidebar_position: 4
+description: "Track the automated OS installation and configuration progress using the Configurator app"
+category: Runbook
+scope: Monitoring simplified provisioning progress
+purpose: Monitor machine setup via the Configurator app during automated provisioning
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "monitoring", "configurator-app"]
+keywords: ["monitor provisioning", "Configurator app", "machine setup", "installation progress"]
+status: Active
+---
+
+# Task 04: Monitor Machine Setup
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Monitoring simplified provisioning progress
+> **PURPOSE**: Track OS installation and configuration via the Configurator app
+> **MASTER REFERENCE**: [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2604)
+
+**Status**: Active
+
+---
+
+## Overview
+
+After provisioning machines from Azure in [Task 03](./task-03-provision-from-azure.mdx), you can optionally monitor the automated setup process using the Configurator app on your Windows 11 PC. The machines cycle through several stages automatically:
+
+1. **Maintenance environment** — Azure Arc configuration in the maintenance OS
+2. **Azure Stack HCI OS installation** — The production OS is downloaded and installed
+3. **OS configuration** — Network settings, credentials, and policies applied
+4. **Azure Arc registration** — Machine connects to Azure Arc with all mandatory extensions
+
+---
+
+## Step-by-Step
+
+### Step 1: Launch the Configurator App
+
+1. On your Windows 11 PC, open the **Start** menu
+2. Search for **Configurator App**
+3. Select **Configurator App for Azure Local V2**
+4. Run as Administrator
+
+### Step 2: Connect to a Machine
+
+1. Connect using `<machine-serial-number>.local` or the machine's IP address
+2. Enter the local administrator credentials:
+   - Default username: `edgeuser`
+   - Default password: `Password1`
+
+:::caution Factory Default Credentials
+The credentials above (`edgeuser` / `Password1`) are [Microsoft's published factory defaults](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning) for the maintenance environment. Change them at the earliest opportunity after initial connection.
+:::
+
+:::info Credential Change
+After the Azure Stack HCI OS installs, the default credentials change to the administrator credentials you configured in [Task 03](./task-03-provision-from-azure.mdx). Use those credentials for subsequent connections.
+:::
+
+### Step 3: Monitor Progress
+
+The Configurator app shows the current stage and progress. Watch for the machine to cycle through:
+
+| Stage | Description | Expected Duration |
+|-------|-------------|-------------------|
+| Maintenance environment | Azure Arc configuration in maintenance OS | 10–15 min |
+| OS installation | Azure Stack HCI OS download and install | 15–30 min |
+| OS configuration | Network, credentials, and policy setup | 5–10 min |
+| Arc registration | Azure Arc enrollment and extension install | 10–15 min |
+
+### Step 4: Repeat for All Machines
+
+Monitor each machine until the Arc configuration succeeds. The total process typically takes **30–60 minutes** per machine.
+
+---
+
+## Validation
+
+- [ ] Configurator app connects to each machine successfully
+- [ ] Each machine cycles through maintenance environment → OS install → configuration → Arc registration
+- [ ] No errors reported in the Configurator app
+- [ ] All machines reach the "Arc configuration succeeded" state
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| Cannot connect to machine | Verify the machine is powered on and on the same network. Try using the IP address instead of `<serial>.local`. |
+| Machine stuck on maintenance environment | Check network connectivity. The machine needs outbound internet access to download the OS from Azure. |
+| OS installation fails | Verify the software version selected in Task 03 is valid. Check Azure portal for provisioning error details. |
+| Credentials rejected after OS install | Use the administrator credentials configured in Task 03, not the default `edgeuser` / `Password1`. |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 03: Provision from Azure](./task-03-provision-from-azure.mdx) | [↑ Simplified Provisioning](./index.mdx) | [Task 05: Verify Arc →](./task-05-verify-arc.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |

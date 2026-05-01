@@ -1,0 +1,150 @@
+---
+title: "Task 03: Provision Machines from Azure"
+sidebar_label: "Task 03: Provision from Azure"
+sidebar_position: 3
+description: "Use the Azure portal to create a site, upload ownership vouchers, and provision Azure Local machines remotely"
+category: Runbook
+scope: Azure portal provisioning for simplified machine provisioning
+purpose: Provision machines from Azure by claiming ownership vouchers and configuring site-level settings
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "azure-portal", "site-configuration"]
+keywords: ["provision from Azure", "ownership voucher", "site configuration", "machine provisioning", "Azure portal"]
+status: Active
+---
+
+# Task 03: Provision Machines from Azure
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Azure portal machine provisioning
+> **PURPOSE**: Claim machines using ownership vouchers and configure site-level settings from Azure
+> **MASTER REFERENCE**: [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2604)
+
+**Status**: Active
+
+---
+
+## Overview
+
+With ownership vouchers collected in [Task 02](./task-02-prepare-machines.mdx), you now provision the machines from the Azure portal. This includes creating a site, configuring site-level settings (time zone, time server, credentials), and claiming machine ownership by uploading the vouchers.
+
+Once provisioning starts, Azure automatically:
+- Downloads and installs the Azure Stack HCI operating system
+- Configures the OS and network settings
+- Connects the machine to Azure Arc
+- Installs mandatory Azure Arc extensions
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Ownership vouchers | `.pem` files from [Task 02](./task-02-prepare-machines.mdx) |
+| Feature registration | `Microsoft.DeviceOnboarding/AzureLocalZTP` registered |
+| Resource providers | All required RPs registered (see [prerequisites](./index.mdx#prerequisites)) |
+| Permissions | Resource group Owner, or Contributor + RBAC Administrator |
+| Machines powered on | Connected to network and accessible |
+
+---
+
+## Step-by-Step
+
+### Step 1: Register the Provisioning Feature
+
+If not already done, register the machine provisioning feature:
+
+```azurecli
+az feature register \
+  --subscription <subscription-id> \
+  --namespace Microsoft.DeviceOnboarding \
+  --name AzureLocalZTP
+```
+
+Verify registration status:
+
+```azurecli
+az feature show \
+  --subscription <subscription-id> \
+  --namespace Microsoft.DeviceOnboarding \
+  --name AzureLocalZTP \
+  --query "properties.state" -o tsv
+```
+
+### Step 2: Navigate to Machine Provisioning
+
+1. In the Azure portal, go to **Azure Arc** → **Azure Local** → **Get started**
+2. On the banner, select **Try provisioning (preview)**
+3. On the **Machine provisioning (preview)** page, select **Provision**
+
+### Step 3: Create a Site
+
+1. Create a new site — note the **resource group name**
+2. Configure site-level settings:
+
+| Setting | Description |
+|---------|-------------|
+| **Time zone** | Common time zone for all machines under this site |
+| **Time server** | Time server for synchronized system time |
+
+:::info Arc Gateway
+Azure Arc gateway is **not supported** with simplified machine provisioning in this preview release.
+:::
+
+### Step 4: Add Machines and Vouchers
+
+1. Select the site you created
+2. Add the ownership vouchers collected in [Task 02](./task-02-prepare-machines.mdx)
+3. Select the **software version** for the Azure Stack HCI OS
+4. Enter **local administrator credentials**:
+   - Password must be at least **12 characters**
+   - Must include lowercase, uppercase, digit, and special character
+5. For each machine, select the pencil (edit) button to provide the **machine name** as the Arc resource name
+
+### Step 5: Review and Create
+
+1. On **Review + create**, review all details
+2. Select **Create** to start provisioning
+
+The machines will automatically connect to Azure, download the OS, configure the network, and register with Azure Arc. This process is fully automated after this step.
+
+---
+
+## Validation
+
+- [ ] Feature `Microsoft.DeviceOnboarding/AzureLocalZTP` registered
+- [ ] Site created with correct time zone and time server
+- [ ] All vouchers uploaded and associated with machines
+- [ ] Provisioning started — machines shown in provisioning status page
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| Feature registration pending | Wait a few minutes and re-check with `az feature show`. Registration can take up to 15 minutes. |
+| Voucher upload fails | Ensure the `.pem` file is valid and was generated during maintenance environment setup. Re-collect from the USB or Configurator app. |
+| Machine not connecting to Azure | Verify the machine is powered on, connected to the network, and has outbound internet access. Check DNS resolution. |
+| Permission denied in portal | Ensure you have Owner or Contributor + RBAC Administrator on the resource group. |
+| Wrong region error | This preview only supports **East US**. Create your provisioning resources in East US. |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 02: Prepare Machines](./task-02-prepare-machines.mdx) | [↑ Simplified Provisioning](./index.mdx) | [Task 04: Monitor Progress →](./task-04-monitor-progress.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |

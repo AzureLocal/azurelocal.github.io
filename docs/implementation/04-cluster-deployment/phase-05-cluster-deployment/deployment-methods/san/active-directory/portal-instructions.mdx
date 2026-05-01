@@ -1,0 +1,162 @@
+---
+title: "Active Directory - Portal Deployment (SAN)"
+sidebar_label: "AD - Portal (SAN)"
+sidebar_position: 1
+description: "Deploy a disaggregated Azure Local cluster with Active Directory authentication and SAN storage using the Azure Portal"
+category: Runbook
+scope: Portal-based SAN cluster deployment with Active Directory
+purpose: Deploy Azure Local cluster using external SAN storage and AD authentication via the Azure Portal wizard
+author: Azure Local Cloud
+created: 2026-05-01
+updated: 2026-05-01
+version: "1.0.0"
+tags: ["azure-local", "san", "active-directory", "portal", "disaggregated"]
+keywords: ["SAN deployment", "Active Directory", "portal", "disaggregated", "Fiber Channel"]
+status: Active
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Active Directory — Portal Deployment (SAN)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2604)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Portal-based SAN cluster deployment with Active Directory
+> **PURPOSE**: Deploy Azure Local with external SAN storage and AD authentication
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2604)
+
+**Status**: Active
+
+---
+
+## Overview
+
+This runbook deploys a disaggregated Azure Local cluster using the Azure Portal wizard with:
+- **Storage**: External SAN (Fiber Channel) — not Storage Spaces Direct
+- **Identity**: Active Directory with domain-joined nodes
+
+The portal wizard flow is similar to the [S2D AD portal deployment](../../active-directory/portal-instructions.mdx) but with key differences in storage and networking configuration.
+
+---
+
+## Prerequisites
+
+Complete all items from the [SAN Prerequisites](../index.mdx#prerequisites) and the [AD Prerequisites](../../index.mdx#active-directory-deployment) sections.
+
+Additionally:
+- [ ] FC HBA drivers installed on all nodes
+- [ ] MPIO feature enabled on all nodes (reboot completed)
+- [ ] FC zoning configured — LUNs visible on all nodes via `Get-PhysicalDisk`
+- [ ] LUNs in RAW state — not initialized, partitioned, or formatted
+- [ ] Infrastructure LUN ≥ 250 GB, performance history LUN ≥ 20 GB
+
+:::warning Disaggregated Cannot Be Rack-Aware
+When deploying a disaggregated (SAN) cluster, you **cannot** select the "Rack aware" cluster option. This is a Microsoft platform constraint. If you need rack-aware clustering, use Storage Spaces Direct (S2D) instead.
+:::
+
+---
+
+## Portal Wizard — Step-by-Step
+
+### Step 1: Start the Wizard
+
+1. In the Azure portal, navigate to **Azure Arc** → **Azure Local**
+2. On the **Get started** tab, select **Create instance**
+
+### Step 2: Basics
+
+1. Select **Subscription** and **Resource group**
+2. Enter the **Instance name** for this Azure Local cluster
+3. Select the **Region** for Azure resources
+4. **Cluster options**: Select **Standard** (Rack aware is **not available** for disaggregated)
+5. **Storage options**: Select **Storage Area Network (SAN)**
+6. **Identity provider**: Select **Active Directory**
+7. Select **+ Add machines** and choose the Arc-registered machines
+
+### Step 3: Configuration
+
+Follow the standard configuration steps. Verify node settings match your hardware.
+
+### Step 4: Networking
+
+The networking configuration for disaggregated deployments differs from S2D:
+
+1. **Storage configuration**: Select **SAN based storage** (the only available option)
+2. **Traffic types**: Configure **Management** and **Compute** traffic
+   - Available patterns: **Group management and compute** or **Separate management and compute**
+   - No storage traffic intents — storage is handled by the FC fabric
+3. For each network intent, select at least two network adapters for redundancy
+4. Configure cluster network names, VLAN IDs, and subnets
+5. Configure IP allocation (Manual or Automatic)
+
+:::info No Storage Network Intents
+Unlike S2D deployments, SAN deployments do **not** configure storage network intents through Network ATC. Storage traffic flows over the dedicated FC fabric, not over Ethernet.
+:::
+
+### Step 5: Management
+
+1. Set the **Custom location name**
+2. Configure the **cloud witness** storage account
+3. Enter **Active Directory domain** (FQDN)
+4. Enter the **OU** path (e.g., `OU=Local001,DC=contoso,DC=com`)
+5. Enter **Deployment account** credentials (the LCM user)
+6. Enter **Local administrator** credentials (must match across all nodes)
+
+### Step 6: Security
+
+Accept the recommended security settings or customize as needed.
+
+### Step 7: Advanced — SAN Storage Selection
+
+1. Select the **infrastructure LUN** (minimum 250 GB) — used for Azure Local infrastructure volumes
+2. Select the **cluster performance history LUN** (minimum 20 GB)
+
+:::warning Do Not Delete Infrastructure Volumes
+The infrastructure volumes created during deployment must **never** be deleted. They are critical for cluster operation.
+:::
+
+3. Optionally add **Tags** for governance
+
+### Step 8: Validation and Deployment
+
+1. Select **Start validation** — takes approximately 20 minutes
+2. Monitor validation progress
+3. After validation succeeds, select **Create** to begin deployment
+
+---
+
+## Post-Deployment
+
+After cluster deployment completes:
+
+1. Connect additional workload LUNs to the cluster — see [Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+2. Proceed to [Phase 06: Post-Deployment](../../../../phase-06-post-deployment/index.mdx)
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| "Rack aware" option greyed out | Expected for disaggregated deployments. Use Standard cluster option. |
+| No SAN disks visible in advanced settings | Verify FC zoning and MPIO configuration. Run `Get-PhysicalDisk` to confirm disks are visible on all nodes. |
+| Validation fails on storage | Ensure LUNs are in RAW state. Infrastructure LUN must be ≥ 250 GB. |
+| Deployment fails on networking | Verify network intents use Management+Compute only (no storage intent). Check VLAN IDs and subnet configuration. |
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [SAN Deployment Overview](../index.mdx) | [↑ Deployment Methods](../../index.mdx) | [AD — ARM Template (SAN) →](./arm-template-instructions.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |
