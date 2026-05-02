@@ -1,15 +1,15 @@
 ---
-title: "Task 13: Phase 03 Verification"
-sidebar_label: "Task 13: Verification"
-sidebar_position: 13
-description: "Read-only verification of all Phase 03 OS Configuration tasks (01–11) across all cluster nodes"
+title: "Task 16: Phase 03 Verification"
+sidebar_label: "Task 16: Verification"
+sidebar_position: 16
+description: "Read-only verification of all Phase 03 OS Configuration tasks (01–15) across all cluster nodes"
 category: "Runbook"
-scope: "Read-only verification of all Phase 03 OS Configuration tasks (01–11) across ..."
-purpose: "Read-only verification of all Phase 03 OS Configuration tasks (01–11) across all cluster nodes"
+scope: "Read-only verification of all Phase 03 OS Configuration tasks (01–15) across ..."
+purpose: "Read-only verification of all Phase 03 OS Configuration tasks (01–15) across all cluster nodes"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
-version: "1.0.0"
+updated: 2026-05-02
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -22,7 +22,7 @@ status: "Active"
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Task 13: Phase 03 Verification
+# Task 16: Phase 03 Verification
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
@@ -37,7 +37,7 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-Read-only verification script that confirms all Phase 03 OS Configuration tasks completed successfully across all cluster nodes. Run this after [Task 12](./task-12-complete-combined-script-all-steps.mdx) completes — or after running individual tasks — before proceeding to Phase 04 ARC Registration.
+Read-only verification script that confirms all Phase 03 OS Configuration tasks completed successfully across all cluster nodes. Run this after [Task 15](./task-15-complete-combined-script-all-steps.mdx) completes — or after running individual tasks — before proceeding to Phase 04 ARC Registration.
 
 :::info Read-only
 This script makes **no changes** to any node. It only reads and reports state.
@@ -59,6 +59,10 @@ This script makes **no changes** to any node. It only reads and reports state.
 | **09** | Unused adapters | No disconnected adapters still enabled |
 | **10** | Hostname | `COMPUTERNAME` matches `variables.yml` hostname |
 | **11** | Storage | No non-primordial pools, no virtual disks, all non-boot disks online |
+| **12** | FC HBA Drivers (SAN only) | FC initiator ports visible via `Get-InitiatorPort` |
+| **13** | MPIO/MSDSM (SAN only) | MPIO feature installed; vendor hardware IDs registered |
+| **14** | LUN Presentation (SAN only) | Infrastructure and perf-history LUNs RAW, all nodes, correct path count |
+| **15** | Combined Script | Nodes restarted, all baseline config applied |
 
 ---
 
@@ -66,7 +70,7 @@ This script makes **no changes** to any node. It only reads and reports state.
 
 | Requirement | Details |
 |---|---|
-| Phase 03 Tasks 01–12 complete | All OS configuration tasks run |
+| Phase 03 Tasks 01–15 complete | All OS configuration tasks run |
 | `variables.yml` populated | All node IPs, hostnames, network values set |
 | WinRM accessible from management server | Required for remote checks |
 
@@ -90,15 +94,15 @@ This script makes **no changes** to any node. It only reads and reports state.
 Run from the management server. Reads all expected values from `variables.yml` and verifies each node remotely.
 
 ```powershell
-# Task 13 - Phase 03 Verification (all nodes)
-.\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-13-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
+# Task 16 - Phase 03 Verification (all nodes)
+.\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-16-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
  -ConfigPath .\config\variables.yml
 ```
 
 **Verify a single node:**
 
 ```powershell
-.\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-13-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
+.\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-16-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
  -ConfigPath .\config\variables.yml `
  -TargetNode azl-lab-01-n02
 ```
@@ -109,7 +113,7 @@ Run from the management server. Reads all expected values from `variables.yml` a
 Run locally on each node to verify its own configuration. Set all `REPLACE_` variables before running.
 
 ```powershell
-# Task 13 - Phase 03 Verification (direct, run on each node)
+# Task 16 - Phase 03 Verification (direct, run on each node)
 # Set all REPLACE_ variables before running
 
 $ExpectedIP = "REPLACE_WITH_STATIC_IP" # cluster_nodes[].management_ip
@@ -249,7 +253,7 @@ A passing run produces a result like:
 **Script location:**
 ```
 scripts/deploy/04-cluster-deployment/phase-03-os-configuration/
- task-13-phase03-verification/powershell/
+ task-16-phase03-verification/powershell/
  Invoke-Phase03Verification-Orchestrated.ps1
 ```
 
@@ -279,7 +283,7 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 
 ## Navigation
 
-[← Task 12: Combined Script](./task-12-complete-combined-script-all-steps.mdx) · [↑ Phase 03](./index.mdx) · [Phase 04: ARC Registration →](../phase-04-arc-registration/index.mdx)
+[← Task 15: Combined Script](./task-15-complete-combined-script-all-steps.mdx) · [↑ Phase 03](./index.mdx) · [Phase 04: ARC Registration →](../phase-04-arc-registration/index.mdx)
 
 ---
 

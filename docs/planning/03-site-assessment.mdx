@@ -453,6 +453,74 @@ Write-Host "VNets: $($discovery.vnets.Count)"
 
 ---
 
+## Part 5: SAN and FC Fabric Infrastructure
+
+*Complete this section only for disaggregated SAN deployments. Skip if using Storage Spaces Direct.*
+
+**Feeds: Phase 03 Tasks 12–14 (FC HBA drivers, MPIO, LUN presentation)**
+
+### FC Switch Inventory
+
+| Setting | Fabric A Switch | Fabric B Switch |
+|---------|-----------------|-----------------|
+| **Switch Vendor** | `________________________` | `________________________` |
+| **Switch Model** | `________________________` | `________________________` |
+| **Firmware Version** | `________________________` | `________________________` |
+| **Management IP** | `________________________` | `________________________` |
+| **Total FC Ports** | `______` | `______` |
+| **Ports in Use** | `______` | `______` |
+| **Ports Available** | `______` | `______` |
+
+### SAN Array Inventory
+
+| Setting | Value |
+|---------|-------|
+| **Array Vendor** | `________________________` |
+| **Array Model** | `________________________` |
+| **Array Firmware** | `________________________` |
+| **Total Raw Capacity** | `________________________` |
+| **Array Management IP** | `________________________` |
+| **FC Target Ports (Fabric A)** | `________________________` |
+| **FC Target Ports (Fabric B)** | `________________________` |
+| **SAN Admin Contact** | `________________________` |
+
+### HBA Inventory (Per Node)
+
+| Node | HBA Vendor | HBA Model | Port 1 WWPN | Port 2 WWPN |
+|------|-----------|-----------|-------------|-------------|
+| Node 1 | `____________` | `____________` | `________________________` | `________________________` |
+| Node 2 | `____________` | `____________` | `________________________` | `________________________` |
+| Node 3 | `____________` | `____________` | `________________________` | `________________________` |
+| Node 4 | `____________` | `____________` | `________________________` | `________________________` |
+
+*(WWPNs collected during Phase 03 Task 12)*
+
+### LUN Layout
+
+| LUN | Purpose | Min Size | Provisioned | State |
+|-----|---------|----------|-------------|-------|
+| Infrastructure Volume | Azure Local system | 250 GB | ☐ Yes ☐ No | Must be RAW |
+| Performance History | Cluster metrics | 20 GB | ☐ Yes ☐ No | Must be RAW |
+| Workload LUN 1 | `________________________` | `_______ GB` | ☐ Yes ☐ No | Initialize post-deployment |
+| Workload LUN 2 | `________________________` | `_______ GB` | ☐ Yes ☐ No | Initialize post-deployment |
+
+### FC Zoning Checklist
+
+- [ ] Single-initiator/single-target zoning policy confirmed with SAN admin
+- [ ] WWPN aliases created on both fabric switches (per node and per SAN port)
+- [ ] Zones created on Fabric A: `______` zones
+- [ ] Zones created on Fabric B: `______` zones
+- [ ] Zonesets activated on both fabrics
+- [ ] LUN presentation verified from all nodes (`Get-PhysicalDisk -BusType FC`)
+- [ ] Infrastructure and performance history LUNs confirmed RAW
+
+**References:**
+- [Storage Architecture Planning](./07-storage-planning.mdx)
+- [Microsoft Learn — FC without backup pattern](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2604)
+- [Microsoft Learn — FC with backup pattern](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2604)
+
+---
+
 ## Assessment Deliverables Checklist
 
 ### Active Directory Planning (Part 1)
@@ -483,6 +551,14 @@ Write-Host "VNets: $($discovery.vnets.Count)"
 - [ ] Azure tenant discovery completed (if existing resources)
 - [ ] Discovery outputs reviewed and categorized
 - [ ] Relevant resources imported to variables.yml
+
+### SAN and FC Fabric Infrastructure (Part 5 — SAN deployments only)
+
+- [ ] FC switch inventory documented (both fabrics)
+- [ ] SAN array inventory documented
+- [ ] HBA inventory and WWPN collection planned
+- [ ] LUN layout approved and provisioned (infra and perf-history LUNs RAW)
+- [ ] FC zoning policy confirmed with SAN admin
 
 ---
 

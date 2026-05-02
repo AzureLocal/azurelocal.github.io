@@ -385,6 +385,51 @@ Document the physical NIC identification for each node:
 
 ---
 
+## Fibre Channel HBA Requirements (SAN Deployments)
+
+*This section applies only to disaggregated SAN deployments. Skip if using Storage Spaces Direct.*
+
+Disaggregated Azure Local clusters require Fibre Channel Host Bus Adapters (HBAs) in each node to connect to the external SAN array. HBAs must be validated for the Azure Local node model in use.
+
+### HBA Specifications
+
+| Requirement | Details |
+|------------|---------|
+| **Ports per node** | Minimum 2 (one per fabric for redundancy) |
+| **Dual-fabric** | Two independent FC switches strongly recommended |
+| **Driver support** | Windows Server driver available from vendor |
+| **Certification** | Validated against Microsoft Azure Local hardware catalog |
+
+:::tip Consult your hardware vendor
+Azure Local nodes are validated with specific HBA models. Consult your server vendor's Azure Local configuration guide for the supported HBA list. The HBA driver must be installed before Arc registration — see [Phase 03 Task 12](../implementation/04-cluster-deployment/phase-03-os-configuration/task-12-install-fc-hba-drivers-conditional.mdx).
+:::
+
+### FC Switch Port Planning
+
+Each node contributes HBA ports to both fabrics. Use the following formula to determine the number of switch ports required:
+
+```
+Ports per fabric = (Number of nodes × HBA ports per node per fabric) + SAN array target ports
+```
+
+Example: 4-node cluster, 1 HBA port per node per fabric, 2 SAN target ports per fabric:
+- Ports per fabric = (4 × 1) + 2 = **6 FC switch ports per fabric**
+
+### Pre-Installation Checklist
+
+- [ ] HBA model validated for the Azure Local node model
+- [ ] FC switch ports allocated per formula above
+- [ ] Vendor driver package downloaded
+- [ ] SAN array FC target port WWPNs documented
+- [ ] Dual-fabric FC switch inventory confirmed
+
+**References:**
+- [Storage Architecture Planning](./07-storage-planning.mdx)
+- [Microsoft Learn — FC planning pattern without backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2604)
+- [Microsoft Learn — FC planning pattern with backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2604)
+
+---
+
 ## Next Steps
 
 After completing hardware requirements documentation:

@@ -39,8 +39,12 @@ This stage configures the Azure Stack HCI operating system on all cluster nodes 
 8. Enable ICMP firewall rules for network diagnostics
 9. Disable unused network adapters
 10. Set node hostnames
-11. Clear previous storage configuration (conditional)
-12. Optional: Run complete combined script
+11. Clear previous storage configuration (conditional — S2D redeployments only)
+12. Install FC HBA drivers (conditional — SAN deployments only)
+13. Configure MPIO and vendor MSDSM (conditional — SAN deployments only)
+14. Verify SAN LUN presentation (conditional — SAN deployments only)
+15. Optional: Run complete combined script (Tasks 02–10)
+16. Phase 03 Verification
 
 **Validation:**
 
@@ -58,38 +62,49 @@ This stage configures the Azure Stack HCI operating system on all cluster nodes 
 
 ```mermaid
 flowchart TD
- A[Start: OS Installed] --> B[Enable WinRM]
- B --> C[Enable RDP]
- C --> D[Static IP]
- D --> E[Disable DHCP]
- E --> F[DNS Config]
- F --> G[Verify DNS]
- G --> H[NTP Config]
- H --> I[Enable ICMP]
- I --> J[Disable Unused NICs]
- J --> K[Hostname]
- K --> L[Storage Cleanup]
- L --> M[Ready for Arc]
+    A[Start: OS Installed] --> B[Enable WinRM]
+    B --> C[Enable RDP]
+    C --> D[Static IP]
+    D --> E[Disable DHCP]
+    E --> F[DNS Config]
+    F --> G[Verify DNS]
+    G --> H[NTP Config]
+    H --> I[Enable ICMP]
+    I --> J[Disable Unused NICs]
+    J --> K[Hostname]
+    K --> L[Storage Cleanup T11]
+    L --> M{Storage Type?}
+    M -->|S2D| N[Combined Script T15]
+    M -->|SAN| O[FC HBA Drivers T12]
+    O --> P[MPIO & MSDSM T13]
+    P --> Q[Verify LUN Presentation T14]
+    Q --> N
+    N --> R[Phase 03 Verification T16]
+    R --> S[Ready for Arc Registration]
 ```
 
 ---
 
 ## Steps Overview
 
-| Step | Description | Time |
-|------|-------------|------|
-| [Task 1](./task-01-enable-winrm-for-remote-management.mdx) | Enable WinRM for Remote Management | 5 min |
-| [Task 2](./task-02-enable-rdp.mdx) | Enable RDP (Remote Desktop Protocol) | 5 min |
-| [Task 3](./task-03-configure-static-ip-address.mdx) | Configure Static IP Address | 10 min |
-| [Task 4](./task-04-disable-dhcp-on-management-adapter.mdx) | Disable DHCP on Management Adapter | 5 min |
-| [Task 5](./task-05-configure-dns-servers.mdx) | Configure DNS Servers | 5 min |
-| [Task 6](./task-06-verify-dns-client-configuration.mdx) | Verify DNS Client Configuration | 5 min |
-| [Task 7](./task-07-configure-time-synchronization-ntp.mdx) | Configure Time Synchronization (NTP) | 5 min |
-| [Task 8](./task-08-enable-icmp-ping.mdx) | Enable ICMP (Ping) | 5 min |
-| [Task 9](./task-09-disable-unused-network-adapters.mdx) | Disable Unused Network Adapters | 5 min |
-| [Task 10](./task-10-configure-hostname.mdx) | Configure Hostname | 5 min |
-| [Task 11](./task-11-clear-previous-storage-configuration-conditional.mdx) | Clear Previous Storage Configuration | 5 min |
-| [Task 12](./task-12-complete-combined-script-all-steps.mdx) | Complete Combined Script | N/A |
+| Step | Description | Time | Applies To |
+|------|-------------|------|-----------|
+| [Task 01](./task-01-enable-winrm-for-remote-management.mdx) | Enable WinRM for Remote Management | 5 min | All |
+| [Task 02](./task-02-enable-rdp.mdx) | Enable RDP (Remote Desktop Protocol) | 5 min | All |
+| [Task 03](./task-03-configure-static-ip-address.mdx) | Configure Static IP Address | 10 min | All |
+| [Task 04](./task-04-disable-dhcp-on-management-adapter.mdx) | Disable DHCP on Management Adapter | 5 min | All |
+| [Task 05](./task-05-configure-dns-servers.mdx) | Configure DNS Servers | 5 min | All |
+| [Task 06](./task-06-verify-dns-client-configuration.mdx) | Verify DNS Client Configuration | 5 min | All |
+| [Task 07](./task-07-configure-time-synchronization-ntp.mdx) | Configure Time Synchronization (NTP) | 5 min | All |
+| [Task 08](./task-08-enable-icmp-ping.mdx) | Enable ICMP (Ping) | 5 min | All |
+| [Task 09](./task-09-disable-unused-network-adapters.mdx) | Disable Unused Network Adapters | 5 min | All |
+| [Task 10](./task-10-configure-hostname.mdx) | Configure Hostname | 5 min | All |
+| [Task 11](./task-11-clear-previous-storage-configuration-conditional.mdx) | Clear Previous Storage Configuration | 5 min | S2D redeployment |
+| [Task 12](./task-12-install-fc-hba-drivers-conditional.mdx) | Install FC HBA Drivers | 15 min | SAN only |
+| [Task 13](./task-13-configure-mpio-and-vendor-msdsm-conditional.mdx) | Configure MPIO & Vendor MSDSM | 15 min | SAN only |
+| [Task 14](./task-14-verify-san-lun-presentation-conditional.mdx) | Verify SAN LUN Presentation | 10 min | SAN only |
+| [Task 15](./task-15-complete-combined-script-all-steps.mdx) | Complete Combined Script | N/A | Optional |
+| [Task 16](./task-16-phase03-verification.mdx) | Phase 03 Verification | 10 min | All |
 
 ---
 
@@ -138,7 +153,9 @@ The following variables are used during OS configuration:
 
 **Manual**: Follow each step in sequence.
 
-**Automated**: Use [Task 12: Combined Script](./task-12-complete-combined-script-all-steps.mdx) for full automation.
+**Automated**: Use [Task 15: Combined Script](./task-15-complete-combined-script-all-steps.mdx) for full automation of Tasks 02–10.
+
+**SAN deployments**: Run Tasks 12–14 after Task 11 before running the combined script.
 
 ---
 
@@ -152,6 +169,9 @@ The following variables are used during OS configuration:
 | DNS resolution works | ✅ |
 | Time synchronized | ✅ |
 | Hostname correct | ✅ |
+| FC HBA ports visible (SAN only) | ⚙️ |
+| MPIO configured (SAN only) | ⚙️ |
+| Infrastructure LUNs RAW (SAN only) | ⚙️ |
 
 ---
 
@@ -161,7 +181,7 @@ After completing OS configuration:
 
 | All Steps Complete? | Next Action |
 |---------------------|-------------|
-| ✅ Yes | Proceed to [Phase 14: Arc Registration](../phase-04-arc-registration/index.mdx) |
+| ✅ Yes | Proceed to [Phase 04: Arc Registration](../phase-04-arc-registration/index.mdx) |
 | ❌ No | Complete remaining configuration steps |
 
 ---

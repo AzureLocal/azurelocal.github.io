@@ -1,0 +1,225 @@
+---
+title: "Task 14: Verify SAN LUN Presentation (Conditional)"
+sidebar_label: "Task 14: Verify LUN Presentation"
+sidebar_position: 14
+description: "Verify SAN LUN presentation and confirm infrastructure LUNs are RAW before Azure Local deployment"
+category: "Runbook"
+scope: "SAN LUN verification before cluster deployment"
+purpose: "Confirm all required LUNs are visible to all nodes and infrastructure LUNs remain RAW"
+author: "Azure Local Cloud"
+created: 2026-05-02
+updated: 2026-05-02
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - os-configuration
+  - san
+  - lun
+keywords:
+  - LUN
+  - SAN
+  - RAW
+  - Fibre Channel
+  - MPIO
+  - disk verification
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 14: Verify SAN LUN Presentation (Conditional)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: SAN LUN pre-deployment verification
+> **PURPOSE**: Confirm all required LUNs are visible and infrastructure LUNs remain RAW
+> **MASTER REFERENCE**: [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+
+**Status**: Active
+
+:::info Skip this task if deploying Storage Spaces Direct (S2D)
+This task applies only to **disaggregated SAN deployments**. If you are deploying with Storage Spaces Direct (hyperconverged), skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx).
+:::
+
+:::danger Do NOT initialize the infrastructure or performance history LUNs
+The infrastructure volume LUN and performance history LUN must remain **RAW** (no partition table, no file system) until the Azure Local deployment wizard runs. If you initialize these LUNs before deployment, the wizard will fail.
+
+Workload LUNs are added and initialized **after** cluster deployment — see [Phase 06 Task 05](../../phase-06-post-deployment/task-05-storage-configuration.mdx).
+:::
+
+---
+
+## Overview
+
+This task confirms that all required SAN LUNs are correctly presented to all cluster nodes via MPIO, and that the infrastructure LUNs are in the correct RAW state. This is a verification-only step — no disk initialization occurs.
+
+---
+
+## When to Run
+
+| Scenario | Run? |
+|----------|------|
+| SAN disaggregated deployment | ✅ Yes — all nodes |
+| Storage Spaces Direct (S2D) | ❌ Skip |
+| After FC zoning changes | ✅ Yes — re-verify |
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Tasks 12 and 13 complete | FC HBA drivers and MPIO configured |
+| FC zoning complete | FC fabric admin has configured single-initiator/single-target zones |
+| SAN LUNs provisioned | Infra LUN (≥250 GB), perf history LUN (≥20 GB), and workload LUNs created on the SAN array and mapped to all nodes |
+| FC fabric connectivity | HBA ports visible in fabric; WWPN aliases and zones active |
+
+:::note Coordinate with your SAN administrator
+LUN presentation timing must be coordinated with the SAN array administrator. The infrastructure and performance history LUNs should be provisioned **before** this step but left uninitialized.
+:::
+
+---
+
+## Required LUN Layout
+
+| LUN | Purpose | Min Size | Expected State |
+|-----|---------|----------|----------------|
+| Infrastructure Volume | Azure Local system data | 250 GB | RAW — no partition |
+| Performance History | Cluster metrics store | 20 GB | RAW — no partition |
+| Workload CSVs | VM storage | Per capacity plan | **Not visible yet** — add post-deployment |
+
+---
+
+## Step 1: Rescan and Verify Disks
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run on each node individually via console, KVM, or RDP.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-14-verify-san-lun-presentation-conditional/powershell/Verify-SANLUNs-Direct.ps1`
+
+```powershell
+# Task 14 - Verify SAN LUN Presentation (run on each node)
+
+# Rescan storage subsystem
+Update-HostStorageCache
+
+# List all FC disks (should include infrastructure and perf-history LUNs)
+Get-PhysicalDisk | Where-Object BusType -eq 'Fibre Channel' |
+    Select-Object FriendlyName, SerialNumber, Size, CanPool, BusType, OperationalStatus |
+    Format-Table -AutoSize
+
+# Verify infrastructure LUNs are RAW (no partition table)
+Get-Disk | Where-Object {
+    $_.BusType -eq 'Fibre Channel' -and $_.PartitionStyle -eq 'RAW'
+} | Select-Object Number, FriendlyName, Size, PartitionStyle |
+    Format-Table -AutoSize
+
+# Confirm MPIO path count per disk
+mpclaim -s -d
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run from the management server against all nodes.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-14-verify-san-lun-presentation-conditional/powershell/Verify-SANLUNs-Orchestrated.ps1`
+
+```powershell
+# Task 14 - Verify SAN LUN Presentation (orchestrated, all nodes)
+# variables.yml variables:
+# cluster_nodes[].management_ip -> $ServerList
+$ConfigPath = "$env:USERPROFILE\variables.yml"
+$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
+    ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+
+Write-Host "=== FC Disk Inventory ===" -ForegroundColor Cyan
+Invoke-Command -ComputerName $ServerList -ScriptBlock {
+    Update-HostStorageCache
+    Get-PhysicalDisk | Where-Object BusType -eq 'Fibre Channel' |
+        Select-Object @{N='Node';E={$env:COMPUTERNAME}}, FriendlyName, Size, CanPool, OperationalStatus
+} | Sort-Object Node | Format-Table -AutoSize
+
+Write-Host "=== RAW Disk Check (Infrastructure LUNs) ===" -ForegroundColor Cyan
+Invoke-Command -ComputerName $ServerList -ScriptBlock {
+    Get-Disk | Where-Object {
+        $_.BusType -eq 'Fibre Channel' -and $_.PartitionStyle -eq 'RAW'
+    } | Select-Object @{N='Node';E={$env:COMPUTERNAME}}, Number, FriendlyName, Size, PartitionStyle
+} | Sort-Object Node | Format-Table -AutoSize
+```
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
+
+:::note Content Pending
+See toolkit repository for standalone implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Expected Results
+
+| Check | Expected |
+|-------|---------|
+| FC disks visible on all nodes | ✅ Same LUNs appear on every node |
+| Infrastructure LUN (≥250 GB) | `PartitionStyle = RAW` |
+| Performance history LUN (≥20 GB) | `PartitionStyle = RAW` |
+| MPIO path count | ≥2 paths per LUN (2 HBAs × 1 fabric or 2 × 2 with dual-fabric) |
+| `OperationalStatus` | `OK` for all LUNs |
+
+:::warning If LUNs are NOT visible on all nodes
+Verify FC zoning — each initiator WWPN must have a zone to each target port. Re-run zoning configuration and rescan: `Update-HostStorageCache`. Confirm `mpclaim -s -d` shows paths.
+:::
+
+:::warning If a LUN shows multiple entries per node
+MPIO is not claiming the disk. Verify `New-MSDSMSupportedHW` hardware IDs match the array vendor, then rescan.
+:::
+
+---
+
+## Validation Checklist
+
+- [ ] Infrastructure LUN (≥250 GB) visible on all nodes with `PartitionStyle = RAW`
+- [ ] Performance history LUN (≥20 GB) visible on all nodes with `PartitionStyle = RAW`
+- [ ] No LUN appears more than once per node (MPIO claiming correctly)
+- [ ] MPIO path count matches expected value (≥2 per LUN)
+- [ ] `OperationalStatus = OK` for all FC disks
+
+---
+
+## Alternatives
+
+The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
+
+| Method | Description |
+|--------|-------------|
+| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
+| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+---
+
+## Navigation
+
+[← Task 13: MPIO & MSDSM](./task-13-configure-mpio-and-vendor-msdsm-conditional.mdx) · [↑ Phase 03](./index.mdx) · [Task 15: Combined Script →](./task-15-complete-combined-script-all-steps.mdx)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |

@@ -1,0 +1,270 @@
+---
+title: "Task 13: Configure MPIO and Vendor MSDSM (Conditional)"
+sidebar_label: "Task 13: MPIO & MSDSM"
+sidebar_position: 13
+description: "Enable Windows Multipath I/O and configure vendor-specific MSDSM for Fibre Channel SAN disaggregated deployments"
+category: "Runbook"
+scope: "MPIO and MSDSM configuration for SAN deployments"
+purpose: "Enable MPIO and configure vendor MSDSM so Windows correctly claims FC disks as multi-path volumes"
+author: "Azure Local Cloud"
+created: 2026-05-02
+updated: 2026-05-02
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - os-configuration
+  - san
+  - mpio
+  - msdsm
+keywords:
+  - MPIO
+  - MSDSM
+  - Multipath IO
+  - Fibre Channel
+  - SAN
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 13: Configure MPIO and Vendor MSDSM (Conditional)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: MPIO and MSDSM configuration
+> **PURPOSE**: Enable MPIO and configure vendor MSDSM so Windows correctly claims FC disks as multi-path volumes
+> **MASTER REFERENCE**: [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+
+**Status**: Active
+
+:::info Skip this task if deploying Storage Spaces Direct (S2D)
+This task applies only to **disaggregated SAN deployments**. If you are deploying with Storage Spaces Direct (hyperconverged), skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx).
+:::
+
+---
+
+## Overview
+
+Windows Multipath I/O (MPIO) aggregates multiple physical paths to a SAN LUN into a single logical disk, providing both redundancy and load distribution. MPIO must be installed as a Windows Feature, and the Microsoft Device Specific Module (MSDSM) must be configured with the hardware IDs for the specific SAN array in use. Without MSDSM, Windows presents each path as a separate disk rather than claiming them as a single multi-path volume.
+
+---
+
+## When to Run
+
+| Scenario | Run? |
+|----------|------|
+| SAN disaggregated deployment | ✅ Yes — all nodes |
+| Storage Spaces Direct (S2D) | ❌ Skip |
+| MPIO already installed from previous deployment | ✅ Yes — verify vendor hardware IDs still registered |
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Task 12 complete | FC HBA drivers installed |
+| SAN array vendor | Vendor and model confirmed (hardware IDs needed) |
+| FC fabric | Zoning configured (nodes can see SAN ports) — OR zoning will be completed post-Arc, before LUN access |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `cluster_nodes[].management_ip` | string | PSRemoting target IP |
+| `storage.san_array_vendor` | string | SAN array vendor name for documentation |
+
+---
+
+## Step 1: Install MPIO Windows Feature
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run on each node individually via console, KVM, or RDP.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional/powershell/Enable-MPIO-Direct.ps1`
+
+```powershell
+# Task 13 - Step 1: Install MPIO Feature (run on each node)
+Add-WindowsFeature -Name Multipath-IO -IncludeManagementTools
+```
+
+:::warning Restart required
+Restart each node after the feature installation completes before proceeding to Step 2.
+:::
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run from the management server against all nodes.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional/powershell/Enable-MPIO-Orchestrated.ps1`
+
+```powershell
+# Task 13 - Step 1: Install MPIO Feature (orchestrated)
+# variables.yml variables:
+# cluster_nodes[].management_ip -> $ServerList
+
+$ConfigPath = "$env:USERPROFILE\variables.yml"
+$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
+    ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+
+Invoke-Command -ComputerName $ServerList -ScriptBlock {
+    Add-WindowsFeature -Name Multipath-IO -IncludeManagementTools
+}
+
+# Restart all nodes after feature installation
+$ServerList | ForEach-Object { Restart-Computer -ComputerName $_ -Force }
+```
+
+:::warning Restart required
+The script restarts all nodes immediately after feature installation. Wait for all nodes to return online before proceeding to Step 2.
+:::
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
+
+:::note Content Pending
+See toolkit repository for standalone implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Step 2: Configure Vendor MSDSM Hardware IDs
+
+After all nodes have restarted, configure the Microsoft DSM with your SAN array's hardware IDs. Select the tab for your array vendor.
+
+<Tabs groupId="san-vendor">
+<TabItem value="pure-storage" label="Pure Storage" default>
+
+```powershell
+# Task 13 - Step 2: Configure MSDSM for Pure Storage FlashArray
+# Auto-claim FC disks via MPIO
+Enable-MSDSMAutomaticClaim -BusType "FC"
+
+# Register Pure Storage hardware IDs
+New-MSDSMSupportedHW -VendorId "PURE" -ProductId "FlashArray"
+
+# Set load balancing policy (Least Queue Depth recommended for All-Flash)
+Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy LQD
+```
+
+</TabItem>
+<TabItem value="dell-powerstore" label="Dell PowerStore">
+
+```powershell
+# Task 13 - Step 2: Configure MSDSM for Dell PowerStore
+Enable-MSDSMAutomaticClaim -BusType "FC"
+
+# Register Dell PowerStore hardware IDs
+New-MSDSMSupportedHW -VendorId "DELL" -ProductId "PowerStore"
+
+# Set load balancing policy
+Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy LQD
+```
+
+</TabItem>
+<TabItem value="hpe-alletra" label="HPE Alletra">
+
+```powershell
+# Task 13 - Step 2: Configure MSDSM for HPE Alletra
+Enable-MSDSMAutomaticClaim -BusType "FC"
+
+# Register HPE Alletra hardware IDs
+New-MSDSMSupportedHW -VendorId "HP" -ProductId "OPEN-V"
+New-MSDSMSupportedHW -VendorId "HP" -ProductId "Alletra"
+
+# Set load balancing policy
+Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy LQD
+```
+
+</TabItem>
+<TabItem value="hitachi-vsp" label="Hitachi VSP">
+
+```powershell
+# Task 13 - Step 2: Configure MSDSM for Hitachi VSP
+Enable-MSDSMAutomaticClaim -BusType "FC"
+
+# Register Hitachi VSP hardware IDs
+New-MSDSMSupportedHW -VendorId "HITACHI" -ProductId "OPEN-V"
+
+# Set load balancing policy (Round Robin typical for VSP)
+Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy RR
+```
+
+</TabItem>
+<TabItem value="netapp-ontap" label="NetApp ONTAP">
+
+```powershell
+# Task 13 - Step 2: Configure MSDSM for NetApp ONTAP
+Enable-MSDSMAutomaticClaim -BusType "FC"
+
+# Register NetApp ONTAP hardware IDs
+New-MSDSMSupportedHW -VendorId "NETAPP" -ProductId "LUN"
+
+# Set load balancing policy
+Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy LQD
+```
+
+</TabItem>
+</Tabs>
+
+:::tip Verify hardware IDs with your SAN vendor
+The hardware IDs (VendorId / ProductId) shown above are commonly used values. Always verify the exact IDs for your specific array firmware version with your SAN vendor's Windows MPIO configuration guide.
+:::
+
+---
+
+## Verification
+
+```powershell
+# Confirm MPIO is installed
+(Get-WindowsFeature -Name Multipath-IO).InstallState
+
+# Confirm supported hardware IDs are registered
+Get-MSDSMSupportedHW | Format-Table VendorId, ProductId
+
+# Confirm auto-claim is enabled for FC
+mpclaim -s -d
+```
+
+**Expected:** `InstallState = Installed`; your vendor's IDs appear in the supported HW list; `mpclaim` shows disk paths (will show 0 paths until LUNs are presented and zoning is complete).
+
+---
+
+## Validation Checklist
+
+- [ ] MPIO Windows feature installed on all nodes
+- [ ] All nodes restarted after MPIO installation
+- [ ] Vendor hardware IDs registered via `New-MSDSMSupportedHW`
+- [ ] `Enable-MSDSMAutomaticClaim -BusType "FC"` confirmed on all nodes
+- [ ] Load balance policy set
+
+---
+
+## Navigation
+
+[← Task 12: FC HBA Drivers](./task-12-install-fc-hba-drivers-conditional.mdx) · [↑ Phase 03](./index.mdx) · [Task 14: Verify LUN Presentation →](./task-14-verify-san-lun-presentation-conditional.mdx)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |

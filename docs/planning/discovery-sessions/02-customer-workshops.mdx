@@ -176,3 +176,76 @@ azurelocal.mgmt
  ├── tpdomainjoin
  └── svc.migration
 ```
+
+---
+
+## Storage Architecture Workshop
+
+**Duration:** 1 hour  
+**Participants:** Infrastructure architect, storage administrator, Azure Local deployment engineer  
+**Output:** Documented storage topology decision and SAN configuration requirements (if applicable)
+
+### Workshop Objectives
+
+- Determine storage topology (S2D vs SAN disaggregated)
+- Document SAN array and FC fabric details if SAN is selected
+- Define LUN layout and capacity requirements
+- Establish FC zoning policy
+
+### Discussion Guide
+
+#### Topic 1: Storage Topology Decision (15 min)
+
+| Question | S2D | SAN |
+|---------|-----|-----|
+| Existing SAN investment? | Not required | ✅ Leverages existing |
+| Team has FC expertise? | Not required | ✅ Required |
+| Workloads require specific IOPS/latency? | Software-defined, NVMe-backed | Hardware-specific guarantees |
+| Shared storage between workloads? | Azure Local only | Multi-platform possible |
+
+Key questions to ask:
+- Does the customer have an existing SAN that they want to use for Azure Local storage?
+- Is there an FC fabric already in place?
+- Is there an in-house storage admin who manages the SAN?
+- What are the workload IOPS and latency requirements?
+
+#### Topic 2: SAN Array Details (if SAN selected — 20 min)
+
+- Array vendor and model
+- Available capacity and number of available LUNs
+- FC port count per controller
+- Supported host operating systems (confirm Windows Server 2025 / Azure Local support)
+- MPIO/DSM availability for the array
+
+#### Topic 3: LUN Layout Planning (15 min)
+
+If SAN is selected, document the following LUN requirements:
+
+| LUN | Purpose | Min Size | Notes |
+|-----|---------|----------|-------|
+| Infrastructure Volume | Azure Local system | 250 GB | Must remain RAW before deployment |
+| Performance History | Cluster metrics | 20 GB | Must remain RAW before deployment |
+| Workload LUNs | VM storage | Per capacity plan | Sized based on workload assessment |
+
+:::warning Infra LUN state
+Emphasize to the SAN admin: the infrastructure and performance history LUNs must **NOT** be initialized before the Azure Local deployment wizard runs. The wizard claims them during cluster creation.
+:::
+
+#### Topic 4: FC Zoning Policy (10 min)
+
+- Confirm zoning policy: single-initiator/single-target is Microsoft's recommendation
+- Agree on naming convention for WWPN aliases and zone names
+- Identify who will configure zoning: SAN admin, FC switch admin, or deployment team
+- Confirm timing: zoning is configured after HBA WWPNs are collected (Phase 03 Task 12) but before the deployment wizard runs
+
+### Workshop Output
+
+Document the following decisions:
+- [ ] Storage topology selected: ☐ S2D ☐ SAN
+- [ ] If SAN: SAN array model and firmware confirmed
+- [ ] If SAN: LUN layout approved and documented in `variables.yml`
+- [ ] If SAN: FC zoning policy agreed
+- [ ] If SAN: Responsible party for zoning configuration confirmed
+- [ ] If SAN: SAN admin contact documented
+
+**Reference:** [Storage Architecture Planning](../07-storage-planning.mdx)

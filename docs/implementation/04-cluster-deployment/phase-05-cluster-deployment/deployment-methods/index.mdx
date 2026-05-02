@@ -39,6 +39,39 @@ For Azure Local Cloud Azure Local deployments, **Active Directory with ARM Templ
 
 ---
 
+## Storage Topology
+
+| Topology | Description | Use Case |
+|----------|-------------|----------|
+| **Storage Spaces Direct (S2D)** | Hyperconverged — local NVMe drives managed by Windows S2D | New deployments without existing SAN investment |
+| **Disaggregated SAN** | External SAN array via Fibre Channel | Environments with existing SAN infrastructure or specific storage requirements |
+
+:::tip S2D is the default
+Storage Spaces Direct is the recommended topology for most Azure Local Cloud deployments. Choose SAN only when there is an existing Fibre Channel SAN that the customer explicitly wants to use.
+:::
+
+### SAN Pre-Deployment Requirements
+
+If using SAN disaggregated topology, complete Phase 03 Tasks 12–14 **before** running the deployment wizard:
+
+1. [Task 12 — Install FC HBA Drivers](../../phase-03-os-configuration/task-12-install-fc-hba-drivers-conditional.mdx)
+2. [Task 13 — Configure MPIO & MSDSM](../../phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional.mdx)
+3. [Task 14 — Verify SAN LUN Presentation](../../phase-03-os-configuration/task-14-verify-san-lun-presentation-conditional.mdx)
+
+:::danger Infrastructure LUNs must be RAW
+The SAN infrastructure volume (≥250 GB) and performance history LUN (≥20 GB) must remain **uninitialized (RAW)** until the deployment wizard claims them. Do not initialize these LUNs before running the wizard.
+:::
+
+:::warning Post-Arc zoning window
+FC zoning is typically completed in two steps:
+1. **Before deployment**: Zone server HBA ports to SAN array target ports
+2. **After Arc registration**: Add the infrastructure volume and performance history LUNs to the host group
+
+Coordinate timing with your SAN administrator.
+:::
+
+---
+
 ## Deployment Methods Matrix
 
 ### Storage Spaces Direct (S2D) — Hyperconverged
@@ -64,7 +97,7 @@ For SAN deployment details, see [SAN (Disaggregated) Deployment](./san/index.mdx
 
 ---
 
-## Active Directory Deployment
+## Active Directory Deployment (S2D and SAN)
 
 Enterprise deployments using domain-joined nodes with Active Directory authentication.
 
@@ -77,16 +110,20 @@ Enterprise deployments using domain-joined nodes with Active Directory authentic
 - WinRM (WS-MAN port 5985) open bi-directionally between all nodes for inter-node cluster communication
 - If a firewall exists between Azure Local nodes and AD, firewall rules must permit AD communication
 
+:::info Applies to both storage topologies
+These Active Directory deployment steps apply to both S2D and SAN disaggregated deployments. Select the appropriate runbook for your topology below.
+:::
+
 ### Deployment Options
 
-| Method | Description | Link |
-|--------|-------------|------|
-| **Portal** | Interactive wizard-based deployment | [AD - Portal Deployment](./active-directory/portal-instructions.mdx) |
-| **ARM Template** | Infrastructure-as-code deployment | [AD - ARM Template](./active-directory/arm-template-instructions.mdx) |
+| Method | S2D Runbook | SAN Runbook |
+|--------|-------------|-------------|
+| **Portal** | [AD/S2D — Portal](./s2d/active-directory/portal-instructions.mdx) | [AD/SAN — Portal](./san/active-directory/portal-instructions.mdx) |
+| **ARM Template** | [AD/S2D — ARM Template](./s2d/active-directory/arm-template-instructions.mdx) | [AD/SAN — ARM Template](./san/active-directory/arm-template-instructions.mdx) |
 
 ---
 
-## Local Identity Deployment
+## Local Identity Deployment (S2D and SAN)
 
 Deployments using local Windows accounts, suitable for edge scenarios or environments without Active Directory.
 
@@ -104,12 +141,16 @@ Deployments using local Windows accounts, suitable for edge scenarios or environ
 **Windows Admin Center is not supported** in Local Identity with Key Vault environments. Use PowerShell or the Azure portal for administrative tasks.
 :::
 
+:::info Applies to both storage topologies
+These Local Identity deployment steps apply to both S2D and SAN disaggregated deployments. Select the appropriate runbook for your topology below.
+:::
+
 ### Deployment Options
 
-| Method | Description | Link |
-|--------|-------------|------|
-| **Portal** | Interactive wizard-based deployment | [Local Identity - Portal](./local-identity/portal-instructions.mdx) |
-| **ARM Template** | Infrastructure-as-code deployment | [Local Identity - ARM Template](./local-identity/arm-template-instructions.mdx) |
+| Method | S2D Runbook | SAN Runbook |
+|--------|-------------|-------------|
+| **Portal** | [LI/S2D — Portal](./s2d/local-identity/portal-instructions.mdx) | [LI/SAN — Portal](./san/local-identity/portal-instructions.mdx) |
+| **ARM Template** | [LI/S2D — ARM Template](./s2d/local-identity/arm-template-instructions.mdx) | [LI/SAN — ARM Template](./san/local-identity/arm-template-instructions.mdx) |
 
 ---
 
@@ -177,13 +218,22 @@ For full details, see [SAN (Disaggregated) Deployment](./san/index.mdx).
 
 ## Quick Start
 
-### Azure Local Cloud Standard Deployment
+### Azure Local Cloud Standard Deployment (S2D)
 
-For standard Azure Local Cloud Azure Local deployments:
+For standard Azure Local Cloud Azure Local deployments with Storage Spaces Direct:
 
 1. Complete [Phase 14: Arc Registration](../../phase-04-arc-registration/index.mdx)
-2. Use [Active Directory - ARM Template](./active-directory/arm-template-instructions.mdx)
+2. Use [AD/S2D — ARM Template](./s2d/active-directory/arm-template-instructions.mdx)
 3. Follow the deployment procedure with Azure Local Cloud templates
+4. Proceed to [Phase 16: Post-Deployment](../../phase-06-post-deployment/index.mdx)
+
+### SAN Disaggregated Deployment
+
+For deployments using an external Fibre Channel SAN:
+
+1. Complete Phase 03 Tasks 12–14 (FC HBA, MPIO, LUN verification)
+2. Complete [Phase 14: Arc Registration](../../phase-04-arc-registration/index.mdx)
+3. Use [AD/SAN — Portal](./san/active-directory/portal-instructions.mdx) or [AD/SAN — ARM Template](./san/active-directory/arm-template-instructions.mdx)
 4. Proceed to [Phase 16: Post-Deployment](../../phase-06-post-deployment/index.mdx)
 
 ---

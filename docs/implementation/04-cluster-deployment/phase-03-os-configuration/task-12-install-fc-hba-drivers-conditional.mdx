@@ -1,0 +1,220 @@
+---
+title: "Task 12: Install FC HBA Drivers (Conditional)"
+sidebar_label: "Task 12: FC HBA Drivers"
+sidebar_position: 12
+description: "Install Fibre Channel HBA drivers on Azure Local nodes for SAN disaggregated deployments"
+category: "Runbook"
+scope: "FC HBA driver installation for SAN deployments"
+purpose: "Install and verify FC HBA drivers so nodes can present WWPNs to the FC fabric before zoning"
+author: "Azure Local Cloud"
+created: 2026-05-02
+updated: 2026-05-02
+version: "1.0.0"
+tags:
+  - azure-local
+  - cluster-deployment
+  - os-configuration
+  - san
+  - fibre-channel
+keywords:
+  - FC HBA
+  - Fibre Channel
+  - HBA drivers
+  - WWPN
+  - SAN
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 12: Install FC HBA Drivers (Conditional)
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: FC HBA driver installation
+> **PURPOSE**: Install and verify FC HBA drivers so nodes present WWPNs to the FC fabric
+> **MASTER REFERENCE**: [Microsoft Learn — Prepare hardware for Azure Local SAN deployment](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2604)
+
+**Status**: Active
+
+:::info Skip this task if deploying Storage Spaces Direct (S2D)
+This task applies only to **disaggregated SAN deployments**. If you are deploying with Storage Spaces Direct (hyperconverged), skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx).
+:::
+
+## Overview
+
+Azure Local disaggregated deployments require Fibre Channel Host Bus Adapters (HBAs) in each node. Before zoning can be configured in the FC fabric, the HBA drivers must be installed and WWPNs collected. This task installs vendor-provided drivers and records each node's WWPN for FC fabric zoning.
+
+---
+
+## When to Run
+
+| Scenario | Run? |
+|---|---|
+| SAN disaggregated deployment | ✅ Yes — all nodes |
+| Storage Spaces Direct (S2D) deployment | ❌ Skip |
+| HBA drivers already installed from OEM image | ✅ Yes — verify and collect WWPNs |
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| Tasks 01–11 complete | Nodes named, storage cleaned |
+| HBA hardware installed | FC HBAs seated in PCIe slots on all nodes |
+| HBA vendor driver package | Download from your HBA vendor (Emulex, QLogic, Broadcom, Marvell, etc.) |
+| FC fabric access | Fabric admin ready to configure zoning after WWPN collection |
+
+---
+
+## Variables from variables.yml
+
+| Path | Type | Description |
+|------|------|-------------|
+| `cluster_nodes[].management_ip` | string | PSRemoting target IP (orchestrated mode) |
+| `cluster_nodes[].hostname` | string | Node display name for logging |
+| `cluster_nodes[].fc_hba[].wwpn` | string | Record here after collection — used for FC zoning |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="direct" label="Direct (On Node)" default>
+
+Run on each node individually via console, RDP, or PSRemoting.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-12-install-fc-hba-drivers-conditional/powershell/Install-FcHbaDrivers-Direct.ps1`
+
+```powershell
+# Task 12 - Install FC HBA Drivers (run on each node)
+# Consult your HBA vendor documentation for the correct .inf driver path
+
+# Stage 1: Install driver via PnP
+# Replace <path-to-driver.inf> with the vendor-provided INF file path
+PNPUTIL /add-driver "<path-to-driver.inf>" /install
+
+# Stage 2: Confirm HBA ports are detected
+Get-InitiatorPort | Select-Object NodeAddress, PortAddress, ConnectionType |
+    Where-Object { $_.ConnectionType -eq 'Fibre Channel' } |
+    Format-Table -AutoSize
+
+# Stage 3: Record WWPNs for each node (save to variables.yml)
+# PortAddress field contains the WWPN in XX:XX:XX:XX:XX:XX:XX:XX format
+Get-InitiatorPort | Where-Object { $_.ConnectionType -eq 'Fibre Channel' } |
+    Select-Object @{N='Node';E={$env:COMPUTERNAME}}, NodeAddress, PortAddress |
+    Export-Csv -Path "C:\Temp\wwpn-$env:COMPUTERNAME.csv" -NoTypeInformation
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+Run from the management server against all nodes.
+
+**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-12-install-fc-hba-drivers-conditional/powershell/Invoke-FcHbaDrivers-Orchestrated.ps1`
+
+```powershell
+# Task 12 - Install FC HBA Drivers (orchestrated)
+# variables.yml: cluster_nodes[].management_ip -> $ServerList
+
+$ConfigPath = "$env:USERPROFILE\variables.yml"
+$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
+    ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+
+# Collect WWPNs from all nodes
+Invoke-Command -ComputerName $ServerList -ScriptBlock {
+    Get-InitiatorPort | Where-Object { $_.ConnectionType -eq 'Fibre Channel' } |
+        Select-Object @{N='Node';E={$env:COMPUTERNAME}}, NodeAddress, PortAddress
+} | Sort-Object Node | Format-Table -AutoSize
+```
+
+> **Note:** Driver installation requires staging the vendor INF to each node before running. Consult your HBA vendor documentation for the driver package appropriate to the installed HBA model.
+
+</TabItem>
+<TabItem value="standalone" label="Standalone Script">
+
+> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+
+**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
+
+:::note Content Pending
+Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
+:::
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+```powershell
+# Confirm HBA ports are online and WWPNs visible
+$ServerList = @("<node1-ip>", "<node2-ip>")
+Invoke-Command -ComputerName $ServerList -ScriptBlock {
+    Get-InitiatorPort | Where-Object { $_.ConnectionType -eq 'Fibre Channel' } |
+        Select-Object @{N='Node';E={$env:COMPUTERNAME}}, PortAddress, ConnectionType, OperationalStatus
+} | Sort-Object Node | Format-Table -AutoSize
+```
+
+**Expected:** Each node shows 1–4 FC initiator ports depending on HBA count. `OperationalStatus` should be `Online` once fabric-connected.
+
+---
+
+## WWPN Collection Worksheet
+
+| Node | HBA Port | WWPN | Fabric (A/B) |
+|------|----------|------|--------------|
+| NODE01 | Port 0 | ___________________________ | A |
+| NODE01 | Port 1 | ___________________________ | B |
+| NODE02 | Port 0 | ___________________________ | A |
+| NODE02 | Port 1 | ___________________________ | B |
+
+:::note Provide WWPNs to FC Fabric Admin
+Once WWPNs are collected, provide them to the FC fabric administrator for zoning configuration. Zoning must be completed **after** Arc registration (Phase 04) — the storage array's port WWPNs are needed to complete the zone configuration.
+:::
+
+---
+
+## Rolling Reboot (if required)
+
+Driver installation may require a node restart. In a cluster, reboot one node at a time to maintain availability:
+
+```powershell
+# Drain and reboot one node at a time
+Suspend-ClusterNode -Name "<NodeName>" -Drain
+# Wait for roles to migrate
+Restart-Computer -ComputerName "<node-ip>" -Force
+# Wait for node to rejoin
+Resume-ClusterNode -Name "<NodeName>"
+```
+
+For initial pre-cluster deployment (Phase 03), simply reboot each node and confirm the OS comes back online.
+
+---
+
+## Validation Checklist
+
+- [ ] HBA drivers installed on all nodes
+- [ ] FC initiator ports visible (`Get-InitiatorPort` shows Fibre Channel ports)
+- [ ] WWPNs collected and recorded in `variables.yml` under `cluster_nodes[].fc_hba[].wwpn`
+- [ ] WWPN list provided to FC fabric administrator
+
+---
+
+## Navigation
+
+[← Task 11: Clear Storage](./task-11-clear-previous-storage-configuration-conditional.mdx) · [↑ Phase 03](./index.mdx) · [Task 13: Configure MPIO →](./task-13-configure-mpio-and-vendor-msdsm-conditional.mdx)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |
