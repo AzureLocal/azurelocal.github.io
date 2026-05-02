@@ -54,12 +54,12 @@ const config = {
           lastVersion: '2411',
           versions: {
             current: {
-              label: '2604',
-              path: '',
+              label: '2604 (Preview)',
+              path: 'next',
+              banner: 'unreleased',
             },
             '2411': {
               label: '2411',
-              path: '2411',
               badge: true,
             },
           },
