@@ -1,0 +1,204 @@
+---
+title: "Appendix P — Fibre Channel Fabric Configuration"
+sidebar_label: "Appendix P: FC Fabric"
+sidebar_position: 16
+description: "Fibre Channel fabric configuration reference — Brocade and Cisco MDS zoning, alias creation, zoneset activation"
+category: "Reference"
+scope: "Fibre Channel fabric configuration for SAN disaggregated Azure Local deployments"
+purpose: "Reference for FC fabric zoning, aliases, and port channels for SAN deployments"
+author: "Azure Local Cloud"
+created: 2026-05-02
+updated: 2026-05-02
+version: "1.0.0"
+tags:
+  - azure-local
+  - fibre-channel
+  - san
+  - zoning
+  - brocade
+  - cisco-mds
+keywords:
+  - Fibre Channel
+  - FC zoning
+  - Brocade
+  - Cisco MDS
+  - WWPN
+  - alias
+  - zoneset
+status: "Active"
+---
+
+# Appendix P — Fibre Channel Fabric Configuration
+
+[![Reference](https://img.shields.io/badge/Type-Reference-green?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference
+> **SCOPE**: Fibre Channel fabric configuration
+> **PURPOSE**: Reference for FC fabric zoning, aliases, and port channels for SAN deployments
+> **MASTER REFERENCE**: [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+
+**Status**: Active
+
+This appendix covers FC fabric configuration for SAN disaggregated Azure Local deployments — alias creation, zone definition, zoneset activation, and post-zoning validation. Both Brocade FOS and Cisco MDS NX-OS examples are provided.
+
+---
+
+## Zoning Policy — Single-Initiator/Single-Target
+
+The Azure Local Cloud standard for FC zoning is **single-initiator/single-target**: each zone contains exactly one HBA port WWPN (initiator) and one SAN array port WWPN (target). This is the pattern recommended by Microsoft and eliminates the multi-initiator contention issues that arise when initiators share a zone.
+
+**Zone count formula:** For an N-node cluster with 2 HBAs per node and 2 independent fabrics, expect **2N zones per fabric**.
+
+| Cluster size | HBAs/node | Fabrics | Zones per fabric | Total zones |
+|---|---|---|---|---|
+| 2-node | 2 | 2 | 4 | 8 |
+| 4-node | 2 | 2 | 8 | 16 |
+| 8-node | 2 | 2 | 16 | 32 |
+
+:::tip Why single-initiator/single-target?
+When multiple initiators share a zone, a LUN reset or RSCN storm from one initiator disrupts all others in the zone. Single-initiator/single-target zones contain blast radius to one host port, which is critical for Azure Local storage resiliency.
+:::
+
+---
+
+## Naming Conventions
+
+Consistent naming makes zones auditable at a glance and simplifies troubleshooting. Apply these patterns across both fabrics.
+
+| Element | Pattern | Example |
+|---|---|---|
+| WWPN alias | `<site>-AZL-<nodeNN>-HBA<P>` | `NYC01-AZL-N01-HBA1` |
+| FC zone | `Z_<initiator>_<target>` | `Z_NYC01-AZL-N01-HBA1_ARRAY-CT0FC0` |
+| Zoneset | `<fabric>_PROD_active` | `FAB-A_PROD_active` |
+
+- `<site>` — a short 3–6 character site code (matches your naming standard, e.g. `NYC01`, `DAL02`)
+- `<nodeNN>` — zero-padded node number: `N01`, `N02`, etc.
+- `<HBA<P>` — HBA port number, 1-indexed: `HBA1`, `HBA2`
+- `<target>` — the array controller and port label as reported by the array vendor
+
+---
+
+## Brocade Fabric — Example Configuration
+
+The following commands target **Fabric A** of a 2-node cluster connecting to a dual-controller SAN array. Collect HBA WWPNs from Windows before beginning (see [Phase 03 Task 12](#cross-references)).
+
+```bash
+# Connect to Brocade switch
+ssh admin@brocade-fab-a.corp.azurelocal.cloud
+
+# Create aliases for HBA WWPNs (collected from Windows: Get-InitiatorPort)
+alicreate "NYC01-AZL-N01-HBA1", "10:00:00:90:fa:11:22:01"
+alicreate "NYC01-AZL-N01-HBA2", "10:00:00:90:fa:11:22:02"
+alicreate "NYC01-AZL-N02-HBA1", "10:00:00:90:fa:11:23:01"
+alicreate "NYC01-AZL-N02-HBA2", "10:00:00:90:fa:11:23:02"
+
+# Create aliases for SAN array target ports
+alicreate "ARRAY-CT0FC0", "52:4a:93:00:11:11:11:01"
+alicreate "ARRAY-CT1FC0", "52:4a:93:00:11:11:11:02"
+
+# Create single-initiator/single-target zones
+zonecreate "Z_NYC01-AZL-N01-HBA1_ARRAY-CT0FC0", "NYC01-AZL-N01-HBA1; ARRAY-CT0FC0"
+zonecreate "Z_NYC01-AZL-N01-HBA2_ARRAY-CT0FC0", "NYC01-AZL-N01-HBA2; ARRAY-CT0FC0"
+zonecreate "Z_NYC01-AZL-N02-HBA1_ARRAY-CT0FC0", "NYC01-AZL-N02-HBA1; ARRAY-CT0FC0"
+zonecreate "Z_NYC01-AZL-N02-HBA2_ARRAY-CT0FC0", "NYC01-AZL-N02-HBA2; ARRAY-CT0FC0"
+
+# Add zones to zoneset
+cfgcreate "FAB-A_PROD_active", "Z_NYC01-AZL-N01-HBA1_ARRAY-CT0FC0; Z_NYC01-AZL-N01-HBA2_ARRAY-CT0FC0; Z_NYC01-AZL-N02-HBA1_ARRAY-CT0FC0; Z_NYC01-AZL-N02-HBA2_ARRAY-CT0FC0"
+
+# Save and enable
+cfgsave
+cfgenable "FAB-A_PROD_active"
+```
+
+Repeat the same sequence on **Fabric B**, substituting the second-fabric port WWPNs for both the HBA aliases and the array target aliases, and naming the zoneset `FAB-B_PROD_active`.
+
+:::note Existing zonesets
+If a zoneset already exists on the switch, use `cfgadd` to add new members rather than `cfgcreate`. Verify with `cfgshow` before enabling.
+:::
+
+---
+
+## Cisco MDS Fabric — Example Configuration
+
+The following NX-OS commands configure **Fabric A** on a single VSAN. Adjust the VSAN ID to match your environment.
+
+```
+# Connect to MDS
+ssh admin@mds-fab-a.corp.azurelocal.cloud
+configure terminal
+
+# Create FC aliases (per VSAN)
+fcalias name NYC01-AZL-N01-HBA1 vsan 100
+  member pwwn 10:00:00:90:fa:11:22:01
+exit
+fcalias name ARRAY-CT0FC0 vsan 100
+  member pwwn 52:4a:93:00:11:11:11:01
+exit
+
+# Create zone
+zone name Z_NYC01-AZL-N01-HBA1_ARRAY-CT0FC0 vsan 100
+  member fcalias NYC01-AZL-N01-HBA1
+  member fcalias ARRAY-CT0FC0
+exit
+
+# Add to zoneset and activate
+zoneset name FAB-A_PROD_active vsan 100
+  member Z_NYC01-AZL-N01-HBA1_ARRAY-CT0FC0
+exit
+zoneset activate name FAB-A_PROD_active vsan 100
+copy running-config startup-config
+```
+
+Add additional `fcalias`, `zone`, and `zoneset member` blocks for each remaining initiator/target pair before activating the zoneset. Activate once, after all zones are added — each activation causes a fabric RSCN.
+
+:::warning Activate after all zones are defined
+On Cisco MDS, each `zoneset activate` triggers an RSCN across the VSAN. Define all zones for the fabric before activating to avoid multiple disruptions during initial configuration.
+:::
+
+---
+
+## Validation After Zoning
+
+Run the following on each cluster node after zoneset activation to confirm LUN visibility and MPIO path count.
+
+```powershell
+# Run on each cluster node
+Get-PhysicalDisk | Where-Object BusType -eq 'Fibre Channel' |
+    Select-Object FriendlyName, SerialNumber, OperationalStatus, Size
+mpclaim -s -d
+```
+
+**Expected results:**
+
+- Each LUN appears once per node with `OperationalStatus = OK`
+- Each LUN shows 2 or more MPIO paths (one per fabric)
+- `mpclaim -s -d` lists the LUN with paths in an `Active/Optimized` or `Active/Unoptimized` state per the array's preferred path policy
+
+If a LUN does not appear, verify: (1) the zone is active on both fabrics, (2) the correct WWPN was aliased — use `Get-InitiatorPort` on the node to re-confirm, (3) the LUN has been mapped to the host in the array management interface.
+
+---
+
+## References
+
+- [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+- [Microsoft Learn — FC pattern without backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2604)
+- [Microsoft Learn — FC pattern with backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2604)
+- [Appendix Q — FC Fabric Maintenance](./appendix-q-fc-maintenance.mdx)
+- [Appendix I — Dell Configuration](./appendix-i-dell-config.mdx)
+
+---
+
+## Cross-References {#cross-references}
+
+| Phase | Task | Link |
+|---|---|---|
+| Phase 03 | Task 12 — Install FC HBA Drivers | [task-12-install-fc-hba-drivers-conditional.mdx](../04-cluster-deployment/phase-03-os-configuration/task-12-install-fc-hba-drivers-conditional.mdx) |
+| Phase 03 | Task 13 — Configure MPIO & MSDSM | [task-13-configure-mpio-and-vendor-msdsm-conditional.mdx](../04-cluster-deployment/phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional.mdx) |
+| Phase 03 | Task 14 — Verify LUN Presentation | [task-14-verify-san-lun-presentation-conditional.mdx](../04-cluster-deployment/phase-03-os-configuration/task-14-verify-san-lun-presentation-conditional.mdx) |
+| Phase 05 | SAN/AD Portal | [portal-instructions.mdx](../04-cluster-deployment/phase-05-cluster-deployment/deployment-methods/san/active-directory/portal-instructions.mdx) |
+| Phase 05 | SAN/AD ARM | [arm-template-instructions.mdx](../04-cluster-deployment/phase-05-cluster-deployment/deployment-methods/san/active-directory/arm-template-instructions.mdx) |
+| Phase 05 | SAN/LI Portal | [portal-instructions.mdx](../04-cluster-deployment/phase-05-cluster-deployment/deployment-methods/san/local-identity/portal-instructions.mdx) |
+| Phase 05 | SAN/LI ARM | [arm-template-instructions.mdx](../04-cluster-deployment/phase-05-cluster-deployment/deployment-methods/san/local-identity/arm-template-instructions.mdx) |
+| Phase 06 | Task 05 — Storage Configuration | [task-05-storage-configuration.mdx](../04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration.mdx) |
+| Planning | Storage Architecture Planning | [07-storage-planning.mdx](../../planning/07-storage-planning.mdx) |

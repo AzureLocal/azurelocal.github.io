@@ -70,8 +70,10 @@ Verify that all Phase 06 tasks completed successfully. This task must pass befor
 | 03 | Operator AD group in `Remote Management Users` on all nodes | Present |
 | 04 | `sshd` service running on all nodes | `Running` |
 | 04 | Port 22 reachable on all nodes | `TcpTestSucceeded : True` |
-| 05 | Storage pool health | `Healthy` |
+| 05 | Storage pool health (S2D) | `Healthy` |
 | 05 | CSV volumes mounted and online | Count matches design |
+| 05 | FC LUN health (SAN only) | `Healthy` for all FC disks |
+| 05 | MPIO path count (SAN only) | ≥2 paths per LUN |
 | 06 | VM images in Azure | Provisioning state `Succeeded` |
 | 07 | Logical networks in Azure | Provisioning state `Succeeded` |
 
@@ -121,8 +123,17 @@ Expected: `TcpTestSucceeded : True` for all nodes.
 
 #### Task 05 — Storage
 
+**S2D deployments:**
+
 1. In WAC → `iic-clus01` → **Storage** → **Volumes** — confirm all CSV volumes are **Healthy** and **Online**
 2. In Azure Portal → **Azure Local** → `iic-clus01` → **Storage paths** — confirm all show **Succeeded**
+
+**SAN deployments:**
+
+1. Verify FC disk health: `Get-PhysicalDisk | Where-Object BusType -eq 'Fibre Channel'` — all `HealthStatus = Healthy`
+2. Verify MPIO paths: `mpclaim -s -d` — ≥2 paths per workload LUN
+3. Confirm CSVs are `Online`: `Get-ClusterSharedVolume`
+4. In Azure Portal — confirm Azure storage paths show `Succeeded`
 
 #### Task 06 — VM Images
 

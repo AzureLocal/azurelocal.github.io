@@ -1,0 +1,152 @@
+---
+title: "Appendix Q — Fibre Channel Fabric Maintenance"
+sidebar_label: "Appendix Q: FC Maintenance"
+sidebar_position: 17
+description: "Fibre Channel fabric maintenance reference — firmware update, port replacement, fabric merge/split"
+category: "Reference"
+scope: "Fibre Channel fabric maintenance procedures"
+purpose: "Reference for FC switch firmware update, port replacement, fabric merge/split"
+author: "Azure Local Cloud"
+created: 2026-05-02
+updated: 2026-05-02
+version: "1.0.0"
+tags:
+  - azure-local
+  - fibre-channel
+  - san
+  - maintenance
+  - brocade
+  - cisco-mds
+keywords:
+  - Fibre Channel
+  - FC switch
+  - firmware update
+  - port replacement
+  - maintenance
+status: "Active"
+---
+
+# Fibre Channel Fabric Maintenance
+
+[![Reference](https://img.shields.io/badge/Type-Reference-green?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference
+> **SCOPE**: Fibre Channel fabric maintenance
+> **PURPOSE**: Reference for FC switch firmware update, port replacement, fabric merge/split
+> **MASTER REFERENCE**: [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+
+**Status**: Active
+
+This document provides maintenance procedures for Fibre Channel fabrics used in Azure Local SAN-attached deployments, covering firmware updates, port and SFP replacement, and a recurring maintenance schedule. Procedures cover both Brocade Fabric OS and Cisco MDS NX-OS platforms.
+
+## FC Switch Firmware Update
+
+Firmware updates require a maintenance window — typically one fabric at a time so the cluster remains operational on the surviving fabric. MPIO on each node automatically routes I/O through the active fabric while the other is updated.
+
+### Pre-Update Checklist
+
+1. Confirm current MPIO path count on each node:
+   ```powershell
+   mpclaim -s -d
+   ```
+2. Confirm the cluster is Healthy:
+   ```powershell
+   Get-Cluster
+   Get-ClusterNode
+   ```
+3. Schedule maintenance window (~2 hours per fabric).
+4. Notify relevant stakeholders and create a change record.
+
+### Brocade Firmware Update
+
+```bash
+# SSH to the switch
+ssh admin@brocade-fab-a.corp.azurelocal.cloud
+
+# Check current version
+firmwareshow
+
+# Stage firmware (FTP from staging server)
+firmwaredownload
+
+# Switch reboots automatically — wait ~10 minutes
+# After reboot, verify
+firmwareshow
+```
+
+During the update, Fabric B continues serving I/O. After Fabric A returns, MPIO automatically reclaims paths within ~30 seconds.
+
+### Cisco MDS Firmware Update
+
+```
+install all kickstart bootflash:m9700-sf3ek9-kickstart-mz.X.Y.Z.bin \
+            system    bootflash:m9700-sf3ek9-mz.X.Y.Z.bin
+```
+
+For a non-disruptive upgrade (NDU), confirm both supervisors are present and active before initiating the install.
+
+### Post-Update Validation
+
+```powershell
+mpclaim -s -d
+Get-PhysicalDisk | Where-Object BusType -eq 'Fibre Channel' |
+    Select-Object FriendlyName, OperationalStatus
+```
+
+Path count must match the pre-update value. If paths do not recover within 60 seconds, check ISL connectivity and zone enforcement on the updated switch before escalating.
+
+---
+
+## Port (Cable/SFP) Replacement
+
+When a fabric port shows persistent CRC errors or link flaps, use the following procedure to isolate and replace the affected component with minimal I/O disruption.
+
+1. Identify the affected port:
+   - Brocade: `porterrshow`
+   - Cisco MDS: `show interface counters`
+2. Cross-reference WWPN aliases to identify the affected node and HBA port.
+3. Create a change record.
+4. **Disable the affected port** to force MPIO failover:
+   - Brocade: `portdisable <port>`
+   - Cisco MDS: enter `interface fc1/N` then `shutdown`
+5. Wait 60 seconds and confirm MPIO has failed all paths for that port over to the redundant fabric.
+6. Replace the cable and/or SFP.
+7. Re-enable the port; wait 30 seconds; confirm path count recovers to the expected value.
+8. Reset error counters to establish a clean baseline:
+   - Brocade: `portstatsclear <port>`
+   - Cisco MDS: `clear counters interface fc1/N`
+
+:::tip Cleaning fiber connectors
+Use an inspection microscope and end-face cleaner before inserting replacement SFPs. Dirty connectors are a leading cause of CRC errors on single-mode links.
+:::
+
+---
+
+## Recurring Maintenance Schedule
+
+| Task | Frequency | Owner |
+|------|-----------|-------|
+| Review fabric error counters | Weekly | Operations |
+| Confirm zoneset matches design | Monthly | Storage admin |
+| Firmware update | Per vendor advisory or annually | Storage admin |
+| Cable inspection / fiber cleaning | Annually | On-site technician |
+
+---
+
+## References
+
+- [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+- [Appendix P — FC Fabric Configuration](./appendix-p-fc-fabric.mdx)
+- Vendor docs: Brocade Fabric OS Administration Guide, Cisco MDS NX-OS Configuration Guide
+
+---
+
+## Cross-references
+
+- **Phase 03 Task 13** — [Configure MPIO & MSDSM](../04-cluster-deployment/phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional.mdx) — MPIO verification commands referenced in the firmware update and port replacement sections above.
+- **Appendix P** — [FC Fabric Configuration](./appendix-p-fc-fabric.mdx) — fabric zoning and port layout that this appendix maintains.
+
+> Procedures verified against Brocade Fabric OS 9.x and Cisco MDS NX-OS 9.x as of 2026-05-02.
+
+For questions about these procedures, refer to the vendor documentation linked above or contact the Azure Local Cloud documentation team.

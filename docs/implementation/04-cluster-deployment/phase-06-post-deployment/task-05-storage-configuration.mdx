@@ -34,6 +34,12 @@ import TabItem from '@theme/TabItem';
 
 **Status**: Active
 
+:::info Storage Topology
+This task covers **two storage topologies**:
+- **[Storage Spaces Direct (S2D)](#section-1--volume-sizing--yaml-verification)** — Sections 1–3 below
+- **[SAN Disaggregated](#san-workload-lun-configuration)** — jump to the SAN section at the bottom of this page
+:::
+
 ## Section 1 — Volume Sizing & YAML Verification
 
 :::warning This step should already be complete
@@ -984,6 +990,123 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 |--------|-------------|
 | Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
 | Bash | Linux/macOS compatible shell scripts for pipeline environments |
+
+---
+
+## SAN Workload LUN Configuration
+
+*This section applies only to **SAN disaggregated deployments**. Skip if using Storage Spaces Direct — use Sections 1–3 above instead.*
+
+After the cluster deployment wizard completes, the infrastructure and performance history LUNs are already claimed by the cluster. This section covers adding workload LUNs as Cluster Shared Volumes.
+
+:::warning Workload LUNs only
+Do **not** initialize the infrastructure volume or performance history LUN — those were claimed by the deployment wizard. Only initialize and add LUNs designated for VM workload storage.
+:::
+
+### Step 1: Rescan and Identify Workload LUNs
+
+```powershell title="Rescan and list FC disks — run on a cluster node"
+Invoke-Command -ComputerName "<cluster-node>" -ScriptBlock {
+    Update-HostStorageCache
+    Get-Disk | Where-Object BusType -eq 'Fibre Channel' |
+        Select-Object Number, FriendlyName, Size, PartitionStyle, OperationalStatus |
+        Format-Table -AutoSize
+}
+```
+
+Identify the disk number(s) of workload LUNs with `PartitionStyle = RAW`.
+
+### Step 2: Initialize and Format Workload LUNs
+
+```powershell title="Initialize and format each workload LUN — run on a cluster node"
+# Replace <disk-number> with the number identified in Step 1
+$DiskNumber = <disk-number>
+$LabelName  = "WorkloadLUN01"   # Change per LUN
+
+Invoke-Command -ComputerName "<cluster-node>" -ArgumentList $DiskNumber, $LabelName -ScriptBlock {
+    param($disk, $label)
+    Initialize-Disk -Number $disk -PartitionStyle GPT -PassThru |
+        New-Partition -UseMaximumSize |
+        Format-Volume -FileSystem NTFS -NewFileSystemLabel $label -Confirm:$false
+}
+```
+
+### Step 3: Add Workload LUNs to Cluster and Create CSVs
+
+```powershell title="Add cluster disk and convert to CSV — run on a cluster node"
+Invoke-Command -ComputerName "<cluster-node>" -ScriptBlock {
+    # List available disks the cluster can claim
+    Get-ClusterAvailableDisk | Format-Table Name, Size
+
+    # Add each available disk as a cluster resource
+    Get-ClusterAvailableDisk | Add-ClusterDisk
+
+    # Convert each Physical Disk cluster resource to a CSV
+    Get-ClusterResource | Where-Object { $_.ResourceType -eq 'Physical Disk' } |
+        ForEach-Object { Add-ClusterSharedVolume -Name $_.Name }
+
+    # Verify CSVs are online
+    Get-ClusterSharedVolume | Select-Object Name, State,
+        @{N='Path'; E={ $_.SharedVolumeInfo.FriendlyVolumeName }}
+}
+```
+
+### Step 4: Register SAN Storage Paths in Azure
+
+After CSVs are online, register them as Azure storage paths. Follow the same procedure as [Section 3 (Storage Paths)](#section-3--storage-path-registration) above — the az CLI commands are topology-agnostic.
+
+```powershell title="Register SAN CSVs as Azure storage paths"
+$rg            = "rg-<customer>-azl-<region>-01"   # variables.yml: azure_platform.resource_groups.cluster.name
+$customLocation = "cl-<customer>"                   # variables.yml: compute.azure_local.custom_location
+
+$StoragePaths = @(
+    [PSCustomObject]@{
+        Name = "sp-<customer>-clus01-san-01"
+        Path = "C:\ClusterStorage\<csv-name>\VMs"
+    }
+)
+
+foreach ($sp in $StoragePaths) {
+    az stack-hci-vm storagepath create `
+        --resource-group $rg `
+        --custom-location $customLocation `
+        --name $sp.Name `
+        --path $sp.Path `
+        --output none
+    Write-Host "Registered: $($sp.Name)"
+}
+```
+
+### SAN Storage Validation
+
+```powershell title="Validate SAN storage state"
+Invoke-Command -ComputerName "<cluster-node>" -ScriptBlock {
+    # FC disk health
+    Get-PhysicalDisk | Where-Object BusType -eq 'Fibre Channel' |
+        Select-Object FriendlyName, HealthStatus, OperationalStatus, Size
+
+    # CSV volumes
+    Get-ClusterSharedVolume | Select-Object Name, State,
+        @{N='Path'; E={ $_.SharedVolumeInfo.FriendlyVolumeName }}
+
+    # MPIO path count
+    mpclaim -s -d
+}
+```
+
+**Expected:**
+
+| Check | Expected |
+|-------|----------|
+| FC disks `HealthStatus` | `Healthy` |
+| `Get-ClusterSharedVolume` State | `Online` for all workload volumes |
+| `mpclaim -s -d` path count | ≥2 per LUN (2 HBAs × 1 fabric minimum) |
+| Azure storage paths | `provisioningState = Succeeded` |
+
+**References:**
+- [Storage Architecture Planning](../../../planning/07-storage-planning.mdx)
+- [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2604)
+- [Appendix P — FC Fabric Configuration](../../appendices/appendix-p-fc-fabric.mdx)
 
 ## Navigation
 
