@@ -21,6 +21,7 @@ This repository follows the **org-wide AzureLocal standards** maintained on the 
 |----------|-----------|------------------|
 | Documentation | [Documentation Standards](documentation) | [Full Reference](https://azurelocal.cloud/standards/documentation/documentation-standards) |
 | Repository Management | [Repository Management Standard](repository-management) | [Full Reference](https://azurelocal.cloud/standards/repository-management/) |
+| Project Management | [Project Management](project-management) | [HCS Base Standard](https://platform.hybridsolutions.cloud/standards/project-management/) |
 | Scripting | [Scripting Standards](scripting) | [Full Reference](https://azurelocal.cloud/standards/scripting/scripting-standards) |
 | Variables | [Variable Standards](variables) | [Full Reference](https://azurelocal.cloud/standards/variable-management/) |
 | Naming Conventions | [Naming Conventions](naming) | [Full Reference](https://azurelocal.cloud/standards/documentation/naming-conventions) |
