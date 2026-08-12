@@ -2,7 +2,8 @@
 
 <!-- What is being worked on right now. Keep it short; update as work moves. -->
 
-_Nothing yet - this repo was just onboarded onto the multi-model standard._
+_Publish and verify the compatibility redirect from `/azurelocal-scom-mp/` to Hybrid
+Infrastructure Health Monitoring at `labs.hybridsolutions.cloud`._
 
 <!--
   Optional advisory model hint the next tool should honour if available.

@@ -184,6 +184,10 @@ const config = {
                     href: 'https://azurelocal.github.io/azurelocal-monitoring/',
                   },
                   {
+                    label: 'Hybrid Infrastructure Health Monitoring',
+                    href: 'https://labs.hybridsolutions.cloud/hybrid-health-monitoring/',
+                  },
+                  {
                     label: 'Governance',
                     href: 'https://azurelocal.github.io/azurelocal-governance/',
                   },

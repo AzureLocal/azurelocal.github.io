@@ -31,6 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Redirect the former Azure Local SCOM MP documentation route to Hybrid Infrastructure Health
+  Monitoring and add the new product to the Solutions menu.
+
 ### Features
 
 - Docusaurus 3.7.0 community portal at azurelocal.cloud
