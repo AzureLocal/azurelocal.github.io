@@ -19,6 +19,9 @@
   a build directory; the exact orphaned Node processes were stopped. Use the GitHub Actions deploy
   workflow as the authoritative Linux build result.
 - **Branch:** `main`.
-- **Blockers:** None in the redirect source; deployment verification remains.
-- **Exact next steps:** Verify the deploy workflow and confirm
-  `https://azurelocal.cloud/azurelocal-scom-mp/` lands on the new Labs product site.
+- **Deployment verification:** GitHub Actions run `31631115407` completed successfully. The live
+  former URL returned HTTP 200 and contained both the meta-refresh and canonical target
+  `https://labs.hybridsolutions.cloud/hybrid-health-monitoring/`; the target site also returned
+  HTTP 200.
+- **Blockers:** None.
+- **Exact next steps:** None for this compatibility route.

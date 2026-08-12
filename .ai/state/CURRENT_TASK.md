@@ -2,8 +2,8 @@
 
 <!-- What is being worked on right now. Keep it short; update as work moves. -->
 
-_Publish and verify the compatibility redirect from `/azurelocal-scom-mp/` to Hybrid
-Infrastructure Health Monitoring at `labs.hybridsolutions.cloud`._
+_No active migration task. The `/azurelocal-scom-mp/` compatibility route is published and
+verified._
 
 <!--
   Optional advisory model hint the next tool should honour if available.
