@@ -14,7 +14,7 @@ description: "MAPROOM fixtures, TRAILHEAD scenarios, and IIC canon — how Azure
 Testing in AzureLocal is centralized. The frameworks, schemas, and canonical test data live in [`AzureLocal/platform/testing/`](https://github.com/AzureLocal/platform/tree/main/testing) and are consumed by every product repo. This standard defines **what each repo must test** and **which framework primitives it must use** — it does not re-describe the frameworks themselves (those have their own docs under [`docs/maproom/`](https://github.com/AzureLocal/platform/tree/main/docs/maproom) and [`docs/trailhead/`](https://github.com/AzureLocal/platform/tree/main/docs/trailhead) once Phase 2 ships).
 
 !!! info "Phase status"
-    Phase 1 (this document) establishes the **standard**. Phase 2 ships the **framework** (`AzureLocal.Maproom` PowerShell module, fixture + IIC schemas, TRAILHEAD harness). Until Phase 2 lands, repos continue to reference [`azurelocal-S2DCartographer/tests/maproom/`](https://github.com/AzureLocal/azurelocal-S2DCartographer/tree/main/tests/maproom) as the interim canonical implementation.
+    Phase 1 (this document) establishes the **standard**. Phase 2 ships the **framework** (`AzureLocal.Maproom` PowerShell module, fixture + IIC schemas, TRAILHEAD harness). Until Phase 2 lands, repos continue to reference [`azurelocal-s2d-cartographer/tests/maproom/`](https://github.com/AzureLocal/azurelocal-s2d-cartographer/tree/main/tests/maproom) as the interim canonical implementation.
 
 ---
 
@@ -48,7 +48,7 @@ MAPROOM fixtures are JSON documents describing the **expected shape** of a targe
 
 ### Fixture schema
 
-Fixtures MUST validate against [`platform/testing/maproom/schema/fixture.schema.json`](https://github.com/AzureLocal/platform/tree/main/testing/maproom/schema) (ships in Phase 2). Until then, use the schema derived from `azurelocal-S2DCartographer/tests/maproom/schema/` and expect to migrate on Phase 2 cutover.
+Fixtures MUST validate against [`platform/testing/maproom/schema/fixture.schema.json`](https://github.com/AzureLocal/platform/tree/main/testing/maproom/schema) (ships in Phase 2). Until then, use the schema derived from `azurelocal-s2d-cartographer/tests/maproom/schema/` and expect to migrate on Phase 2 cutover.
 
 ### IIC canon as fixture source
 
