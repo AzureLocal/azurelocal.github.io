@@ -54,9 +54,9 @@ const config = {
           lastVersion: '2411',
           versions: {
             current: {
-              label: '2604 (Preview)',
+              label: '2609',
               path: 'next',
-              banner: 'unreleased',
+              banner: 'none',
             },
             '2411': {
               label: '2411',
