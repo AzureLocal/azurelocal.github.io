@@ -22,7 +22,8 @@ Documentation versions align with Azure Local build releases:
 
 | Version | Description |
 |---------|-------------|
-| **2604** | Current — includes Simplified Provisioning (Preview), SAN (Disaggregated) deployment, Local Identity GA |
+| **2609** | Current: solution version 12.2609.1003.7 (11 September 2026); includes Local Identity with internal DNS (preview), automatic backup of system-level secrets (preview) and private path network documentation |
+| **2604** | Previous release: includes Simplified Provisioning (Preview), SAN (Disaggregated) deployment, Local Identity GA |
 | **2411** | Previous release baseline |
 
 ## Local Development
