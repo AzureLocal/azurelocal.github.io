@@ -64,14 +64,114 @@ const repos = [
     url: 'https://github.com/AzureLocal/azurelocal-training',
   },
   {
-    name: 'azurelocal-copilot',
-    desc: 'GitHub Copilot customisation and AI-assisted authoring standards for the org.',
-    url: 'https://github.com/AzureLocal/azurelocal-copilot',
-  },
-  {
     name: 'azurelocal-nutanix-migration',
     desc: 'Guidance and automation for migrating from Nutanix to Azure Local.',
     url: 'https://github.com/AzureLocal/azurelocal-nutanix-migration',
+  },
+  {
+    name: 'azurelocal-surveyor',
+    desc: 'Discovery and assessment of existing estates ahead of an Azure Local move.',
+    url: 'https://github.com/AzureLocal/azurelocal-surveyor',
+  },
+  {
+    name: 'azurelocal-ranger',
+    desc: 'As-built documentation and reporting for Azure Local clusters.',
+    url: 'https://github.com/AzureLocal/azurelocal-ranger',
+  },
+  {
+    name: 'azurelocal-ztp',
+    desc: 'Zero touch provisioning for Azure Local nodes and clusters.',
+    url: 'https://github.com/AzureLocal/azurelocal-ztp',
+  },
+  {
+    name: 'azurelocal-beacon',
+    desc: 'Deployment readiness and bootstrap helper for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-beacon',
+  },
+  {
+    name: 'azurelocal-sonar',
+    desc: 'Pre- and post-deployment environment checks for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-sonar',
+  },
+  {
+    name: 'azurelocal-custom-images',
+    desc: 'Custom VM image build and publish for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-custom-images',
+  },
+  {
+    name: 'azurelocal-s2d-cartographer',
+    desc: 'Storage Spaces Direct capacity and layout mapping.',
+    url: 'https://github.com/AzureLocal/azurelocal-s2d-cartographer',
+  },
+  {
+    name: 'azurelocal-vmware-migration',
+    desc: 'Guidance and automation for migrating from VMware to Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-vmware-migration',
+  },
+  {
+    name: 'azurelocal-aks',
+    desc: 'AKS enabled by Azure Arc on Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-aks',
+  },
+  {
+    name: 'azurelocal-iot',
+    desc: 'Azure IoT Operations on Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-iot',
+  },
+  {
+    name: 'azurelocal-sql-ha',
+    desc: 'SQL Server high availability patterns on Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-sql-ha',
+  },
+  {
+    name: 'azurelocal-monitoring',
+    desc: 'Monitoring and alerting for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-monitoring',
+  },
+  {
+    name: 'azurelocal-bcdr',
+    desc: 'Backup and disaster recovery for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-bcdr',
+  },
+  {
+    name: 'azurelocal-cost',
+    desc: 'Cost management for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-cost',
+  },
+  {
+    name: 'azurelocal-governance',
+    desc: 'Policy, security and compliance baselines for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-governance',
+  },
+  {
+    name: 'azurelocal-draftsman',
+    desc: 'Diagram and design drafting for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-draftsman',
+  },
+  {
+    name: 'azurelocal-disconnected',
+    desc: 'Disconnected operations for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-disconnected',
+  },
+  {
+    name: 'azurelocal-app-services',
+    desc: 'App Services on Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-app-services',
+  },
+  {
+    name: 'azurelocal-ml-ai',
+    desc: 'Machine learning and AI on Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-ml-ai',
+  },
+  {
+    name: 'azurelocal-sql-mi',
+    desc: 'SQL Managed Instance on Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-sql-mi',
+  },
+  {
+    name: 'azurelocal-vms',
+    desc: 'Virtual machine guidance for Azure Local.',
+    url: 'https://github.com/AzureLocal/azurelocal-vms',
   },
 ];
 
