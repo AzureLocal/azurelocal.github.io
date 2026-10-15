@@ -18,12 +18,7 @@ Community documentation for [Azure Local](https://learn.microsoft.com/en-us/azur
 
 ## Versioning
 
-Documentation versions align with Azure Local build releases:
-
-| Version | Description |
-|---------|-------------|
-| **2604** | Current — includes Simplified Provisioning (Preview), SAN (Disaggregated) deployment, Local Identity GA |
-| **2411** | Previous release baseline |
+The docs are a single set published at `/docs/`. They track the current Azure Local release train (12.2609) and the release notes on Microsoft Learn. Old `/docs/2411/` and `/docs/next/` URLs redirect to the matching page under `/docs/`.
 
 ## Local Development
 

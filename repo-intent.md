@@ -15,8 +15,8 @@ on Azure Local (AVD, AKS, SQL MI, App Services, ML/AI), and a Lab Environment.
 
 ## Shape
 
-- Docusaurus site (`docusaurus.config.js`, `versioned_docs/`, `sidebars.js`)
-- Documentation versions align with Azure Local build releases
+- Docusaurus site (`docusaurus.config.js`, `docs/`, `sidebars.js`)
+- A single docs set at `/docs/`, kept current with the latest Azure Local release (12.2609)
 - `repo-management/`, `standards/` — org governance artifacts live here too
 
 ## How it relates to other repos

@@ -41,6 +41,22 @@ const config = {
     locales: ['en'],
   },
 
+  plugins: [
+    [
+      '@docusaurus/plugin-client-redirects',
+      {
+        // Docs used to be versioned (2411 and next). Keep the old URLs working.
+        createRedirects(existingPath) {
+          if (existingPath === '/docs' || existingPath.startsWith('/docs/')) {
+            const rest = existingPath.slice('/docs'.length);
+            return ['/docs/2411' + rest, '/docs/next' + rest];
+          }
+          return undefined;
+        },
+      },
+    ],
+  ],
+
   presets: [
     [
       'classic',
