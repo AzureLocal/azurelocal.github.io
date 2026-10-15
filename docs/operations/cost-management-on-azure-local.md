@@ -55,7 +55,7 @@ Azure Local Cluster
 
 - **Repository**: [azurelocal-cost](https://github.com/AzureLocal/azurelocal-cost)
 - **Microsoft Docs**: [Azure Cost Management overview](https://learn.microsoft.com/en-us/azure/cost-management-billing/cost-management-billing-overview)
-- **Azure Arc billing**: [Arc-enabled billing](https://learn.microsoft.com/en-us/azure/azure-local/conceptual-billing)
+- **Azure Arc billing**: [Arc-enabled billing](https://learn.microsoft.com/en-us/azure/azure-local/concepts/billing)
 
 :::note Work in Progress
 This page is a placeholder. Full documentation is tracked in [azurelocal-cost](https://github.com/AzureLocal/azurelocal-cost).

@@ -56,6 +56,6 @@ App Services on Azure Local runs on a Kubernetes cluster (AKS on Azure Local) wi
 
 - [App Service on Azure Arc — Microsoft Learn](https://learn.microsoft.com/azure/app-service/overview-arc-integration)
 - [Set up Azure App Service on Azure Arc — Microsoft Learn](https://learn.microsoft.com/azure/app-service/manage-create-arc-environment)
-- [AKS on Azure Local — Microsoft Learn](https://learn.microsoft.com/azure/aks/hybrid/aks-hybrid-options-overview)
+- [AKS on Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/aks/aksarc/aks-overview)
 
 > Data verified with Microsoft Azure Local documentation, March 2026.

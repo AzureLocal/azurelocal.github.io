@@ -49,7 +49,7 @@ SOFS on Azure Local delivers enterprise-grade SMB 3.x shared storage directly fr
 
 - **Repository**: [azurelocal-sofs-fslogix](https://github.com/AzureLocal/azurelocal-sofs-fslogix)
 - **Docs Site**: [azurelocal.github.io/azurelocal-sofs-fslogix](https://azurelocal.github.io/azurelocal-sofs-fslogix/)
-- **Microsoft Docs**: [FSLogix profile containers on Azure Local](https://learn.microsoft.com/en-us/azure/virtual-desktop/fslogix-profile-container-configure-azure-files)
+- **Microsoft Docs**: [FSLogix profile containers on Azure Local](https://learn.microsoft.com/en-us/azure/virtual-desktop/fslogix-profile-container-configure-azure-files-active-directory)
 
 :::note Work in Progress
 This page is a placeholder. Full documentation is tracked in [azurelocal-sofs-fslogix](https://github.com/AzureLocal/azurelocal-sofs-fslogix).

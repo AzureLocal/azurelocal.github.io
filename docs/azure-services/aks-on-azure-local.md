@@ -56,7 +56,7 @@ AKS on Azure Local allows organizations to run production Kubernetes clusters on
 
 ## External References
 
-- [AKS on Azure Local overview — Microsoft Learn](https://learn.microsoft.com/azure/aks/hybrid/aks-hybrid-options-overview)
+- [AKS on Azure Local overview — Microsoft Learn](https://learn.microsoft.com/en-us/azure/aks/aksarc/aks-overview)
 - [Deploy AKS clusters on Azure Local — Microsoft Learn](https://learn.microsoft.com/azure/aks/hybrid/aks-create-clusters-portal)
 - [Azure Arc-enabled Kubernetes — Microsoft Learn](https://learn.microsoft.com/azure/azure-arc/kubernetes/overview)
 
