@@ -5,6 +5,10 @@ sidebar_position: 4
 
 # Azure App Services on Azure Local
 
+:::warning Retirement notice
+Azure Advisor lists the Azure App Service on Arc-enabled Kubernetes extension (Microsoft Kubernetes Configuration Extension) with a retirement date of 31 March 2026, which has passed. Do not start new deployments on it. Use [Azure Container Apps on Azure Arc](https://learn.microsoft.com/en-us/azure/container-apps/azure-arc-overview), which lists AKS on Azure Local as a supported distribution, or run web workloads as containers on [AKS on Azure Local](./aks-on-azure-local.md). Confirm the current status in the [Azure retirement list](https://learn.microsoft.com/en-us/azure/advisor/advisor-how-to-use-service-upgrade-retirement-recommendations) before you plan.
+:::
+
 Azure App Services on Azure Local extends the platform-as-a-service (PaaS) experience to on-premises infrastructure. Organizations can host web applications, REST APIs, and background services using the same App Service programming model and deployment workflows used in Azure — while keeping application compute and data within their local environment.
 
 ## Service Details
@@ -57,5 +61,7 @@ App Services on Azure Local runs on a Kubernetes cluster (AKS on Azure Local) wi
 - [App Service on Azure Arc — Microsoft Learn](https://learn.microsoft.com/azure/app-service/overview-arc-integration)
 - [Set up Azure App Service on Azure Arc — Microsoft Learn](https://learn.microsoft.com/azure/app-service/manage-create-arc-environment)
 - [AKS on Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/aks/aksarc/aks-overview)
+- [Azure Container Apps on Azure Arc — Microsoft Learn](https://learn.microsoft.com/en-us/azure/container-apps/azure-arc-overview)
+- [Azure service retirements — Microsoft Learn](https://learn.microsoft.com/en-us/azure/advisor/advisor-how-to-use-service-upgrade-retirement-recommendations)
 
-> Data verified with Microsoft Azure Local documentation, March 2026.
+> Data verified with Microsoft Azure Local documentation, October 2026.

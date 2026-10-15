@@ -57,17 +57,21 @@ The [`AzureLocal/azurelocal-avd`](https://github.com/AzureLocal/azurelocal-avd) 
 ### Documentation Site
 
 Full deployment documentation, architecture guides, and scenario walkthroughs are published at:
-**[azurelocal.github.io/azurelocal-avd](https://azurelocal.github.io/azurelocal-avd/)**
+**[azurelocal.cloud/azurelocal-avd](https://azurelocal.cloud/azurelocal-avd/)**
 
 ### Companion: SOFS for FSLogix
 
 AVD session hosts need a performant storage layer for user profiles. The companion repository [`AzureLocal/azurelocal-sofs-fslogix`](https://github.com/AzureLocal/azurelocal-sofs-fslogix) automates deployment of a three-node Scale-Out File Server cluster on Azure Local to host FSLogix profile containers.
 
-- Docs site: [azurelocal.github.io/azurelocal-sofs-fslogix](https://azurelocal.github.io/azurelocal-sofs-fslogix/)
+- Docs site: [azurelocal.cloud/azurelocal-sofs-fslogix](https://azurelocal.cloud/azurelocal-sofs-fslogix/)
 
 ## Deployment Notes
 
-- Requires Azure Local infrastructure (Azure Stack HCI 23H2+ recommended)
+- Requires Azure Local registered with Azure and running 23H2 or later. 23H2 (OS 25398) reached end of support in April 2026, so target the current 12.x release (12.2609)
+- Supported session host images: Windows 11 and Windows 10 Enterprise (single and multi-session), and Windows Server 2025, 2022, and 2019. Check the AVD prerequisites for the licensing method per OS
+- Activate Windows 10 and 11 Enterprise multi-session and Windows Server 2022 Datacenter: Azure Edition with Azure verification for VMs. Use existing activation methods for other images
+- A host pool contains session hosts on Azure or on Azure Local, never both
+- To add session hosts from the Azure portal you need an Azure Local logical network (DHCP or static with automatic IP allocation) and at least one Windows image on the instance
 - Session hosts must be Arc-enabled and registered to an AVD host pool
 - FSLogix profile storage should be provisioned on local SMB shares (see SOFS companion above)
 - Azure subscription required for the AVD control plane
@@ -81,8 +85,11 @@ AVD session hosts need a performant storage layer for user profiles. The compani
 
 ## External References
 
-- [Azure Virtual Desktop on Azure Local — Microsoft Learn](https://learn.microsoft.com/azure/virtual-desktop/azure-stack-hci-overview)
+- [Azure Virtual Desktop on Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/virtual-desktop/azure-local-overview)
+- [Prerequisites for Azure Virtual Desktop — Microsoft Learn](https://learn.microsoft.com/en-us/azure/virtual-desktop/prerequisites)
+- [Add session hosts to a host pool — Microsoft Learn](https://learn.microsoft.com/en-us/azure/virtual-desktop/add-session-hosts-host-pool)
+- [Azure Virtual Desktop for Azure Local architecture — Microsoft Learn](https://learn.microsoft.com/en-us/azure/architecture/hybrid/azure-local-workload-virtual-desktop)
 - [Deploy AVD session hosts on Azure Local — Microsoft Learn](https://learn.microsoft.com/azure/virtual-desktop/deploy-azure-virtual-desktop)
 - [FSLogix profile containers — Microsoft Learn](https://learn.microsoft.com/fslogix/overview-what-is-fslogix)
 
-> Data verified with Microsoft Azure Local documentation, March 2026.
+> Data verified with Microsoft Azure Local documentation, October 2026.

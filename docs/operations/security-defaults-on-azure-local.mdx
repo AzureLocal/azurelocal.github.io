@@ -1,0 +1,90 @@
+---
+title: "Security Defaults and Drift Control"
+sidebar_label: "Security Defaults"
+sidebar_position: 3
+description: "Azure Local security baseline, drift control, and the security changes in releases 2601 to 2609"
+---
+
+# Security Defaults and Drift Control
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Platform security settings on Azure Local machines
+> **PURPOSE**: Know what the platform enforces, how to change it safely, and how to report compliance
+> **MASTER REFERENCE**: [Microsoft Learn — Manage security defaults for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-secure-baseline?view=azloc-2609)
+
+**Status**: Active
+
+---
+
+## What the platform does by default
+
+Azure Local is secure by default. More than 300 security settings are applied at deployment from a tailored security baseline, so each machine starts in a known good state. The baseline is designed to help you meet CIS Benchmark and DISA STIG requirements for the operating system, and it aligns with the Azure compute security baseline.
+
+- **Drift control** refreshes the protected settings every 90 minutes and remediates any change from the desired state.
+- **Insecure protocols are off**: TLS and DTLS below 1.2, SMB 1.0, and WDigest are disabled.
+- **Secured-core** settings (TPM 2.0, Secure Boot, DRTM) apply when the hardware supports them. From release 2601, DRTM is enabled on instances deployed before 2504, and new deployments since 2504 have it by default.
+- **Application Control** (Windows Defender Application Control) is enforced. Add approved non-Microsoft software with a supplemental policy, then return to Enforced mode.
+- **BitLocker** is recommended for OS volumes and cluster shared volumes at deployment. Turn it on manually for volumes you add later.
+
+## Security-relevant changes by release
+
+| Release | Change |
+|---------|--------|
+| 2601 | DRTM enabled on instances deployed before 2504. Security baseline for OS build 26100 can be applied to upgraded deployments with new cmdlets. A pre-upgrade check confirms CredSSP is not disabled. |
+| 2602 | Drift detection framework reports deviations from approved component versions and configurations. |
+| 2603 | Azure Local orchestrates the Secure Boot 2023 certificate update (CVE-2023-24932). |
+| 2604 | Interactive logon message title and text are set by the baseline and protected by drift control, so they no longer show as non-compliant. |
+| 2607 | Release notes: the baseline enforces a 14-character minimum password length. Confidential VM (AMD SEV-SNP) in preview. |
+| 2609 | Automatic backup of system-level secrets (Trusted Launch VM keys, BitLocker recovery keys) to a backup key vault, in preview. |
+
+:::note Minimum password length
+The 2607 release notes say the baseline enforces a 14-character minimum password length. The security defaults article still lists the setting as customer-defined, not covered by drift control, and shows how to set it with `net accounts /minpwlen:14`. Verify the value on your build and set it explicitly if your compliance report flags it.
+:::
+
+## Change a protected setting
+
+Drift control only lets you change settings that are not protected. To change a protected baseline setting:
+
+1. Disable drift control on the machine, or on the whole cluster:
+
+   ```powershell
+   Disable-AzsSecurity -FeatureName DriftControl -Cluster
+   ```
+
+2. Make and document the change. Record an owner, a compensating control, and an expiry date for every exception.
+3. Re-enable drift control:
+
+   ```powershell
+   Enable-AzsSecurity -FeatureName DriftControl -Cluster
+   ```
+
+:::warning
+When you re-enable drift control, any change you made to a protected setting is overwritten. Without `-Cluster`, the cmdlets apply to the local machine only.
+:::
+
+## Report compliance
+
+- Enroll the instance in Microsoft Defender for Cloud, or assign the built-in policy *Windows machines should meet requirements of the Azure compute security baseline*. A compliance report is generated from the `AzureWindowsBaseline` machine configuration assignment, which audits but does not remediate.
+- With Secured-core hardware, the expected compliance score is about 99%. The remaining gaps are settings the customer defines, such as minimum password length.
+- Download the settings list for your build and identity model (Active Directory or local identity) from the security defaults article. Different lists apply to 2505 and earlier (OS 25398) and to 2506 and later (OS 26100).
+
+See [Governance and Compliance](./governance-on-azure-local.md) for policy assignment patterns and the implementation tasks for [Defender for Cloud](../implementation/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud.mdx).
+
+## Secrets and credentials
+
+Rotate Lifecycle Manager credentials, cloud witness keys, service principal secrets, and infrastructure secrets only with the supported secret rotation workflow. Since release 2512, cluster registration uses a system-assigned managed identity rather than a service principal with a self-signed certificate.
+
+> Data verified with Microsoft Learn (security features, security defaults, What's new), October 2026.
+
+---
+
+## References
+
+- [Microsoft Learn — Manage security defaults for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-secure-baseline?view=azloc-2609)
+- [Microsoft Learn — Security features for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/security-features?view=azloc-2609)
+- [Microsoft Learn — Manage Application Control](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-wdac?view=azloc-2609)
+- [Microsoft Learn — Manage secrets rotation](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-secrets-rotation?view=azloc-2609)
+- [Microsoft Learn — What's new (2601 to 2609)](https://learn.microsoft.com/en-us/azure/azure-local/whats-new?view=azloc-2609)

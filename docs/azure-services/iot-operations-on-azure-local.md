@@ -59,4 +59,4 @@ IoT Operations on Azure Local runs as a set of Arc-enabled services on AKS clust
 - [Deploy Azure IoT Operations — Microsoft Learn](https://learn.microsoft.com/azure/iot-operations/deploy-iot-ops/howto-deploy-iot-operations)
 - [Azure IoT Operations MQTT broker — Microsoft Learn](https://learn.microsoft.com/azure/iot-operations/manage-mqtt-broker/overview-iot-mq)
 
-> Data verified with Microsoft Azure Local documentation, March 2026.
+> Data verified with Microsoft Azure Local documentation, October 2026.

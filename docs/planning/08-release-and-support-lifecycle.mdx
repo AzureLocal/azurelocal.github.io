@@ -1,0 +1,131 @@
+---
+title: "Releases and Support Lifecycle"
+sidebar_label: "Releases & Support Lifecycle"
+sidebar_position: 9
+description: "Azure Local release trains, supported builds, end of support, and what changed from 2604 to 2609"
+---
+
+# Releases and Support Lifecycle
+
+[![Reference](https://img.shields.io/badge/Type-Reference-purple?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference
+> **SCOPE**: Azure Local release model, supported builds, and feature changes
+> **PURPOSE**: Plan which release to deploy, how long it stays supported, and what changed recently
+> **MASTER REFERENCE**: [Microsoft Learn — Azure Local release information](https://learn.microsoft.com/en-us/azure/azure-local/release-information-23h2?view=azloc-2609)
+
+**Status**: Active
+
+---
+
+## Current release
+
+The latest release of Azure Local is **12.2609** (September 2026). New deployments use build **12.2609.1003.7**, available since 11 September 2026, with OS build **26100.33438**.
+
+:::note Build numbers
+Solution versions are written `12.<YYMM>.<build>`. This site says "2609" or "12.2609" for the release train. Microsoft publishes the exact build number and OS build for each train on the release information page.
+:::
+
+## Release model
+
+Azure Local moved from one annual release to a monthly release train. Each train is one of the following:
+
+| Build type | What it contains |
+|------------|------------------|
+| **Feature build** | The first build in a train. Adds product enhancements, including updates to Azure Local services and agents. |
+| **Cumulative build** | Incremental updates on top of the most recent feature build. |
+| **Quality build** | Optional, security-only, not cumulative. Starting with 2604, quality updates are available before the cumulative update. |
+
+Key points that affect planning:
+
+- Starting with 2504, there are two solution versions each month. Version **11.25xx** stays on OS build 25398 (23H2). Version **12.25xx or 12.26xx** runs OS build 26100 (24H2). Each version keeps its OS build for all later updates.
+- Before you install a feature update, install the last cumulative update. For example, install 2509 before you install 2510.
+- Feature releases reach clusters that use a Solution Builder Extension (SBE) after your hardware vendor validates them. This typically takes a few weeks and varies by vendor. See [Update management and Solution Builder Extension](../operations/update-management-and-sbe.mdx).
+- The Azure Arc resource bridge requires solution updates to be applied within one year, to keep certificates valid and Azure Local VM management working.
+
+## Supported builds
+
+Each Azure Local release is supported for six months. If you do not update within six months, the solution is no longer supported, and Microsoft Support can only help you update to a supported version.
+
+| Solution version | Availability | OS build |
+|------------------|--------------|----------|
+| **12.2609.1003.7** (latest) | 2026-09-11 | 26100.33438 |
+| 12.2608.1003.9 | 2026-09-01 | 26100.33296 |
+| 12.2607.1003.73 | 2026-08-07 | 26100.33158 |
+| 12.2606.1003.205 | 2026-06-15 | 26100.32995 |
+| 12.2605.1003.1003 | 2026-06-18 | 26100.32860 |
+| 12.2604.1003.1006 | 2026-05-28 | 26100.32690 |
+
+Releases older than 2604 (12.2603 and earlier, and all 11.x and 10.x builds) are listed on Microsoft Learn as older versions.
+
+:::warning Azure Stack HCI 23H2 is out of support
+The Azure Stack HCI, version 23H2 operating system (OS build 25398) reached end of support in April 2026. October 2025 (11.2510) was the final 23H2 release. Systems still on 25398 receive no monthly security or quality updates, and support requests are limited to patching to a supported release. Move them to the 12.x train.
+:::
+
+## Naming
+
+Azure Stack HCI was renamed Azure Local. Some portal wizards, PowerShell cmdlet names (for example `Invoke-AzStackHciArcInitialization`), built-in role names (for example `Azure Stack HCI Administrator`), and OS strings still use the older name. Treat them as the same product.
+
+## What changed between 2604 and 2609
+
+This table lists the changes from the monthly "Features and improvements" pages that matter for the runbooks on this site. GA means Microsoft states the feature is generally available. Preview features carry the Microsoft preview terms. Available means the release notes describe the change without a GA or preview label.
+
+| Release | Change | Status |
+|---------|--------|--------|
+| 2604 | Disaggregated deployments: deploy with SAN storage only, scale beyond 16 nodes | GA |
+| 2604 | SAN storage attached alongside Storage Spaces Direct (Fibre Channel) | GA |
+| 2604 | Local identity with Azure Key Vault | GA |
+| 2604 | Domain join before deployment; update settings; validation time reduced by up to 50% | Available |
+| 2604 | GPU acceleration for Azure Local VMs (DDA and GPU-P) | GA |
+| 2604 | Security baseline sets a logon banner and message title, protected by drift control | Available |
+| 2605 | iSCSI SAN integration | Preview |
+| 2605 | GPU metrics for GPU-P | Available |
+| 2607 | iSCSI SAN integration (hyperconverged and disaggregated) | GA |
+| 2607 | Azure Local VMs can be the DNS server or gateway of a workload logical network (not supported with SDN enabled by Azure Arc) | GA |
+| 2607 | Security baseline enforces a 14-character minimum password length | Enforced |
+| 2607 | Confidential VM (AMD SEV-SNP) | Preview |
+| 2607 | Download update packages from the Azure portal for limited connectivity | Available |
+| 2607 | Local availability zones for disaggregated deployments | Available |
+| 2608 | Prepare updates workflow and a "Pending OEM Validation" update state | Available |
+| 2608 | Add a node from the Azure portal | Preview |
+| 2608 | GPU management from Azure; Azure Arc Site Manager for Azure Local VMs | Preview |
+| 2609 | Automatic backup of system-level secrets to a backup key vault | Preview |
+| 2609 | Local identity with Azure Key Vault: internal DNS and PowerShell-based admin setup | Preview |
+
+Earlier changes that are still relevant:
+
+| Release | Change | Status |
+|---------|--------|--------|
+| 2601 | Rack aware clustering | GA (preview from 2510). See [Rack aware clustering](./09-rack-aware-clustering.mdx). |
+| 2602 | Drift detection framework for configuration deviations | Available |
+| 2603 | Simplified machine provisioning | Preview. See [Simplified provisioning](../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/index.mdx). |
+| 2512 | Cluster registration uses a system-assigned managed identity instead of a service principal with a self-signed certificate | Available |
+
+## Deprecations and retirements
+
+| Item | Detail |
+|------|--------|
+| Azure Stack HCI 23H2 (OS 25398) | End of support April 2026. |
+| Windows Admin Center extensions for driver and firmware updates | No longer supported on Azure Local. Use Solution Builder Extension packages. |
+| Windows Server 2019 node pools on AKS enabled by Azure Arc | Support ends March 2026. |
+| Kubernetes 1.30 on AKS enabled by Azure Arc | No longer supported from the 2602 release train. Plan on KMS v2 because KMS v1 is deprecated. |
+| Windows Server Subscription and ESU purchases for OS 20349 (22H2) | No longer available from 2602. |
+
+## Planning guidance
+
+1. Target the latest train (12.2609) for new deployments. Hardware that ships with an older preinstalled OS can be updated after Azure Arc registration.
+2. Budget a recurring update window. A cluster that falls more than six months behind is unsupported.
+3. Confirm with your hardware vendor which Solution Builder Extension version matches the release you plan to run.
+4. Re-check [known issues](https://learn.microsoft.com/en-us/azure/azure-local/known-issues?view=azloc-2609) before each maintenance window.
+
+> Data verified with Microsoft Learn (Azure Local release information and What's new), October 2026.
+
+---
+
+## References
+
+- [Microsoft Learn — Azure Local release information](https://learn.microsoft.com/en-us/azure/azure-local/release-information-23h2?view=azloc-2609)
+- [Microsoft Learn — What's new in hyperconverged deployments of Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/whats-new?view=azloc-2609)
+- [Microsoft Learn — Known issues for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/known-issues?view=azloc-2609)
+- [Microsoft Learn — System requirements for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2609)

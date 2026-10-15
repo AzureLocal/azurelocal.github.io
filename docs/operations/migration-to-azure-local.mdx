@@ -1,0 +1,83 @@
+---
+title: "Migrating Workloads to Azure Local"
+sidebar_label: "Migration"
+sidebar_position: 4
+description: "Azure Migrate paths from VMware and Hyper-V to Azure Local, prerequisites, and where the AzureLocal migration tools fit"
+---
+
+# Migrating Workloads to Azure Local
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Moving existing VMs to an Azure Local instance
+> **PURPOSE**: Choose a migration path, meet the prerequisites, and plan cutover
+> **MASTER REFERENCE**: [Microsoft Learn — Migrate to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/migrate/migration-azure-migrate-overview?view=azloc-2609)
+
+**Status**: Active
+
+---
+
+## Migration paths
+
+| Source | Method | Status |
+|--------|--------|--------|
+| VMware vSphere | Azure Migrate (agentless replication to an Azure Local target) | GA |
+| Hyper-V | Azure Migrate | Preview |
+| Nutanix, other platforms | Partner and third-party tools. See the [Nutanix migration runbooks](https://azurelocal.cloud/azurelocal-nutanix-migration/). | n/a |
+
+Azure Migrate updates ship on their own cadence, so you do not need to update Azure Local to get them. Recent additions, per the Azure Local release notes:
+
+- Secure Boot settings are preserved for UEFI (Generation 2) VMs (February 2026).
+- A new target appliance can be registered if the original one stops responding, without creating a new project (January 2026).
+- Migration to Azure Local instances that use external SAN storage, including NTFS volumes (May 2026).
+- Azure CLI for replication and migration, in preview (April 2026). Terraform for replication and migration, in preview, and purpose-built Azure RBAC roles for Azure Local migrations (July 2026).
+
+## Requirements
+
+| Item | VMware source | Hyper-V source |
+|------|---------------|----------------|
+| Source versions | vCenter Server and ESXi 8.0, 7, 6.7, or 6.5 | Hyper-V on Windows Server 2025, 2022, 2019, 2016, or 2012 R2 |
+| Source and target appliance OS | Windows Server 2022 | Windows Server 2022 |
+| Target | Azure Local 2311.2 or later (listed for 2503 and later) | Azure Local 2311.2 or later |
+| Azure Migrate project | Created in the Azure portal, in the same tenant as the target. One source appliance and one target appliance per project. | Same. A project cannot mix VMware and Hyper-V sources. |
+
+On the target Azure Local instance you need the Azure Arc resource bridge (created at deployment), a logical network, and a custom storage path configured for migration.
+
+## Prerequisites on the source VMs
+
+- Disable BitLocker. Encrypted disks and volumes are not supported. Shared disks are not supported.
+- On Linux VMs, make sure the Hyper-V Linux Integration Services drivers are in the init image.
+- Decide what to do with the Azure Connected Machine agent. You can reuse the existing Arc resource, or uninstall the agent before replication starts.
+- Do not run snapshot-based backups at the same time as Azure Migrate replication cycles.
+- Boot type is preserved: BIOS VMs become Generation 1 and UEFI VMs become Generation 2. Generation 1 VMs have limits in Azure Local VM management. Use the [VM Conversion Toolkit](https://azurelocal.cloud/azurelocal-vm-conversion-toolkit/) to convert Generation 1 VMs to Generation 2 after migration.
+- Static IP addresses are preserved for Windows VMs only. DHCP reservation by MAC address is not supported.
+- Open the appliance firewall ports Microsoft lists (for example 443, 445, 3389, 44368, 5985 and 5986 depending on source) and allow `*.siterecovery.azure.com`.
+
+## Cost
+
+There are no Azure Migrate tool usage charges for 180 days from the start of replication. The storage account and key vault created in your subscription accrue normal charges.
+
+## Where the AzureLocal tools fit
+
+| Phase | Tool |
+|-------|------|
+| Size the target | [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) for S2D capacity and workload sizing |
+| VMware to Azure Local runbooks | [VMware migration](https://azurelocal.cloud/azurelocal-vmware-migration/) |
+| Nutanix to Azure Local runbooks | [Nutanix migration](https://azurelocal.cloud/azurelocal-nutanix-migration/) |
+| Generation 1 to Generation 2 conversion | [VM Conversion Toolkit](https://azurelocal.cloud/azurelocal-vm-conversion-toolkit/) |
+| Validate the target after cutover | [Load testing framework](./load-testing-on-azure-local.md) and the [testing and validation](../implementation/06-testing-validation/index.mdx) tasks |
+
+> Data verified with Microsoft Learn (Azure Migrate for Azure Local articles and What's new), October 2026.
+
+---
+
+## References
+
+- [Microsoft Learn — Review requirements for VMware VM migration](https://learn.microsoft.com/en-us/azure/azure-local/migrate/migrate-vmware-requirements?view=azloc-2609)
+- [Microsoft Learn — Prerequisites for VMware migration](https://learn.microsoft.com/en-us/azure/azure-local/migrate/migrate-vmware-prerequisites?view=azloc-2609)
+- [Microsoft Learn — Review requirements for Hyper-V VM migration (preview)](https://learn.microsoft.com/en-us/azure/azure-local/migrate/migrate-hyperv-requirements?view=azloc-2609)
+- [Microsoft Learn — Prerequisites for Hyper-V migration (preview)](https://learn.microsoft.com/en-us/azure/azure-local/migrate/migrate-hyperv-prerequisites?view=azloc-2609)
+- [Microsoft Learn — Migration FAQ](https://learn.microsoft.com/en-us/azure/azure-local/migrate/migrate-faq?view=azloc-2609)
+- [Microsoft Learn — What's new in Azure Migrate for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/migrate/migrate-whats-new?view=azloc-2609)

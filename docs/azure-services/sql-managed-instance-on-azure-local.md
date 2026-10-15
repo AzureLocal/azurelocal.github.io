@@ -26,7 +26,7 @@ SQL Managed Instance on Azure Local provides a cloud-managed database engine on-
 - **Kubernetes** — SQL MI runs as containers orchestrated by AKS, with persistent volumes backed by S2D storage
 - **High availability** — Built-in Always On availability groups for automatic failover within the cluster
 - **Monitoring** — Metrics and logs exported to Azure Monitor and Log Analytics via the Arc data controller
-- **Connectivity modes** — Supports both direct (always-connected) and indirect (periodically-connected) modes for Arc registration
+- **Connectivity mode** — Directly connected mode. The indirectly connected mode was retired in September 2025. For sites without Azure connectivity use [disconnected operations](../operations/disconnected-operations-on-azure-local.md) and check which data services it supports
 
 ## Supported Features
 
@@ -37,7 +37,8 @@ SQL Managed Instance on Azure Local provides a cloud-managed database engine on-
 - Azure Monitor and Grafana dashboards integration
 - Azure RBAC for instance management
 - Elastic pools for multi-database resource sharing
-- Direct and indirect connectivity modes
+- Directly connected mode (indirectly connected mode retired September 2025)
+- General Purpose and Business Critical service tiers. High availability with a contained availability group needs Business Critical
 
 ## Deployment Notes
 
@@ -48,7 +49,8 @@ SQL Managed Instance on Azure Local provides a cloud-managed database engine on-
 
 ## Limitations
 
-- Some SQL Managed Instance cloud features (e.g., link to Azure SQL) may have reduced functionality in indirect connectivity mode
+- Some SQL Managed Instance cloud features (for example, link to Azure SQL) may be unavailable or limited on Arc-enabled data services
+- Arc data services give no Microsoft-guaranteed SLA because you supply the compute and storage
 - Cross-instance distributed transactions require manual configuration
 - Performance governed by local hardware resources; no elastic scale-out to cloud
 - Licensing: SQL Server license required (pay-as-you-go through Arc or bring-your-own)
@@ -58,5 +60,7 @@ SQL Managed Instance on Azure Local provides a cloud-managed database engine on-
 - [Azure SQL Managed Instance enabled by Azure Arc — Microsoft Learn](https://learn.microsoft.com/azure/azure-arc/data/managed-instance-overview)
 - [Deploy Azure Arc data services — Microsoft Learn](https://learn.microsoft.com/azure/azure-arc/data/plan-azure-arc-data-services)
 - [SQL Managed Instance connectivity modes — Microsoft Learn](https://learn.microsoft.com/azure/azure-arc/data/connectivity)
+- [SQL Managed Instance service tiers — Microsoft Learn](https://learn.microsoft.com/azure/azure-arc/data/service-tiers)
+- [Azure Arc overview (indirect mode retirement) — Microsoft Learn](https://learn.microsoft.com/azure/azure-arc/overview)
 
-> Data verified with Microsoft Azure Local documentation, March 2026.
+> Data verified with Microsoft Azure Local documentation, October 2026.

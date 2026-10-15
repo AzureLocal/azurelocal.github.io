@@ -44,7 +44,7 @@ Azure Backup provides enterprise backup capabilities for Azure Local VMs with bo
 | Requirement | Description | Validation |
 |-------------|-------------|------------|
 | backup server VM | Dedicated VM on cluster with sufficient storage | 80 TB recommended for 800 VMs |
-| Azure Backup Software | Azure Backup V4 or later | Supports Azure Local 22H2+ |
+| Backup software | A backup product that supports Azure Local (Azure Backup, Veeam, Commvault, Cohesity, Rubrik) | Check the vendor support matrix for your Azure Local release |
 | Recovery Services Vault | Azure vault for online protection | Created in Azure subscription |
 | Network Connectivity | Azure Backup to Azure (443), Azure Backup to nodes (445, 135, dynamic RPC) | Firewall rules configured |
 | Cluster Access | Domain account with local admin on all nodes | CredSSP or Kerberos delegation |
@@ -56,7 +56,7 @@ Azure Backup provides enterprise backup capabilities for Azure Local VMs with bo
 |----------|-------------|---------|
 | `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
 | `RECOVERY_VAULT_NAME` | `backup.recovery_vault_name` | `rsv-azl-dal-prod-01` |
-| `BACKUP_SERVER_NAME` | `backup.server_name` | `azl-dal-mabs-01` |
+| `BACKUP_SERVER_NAME` | `backup.server_name` | `azl-dal-bkp-01` |
 | `CLUSTER_STORAGE_PATH` | `storage.cluster_storage_path` | `C:\ClusterStorage\Volume01` |
 | `MANAGEMENT_VIRTUAL_SWITCH` | `networking.management.virtual_switch` | `ConvergedSwitch(mgmt_compute)` |
 
@@ -112,11 +112,11 @@ Add-VMHardDiskDrive -VMName $VMName -Path $StorageDisk.Path
 
 ### Step 1.2: Install Azure Backup
 
-1. Download Azure Backup V4 from [Microsoft Evaluation Center](https://www.microsoft.com/en-us/evalcenter/evaluate-microsoft-azure-backup-server)
+1. Download the backup software for your chosen product. This task follows the Azure Backup based flow. Azure Backup, Veeam, Commvault, Cohesity, and Rubrik can all protect Azure Local VMs, so use your vendor installation guide if you chose another product. See [Virtual machine resiliency for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/disaster-recovery-vm-resiliency?view=azloc-2609).
 
 2. Run the installer and select required components:
  - SQL Server (bundled or use existing)
- - Azure Backup Server
+ - Backup server components
 
 3. Register with Recovery Services Vault:
 
@@ -265,7 +265,7 @@ Expected output shows all cluster nodes with **Valid** protection state.
 <TabItem value="manual" label="Azure Portal" default>
 
 1. Navigate to **Recovery Services vault** → **Backup items**
-2. Select **Azure Backup Server**
+2. Select the backup management type for your product
 3. Verify VMs appear with recent recovery points
 
 </TabItem>
@@ -276,7 +276,7 @@ Expected output shows all cluster nodes with **Valid** protection state.
 
 | Component | Verification | Expected Result |
 |-----------|--------------|-----------------|
-| Azure Backup Service | `Get-Service MSDPM` | Running |
+| Backup service | Backup product service on the backup server | Running |
 | Protection Agent | Agent status in console | Valid on all nodes |
 | Protection Group | Group status | OK, no warnings |
 | Disk Recovery Points | Latest recovery point | Within last 24 hours |
@@ -350,7 +350,7 @@ Azure Backup storage = (Protected data × 2) + (Protected data × retention days
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `{{BACKUP_SERVER_NAME}}` | backup server hostname | `Azure Backup-dal-01` |
+| `{{BACKUP_SERVER_NAME}}` | backup server hostname | `bkp-dal-01` |
 | `{{PROTECTION_GROUP_NAME}}` | Protection group name | `AzureLocal-VMs-Prod` |
 | `{{RECOVERY_VAULT_NAME}}` | Recovery Services vault name | `rsv-azl-dal-prod-01` |
 | `{{BACKUP_RETENTION_DAYS}}` | Local disk retention days | `14` |

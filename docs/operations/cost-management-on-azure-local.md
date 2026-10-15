@@ -45,6 +45,15 @@ Azure Local Cluster
 - Chargeback export to CSV/Excel for finance integration
 - Multi-tenant cost view across multiple Azure Local clusters
 
+## Azure Local billing basics
+
+- Azure Local is billed through your Azure subscription at a flat rate per physical processor core. The number of virtual cores does not change the price, and other Azure services you use are billed as usual.
+- Hyperconverged deployments without external storage use the L1 host service rate. Disaggregated deployments and hyperconverged deployments with external storage use the L2 rate.
+- AKS enabled by Azure Arc on Azure Local is included with Azure Local release 2402 and later. Do not add separate Azure Arc-enabled server charges for the Azure Local machines.
+- Azure Hybrid Benefit can waive the host service fee and the Windows Server subscription fee for eligible L1 deployments. See the [licensing task](../implementation/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit.mdx).
+- Disconnected operations is licensed per physical core on an annual term, including the cores that run the control plane.
+- Budget for consumption-based services separately: Azure Monitor log ingestion and retention, Defender for Cloud plans, backup capacity, Key Vault operations, and data transfer.
+
 ## Deployment Notes
 
 - Requires Arc enrollment of all resources to be tracked
@@ -55,7 +64,9 @@ Azure Local Cluster
 
 - **Repository**: [azurelocal-cost](https://github.com/AzureLocal/azurelocal-cost)
 - **Microsoft Docs**: [Azure Cost Management overview](https://learn.microsoft.com/en-us/azure/cost-management-billing/cost-management-billing-overview)
-- **Azure Arc billing**: [Arc-enabled billing](https://learn.microsoft.com/en-us/azure/azure-local/concepts/billing)
+- **Azure Local billing**: [Billing and payment](https://learn.microsoft.com/en-us/azure/azure-local/concepts/billing?view=azloc-2609)
+- **Disconnected operations billing**: [Billing for disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-billing?view=azloc-2609)
+- **Pricing**: [Azure Local pricing](https://azure.microsoft.com/pricing/details/azure-local/)
 
 :::note Work in Progress
 This page is a placeholder. Full documentation is tracked in [azurelocal-cost](https://github.com/AzureLocal/azurelocal-cost).

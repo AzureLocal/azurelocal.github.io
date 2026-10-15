@@ -1,0 +1,68 @@
+---
+title: "Update Management and Solution Builder Extension"
+sidebar_label: "Updates & SBE"
+sidebar_position: 2
+description: "Keep Azure Local in a supported state: update cadence, Solution Builder Extension packages, and limited connectivity updates"
+---
+
+# Update Management and Solution Builder Extension
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Solution updates and hardware vendor (Solution Builder Extension) updates
+> **PURPOSE**: Keep every cluster inside the six-month support window with predictable maintenance windows
+> **MASTER REFERENCE**: [Microsoft Learn — About updates for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/update/about-updates-23h2?view=azloc-2609)
+
+**Status**: Active
+
+---
+
+## Why this matters
+
+An Azure Local release is supported for six months. A cluster that is older than that is unsupported, and Microsoft Support can only help it update. The Azure Arc resource bridge also needs a solution update at least once a year. See [Releases and support lifecycle](../planning/08-release-and-support-lifecycle.mdx) for the current builds.
+
+## What an update contains
+
+A solution update bundles the Azure Local OS, core agents and services, and, where your hardware supports it, a **Solution Builder Extension (SBE)** package from the hardware vendor. SBE packages carry driver and firmware updates, hardware monitoring enhancements, diagnostic tools, supplemental Windows Defender Application Control policies, and extra validation logic for the pre-update health checks. Microsoft recommends installing the combined solution update (Azure Local plus SBE) in most cases, which reduces the number of update operations.
+
+## Update flow
+
+1. **Confirm health.** Connect with the deployment user account, confirm the cluster runs a supported version, and review the update environment health.
+2. **Discover updates.** Use Azure Update Manager in the Azure portal, or `Get-SolutionUpdate` in PowerShell. Use the `PackageType` and `SbeVersion` properties to tell a standalone SBE update from a combined solution update. The `SBEReleaseLink` and `SBENotifyMessage` properties show whether a vendor update is urgent.
+3. **Import SBE content if needed.** An update in the `AdditionalContentRequired` state needs files from your hardware vendor. Download the discovery manifest, the inventory file, and the payload (`SBE_Discovery_<Manufacturer>.xml`, `SBE_<Manufacturer>_<Family>_<Version>.xml`, and `.zip`) from the vendor and import them. If the SBE supports a download connector, updates show as `Ready` and need no import. Credentials for the connector can be set after deployment with `Set-SolutionExtensionSecretLocation`.
+4. **Prepare (optional).** Run `Start-SolutionUpdate -PrepareOnly` to download and validate content and run health checks without installing. Release 2608 adds a prepare updates workflow in the portal, so you can prepare now and install later.
+5. **Install.** Run `Start-SolutionUpdate` or start the update in the portal. Feature updates can show a **Pending OEM Validation** state while the vendor validates them.
+6. **Verify.** Check `Get-SolutionUpdateEnvironment` for the SBE state (`AppliedSuccessfully` is the goal) and re-run your [post-update validation](../implementation/06-testing-validation/index.mdx).
+
+## Limited or no connectivity
+
+For sites with limited connectivity, download the combined solution bundle from the Azure portal (available from release 2607) or by script, check its SHA256 hash, extract it to the `import` share on the infrastructure volume, and run `Add-SolutionUpdate`. Then discover and start the update as above.
+
+## Operating practices
+
+- Update in batches. Start with the smallest or least critical batch in a maintenance window, then move on if it succeeds.
+- Pre-download update content with the prepare-only workflow. Components for the Arc resource bridge and AKS are downloaded during the update itself.
+- Systems with more than 16 nodes can have longer update runtimes. Consider running the SBE update separately from the solution update.
+- Feature releases arrive after your hardware vendor validates them. Expect a delay of a few weeks.
+- Release 2604 added update settings that control how updates are applied. Review them before you automate.
+
+## Related tools
+
+- [azurelocal-beacon](https://azurelocal.cloud/azurelocal-beacon/) runs endpoint, network, and hardware readiness checks, which you can re-run before a maintenance window.
+- [azurelocal-ranger](https://azurelocal.cloud/azurelocal-ranger/) is a read-only discovery and reporting tool; run it before and after an update window to compare the as-built state.
+
+> Data verified with Microsoft Learn (update articles and release information), October 2026.
+
+---
+
+## References
+
+- [Microsoft Learn — About updates for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/update/about-updates-23h2?view=azloc-2609)
+- [Microsoft Learn — Solution Builder Extension updates](https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2609)
+- [Microsoft Learn — Update phases](https://learn.microsoft.com/en-us/azure/azure-local/update/update-phases-23h2?view=azloc-2609)
+- [Microsoft Learn — Update with PowerShell](https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2609)
+- [Microsoft Learn — Import and discover update packages with limited connectivity](https://learn.microsoft.com/en-us/azure/azure-local/update/import-discover-updates-offline-23h2?view=azloc-2609)
+- [Microsoft Learn — Best practices for managing updates](https://learn.microsoft.com/en-us/azure/azure-local/update/update-best-practices?view=azloc-2609)
+- [Microsoft Learn — Release information](https://learn.microsoft.com/en-us/azure/azure-local/release-information-23h2?view=azloc-2609)

@@ -41,7 +41,7 @@ ML and AI on Azure Local allows organizations to deploy trained machine learning
 ## Deployment Notes
 
 - Requires AKS on Azure Local with the Azure ML extension installed via Azure Arc
-- GPU workloads require compatible hardware with DDA or GPU-P configured on cluster nodes
+- GPU workloads require compatible hardware with DDA or GPU-P configured on cluster nodes. GPU acceleration for Azure Local VMs is generally available from release 2604, and GPU metrics for GPU-P are available from 2605. Azure portal GPU management is in preview from 2608
 - Azure subscription required for Azure ML workspace and Arc integration
 - Consider CPU-only inference for models that don't require GPU acceleration to simplify hardware requirements
 
@@ -56,6 +56,6 @@ ML and AI on Azure Local allows organizations to deploy trained machine learning
 
 - [Deploy Azure ML models to Arc-enabled Kubernetes — Microsoft Learn](https://learn.microsoft.com/azure/machine-learning/how-to-attach-kubernetes-anywhere)
 - [Azure Arc-enabled machine learning — Microsoft Learn](https://learn.microsoft.com/azure/machine-learning/how-to-attach-kubernetes-to-workspace)
-- [GPU acceleration on Azure Local — Microsoft Learn](https://learn.microsoft.com/azure-stack/hci/manage/use-gpu-with-clustered-vm)
+- [GPU acceleration on Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/gpu-manage-via-device)
 
-> Data verified with Microsoft Azure Local documentation, March 2026.
+> Data verified with Microsoft Azure Local documentation, October 2026.

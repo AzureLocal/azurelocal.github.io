@@ -5,7 +5,7 @@ sidebar_position: 6
 
 # Azure Services on Azure Local
 
-This section covers Azure services that run natively on Azure Local infrastructure (Azure Stack HCI, Hub, Edge, and related platforms). Only services that execute workloads locally are included — cloud-only services managed through the Azure portal are not covered here.
+This section covers Azure services that run natively on Azure Local infrastructure (Azure Local, formerly Azure Stack HCI). Only services that execute workloads locally are included — cloud-only services managed through the Azure portal are not covered here.
 
 ## Service Overview
 
@@ -13,12 +13,12 @@ Only Microsoft-published, named Azure services with an Arc-enabled or Azure Loca
 
 | Service | Description | AzureLocal Repo | Docs Site |
 |---------|-------------|-----------------|-----------|
-| [Azure Virtual Desktop (AVD)](./avd-on-azure-local.md) | Cloud-managed virtual desktops and RemoteApp on-premises | [azurelocal-avd](https://github.com/AzureLocal/azurelocal-avd) | [Docs](https://azurelocal.github.io/azurelocal-avd/) |
-| [Azure Kubernetes Service (AKS)](./aks-on-azure-local.md) | Managed Kubernetes on-premises via Azure Arc | [azurelocal-aks](https://github.com/AzureLocal/azurelocal-aks) | — |
-| [Azure App Services](./app-services-on-azure-local.md) | PaaS web app and API hosting on AKS via Arc | [azurelocal-app-services](https://github.com/AzureLocal/azurelocal-app-services) | — |
+| [Azure Virtual Desktop (AVD)](./avd-on-azure-local.md) | Cloud-managed virtual desktops and RemoteApp on-premises | [azurelocal-avd](https://github.com/AzureLocal/azurelocal-avd) | [Docs](https://azurelocal.cloud/azurelocal-avd/) |
+| [Azure Kubernetes Service (AKS)](./aks-on-azure-local.md) | Managed Kubernetes on-premises via Azure Arc | [azurelocal-aks](https://github.com/AzureLocal/azurelocal-aks) | [Docs](https://azurelocal.cloud/azurelocal-aks/) |
+| [Azure App Services](./app-services-on-azure-local.md) | PaaS web app and API hosting on AKS via Arc (extension retirement date passed; see page) | [azurelocal-app-services](https://github.com/AzureLocal/azurelocal-app-services) | — |
 | [Azure SQL Managed Instance](./sql-managed-instance-on-azure-local.md) | Managed SQL databases on-premises via Arc data services | [azurelocal-sql-mi](https://github.com/AzureLocal/azurelocal-sql-mi) | — |
 | [Machine Learning / AI](./ml-ai-on-azure-local.md) | ML inference and AI workloads at the edge | [azurelocal-ml-ai](https://github.com/AzureLocal/azurelocal-ml-ai) | — |
-| [IoT Operations](./iot-operations-on-azure-local.md) | Edge IoT data processing, MQTT broker, and device management | [azurelocal-iot](https://github.com/AzureLocal/azurelocal-iot) | — |
+| [IoT Operations](./iot-operations-on-azure-local.md) | Edge IoT data processing, MQTT broker, and device management | [azurelocal-iot](https://github.com/AzureLocal/azurelocal-iot) | [Docs](https://azurelocal.cloud/azurelocal-iot/) |
 
 ## Supporting Repositories
 
@@ -26,7 +26,7 @@ In addition to service-specific repos, the AzureLocal organization maintains cro
 
 | Repository | Purpose | Docs Site |
 |------------|---------|-----------|
-| [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | Platform automation, variable registry, and IaC lifecycle governance | [Docs](https://azurelocal.github.io/azurelocal-toolkit/) |
+| [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | Platform automation, variable registry, and IaC lifecycle governance | [Docs](https://azurelocal.cloud/azurelocal-toolkit/) |
 
 For the full list of operational and day-2 solution repositories, see the [Operations](../operations/) section.
 
@@ -42,4 +42,4 @@ All services in this section share a common pattern:
 
 Refer to each service page for specific architecture details, deployment notes, and external references.
 
-> Data verified with Microsoft Azure Local documentation, March 2026.
+> Data verified with Microsoft Azure Local documentation, October 2026.

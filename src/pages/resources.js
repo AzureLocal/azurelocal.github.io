@@ -108,7 +108,7 @@ const resources = [
   {
     category: 'Tool',
     title: 'Surveyor',
-    desc: 'Discover and assess existing estates before moving to Azure Local.',
+    desc: 'S2D capacity planning and workload sizing for Azure Local.',
     link: 'https://azurelocal.cloud/azurelocal-surveyor/',
     linkLabel: 'Open the site →',
     external: true,
@@ -116,7 +116,7 @@ const resources = [
   {
     category: 'Tool',
     title: 'Ranger',
-    desc: 'As-built documentation and reporting for Azure Local clusters.',
+    desc: 'Read-only discovery, documentation, audit and reporting for Azure Local.',
     link: 'https://azurelocal.cloud/azurelocal-ranger/',
     linkLabel: 'Open the site →',
     external: true,
@@ -124,7 +124,7 @@ const resources = [
   {
     category: 'Tool',
     title: 'Zero Touch Provisioning',
-    desc: 'Automated provisioning of Azure Local nodes and clusters.',
+    desc: 'Automation for simplified machine provisioning using BMC and Redfish.',
     link: 'https://azurelocal.cloud/azurelocal-ztp/',
     linkLabel: 'Open the site →',
     external: true,
@@ -132,7 +132,7 @@ const resources = [
   {
     category: 'Tool',
     title: 'Beacon',
-    desc: 'Deployment readiness and bootstrap helper.',
+    desc: 'Pre-deployment endpoint, network and hardware readiness validation.',
     link: 'https://azurelocal.cloud/azurelocal-beacon/',
     linkLabel: 'Open the site →',
     external: true,
@@ -140,7 +140,7 @@ const resources = [
   {
     category: 'Tool',
     title: 'Sonar',
-    desc: 'Pre- and post-deployment environment checks.',
+    desc: 'Real-time monitor for Azure Local deployments.',
     link: 'https://azurelocal.cloud/azurelocal-sonar/',
     linkLabel: 'Open the site →',
     external: true,
@@ -148,7 +148,7 @@ const resources = [
   {
     category: 'Tool',
     title: 'S2D Cartographer',
-    desc: 'Storage Spaces Direct capacity and layout mapping.',
+    desc: 'Storage Spaces Direct inventory, capacity analysis and health.',
     link: 'https://azurelocal.cloud/azurelocal-s2d-cartographer/',
     linkLabel: 'Open the site →',
     external: true,
@@ -156,7 +156,7 @@ const resources = [
   {
     category: 'Tool',
     title: 'Custom Images',
-    desc: 'Build and publish custom VM images for Azure Local.',
+    desc: 'Hardened golden VM image pipelines using Packer and Azure Image Builder.',
     link: 'https://azurelocal.cloud/azurelocal-custom-images/',
     linkLabel: 'Open the site →',
     external: true,
@@ -164,7 +164,7 @@ const resources = [
   {
     category: 'Migration',
     title: 'VMware to Azure Local Migration',
-    desc: 'Assessment, planning and automation for moving VMware workloads to Azure Local.',
+    desc: 'Runbooks and tooling for migrating VMware vSphere workloads to Azure Local.',
     link: 'https://azurelocal.cloud/azurelocal-vmware-migration/',
     linkLabel: 'Open the site →',
     external: true,
@@ -172,7 +172,7 @@ const resources = [
   {
     category: 'Solution',
     title: 'AKS on Azure Local',
-    desc: 'Kubernetes with AKS enabled by Azure Arc.',
+    desc: 'IaC and automation for AKS on Azure Local.',
     link: 'https://azurelocal.cloud/azurelocal-aks/',
     linkLabel: 'Open the site →',
     external: true,
@@ -188,7 +188,7 @@ const resources = [
   {
     category: 'Solution',
     title: 'SQL High Availability',
-    desc: 'SQL Server high availability patterns on Azure Local.',
+    desc: 'Highly available SQL Server (FCI or AG) on Azure Local.',
     link: 'https://azurelocal.cloud/azurelocal-sql-ha/',
     linkLabel: 'Open the site →',
     external: true,
@@ -196,7 +196,7 @@ const resources = [
   {
     category: 'Solution',
     title: 'Monitoring',
-    desc: 'Monitoring and alerting for Azure Local.',
+    desc: 'Azure Monitor, Prometheus and Grafana for Azure Local.',
     link: 'https://azurelocal.cloud/azurelocal-monitoring/',
     linkLabel: 'Open the site →',
     external: true,
@@ -204,7 +204,7 @@ const resources = [
   {
     category: 'Solution',
     title: 'BCDR',
-    desc: 'Backup and disaster recovery for Azure Local.',
+    desc: 'Business continuity and disaster recovery for Azure Local.',
     link: 'https://azurelocal.cloud/azurelocal-bcdr/',
     linkLabel: 'Open the site →',
     external: true,
@@ -212,7 +212,7 @@ const resources = [
   {
     category: 'Solution',
     title: 'Cost Management',
-    desc: 'Cost visibility and optimization.',
+    desc: 'Chargeback, showback and cost reporting for Azure Local.',
     link: 'https://azurelocal.cloud/azurelocal-cost/',
     linkLabel: 'Open the site →',
     external: true,
@@ -220,7 +220,7 @@ const resources = [
   {
     category: 'Solution',
     title: 'Governance',
-    desc: 'Policy, security and compliance baselines.',
+    desc: 'Azure Policy, security baselines, RBAC and CIS automation.',
     link: 'https://azurelocal.cloud/azurelocal-governance/',
     linkLabel: 'Open the site →',
     external: true,

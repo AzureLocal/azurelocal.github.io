@@ -52,20 +52,33 @@ Dell AX-series nodes are purpose-built for Azure Local with pre-validated config
 
 ### Azure Local System Requirements
 
-| Component | Minimum | Recommended | Notes |
-|-----------|---------|-------------|-------|
-| **Nodes per Cluster** | 1 | 2-16 | Single-node supported for dev/test |
-| **CPU Cores (per node)** | 16 cores | 32+ cores | Second-generation 64-bit or later |
-| **RAM (per node)** | 128 GB | 256+ GB | Additional for Arc VM management |
-| **Boot Drive** | 200 GB | 480+ GB SSD | BOSS card or M.2 recommended |
-| **Storage Drives** | 2 drives | 4+ NVMe | For Storage Spaces Direct |
-| **Network Adapters** | 2 NICs | 4+ NICs | RDMA-capable for storage |
+Microsoft publishes the following minimums. Microsoft Support may only be provided for Azure Local running on hardware in the [Azure Local catalog](https://aka.ms/azurelocalcatalog). The "Cloud Standard baseline" column is the sizing this site assumes for production clusters, which is higher than the Microsoft minimum.
+
+| Component | Microsoft minimum | Cloud Standard baseline | Notes |
+|-----------|-------------------|-------------------------|-------|
+| **Machines per instance** | 1 to 16 (hyperconverged). Up to 64 for [disaggregated (SAN)](./07-storage-planning.mdx) | 2 to 16 | Single-node is a supported size, with no node-level failover. All machines must match (model, processor, NICs, drive count and type) |
+| **CPU** | 64-bit Intel Nehalem grade or AMD EPYC or later with SLAT | 16+ cores per node, 32+ recommended | Processor properties (family, clock, core and thread counts) must match across nodes at deployment |
+| **Memory** | 32 GB per machine, ECC | 128 GB or more per node, 256+ GB recommended | Add capacity for Arc VM management and workloads |
+| **Boot drive** | 200 GB | 480+ GB SSD | 400 GB or more for machines with more than 768 GB RAM. BOSS card or M.2 recommended |
+| **Data drives** | At least 2 drives per machine, 500 GB or more each | 4+ NVMe | All-flash recommended. Same count, type, capacity, and firmware at deployment |
+| **Host network adapters** | At least 2 adapters from the Windows Server Catalog | 4+ NICs | RDMA-capable for storage |
+| **TPM, Secure Boot, BIOS** | TPM 2.0 present and enabled, Secure Boot enabled, Intel VT or AMD-V on | Same | Required for deployment |
+
+Maximums: 512 logical processors per host, 24 TB RAM per host, and 2,048 virtual processors per host. GPU memory up to 192 GB per machine is supported.
+
+:::note Verified against Microsoft Learn (October 2026)
+See [System requirements for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2609). The 16 core and 128 GB figures used by the validation script below are the Cloud Standard baseline, not Microsoft requirements. Machines that cannot meet the memory and ECC requirement can use a [virtual deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-virtual?view=azloc-2609) for testing.
+:::
+
+:::tip Size before you buy
+Use [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) to model S2D capacity, resiliency, and workloads, and capture the as-built result with [Ranger](https://azurelocal.cloud/azurelocal-ranger/) after deployment.
+:::
 
 ### Storage Requirements
 
 | Storage Tier | Drive Type | Minimum Count | Purpose |
 |--------------|------------|---------------|---------|
-| **Cache Tier** | NVMe SSD | 2 per node | High-speed caching |
+| **Cache Tier** | NVMe SSD | 2 per node | High-speed caching (hybrid HDD plus flash layouts only: cache devices of 32 GB or more, cache-to-capacity ratio of 15% or more) |
 | **Capacity Tier** | SSD or HDD | 4 per node | Data storage |
 | **Boot Drive** | SSD (BOSS/M.2) | 1 per node | OS installation |
 

@@ -38,6 +38,19 @@ Cluster Nodes
      └──▶ Azure Monitor Alerts ──▶ Action Groups (email/webhook)
 ```
 
+## Built-in Azure Local monitoring
+
+Use the platform capabilities first and add the solution below on top of them. Microsoft documents four alert types for Azure Local:
+
+| Alert type | What it gives you | Cost and setup |
+|------------|-------------------|----------------|
+| **Health alerts** | The OS health service watches for more than 80 health issues (storage capacity, disks, network adapters, CPU and memory, cluster configuration). They are forwarded to Azure Monitor alerts in near real time. | No extra cost. No Log Analytics workspace or alert rules to author. Configure alert processing rules and action groups to route them. |
+| **Recommended alerts** | Predefined metric alerts: percentage CPU (greater than 80), available memory (less than 1 GB), volume read and write latency (greater than 500 ms), and network in and out per second. | Enable from **Monitoring** > **Alerts** > **View + set up** on the Azure Local resource. Thresholds and severity can be changed. |
+| **Metric alerts** | Customer-defined alerts on Azure Local system metrics. | Set up in Azure Monitor. |
+| **Log alerts** | Customer-defined Log Analytics queries with predefined templates. | Needs a Log Analytics workspace. |
+
+Prerequisites: a registered system with the `AzureEdgeTelemetryAndDiagnostics` extension installed. Since release 2605 you can also monitor GPU metrics for GPUs configured with GPU partitioning. For disconnected operations, see [Disconnected operations](./disconnected-operations-on-azure-local.md).
+
 ## Supported Features
 
 - Azure Monitor Agent deployment across all cluster nodes
@@ -58,9 +71,14 @@ Cluster Nodes
 ## Resources
 
 - **Repository**: [azurelocal-monitoring](https://github.com/AzureLocal/azurelocal-monitoring)
-- **Microsoft Docs**: [Monitor Azure Local with Azure Monitor](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-cluster)
+- **Microsoft Docs**: [What is Azure Local monitoring?](https://learn.microsoft.com/en-us/azure/azure-local/concepts/monitoring-overview?view=azloc-2609)
+- **Health alerts**: [Respond to Azure Local health alerts](https://learn.microsoft.com/en-us/azure/azure-local/manage/health-alerts-via-azure-monitor-alerts?view=azloc-2609)
+- **Recommended alerts**: [Enable recommended alert rules](https://learn.microsoft.com/en-us/azure/azure-local/manage/set-up-recommended-alert-rules?view=azloc-2609)
+- **Metrics**: [Monitor with metrics](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-cluster-with-metrics?view=azloc-2609)
 - **Azure Monitor Agent**: [Overview](https://learn.microsoft.com/en-us/azure/azure-monitor/agents/azure-monitor-agent-overview)
 
+> Data verified with Microsoft Azure Local documentation, October 2026.
+
 :::note Work in Progress
-This page is a placeholder. Full documentation is tracked in [azurelocal-monitoring](https://github.com/AzureLocal/azurelocal-monitoring).
+Full dashboards and deployment scripts are tracked in [azurelocal-monitoring](https://azurelocal.cloud/azurelocal-monitoring/).
 :::

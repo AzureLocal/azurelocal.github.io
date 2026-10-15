@@ -50,7 +50,7 @@ The toolkit gives Azure Local operators a repeatable, evidence-based methodology
 ## Resources
 
 - **Repository**: [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools)
-- **Docs Site**: [azurelocal.github.io/azurelocal-loadtools](https://azurelocal.github.io/azurelocal-loadtools/)
+- **Docs Site**: [azurelocal.cloud/azurelocal-loadtools](https://azurelocal.cloud/azurelocal-loadtools/)
 
 :::note Work in Progress
 This page is a placeholder. Full documentation is tracked in [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools).
