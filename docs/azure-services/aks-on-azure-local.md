@@ -13,7 +13,7 @@ Azure Kubernetes Service (AKS) on Azure Local runs Kubernetes on your own Azure 
 
 AKS on Azure Local allows organizations to run production Kubernetes clusters on their own hardware with the same Azure management experience used for cloud-hosted AKS. Cluster lifecycle management (creation, scaling, upgrades, and monitoring) is handled through the Azure portal, Azure CLI, or ARM and Bicep templates via Azure Arc.
 
-AKS on Azure Local is included with Azure Local release 2402 and later. You do not pay a separate AKS fee on top of the Azure Local host service fee.
+AKS on Azure Local is included with Azure Local release 2402 and later. Microsoft's pricing guidance says not to add a separate AKS on Azure Local line item for release 2402 or later.
 
 ### Key Use Cases
 
