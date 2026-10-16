@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2604.2.0](https://github.com/AzureLocal/azurelocal.github.io/compare/v2604.1.0...v2604.2.0) (2026-10-16)
+
+
+### Features
+
+* **nav:** Tools and Solutions dropdowns list every live tool; drop single-version config ([374eed8](https://github.com/AzureLocal/azurelocal.github.io/commit/374eed87b337f6438ed3c1669c022e1189da6c34))
+
+
+### Bug Fixes
+
+* **docs:** broken anchors, pin client-redirects plugin to 3.9.2, format src pages ([a9f0163](https://github.com/AzureLocal/azurelocal.github.io/commit/a9f016354052f8ed04154504a591dbf3491dd79d))
+
 ## [2604.1.0](https://github.com/AzureLocal/azurelocal.github.io/compare/v2604.0.1...v2604.1.0) (2026-09-22)
 
 
