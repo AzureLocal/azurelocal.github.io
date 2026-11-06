@@ -41,6 +41,9 @@ const config = {
     locales: ['en'],
   },
 
+  // Click-to-zoom viewer for the ZTP diagrams (src/clientModules/imageZoom.js).
+  clientModules: ['./src/clientModules/imageZoom.js'],
+
   plugins: [
     [
       '@docusaurus/plugin-client-redirects',
@@ -83,7 +86,7 @@ const config = {
           onUntruncatedBlogPosts: 'warn',
         },
         theme: {
-          customCss: './src/css/custom.css',
+          customCss: ['./src/css/custom.css', './src/css/image-zoom.css'],
         },
         gtag: {
           trackingID: 'G-2D9XDHSXJW',

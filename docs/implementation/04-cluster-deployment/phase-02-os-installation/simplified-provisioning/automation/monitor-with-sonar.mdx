@@ -1,0 +1,182 @@
+---
+title: "Monitor the Run with Sonar"
+sidebar_label: "Monitor with Sonar"
+sidebar_position: 5
+description: "Follow a zero-touch provisioning run live and read-only with azurelocal-sonar, from the virtual USB boot to ready for Validate, and on through cluster Validate and Deploy."
+category: Runbook
+scope: Watching an azurelocal-ztp run with azurelocal-sonar
+purpose: Start Sonar for a ZTP run, read what it shows, and keep it running into cluster deployment
+author: Azure Local Cloud
+created: 2026-11-06
+updated: 2026-11-06
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "zero-touch", "monitoring", "sonar"]
+keywords: ["Sonar", "Start-ZtpMonitor", "ztp-events.jsonl", "Ready for Validate", "Prepare", "monitoring"]
+status: Active
+---
+
+# Monitor the Run with Sonar
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Watching an azurelocal-ztp run with azurelocal-sonar
+> **PURPOSE**: Start Sonar for a ZTP run, read what it shows, and keep it running into cluster deployment
+> **MASTER REFERENCE**: [azurelocal-sonar documentation](https://azurelocal.cloud/azurelocal-sonar/)
+
+**Status**: Active
+
+---
+
+## Overview
+
+[azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/) is a local web page that follows an Azure Local provisioning and deployment live. For a ZTP run it shows, on one page:
+
+- every ZTP stage as it starts and ends, from the virtual USB boot to the voucher;
+- each machine's provisioning in Azure: its lifecycle, its stages and the `ProvisionOs` job steps;
+- each machine's **Prepare for Validate** stage: drivers installed, restart, ready for Validate;
+- once you deploy the cluster, Validate and Deploy, with the seed node's logs.
+
+Sonar **only reads**. It never resubmits a job, never changes Azure, and never touches the machines or the event file. The ZTP run checks every stage itself and stops when a check fails, so Sonar is for watching, not for control. You don't need it for the run to succeed.
+
+| Link | What it is |
+|------|------------|
+| [Sonar documentation](https://azurelocal.cloud/azurelocal-sonar/) | The Sonar site |
+| [Getting started](https://azurelocal.cloud/azurelocal-sonar/getting-started) | Install, sign-in, and which account reads the node logs |
+| [Following a ZTP run](https://azurelocal.cloud/azurelocal-sonar/ztp) | What Sonar reads during ZTP, how it decides running, ready or failed, and every config key |
+| [ZTP: Monitoring a run](https://azurelocal.cloud/azurelocal-ztp/monitoring) | What each ZTP stage checks, and the event file format |
+| [azurelocal-sonar repository](https://github.com/AzureLocal/azurelocal-sonar) | Source and releases |
+
+---
+
+## What Sonar reads
+
+| Source | What it gives | How |
+|--------|---------------|-----|
+| The ZTP event file `ztp-events.jsonl` | One line per stage start, end and failure, the boot and voucher events, and the Prepare events | Reads the file on the management host every 2 seconds, without locking it |
+| Azure | The edge machines, their `ProvisionOs` job and lifecycle stages, and each Arc machine | Read-only ARM GET requests under your Az PowerShell sign-in, every 20 seconds by default |
+| The seed node | Validate and Deploy logs | WinRM, once the cluster deployment starts |
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Where | The same management host as the ZTP run. Sonar reads the event file from the local disk. |
+| PowerShell | 7.4 or later |
+| Az sign-in | `Az.Accounts`, signed in with `Connect-AzAccount` |
+| Azure role | Read on the resource group of the edge machines and on the managed resource group that holds their Arc machines. **Reader** on the subscription covers both. |
+| ZTP inputs | The ZTP plan or run has written `config\simplified-provisioning\nodes.json` in the ZTP clone. The plan run writes it, so you can start Sonar before `-Execute`. |
+
+---
+
+## Step-by-Step
+
+### Step 1: Get Sonar
+
+Clone the Sonar repository next to the ZTP clone.
+
+```powershell
+git clone https://github.com/AzureLocal/azurelocal-sonar.git D:\git\azurelocal-sonar
+```
+
+### Step 2: Start Sonar from the ZTP clone
+
+Open a **second** PowerShell 7 window, so the ZTP run keeps its own. Change to the root of the ZTP clone and sign in.
+
+```powershell
+Set-Location D:\git\azurelocal-ztp
+Connect-AzAccount -Tenant <tenant-id>
+```
+
+Run `Start-ZtpMonitor.ps1` without `-Execute` first. It prints the Sonar config it would write and the command, and changes nothing.
+
+```powershell
+.\scripts\simplified-provisioning\Start-ZtpMonitor.ps1 `
+  -SonarPath D:\git\azurelocal-sonar `
+  -SubscriptionId <subscription-id> `
+  -ResourceGroupName <resource-group> `
+  -NodesFile .\config\simplified-provisioning\nodes.json `
+  -EventLogPath .\_media\ztp-state\ztp-events.jsonl `
+  -ClusterName <cluster-name>
+```
+
+Use the values from your environment file: `ztp.subscription_id` and `ztp.resource_group`. Pass the **real name of the cluster you will deploy** as `-ClusterName`, so Sonar goes on to follow Validate and Deploy. Add `-IdentityModel LocalIdentity` if the cluster won't use Active Directory; the default is `ActiveDirectory`.
+
+When the output looks right, run it again with `-Execute`. It writes `ztp-sonar.config.json` in the current folder and starts Sonar.
+
+Sonar asks once for an account to read the seed node's logs. During provisioning there are no logs to read on the nodes: cancel, and Sonar uses your Windows identity. See [Which account](https://azurelocal.cloud/azurelocal-sonar/getting-started#which-account) for Validate and Deploy.
+
+| Parameter | Use |
+|-----------|-----|
+| `-NodeName` | Follow only some machines |
+| `-Port` | Local port of the page, default `8642` |
+| `-NoBrowser` | Don't open the browser |
+| `-Record <file>` | Also record the run, for replay later. Recording is **off** unless you pass it. |
+
+### Step 3: Open the page
+
+Sonar opens `http://localhost:8642/` in your browser, or the `-Port` you chose. The page updates by itself.
+
+### Step 4: Read what you see
+
+| Part of the page | What it shows during the run |
+|------------------|------------------------------|
+| Header | The cluster name, the phase chip, the overall status such as "1 of 2 machines ready", elapsed time, last poll, and one chip per machine |
+| Provisioning panel | One item per machine: lifecycle, progress bar, Arc machine, extensions, and the lifecycle message. Expand it for the lifecycle stages, the `ProvisionOs` job steps with their timers, and **Prepare for Validate** |
+| Live logs | The `[ztp]` lines from the event file, by time and coloured by level. Pick `ztp-events` in the file filter to see only those. |
+
+The run is done when every machine's Prepare stage shows ready for Validate and the phase chip reads **Ready for Validate**. That matches the run's own last line, `<node> is ready for Validate`.
+
+### Step 5: Leave it running for cluster deployment
+
+When you deploy the cluster with the name you gave as `-ClusterName`, Sonar moves on to **Validation** and then **Deployment**, and follows the seed node's logs. See [Following a ZTP run](https://azurelocal.cloud/azurelocal-sonar/ztp) and Sonar's [Getting started](https://azurelocal.cloud/azurelocal-sonar/getting-started).
+
+---
+
+## What's normal
+
+These were seen on the proven runs, on Dell AX-760 with iDRAC 7.30. They recover by themselves; see [Troubleshooting and known issues](../troubleshooting.mdx).
+
+| What you see | What it means |
+|--------------|---------------|
+| A machine at `AwaitingConnection` for a long time after the claim | Its registration is late. On the proven runs it took up to about 45 minutes, and recovered on its own. |
+| A machine turns **failed** at `SetupHybridComputeRP` with 5901, then **running** again a minute later | The first OS install attempt failed, and ZTP resubmitted it once. Sonar shows the failure while the job reports it. Once the new attempt starts, the old error moves to the machine's previous errors and the machine is running again. It didn't happen on every machine. |
+| A machine stays **running** after Azure reports Provisioned | ZTP's Prepare stage is still installing drivers and setting the network. The machine is done when Prepare reports ready for Validate. |
+| A restart in the Prepare stage | A driver asked for it. Prepare waits for the machine to come back with a new boot time and carries on. |
+
+If Sonar and the run disagree, the run is right: it stops with the reason when a check fails. The Azure portal also shows each machine under **Azure Arc** > **Operations** > **Provisioning (preview)** > **Provisioned machines**.
+
+---
+
+## Validation
+
+- [ ] Sonar shows every machine of the run
+- [ ] The live logs show `[ztp]` lines from the event file
+- [ ] At the end, every machine shows ready for Validate and the phase chip reads **Ready for Validate**
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Run from a management host](./run-from-management-host.mdx) | [↑ Simplified Provisioning](../index.mdx) | [Run from a pipeline →](./run-from-pipeline.mdx) |
+
+---
+
+## References
+
+- [azurelocal-sonar — Following a ZTP run](https://azurelocal.cloud/azurelocal-sonar/ztp)
+- [azurelocal-sonar — Getting started](https://azurelocal.cloud/azurelocal-sonar/getting-started)
+- [azurelocal-ztp — Monitoring a run](https://azurelocal.cloud/azurelocal-ztp/monitoring)
+- [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-11-06 | Azure Local Cloud | Initial release |

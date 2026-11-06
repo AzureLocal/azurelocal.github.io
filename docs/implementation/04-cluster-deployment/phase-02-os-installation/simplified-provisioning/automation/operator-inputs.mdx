@@ -8,7 +8,7 @@ scope: Operator inputs for the azurelocal-ztp zero-touch automation
 purpose: Describe the environment file keys the automation reads and the OEM SBE folder it needs
 author: Azure Local Cloud
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 version: "1.0.0"
 tags: ["azure-local", "simplified-provisioning", "zero-touch", "environment-file", "sbe"]
 keywords: ["environment file", "infrastructure.yml", "SBE", "Solution Builder Extension", "sbe_bundle", "Invoke-ZtpEnvironment"]
@@ -51,33 +51,26 @@ If a `tools\Validate-Infrastructure.ps1` script sits next to the environment fil
 
 ### Example
 
-All values are placeholders. Addresses use the documentation ranges from RFC 5737.
+This is the template from the repository, [`examples/infrastructure.example.yml`](https://github.com/AzureLocal/azurelocal-ztp/blob/main/examples/infrastructure.example.yml). Copy it, keep your copy **outside** the repository clone, and replace every value. All values here are placeholders: addresses are from the RFC 5737 documentation ranges, MAC addresses from the RFC 7042 range. The tables below describe each key, and the [environment file reference](https://azurelocal.cloud/azurelocal-ztp/environment-file) has the format of each one.
 
-```yaml title="infrastructure.yml (excerpt)"
+```yaml title="infrastructure.yml"
 azure_identity:
   azure_tenant_id: "<tenant-id>"
 
 azure_resources:
+  # Region of the site configuration and the edge machines. Preview: eastus only.
   location: eastus
 
 site:
-  name: "<site display name>"
+  name: "Example site"
 
 hardware:
-  vendor: Dell
-  model: AX-760
+  vendor: Dell                     # picks config/oem/dell.json
+  model: AX-760                    # SBE selection; becomes AX760
 
-cluster_nodes:
-  - name: node-01
-    service_tag: "<service-tag-1>"
-    idrac_ip: 192.0.2.11
-    ip_address: 192.0.2.21
-    mac_address: "AA:BB:CC:DD:EE:01"
-  - name: node-02
-    service_tag: "<service-tag-2>"
-    idrac_ip: 192.0.2.12
-    ip_address: 192.0.2.22
-    mac_address: "AA:BB:CC:DD:EE:02"
+onprem:
+  ntp_servers:
+    - 192.0.2.123
 
 network_intents:
   management:
@@ -85,39 +78,63 @@ network_intents:
     gateway: 192.0.2.1
     dns_servers:
       - 192.0.2.53
-
-onprem:
-  ntp_servers:
-    - 192.0.2.123
+      - 192.0.2.54
 
 credentials:
-  local_admin_username: "<deployment-admin-user>"
-  local_admin_password_secret: "keyvault://<vault-name>/<secret-name>"
+  # Deployment admin that Prepare creates in local Administrators. Not Administrator or Guest.
+  local_admin_username: <deployment-admin-username>
+  local_admin_password_secret: keyvault://<vault-name>/<deployment-admin-secret-name>
+
+cluster_nodes:
+  - name: node-01
+    service_tag: <serial-number-1>
+    idrac_ip: 198.51.100.11        # BMC address
+    ip_address: 192.0.2.11         # management address; give the MAC below a DHCP reservation for it
+    mac_address: "00-00-5E-00-53-01"
+  - name: node-02
+    service_tag: <serial-number-2>
+    idrac_ip: 198.51.100.12
+    ip_address: 192.0.2.12
+    mac_address: "00-00-5E-00-53-02"
 
 ztp:
   subscription_id: "<subscription-id>"
-  resource_group: "<resource-group>"
-  site_name: "<site-name>"
+  resource_group: <resource-group>
+  site_name: <site-name>
   time_zone: UTC
+  # Pin a validated solution recipe version (12.YYMM.x.y); Get-ZtpOsImage.ps1 lists them. latest also works.
+  os_version: "<solution-version>"
+  # Maintenance ISO: latest, a train such as 2610, a build, or a Microsoft download URL.
   provisioning_iso: latest
-  os_version: "<solution-version-or-latest>"
-  share_host_adapter: "<adapter-name-the-BMCs-reach>"
+
+  # The address the BMCs reach this host on. Or set share_host_adapter to a local adapter name instead.
+  share_host: 192.0.2.10
+  # share_host_adapter: "<adapter-name>"
   share_name: ztp-virtual-usb
-  azl_rp_object_id: "<azure-local-resource-provider-object-id>"
+
+  # Object ID of the Azure Local resource provider service principal in your tenant. Set it for pipelines.
+  # azl_rp_object_id: "<object-id>"
+
   tags:
-    purpose: ztp
+    workload: azurelocal
+
+  # Provisioning administrator. The secret must exist before the run.
   admin_secret:
-    subscription_id: "<vault-subscription-id>"
-    vault: "<vault-name>"
-    resource_group: "<vault-resource-group>"
-    username: "<provisioning-admin-user>"
-    name: "<secret-name>"
+    subscription_id: "<subscription-id>"
+    resource_group: <key-vault-resource-group>
+    vault: <vault-name>
+    name: <provisioning-admin-secret-name>
+    username: <provisioning-admin-username>
+
+  # BMC login: two secrets, the user name and the password.
   bmc_secret:
-    vault: "<vault-name>"
-    username_name: "<secret-name-for-bmc-user>"
-    password_name: "<secret-name-for-bmc-password>"
+    vault: <vault-name>
+    username_name: <bmc-username-secret-name>
+    password_name: <bmc-password-secret-name>
+
   node_preparation:
-    sbe_bundle: 'D:\sbe\<oem>'
+    # Folder with SBE_<OEM>_<family>_<version>.zip, its .xml and SBE_Discovery_<OEM>.xml from the OEM.
+    sbe_bundle: 'D:\ztp\sbe\<sbe-folder>'
 ```
 
 ### Machines and network
