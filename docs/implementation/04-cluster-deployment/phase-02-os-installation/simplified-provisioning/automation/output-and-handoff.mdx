@@ -1,0 +1,146 @@
+---
+title: "Output and Handoff to Cluster Deployment"
+sidebar_label: "Output and Handoff"
+sidebar_position: 6
+description: "What the azurelocal-ztp automation produces when machines are ready for Validate, and what to give cluster deployment, including each machine's arcMachineResourceId."
+category: Runbook
+scope: Output of the azurelocal-ztp automation and handoff to cluster deployment
+purpose: Explain the ready-for-Validate end state, the handoff files, and why cluster deployment must use each machine's arcMachineResourceId
+author: Azure Local Cloud
+created: 2026-11-05
+updated: 2026-11-05
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "zero-touch", "handoff", "arc", "cluster-deployment"]
+keywords: ["ready for Validate", "handoff", "arcMachineResourceId", "arc_machine_names", "ztp-handoff.json", "cluster deployment"]
+status: Active
+---
+
+# Output and Handoff to Cluster Deployment
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Output of the azurelocal-ztp automation and handoff to cluster deployment
+> **PURPOSE**: Confirm the end state and hand the machines to cluster deployment
+> **MASTER REFERENCE**: [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
+
+**Status**: Active
+
+---
+
+## Overview
+
+The automation stops at **ready for Validate**. At that point each machine has the Azure Local OS, is connected to Azure Arc with its mandatory extensions, has the OEM's network drivers, and has one static management address and one default gateway. The machines are ready to join a cluster.
+
+The automation does **not**:
+
+- prepare Active Directory,
+- run cluster Validate, or
+- deploy the cluster.
+
+Those are separate steps. See [Prepare your Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610) and the [cluster deployment phase](../../../phase-05-cluster-deployment/index.mdx).
+
+---
+
+## The end state
+
+A successful run ends with this line for each machine, then a summary:
+
+```text
+<node> is ready for Validate
+All ready for Validate: <node-1>, <node-2>
+```
+
+That line means the Prepare stage's four gates passed for that machine:
+
+| Gate | Evidence |
+|------|----------|
+| 1 | Azure reports the machine Ready to cluster: provisioned, `ProvisionOs` job succeeded, Arc Connected, extensions done |
+| 2 | The machine accepted a sign-in with the ZTP administrator secret |
+| 3 | The machine reported success after the changes, and restarted if a driver or Windows asked |
+| 4 | Static address, one default gateway, every adapter on the SBE's driver, `C:\SBE` complete, deployment administrator present. Azure reports the machine Ready again, so Arc survived the change. |
+
+You can also confirm in the Azure portal. Go to **Azure Arc** > **Operations** > **Provisioning (preview)** > **Provisioned machines**. Each machine shows **Ready to cluster**. See [Task 05](../task-05-verify-arc.mdx) for the portal checks.
+
+---
+
+## Files the run writes
+
+The run writes its state and outputs to the `ztp-state` folder under the `_media` folder next to the repository clone. The file names start with the run name, which is the names of the machines in the run joined with `+`.
+
+| File | What it holds |
+|------|---------------|
+| `<run>.ztp-handoff.json` | The handoff: for each machine, its name, serial, provisioned machine name and resource ID, Arc machine name, **`arcMachineResourceId`**, Arc resource group and connectivity. It also records the site, the solution version, and the bootstrap and SBE versions, with timestamps. |
+| `<run>.ztp-cluster-inputs.yaml` | The cluster inputs: an `arc_machine_names` block that maps each node name to its Arc machine name, plus `sbe` and `release` blocks when the handoff has the values. |
+| `<run>.arc-machine-names.json` | The map from node to Arc machine name. |
+| `<run>.ztp-provisioning.state.json` | The state file that makes the run resumable. |
+| `ztp-events.jsonl` | Structured events that Sonar can follow. |
+
+The handoff and cluster inputs hold environment-specific names and resource IDs. Treat them as internal. Don't publish them.
+
+---
+
+## What to hand to cluster deployment
+
+Hand over **each machine's `arcMachineResourceId`** from the handoff file, and the `arc_machine_names` map in the cluster inputs file.
+
+:::caution Use the Arc names from the handoff, not the node names
+Simplified machine provisioning creates two resources for each machine:
+
+- the **provisioned machine** (`edgeMachines`), which is named in the Azure Local site after the name you gave it, and
+- the **Azure Arc for Servers machine**, which the service names `<device-id>-1`.
+
+The `arcMachineResourceId` that the claim sets is overwritten by the service. The handoff reads each `arcMachineResourceId` after the Ready stage, so it points at the service-created `<device-id>-1` machine. The Arc machine name is therefore **not** the node name. If cluster deployment builds the Arc resource ID from the node name, it points at a resource that doesn't exist.
+
+On build 12.2690.1003.15, an earlier Deploy failed at "Deploy Arc infrastructure components" with `ParentResourceNotFound` because the Arc machine names are device IDs. Check the names before Deploy.
+:::
+
+To convert a handoff file into the cluster inputs block yourself, the repository has `Convert-ZtpHandoffToClusterInputs.ps1`. It takes `-HandoffPath`, an optional `-Only` of `arc_machine_names`, `sbe` or `release`, and `-Format` of `Yaml` or `Json`. See the script's help for the full parameters.
+
+Check the `release` values against your cluster deployment environment schema before you paste them. Only `arc_machine_names` is needed by the cluster deployment inputs.
+
+---
+
+## Before you start Validate
+
+| Check | Why |
+|-------|-----|
+| Active Directory is prepared | Learn lists it as an on-site prerequisite. The automation doesn't do it. |
+| The Arc machine names in your cluster inputs are the ones in the handoff | See the caution above. |
+| Each machine has one static address, one default gateway, and the OEM's drivers | Learn says [inbox drivers aren't supported](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements), and validation fails with more than one physical adapter that has a default gateway. The Prepare stage handles both. |
+| The iDRAC USB link adapter is not in any network intent | It appears as a network adapter (Remote NDIS, `169.254.0.x`). It isn't a cluster port. |
+| `C:\SBE` holds the SBE files | The Prepare stage copied them and checked the hashes. |
+
+---
+
+## Validation
+
+- [ ] Every machine printed "ready for Validate"
+- [ ] The handoff file lists every machine with an `arcMachineResourceId`
+- [ ] The Arc machine names are not the node names, and your cluster inputs use the handoff values
+- [ ] Every machine shows **Ready to cluster** and **Connected** in the portal
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Run from a pipeline](./run-from-pipeline.mdx) | [↑ Simplified Provisioning](../index.mdx) | [Troubleshooting and known issues →](../troubleshooting.mdx) |
+
+---
+
+## References
+
+- [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp)
+- [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
+- [Microsoft Learn — Host network requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610)
+- [Phase 05: Cluster Deployment](../../../phase-05-cluster-deployment/index.mdx)
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |

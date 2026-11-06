@@ -8,10 +8,10 @@ scope: Azure Local OS installation via simplified provisioning
 purpose: Provision Azure Local machines from Azure using FIDO Device Onboarding and USB maintenance environment
 author: Azure Local Cloud
 created: 2026-05-01
-updated: 2026-05-01
-version: "1.0.0"
+updated: 2026-11-05
+version: "1.1.0"
 tags: ["azure-local", "simplified-provisioning", "os-installation", "preview", "fdo", "zero-touch"]
-keywords: ["simplified machine provisioning", "FDO", "ownership voucher", "maintenance environment", "USB provisioning", "zero touch provisioning", "Azure Local"]
+keywords: ["simplified machine provisioning", "FDO", "ownership voucher", "maintenance environment", "USB provisioning", "zero touch provisioning", "azurelocal-ztp", "Redfish virtual USB", "automation", "Azure Local"]
 status: Active
 ---
 
@@ -59,8 +59,8 @@ Simplified machine provisioning offers an alternative to manual ISO installation
 
 This approach is most valuable when someone other than on-site staff prepares the machines (e.g., a hardware manufacturer or integrator), and on-site staff simply power them on and connect them to the network.
 
-:::tip Community Automation — azurelocal-ztp
-For a fully automated approach that **bypasses the manual USB media step entirely**, see the [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) project. It uses BMC/Redfish (iDRAC, XCC, iLO) to mount the maintenance-environment ISO as virtual media, set the boot source, and reboot — all without anyone in the rack and without physical USB media.
+:::tip Automated route — azurelocal-ztp
+For a fully automated approach that **removes the manual USB step and the portal steps**, see [Zero-Touch Provisioning Automation](./automation/index.mdx). The [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) scripts build a virtual USB image for each machine, attach it through the BMC (Redfish), collect the ownership vouchers, claim the machines in Azure, and prepare them for cluster Validate, with no one in the rack. It was proven on Dell AX-760 with iDRAC 7.30 and is not Microsoft-supported.
 
 This is especially useful for remote or lights-out deployments where physical access is limited.
 :::
@@ -92,7 +92,26 @@ This is especially useful for remote or lights-out deployments where physical ac
 
 ---
 
+## Choose your route
+
+This section covers two routes to the same end state: machines with the OS installed and registered with Azure Arc, ready for cluster deployment.
+
+| | Portal route (Tasks 1 to 5) | Automated route (azurelocal-ztp) |
+|--|-----------------------------|----------------------------------|
+| **How** | You create USB media, boot each machine, collect vouchers, and provision in the Azure portal | One command, or one pipeline, from a Windows management host |
+| **Physical access** | Someone attaches USB media and powers on each machine | None after the machines are racked, cabled and reachable by BMC |
+| **Needs** | Windows 11 PC, USB drive, the Azure portal | Windows management host with BMC access, an environment file, the OEM SBE files |
+| **Ends at** | Machines show "Ready to cluster" | Machines are ready for Validate: OEM drivers, one static management address, SBE files in `C:\SBE` |
+| **Support** | Microsoft's documented steps (preview) | Proven on Dell AX-760 / iDRAC 7.30. Not on Learn's validated list for this flow |
+| **Start here** | [Task 1: Create USB Installation Media](./task-01-create-usb-media.mdx) | [Zero-Touch Provisioning Automation](./automation/index.mdx) |
+
+Both routes share the same preview limits: East US only and no Arc gateway. If something goes wrong on either route, see [Troubleshooting and Known Issues](./troubleshooting.mdx).
+
+---
+
 ## Workflow Overview
+
+The following diagram is the portal route. The flow chart for the automated route is on the [automation overview](./automation/index.mdx#the-flow).
 
 ```mermaid
 graph TD
@@ -133,6 +152,8 @@ graph TD
 
 ## Steps in This Section
 
+### Portal route
+
 | Task | Description | Duration |
 |------|-------------|----------|
 | 1 | [Create USB Installation Media](./task-01-create-usb-media.mdx) | 15 min |
@@ -140,6 +161,23 @@ graph TD
 | 3 | [Provision Machines from Azure](./task-03-provision-from-azure.mdx) | 15 min + wait |
 | 4 | [Monitor Machine Setup](./task-04-monitor-progress.mdx) | 30–60 min |
 | 5 | [Verify Azure Arc Connectivity](./task-05-verify-arc.mdx) | 10 min |
+
+### Automated route (azurelocal-ztp)
+
+| Page | Description |
+|------|-------------|
+| [Automation Overview](./automation/index.mdx) | Design, flow chart, stages and gates, parallel machines, resume |
+| [Prerequisites](./automation/prerequisites.mdx) | Azure, hardware and BMC, network paths, management host |
+| [Operator Inputs](./automation/operator-inputs.mdx) | The environment file and the OEM SBE folder |
+| [Run from a Management Host](./automation/run-from-management-host.mdx) | Plan, run, watch and resume on Windows |
+| [Run from a Pipeline](./automation/run-from-pipeline.mdx) | Self-hosted Windows runner, identity, Key Vault, approval before Boot |
+| [Output and Handoff](./automation/output-and-handoff.mdx) | Ready for Validate, and what to give cluster deployment |
+
+### Both routes
+
+| Page | Description |
+|------|-------------|
+| [Troubleshooting and Known Issues](./troubleshooting.mdx) | Known issues, causes, and Microsoft Learn's recovery steps |
 
 ---
 
@@ -171,6 +209,7 @@ Follow a running provisioning and deployment live with [azurelocal-sonar](https:
 - [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2609)
 - [Microsoft Learn — Install OS via ISO](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2609)
 - [FIDO Device Onboarding Overview](https://fidoalliance.org/device-onboarding-overview/)
+- [Microsoft Learn — Troubleshoot Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2610)
 - [azurelocal-ztp — BMC/Redfish Automation](https://github.com/AzureLocal/azurelocal-ztp)
 
 ---
@@ -178,3 +217,4 @@ Follow a running provisioning and deployment live with [azurelocal-sonar](https:
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-05-01 | Azure Local Cloud | Initial release — Simplified Provisioning (Preview) |
+| 1.1 | 2026-11-05 | Azure Local Cloud | Add the automated route (azurelocal-ztp), a troubleshooting page and a route comparison |

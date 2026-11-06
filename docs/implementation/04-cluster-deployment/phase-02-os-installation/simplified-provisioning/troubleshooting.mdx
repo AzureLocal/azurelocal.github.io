@@ -1,0 +1,255 @@
+---
+title: "Troubleshooting and Known Issues"
+sidebar_label: "Troubleshooting and Known Issues"
+sidebar_position: 20
+description: "Known issues found on live runs of the azurelocal-ztp zero-touch automation, with the recovery steps Microsoft Learn documents for simplified machine provisioning."
+category: Runbook
+scope: Troubleshooting simplified machine provisioning, portal and automated routes
+purpose: List known issues with causes, what the automation does, and what to do, next to Microsoft Learn's recovery steps
+author: Azure Local Cloud
+created: 2026-11-05
+updated: 2026-11-05
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "troubleshooting", "known-issues", "zero-touch", "idrac"]
+keywords: ["5901", "SetupHybridComputeRP", "ProvisionOs", "RegisterMachine", "AwaitingConnection", "iDRAC 7.30", "VRM0010", "arcMachineResourceId", "ParentResourceNotFound"]
+status: Active
+---
+
+# Troubleshooting and Known Issues
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Troubleshooting simplified machine provisioning, portal and automated routes
+> **PURPOSE**: Known issues, causes, and recovery
+> **MASTER REFERENCE**: [Microsoft Learn — Troubleshoot Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2610)
+
+**Status**: Active
+
+:::warning Preview feature
+Simplified machine provisioning is in preview, East US only, and doesn't support Arc gateway. Behavior can change between builds.
+:::
+
+:::info How to read this page
+Items marked **proven on Dell AX-760 / iDRAC 7.30** were seen on live runs of the [azurelocal-ztp automation](./automation/index.mdx) on two Dell AX-760 machines with iDRAC 7.30, Azure Local build `12.2690.1003.15` and maintenance image `10.2610.0.3063`. They aren't confirmed on other hardware or builds. Where the cause is a best guess, the page says so. Items marked **Learn** come from Microsoft's documentation, with a link.
+:::
+
+---
+
+## Overview
+
+This page has two parts: issues that Microsoft Learn documents, which apply to both routes, and issues found on live runs of the automation. Start with the summary table.
+
+| Symptom | Section | Source |
+|---------|---------|--------|
+| OS install fails at `SetupHybridComputeRP`, code 5901, on the first attempt | [5901](#first-os-install-attempt-fails-with-5901) | Proven on Dell AX-760 / iDRAC 7.30 |
+| A machine takes a long time to register after the claim | [Registration delay](#a-machine-takes-up-to-35-minutes-to-register-after-the-claim) | Proven on Dell AX-760 / iDRAC 7.30 |
+| OS installation failed and doesn't retry | [Reattempt a failed OS provisioning](#reattempt-a-failed-os-provisioning) | Learn |
+| The boot never reaches the maintenance environment, or the BMC rejects the media | [iDRAC 7.30 behaviors](#idrac-730-behaviors-the-boot-stage-works-around) | Proven on Dell AX-760 / iDRAC 7.30 |
+| The machine reinstalls the maintenance environment every 10 minutes | [USB boot loop](#usb-boot-loop-with-the-maintenance-environment) | Learn |
+| Cluster deployment can't find the Arc machine | [Arc machine names](#arc-machine-names-are-device-ids) | Proven on Dell AX-760 / iDRAC 7.30 |
+| The ProvisionOs job still shows an error after a successful resubmit | [Stale job error](#a-resubmitted-job-keeps-the-earlier-error) | Proven on Dell AX-760 / iDRAC 7.30 |
+| A remote restart returns an error or the session drops | [Restart over WinRM](#restart-over-winrm-drops-the-session) | Proven on Dell AX-760 / iDRAC 7.30 |
+| Validate fails on drivers or default gateways | [Inbox drivers and gateways](#inbox-drivers-and-default-gateways-after-a-fresh-os) | Learn |
+| The Image drop-down is empty in the portal | [Empty image drop-down](#operating-system-image-drop-down-is-empty) | Learn |
+| ARM template validation fails with `hciRPServiceprincipalID` | [Template validation](#arm-template-validation-fails-when-you-provision) | Learn |
+| `InternalServerError` creating the site, `MoboBroker` | [Azure Policy](#internal-server-error-when-you-provision-azure-policy) | Learn |
+
+---
+
+## Issues found on live runs of the automation
+
+### First OS install attempt fails with 5901
+
+**Proven on Dell AX-760 / iDRAC 7.30.**
+
+**Symptom.** The `ProvisionOs` job fails at the step `SetupHybridComputeRP` with error 5901, "The device could not read or update its Azure registration", and job code `Retryable`. It happened on the first OS install attempt of **every** machine, on every run.
+
+**What was seen.** The maintenance environment's log showed a 403 when it read the new Azure Arc machine. The role that allows the read is assigned seconds after the machine is created.
+
+**Likely cause (not confirmed).** Azure role assignments can take time to propagate. The most likely explanation is that propagation took longer than the device's retry window, which is about 20 minutes. The 403 was confirmed only up to about minute 6 of that window.
+
+**What the automation does.** The **Ready** stage resubmits the failed `ProvisionOs` job once, by sending the PUT for `jobs/ProvisionOs` again. Learn says the service doesn't retry a failed OS installation, so the automation does the resubmit for you. On the proven runs the single resubmit passed in about 2 minutes every time.
+
+**What you do.** Usually nothing. If the resubmit also fails, the run stops with the reason. Then follow [Reattempt a failed OS provisioning](#reattempt-a-failed-os-provisioning), and check the role assignments on the resource group.
+
+### A machine takes up to 35 minutes to register after the claim
+
+**Proven on Dell AX-760 / iDRAC 7.30.**
+
+**Symptom.** After the claim, a machine stays at `RegisterMachine` `NotStarted`, with lifecycle `AwaitingConnection`, for up to about 35 minutes. Another machine in the same run registered in 6 minutes.
+
+**Outcome.** It recovered by itself each time.
+
+**Likely cause (not confirmed).** The gap between the device's retries to the onboarding service.
+
+**What you do.** Wait. The Ready stage waits up to 180 minutes by default. Check the machine has power, network, and outbound access to Azure. If it doesn't register at all, collect logs as described in [Collect logs](#collect-logs).
+
+### iDRAC 7.30 behaviors the Boot stage works around
+
+**Proven on Dell AX-760 / iDRAC 7.30.** Other BMCs and firmware weren't tested.
+
+| Behavior | What the automation does |
+|----------|--------------------------|
+| The `WriteProtected=false` field in the `InsertMedia` call is rejected. | Sets the iDRAC manager attribute `RFS.<n>.WriteProtected` to `Read Write` with a Redfish PATCH on `/redfish/v1/Managers/iDRAC.Embedded.1/Attributes`, then inserts the media. Eject sets the attribute back to `Read Only`. |
+| After that, Redfish still reports `WriteProtected=True`, although the share is open for write. | Doesn't trust that field. It proves the attach with a read-back instead. |
+| There is no `Usb` one-time boot target. The USB-stick slot boots as a virtual floppy (`vFDD`). | Sets `ServerBoot.1.FirstBootDevice=vFDD` with boot-once. This is iDRAC 7.30 behavior, not generic Redfish behavior. |
+| The `ServerBoot` setting is applied asynchronously. | Also sets the standard `Once` and `Floppy` boot override (on 7.30, `Floppy` reaches the USB-stick slot), and waits until the BMC reports it before the reset. |
+| Eject can return HTTP 500 (`VRM0010`) just after the machine writes to the image. | Retries the eject. |
+
+**Signals.** The automation watches the iDRAC log for 10 minutes for event `OSE1002`, logged with the text "C: boot completed". The automation reads it as the installed OS booting. This is what the log showed on the proven runs, not a definition that Dell documents.
+
+**If the machine doesn't boot the image.** The iDRAC's SMB client connects out to the management host on TCP 445. Check that the BMC can reach the host on that port, and check the share and the firewall rule on the host. See [network paths](./automation/prerequisites.mdx#network-paths).
+
+**After a failed Boot stage.** Before you retry, check on each BMC that the virtual media is ejected and that the one-time boot setting is cleared. A leftover attached image or pending one-time boot can send the next attempt to the wrong place.
+
+### Arc machine names are device IDs
+
+**Proven on Dell AX-760 / iDRAC 7.30.**
+
+**Symptom.** Cluster deployment can't find a machine, or fails at "Deploy Arc infrastructure components" with `ParentResourceNotFound`.
+
+**Cause.** The provisioned machine (`edgeMachines`) is named in the Azure Local site after the name you gave it. The Azure Arc for Servers machine is named by the service, `<device-id>-1`, and the `arcMachineResourceId` set at claim time is overwritten. On build `12.2690.1003.15`, an earlier Deploy failed because the Arc machine names are device IDs.
+
+**What you do.** Give cluster deployment each machine's `arcMachineResourceId` and Arc machine name from the handoff file. The handoff reads them after the Ready stage, so they point at the service-created `<device-id>-1` machine. See [Output and handoff](./automation/output-and-handoff.mdx#what-to-hand-to-cluster-deployment). Check the names before Deploy.
+
+### A resubmitted job keeps the earlier error
+
+**Proven on Dell AX-760 / iDRAC 7.30.**
+
+**Symptom.** After a resubmit, Azure still shows the earlier attempt's error on the `ProvisionOs` job.
+
+**What you do.** Don't treat that error as current. Check the job's state and the machine's lifecycle instead. If you run a monitor such as [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/), it must not read the old error as the current result.
+
+### Restart over WinRM drops the session
+
+**Proven on Dell AX-760 / iDRAC 7.30.**
+
+**Symptom.** A restart inside a remote WinRM call kills the session before the call returns, so the caller sees an error although the restart worked.
+
+**What the automation does.** The Prepare stage schedules the restart about 10 seconds out so the call returns first, then waits for the machine to come back with a new boot time. If you restart machines yourself during preparation, do the same.
+
+### The iDRAC USB link shows up as an adapter
+
+**Proven on Dell AX-760 / iDRAC 7.30.**
+
+The iDRAC's USB link to the operating system (Remote NDIS, `169.254.0.x`) appears as a network adapter. It isn't a cluster port, has no gateway, and must stay out of your network intents.
+
+---
+
+## Documented by Microsoft Learn
+
+### Reattempt a failed OS provisioning
+
+**Learn.** If the OS installation fails, the deployment shows `Your deployment failed` and the resource reached the provisioning state `Failed`. Learn states that simplified machine provisioning doesn't retry automatically from the service.
+
+**Learn's recovery.** Resubmit the `ProvisionOs` job:
+
+1. Open [Azure Cloud Shell](https://shell.azure.com).
+2. Run the script that Learn provides. It reads the provisioned machine's `userDetails` and `osProfile`, then sends a PUT for the `jobs/ProvisionOs` resource with those values. You supply your subscription ID, resource group, and the provisioned machine name.
+3. Wait. The retry takes up to 30 minutes.
+
+The full script is on Learn: [Reattempt a failed OS provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2610#reattempt-a-failed-os-provisioning). Use Learn's current version, because it uses a preview API version.
+
+**In the automation.** The Ready stage runs this resubmit once, automatically.
+
+### USB boot loop with the maintenance environment
+
+**Learn.** If the BIOS setting `Boot USB Devices First` is set, the machine boots the USB media again after every restart. It reinstalls the maintenance environment and reboots, about every 10 minutes.
+
+**Learn's recovery.** Boot from the USB device only once to install the maintenance environment, then set the machine to boot from the internal disk. See [Prepare machines](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#step-2-prepare-machines) and your hardware vendor's documentation for the boot order.
+
+**In the automation.** The Boot stage sets a one-time boot, not a permanent boot order. If you still see a loop, check the `Boot USB Devices First` setting in BIOS.
+
+### Operating system image drop-down is empty
+
+**Learn.** In **Provision new machines**, the **Operating system** > **Image** drop-down is empty.
+
+**Cause (Learn).** The `Microsoft.AzureStackHCI` resource provider registration is missing.
+
+**Learn's recovery.** Register the resource provider. See the [Azure prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#azure-prerequisites). The automation checks the providers in the Bootstrap stage, before the claim.
+
+### ARM template validation fails when you provision
+
+**Learn.** Creating the machines fails with `Arm template validation failed` and `The value for the template parameter 'hciRPServiceprincipalID' ... is not provided` (`InvalidTemplate`).
+
+**Cause (Learn).** This can happen if you use Azure Stack HCI for the first time in the subscription.
+
+**Learn's recovery.**
+
+1. Delete the provisioned machine: **Azure Arc** > **Operations** > **Machine provisioning (preview)** > **Provisioned machines**, select the machine, then **Delete**.
+2. Wait 15 minutes.
+3. Provision the machine again with the voucher.
+
+### Internal server error when you provision (Azure Policy)
+
+**Learn.** Creating the site or machine fails with `Failed to verify creation of MoboBroker resource` (`InternalServerError`).
+
+**Cause (Learn).** An Azure Policy blocks resource creation. Policies named by Learn:
+
+- resource groups must be in a specific region (the preview supports only `eastus`),
+- resource groups must follow a naming convention, or
+- resources must have tags. Learn says simplified machine provisioning doesn't currently support this requirement.
+
+**Learn's recovery.**
+
+1. In the resource group, open **Monitor** > **Activity log** to find the policy that blocked creation.
+2. Add an [Azure Policy exemption](https://learn.microsoft.com/en-us/azure/governance/policy/concepts/exemption-structure) for that policy.
+3. If the managed resource group name is the cause, set the managed resource group name to match your policy. After you select the site, select **Configure** and set it. In the preview, only `eastus` supports managed resource groups.
+4. Delete the provisioned machine, then provision it again with the voucher.
+
+### Inbox drivers and default gateways after a fresh OS
+
+**Learn.** [Inbox drivers aren't supported for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements). An adapter uses an inbox driver if its `DriverProvider` property is `Microsoft`. Install the latest driver from your OEM. Also, [network validation fails if it detects more than one physical adapter with a default gateway](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network).
+
+**What was seen.** **Proven on Dell AX-760 / iDRAC 7.30.** After a fresh OS, a machine has inbox drivers, DHCP and a default gateway on more than one port, and an empty `C:\SBE`. Dell states that the SBE can't install drivers or firmware during deployment, so the drivers must go on before Validate and Deploy.
+
+**What the automation does.** The [Prepare stage](./automation/index.mdx#prepare-stage) installs the SBE's network drivers, sets one static management address, and turns off DHCP and the gateway on the other adapters.
+
+**Check by hand.**
+
+```powershell
+Get-NetAdapter -Physical | Select-Object Name, InterfaceDescription, MacAddress, DriverProvider, DriverVersionString
+Get-NetIPConfiguration | Select-Object InterfaceAlias, IPv4Address, IPv4DefaultGateway
+```
+
+---
+
+## Collect logs
+
+**Learn.** The logs are at these locations:
+
+| Target operating system | Log files |
+|-------------------------|-----------|
+| Azure Stack HCI | `C:\Windows\System32\Bootstrap\Logs` |
+| Maintenance environment | `/var/log/bootstrap`, `/var/log/provisioningextension`, `/var/log/trident-full.log`, `/var/log/messages`, `/var/log/bootstraprestservice` |
+
+In the Configurator app, **Support + troubleshooting** can run diagnostic tests and create a support package. See [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2610).
+
+For the automation, the event file `ztp-events.jsonl` in the `ztp-state` folder records each stage with a timestamp. [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/) can read it live.
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Simplified Provisioning Overview](./index.mdx) | [↑ Phase 02: OS Installation](../index.mdx) | [Automation Overview →](./automation/index.mdx) |
+
+---
+
+## References
+
+- [Microsoft Learn — Troubleshoot Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2610)
+- [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
+- [Microsoft Learn — Host network requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610)
+- [Microsoft Learn — Network considerations for cloud deployments](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610)
+- [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp)
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |

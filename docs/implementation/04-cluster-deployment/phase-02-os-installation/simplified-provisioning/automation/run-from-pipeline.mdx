@@ -1,0 +1,208 @@
+---
+title: "Run from a Pipeline"
+sidebar_label: "Run from a Pipeline"
+sidebar_position: 5
+description: "Run the azurelocal-ztp zero-touch automation from a pipeline on a self-hosted Windows runner: why self-hosted, identity and roles, Key Vault secrets, a manual approval before the Boot stage, and resume with -From."
+category: Runbook
+scope: Running the azurelocal-ztp automation from CI/CD
+purpose: Run provisioning from a pipeline with an approval before the destructive Boot stage
+author: Azure Local Cloud
+created: 2026-11-05
+updated: 2026-11-05
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "zero-touch", "pipeline", "self-hosted-runner", "key-vault"]
+keywords: ["pipeline", "self-hosted runner", "Windows agent", "managed identity", "Key Vault", "manual approval", "Invoke-ZtpEnvironment", "From"]
+status: Active
+---
+
+# Run from a Pipeline
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Running the azurelocal-ztp automation from CI/CD
+> **PURPOSE**: Run provisioning from a pipeline with an approval before Boot
+> **MASTER REFERENCE**: [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp)
+
+**Status**: Active
+
+:::warning The Boot stage reinstalls machines
+A pipeline that runs `Invoke-ZtpEnvironment.ps1 -Execute` reinstalls the named machines. Put a manual approval in front of that step, and don't trigger it from pushes or schedules.
+:::
+
+---
+
+## Overview
+
+You can run the same single command from a pipeline instead of from a person's session. This suits teams that want an audited, repeatable run, and sites where only a runner inside the management network can reach the BMCs.
+
+The pipeline does three things the interactive run doesn't:
+
+1. It runs on a **self-hosted Windows runner** on the management network.
+2. It signs in with a **pipeline identity** and reads secrets from **Key Vault**, so no secret value sits in the pipeline.
+3. It **stops for a manual approval** between the plan and the destructive Boot stage.
+
+The azurelocal-ztp repository carries the scripts and the example pipelines. This page explains the design, so you can adapt the examples to GitHub Actions, Azure Pipelines or another system.
+
+---
+
+## Why a self-hosted Windows runner
+
+A Microsoft-hosted or Linux runner can't run this automation. The reasons are in the design of the Boot stage:
+
+| Reason | Detail |
+|--------|--------|
+| **The BMCs read the image from the runner** | The Boot stage publishes the virtual USB images on an SMB share on the machine that runs it. The iDRAC's SMB client connects out to that machine on TCP 445, and the runner allows inbound 445 only from the BMC addresses. A hosted runner sits outside your network and can't accept that connection. |
+| **It uses Windows commands** | The share, the local account and the firewall rule are created with Windows commands. Linux runners can't do this. |
+| **It must reach the machines** | The BMCs (HTTPS) and, after the OS install, the machines (WinRM on TCP 5985) are on the management network. |
+| **It must be elevated** | The share, account and rule need administrator rights on the runner. |
+| **It runs for hours** | A run takes about 1.5 to 2 hours on the proven setup. It must not depend on an interactive session or a short job timeout. |
+
+### Runner requirements
+
+The runner meets the [management host prerequisites](./prerequisites.mdx#management-host): Windows, PowerShell 7, elevated, the Az modules, `powershell-yaml`, Bicep, and the network paths. In addition:
+
+- Install the runner or agent as a **service** that runs as an account with local administrator rights on the runner.
+- Label the runner so that only this pipeline's jobs target it, for example with a `ztp` label or its own pool. The service account has administrator rights and can reach your BMC network, so don't share the pool.
+- Set the job timeout well above the run time.
+- Keep the repository clone and its `_media` sibling folder in a **persistent location** that the runner's workspace clean-up doesn't remove. The run keeps its state, downloaded files, images and vouchers there, and resume depends on them. Restrict access to that folder, because vouchers are proof of ownership of the machines.
+
+For setup steps, see the vendor's documentation, such as [self-hosted Windows agents](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/windows-agent?view=azure-devops) for Azure Pipelines or [self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners) for GitHub Actions.
+
+---
+
+## Identity and roles
+
+The pipeline needs an Azure identity. Use one of these:
+
+| Option | How it signs in |
+|--------|-----------------|
+| **Managed identity** | The runner is an Azure VM, or an Azure Arc-enabled server, with a managed identity. Pass `-UseManagedIdentity` and the script signs in as that identity. |
+| **Service principal** | The pipeline signs in with `Connect-AzAccount` before it calls the script. Prefer a federated credential (workload identity) over a client secret, so no secret is stored. |
+
+Give the identity these roles. A person with enough rights does this once, before the first run.
+
+| Where | Role | Why |
+|-------|------|-----|
+| The resource group for the machines | Owner, or Contributor and Role Based Access Control Administrator | Learn's prerequisite for simplified machine provisioning. Without them the template validation in the Azure stage fails. The deployment also creates role assignments for the provisioned machines. |
+| The Key Vault that holds the provisioning administrator secret | Permission to read secrets, and rights to delegate on the vault | The run reads the secret, and the machine's role delegation includes a Key Vault role on this vault. |
+| The Key Vault that holds the BMC account | Permission to read secrets | The run reads the BMC user name and password. |
+| The Key Vault that holds the deployment administrator secret | Permission to read secrets | The Prepare stage reads it. |
+| The subscription | The `Microsoft.DeviceOnboarding/AzureLocalZTP` feature and the resource providers [registered](./prerequisites.mdx#azure) | The Bootstrap stage checks them before the claim. |
+
+A managed identity has no directory read rights by default, so set `ztp.azl_rp_object_id` in the environment file. That way the run doesn't need to look up the resource provider's object ID.
+
+---
+
+## Secrets from Key Vault
+
+- The environment file holds **names and references**: the vault names, the secret names, and `keyvault://<vault>/<secret>`. See [Operator inputs](./operator-inputs.mdx#secrets).
+- The scripts read the BMC account, the provisioning administrator password and the deployment administrator password from Key Vault at run time, using the pipeline identity.
+- With a managed identity or a federated credential, the pipeline needs **no stored secret values**. Don't pass the BMC or administrator passwords as pipeline variables.
+- Don't echo, upload or cache the generated files. They hold node names, addresses and Azure resource IDs that are specific to your environment.
+
+---
+
+## Manual approval before Boot
+
+`Invoke-ZtpEnvironment.ps1` does the whole flow, including the destructive Boot stage, in one call when you pass `-Execute`. To put an approval in front of Boot, split the pipeline into two jobs:
+
+1. **Plan job.** Runs the script **without** `-Execute`. It validates the environment file, writes the generated files and shows the plan. Nothing changes in Azure or on a machine. Publish the plan output so the approver can read it.
+2. **Run job.** Runs the script **with** `-Execute`. Bind this job to a protected environment that requires a named reviewer. The job starts only after the reviewer approves.
+
+The reviewer should check the machine list, the share host address and the target resource group in the plan, and confirm that the machines carry no cluster to keep.
+
+Approvals are a pipeline-platform feature. See [Define approvals and checks](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/approvals?view=azure-devops) for Azure Pipelines, or [environments with required reviewers](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment) for GitHub Actions. In Azure Pipelines, a stage whose approval times out is skipped, which is the safe outcome.
+
+### Sketch
+
+The following GitHub Actions sketch shows the shape only. It is **illustrative**. Take the working example pipelines from the [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp), and check script paths and parameters against the repository.
+
+```yaml title=".github/workflows/ztp.yml (sketch)"
+name: ztp-provision
+on:
+  workflow_dispatch:
+    inputs:
+      nodes:
+        description: "Comma-separated node names. Leave empty for every node in the environment file."
+        required: false
+      from:
+        description: "Resume from this stage. Leave empty to start from the beginning."
+        required: false
+        type: choice
+        options: ["", Resolve, Media, Boot, Bootstrap, Vouchers, Azure, Ready, Handoff, Prepare]
+
+jobs:
+  plan:
+    runs-on: [self-hosted, windows, ztp]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Plan (no changes)
+        shell: pwsh
+        run: |
+          ./scripts/simplified-provisioning/Invoke-ZtpEnvironment.ps1 `
+            -InfrastructureFile ./infrastructure.yml -UseManagedIdentity
+
+  run:
+    needs: plan
+    runs-on: [self-hosted, windows, ztp]
+    timeout-minutes: 480
+    environment: ztp-reinstall   # configured with required reviewers
+    steps:
+      - name: Provision (reinstalls the named machines)
+        shell: pwsh
+        run: |
+          $params = @{ InfrastructureFile = './infrastructure.yml'; UseManagedIdentity = $true; Execute = $true }
+          if ('${{ inputs.nodes }}') { $params.Node = '${{ inputs.nodes }}' -split ',' }
+          if ('${{ inputs.from }}')  { $params.From = '${{ inputs.from }}' }
+          ./scripts/simplified-provisioning/Invoke-ZtpEnvironment.ps1 @params
+```
+
+The sketch assumes the clone sits in a persistent workspace on the runner and that the environment file is available to the job. Keep the environment file in the repository only if it holds no secret values and no data you treat as sensitive. Otherwise place it on the runner or fetch it at run time.
+
+---
+
+## Resume with -From
+
+If a run fails or the approval times out, start the pipeline again with the same inputs.
+
+- **Failure partway through:** run again with no `from`. The orchestrator skips stages it recorded as complete.
+- **Force a restart from a stage:** set the `from` input to the stage name. The stage and every later stage run again.
+- **One machine failed in Prepare:** set `from` to `Prepare` and `nodes` to that machine.
+
+Resume works only on the **same runner**, because the state file is on the runner's disk. Use `Azure` or a later stage once vouchers exist. Don't use `Resolve` or `Media` then, because they rebuild the images that hold the vouchers. See the table in [Run from a management host](./run-from-management-host.mdx#step-6-resume-after-a-stop).
+
+---
+
+## Validation
+
+- [ ] The runner is self-hosted, Windows, on the management network, with its own label or pool
+- [ ] The identity holds the roles above, and no secret value is stored in the pipeline
+- [ ] The run job is bound to an environment with a required reviewer
+- [ ] The plan job output is visible to the reviewer
+- [ ] A run ends with "`<node>` is ready for Validate" for every machine
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Run from a management host](./run-from-management-host.mdx) | [↑ Simplified Provisioning](../index.mdx) | [Output and handoff →](./output-and-handoff.mdx) |
+
+---
+
+## References
+
+- [Microsoft Learn — Simplified Machine Provisioning, Azure prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#azure-prerequisites)
+- [Microsoft Learn — Define approvals and checks (Azure Pipelines)](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/approvals?view=azure-devops)
+- [Microsoft Learn — Self-hosted Windows agents (Azure Pipelines)](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/windows-agent?view=azure-devops)
+- [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp)
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |
