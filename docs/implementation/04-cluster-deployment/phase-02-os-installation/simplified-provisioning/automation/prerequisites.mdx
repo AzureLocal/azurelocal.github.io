@@ -1,0 +1,150 @@
+---
+title: "Automation Prerequisites"
+sidebar_label: "Prerequisites"
+sidebar_position: 2
+description: "What you need before running the azurelocal-ztp automation: Azure subscription settings and roles, hardware and BMC, network paths, and the Windows management host."
+category: Runbook
+scope: Prerequisites for the azurelocal-ztp zero-touch automation
+purpose: List the Azure, hardware, BMC, network and management host requirements
+author: Azure Local Cloud
+created: 2026-11-05
+updated: 2026-11-05
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "zero-touch", "prerequisites", "bmc", "redfish"]
+keywords: ["azurelocal-ztp prerequisites", "Redfish", "SMB 445", "WinRM 5985", "management host", "AzureLocalZTP feature"]
+status: Active
+---
+
+# Automation Prerequisites
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Prerequisites for the azurelocal-ztp zero-touch automation
+> **PURPOSE**: List what must be in place before the first run
+> **MASTER REFERENCE**: [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
+
+**Status**: Active
+
+:::warning Preview feature
+Simplified machine provisioning is in preview, East US only, and doesn't support Arc gateway. See the [overview](./index.mdx) for the full list of limits.
+:::
+
+---
+
+## Azure
+
+These are Microsoft's prerequisites for simplified machine provisioning (see [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#azure-prerequisites)). The automation checks the feature and the resource providers in the Bootstrap stage and doesn't report a machine ready until they're registered. It doesn't check roles up front: missing roles make the template validation in the Azure stage fail.
+
+| Requirement | Details |
+|-------------|---------|
+| Feature registration | `Microsoft.DeviceOnboarding/AzureLocalZTP` registered on the subscription. See [Task 03](../task-03-provision-from-azure.mdx#step-1-register-the-provisioning-feature) for the command. |
+| Resource providers | Registered, as listed in the [section overview](../index.mdx#azure). |
+| Region | East US for the provisioning resources (preview limit). The resource group can be in another region. |
+| Operator roles | Owner on the resource group, or Contributor and Role Based Access Control Administrator on it. The identity that runs the automation needs these. |
+| Key Vault, administrator secret | A vault that holds the provisioning administrator password as a secret. The secret must exist before the run, because `Invoke-ZtpEnvironment.ps1` doesn't pass a password. The identity also needs rights to delegate on this vault, because the machine's role delegation includes a Key Vault role. |
+| Key Vault, BMC account | A secret for the BMC user name and one for the BMC password, which the run reads. See [Operator inputs](./operator-inputs.mdx). |
+| Key Vault, deployment administrator | A secret for the local administrator password used for cluster deployment, referenced as `keyvault://<vault>/<secret>`. |
+| Resource provider object ID | The object ID of the Azure Local resource provider in your tenant. Set it in the environment file so the run doesn't need directory read rights, which a managed identity doesn't have by default. |
+
+:::note Roles are a one-time setup
+Someone with enough rights gives the automation identity its roles once, before the first run. After that the run needs no more than the roles above.
+:::
+
+---
+
+## Hardware and BMC
+
+| Requirement | Details |
+|-------------|---------|
+| Machines | Hardware that supports simplified machine provisioning. Learn lists Dell AX-750 and AX-650, Lenovo ThinkAgile MX650 V3 and V4, and HPE ProLiant DL360 Gen11. The automation was **proven on Dell AX-760 with iDRAC 7.30**. |
+| BMC | A BMC with Redfish and a way to attach a virtual USB image over SMB. Dell iDRAC is proven. The repository carries OEM definitions for other vendors, but only Dell is complete. |
+| BMC account | An account that can insert virtual media, change iDRAC manager attributes, set the one-time boot, and reset the machine. Change the iDRAC factory password first, and keep the credential in Key Vault. |
+| Firmware | Match the BMC and machine firmware to the OEM's Azure Local support matrix before you start. Only iDRAC 7.30 was proven. |
+| Secure Boot and TPM | Enabled, as Learn requires for the maintenance environment. |
+| Machine state | The machines carry no cluster to keep. The run **reinstalls** them. |
+| OEM SBE | The Solution Builder Extension files from the OEM. See [Operator inputs](./operator-inputs.mdx#the-oem-sbe-folder). |
+
+:::caution BMC behavior proven on iDRAC 7.30 only
+The Boot stage works around several iDRAC 7.30 behaviors, such as the `InsertMedia` call rejecting `WriteProtected=false`, and `Floppy` being the one-time boot override that reaches the USB-stick slot. These are described in [Troubleshooting and known issues](../troubleshooting.mdx#idrac-730-behaviors-the-boot-stage-works-around). Other BMC models and firmware haven't been proven.
+:::
+
+---
+
+## Network paths
+
+| From | To | Port | Used for |
+|------|----|------|----------|
+| Management host | BMC | TCP 443 (HTTPS, Redfish) | Insert media, set boot, reset, read power, boot state and logs |
+| **BMC** | **Management host** | **TCP 445 (SMB)** | The iDRAC's SMB client connects out to the share on the host to read and write the virtual USB image |
+| Management host | Machine | TCP 5985 (WinRM) | The Prepare stage, after the OS is installed |
+| Management host | Azure | HTTPS | Azure Resource Manager, Key Vault, downloads |
+| Machine | Azure | HTTPS | Call-home, OS download, Arc registration. See [Azure Local firewall requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610). |
+
+The BMC-to-host path is the one people miss. The direction matters: the BMC connects out to the host, so no inbound port is needed on the BMC. The Boot stage creates a firewall rule on the host that allows inbound TCP 445 only from the BMC addresses, and the share uses a dedicated local account. If a firewall between the BMC network and the host blocks the connection, the BMC can't read the image and the machine never boots the maintenance environment.
+
+You can check endpoint and network readiness before the first run with [azurelocal-beacon](https://azurelocal.cloud/azurelocal-beacon/).
+
+---
+
+## Management host
+
+| Requirement | Details |
+|-------------|---------|
+| Operating system | **Windows.** The Boot stage shares the images over SMB with Windows commands, so Linux and macOS hosts don't work. |
+| PowerShell | PowerShell 7 or later. |
+| Elevation | Run elevated. The Boot stage creates an SMB share, a local account and a firewall rule on the host. |
+| Azure sign-in | The Az PowerShell modules, signed in as an identity that has the [Azure roles](#azure). With `-UseManagedIdentity` the script signs in as the managed identity attached to the host. |
+| Bicep | Available on the host. `Invoke-ZtpEnvironment.ps1` adds the Azure CLI's Bicep folder to `PATH`, so installing the Azure CLI's Bicep is enough. |
+| `powershell-yaml` | Reads the environment file. |
+| Pester 5 | Only needed to run the repository's tests. |
+| Disk | Space for the maintenance ISO, the SBE, and one image per machine. |
+| Network | The [paths above](#network-paths). |
+
+The host can be a dedicated server, a VM on the management network, or a self-hosted pipeline runner. See [Run from a pipeline](./run-from-pipeline.mdx).
+
+---
+
+## Security
+
+:::caution Before the first run
+- **Change the iDRAC factory password** and keep the BMC credential in Key Vault.
+- **Vouchers are secrets.** A voucher proves ownership of a machine. Restrict the folder that holds them and delete them when provisioning is done.
+- **The read-write SMB share is a tampering risk while it is up.** The Boot stage limits it to the BMC addresses with a firewall rule and removes it after the Vouchers stage. Keep the host on an isolated network and consider requiring SMB signing.
+- **After a failed Boot stage**, check on each BMC that the media is ejected and the one-time boot is cleared before you retry.
+:::
+
+---
+
+## Validation
+
+- [ ] `Microsoft.DeviceOnboarding/AzureLocalZTP` registered and the resource providers registered
+- [ ] The operator identity holds the required roles on the resource group
+- [ ] The administrator, BMC and deployment administrator secrets exist in Key Vault
+- [ ] The management host can reach every BMC on TCP 443, and every BMC can reach the host on TCP 445
+- [ ] The management host runs Windows with PowerShell 7, elevated, signed in to Azure
+- [ ] The OEM SBE files are downloaded
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Automation Overview](./index.mdx) | [↑ Simplified Provisioning](../index.mdx) | [Operator inputs →](./operator-inputs.mdx) |
+
+---
+
+## References
+
+- [Microsoft Learn — Simplified Machine Provisioning, prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#prerequisites)
+- [Microsoft Learn — Azure Local firewall requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610)
+- [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp)
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |

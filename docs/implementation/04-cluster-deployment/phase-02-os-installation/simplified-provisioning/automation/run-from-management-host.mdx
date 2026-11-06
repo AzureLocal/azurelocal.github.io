@@ -1,0 +1,194 @@
+---
+title: "Run from a Windows Management Host"
+sidebar_label: "Run from a Management Host"
+sidebar_position: 4
+description: "Plan, run, watch and resume the azurelocal-ztp zero-touch automation from a Windows management host."
+category: Runbook
+scope: Running the azurelocal-ztp automation interactively
+purpose: Run the end-to-end provisioning from a Windows management host, with a plan first and resume after a stop
+author: Azure Local Cloud
+created: 2026-11-05
+updated: 2026-11-05
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "zero-touch", "runbook", "powershell"]
+keywords: ["Invoke-ZtpEnvironment", "management host", "plan", "Execute", "resume", "From", "Sonar"]
+status: Active
+---
+
+# Run from a Windows Management Host
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Running the azurelocal-ztp automation interactively
+> **PURPOSE**: Run provisioning from a Windows host, plan first, resume after a stop
+> **MASTER REFERENCE**: [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp)
+
+**Status**: Active
+
+:::warning Execute reinstalls the machines
+Without `-Execute` the run is a plan and changes nothing. With `-Execute` it **reinstalls the named machines**. Run the plan first, confirm the machine list, and confirm that none of the machines holds a cluster or data you need.
+:::
+
+---
+
+## Overview
+
+You run one command, `Invoke-ZtpEnvironment.ps1`, with the environment file. It does the whole flow from the [overview](./index.mdx): Resolve, Media, Boot, Bootstrap, Vouchers, Azure, Ready, Handoff, and Prepare. This page shows how to run it from a Windows management host. To run it from a pipeline, see [Run from a pipeline](./run-from-pipeline.mdx).
+
+The script is in the `scripts/simplified-provisioning` folder of the [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp).
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Management host | Meets the [prerequisites](./prerequisites.mdx#management-host): Windows, PowerShell 7, elevated, Az modules, `powershell-yaml`. |
+| Environment file | Filled in, as described in [Operator inputs](./operator-inputs.mdx). |
+| SBE folder | Downloaded, and `ztp.node_preparation.sbe_bundle` points to it. |
+| Network paths | The BMC and WinRM paths in [Prerequisites](./prerequisites.mdx#network-paths) are open. |
+| Roles | Your sign-in holds the [Azure roles](./prerequisites.mdx#azure) on the resource group, and Key Vault access for the secrets. |
+
+---
+
+## Step-by-Step
+
+### Step 1: Get the scripts
+
+Clone the repository onto the management host and open an **elevated** PowerShell 7 session in it.
+
+```powershell
+git clone https://github.com/AzureLocal/azurelocal-ztp.git
+Set-Location .\azurelocal-ztp
+```
+
+The run writes its working files, such as downloaded ISOs, images, vouchers and state, to a `_media` folder next to the repository folder, not inside it.
+
+### Step 2: Sign in to Azure
+
+Sign in as an identity that holds the required roles. The script uses the current Az sign-in.
+
+```powershell
+Connect-AzAccount -Tenant <tenant-id>
+```
+
+If the host has a managed identity attached, you can pass `-UseManagedIdentity` instead, and the script signs in as that identity.
+
+### Step 3: Run the plan
+
+Without `-Execute`, the script validates the environment file, writes the generated settings, and shows the plan for the stages. It changes nothing in Azure or on a machine.
+
+```powershell
+.\scripts\simplified-provisioning\Invoke-ZtpEnvironment.ps1 `
+  -InfrastructureFile .\infrastructure.yml
+```
+
+Read the output. Check:
+
+- the share host address is the address the BMCs reach,
+- the machine list is the one you expect, and
+- the plan lists the stages and the commands each would run.
+
+### Step 4: Run it
+
+Add `-Execute`.
+
+```powershell
+.\scripts\simplified-provisioning\Invoke-ZtpEnvironment.ps1 `
+  -InfrastructureFile .\infrastructure.yml `
+  -Execute
+```
+
+The script then:
+
+1. Reads the BMC account from Key Vault.
+2. Creates the resource group if it doesn't exist.
+3. Runs Resolve to Handoff. A failed OS install is resubmitted once automatically.
+4. Runs the Prepare stage on every machine in parallel.
+
+Keep the session open. The run takes about 1.5 to 2 hours on the proven setup. Don't close the window or let the host sleep.
+
+To provision only some machines, name them. The names are those in `cluster_nodes[].name`.
+
+```powershell
+.\scripts\simplified-provisioning\Invoke-ZtpEnvironment.ps1 `
+  -InfrastructureFile .\infrastructure.yml `
+  -Node node-02 `
+  -Execute
+```
+
+### Step 5: Watch the run
+
+The orchestrator writes structured events to a JSON-lines file, `ztp-events.jsonl`, in the `ztp-state` folder under `_media`. You can follow the run live and read-only with [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/). The repository's `Start-ZtpMonitor.ps1` writes a Sonar configuration for the event file and the machines and starts Sonar.
+
+In the Azure portal, **Azure Arc** > **Operations** > **Provisioning (preview)** > **Provisioned machines** shows each machine's status as Azure sees it.
+
+### Step 6: Resume after a stop
+
+If a gate fails or times out, the run stops with the reason. Fix the cause and run the same command again. The orchestrator records completed stages in a state file and skips them.
+
+To force a restart from a stage, add `-From` with the stage name:
+
+```powershell
+.\scripts\simplified-provisioning\Invoke-ZtpEnvironment.ps1 `
+  -InfrastructureFile .\infrastructure.yml `
+  -From Azure `
+  -Execute
+```
+
+`-From` takes `Resolve`, `Media`, `Boot`, `Bootstrap`, `Vouchers`, `Azure`, `Ready`, `Handoff` or `Prepare`. The named stage and every later stage run again.
+
+| Where it stopped | Resume with |
+|------------------|-------------|
+| Before the Boot stage | The same command, or `-From Resolve` or `-From Media`. |
+| After Boot, before the claim | `-From Bootstrap`, `-From Vouchers` or `-From Azure`. Don't use `-From Resolve` or `-From Media`, because they rebuild the images that now hold the vouchers. |
+| After the claim | `-From Ready`. |
+| Prepare failed on one machine | `-From Prepare` with `-Node` naming that machine. Prepare skips steps that are already done. |
+
+Each set of machines keeps its own state, named after the machines. Running machine `node-02` on its own doesn't disturb the state of a run for the others.
+
+---
+
+## Timeouts
+
+`Invoke-ZtpEnvironment.ps1` sets these waiting budgets in the settings it generates. They are in the script, not in the environment file.
+
+| Wait | Budget |
+|------|--------|
+| Bootstrap, overall | 120 minutes |
+| Bootstrap, until a valid voucher appears | 90 minutes |
+| Vouchers | 120 minutes |
+| Ready to cluster | 180 minutes |
+| Prepare, Azure Ready gate | 240 minutes |
+| Prepare, sign-in and restart gates | 30 minutes |
+
+---
+
+## Validation
+
+- [ ] The plan run showed the expected machines and share host
+- [ ] The run finished with "`<node>` is ready for Validate" for every machine
+- [ ] The handoff and cluster input files exist (see [Output and handoff](./output-and-handoff.mdx))
+
+---
+
+## Troubleshooting
+
+See [Troubleshooting and known issues](../troubleshooting.mdx). The ones you are most likely to meet are the first OS install attempt failing with 5901, and a machine that takes up to 35 minutes to register after the claim. Both recovered on their own on the proven runs.
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Operator inputs](./operator-inputs.mdx) | [↑ Simplified Provisioning](../index.mdx) | [Run from a pipeline →](./run-from-pipeline.mdx) |
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |
