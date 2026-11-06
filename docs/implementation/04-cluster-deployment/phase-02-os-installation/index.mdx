@@ -1,22 +1,19 @@
-﻿---
+---
 title: "Phase 02: OS Installation"
 sidebar_label: "Phase 02: OS Installation"
 sidebar_position: 2
-description: "Install Azure Stack HCI OS on cluster nodes using ISO-based manual installation or Simplified Machine Provisioning (Preview)."
+description: "Install the Azure Stack HCI OS on cluster nodes by one of two paths: manual installation from an ISO or OEM image, or simplified machine provisioning (preview), by hand or automated with azurelocal-ztp."
 category: Runbook
 scope: Azure Local cluster OS installation
-purpose: Install Azure Stack HCI OS on all cluster nodes using ISO or Simplified Provisioning
+purpose: Choose the OS installation path and follow its tasks
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-05-01
-version: 1.2
-tags: ["azure-local", "os-installation", "azure-stack-hci", "dell", "boss", "idrac", "simplified-provisioning"]
-keywords: ["Azure Stack HCI OS", "OS installation", "Dell BOSS card", "iDRAC virtual media", "gold image ISO", "Server Core", "simplified provisioning", "FDO", "zero touch"]
+updated: 2026-11-06
+version: "2.0"
+tags: ["azure-local", "os-installation", "azure-stack-hci", "dell", "boss", "idrac", "simplified-provisioning", "zero-touch"]
+keywords: ["Azure Stack HCI OS", "OS installation", "ISO", "Dell BOSS card", "iDRAC virtual media", "gold image ISO", "simplified provisioning", "FDO", "zero touch", "azurelocal-ztp"]
 status: Active
 ---
-
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
 
 # Phase 02: OS Installation
 
@@ -24,88 +21,84 @@ import TabItem from '@theme/TabItem';
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 [![Dell](https://img.shields.io/badge/Hardware-Dell-007DB8?style=flat-square)](https://www.dell.com/)
 
-> **DOCUMENT CATEGORY**: Runbook   
-> **SCOPE**: Azure Local cluster OS installation   
-> **PURPOSE**: Install Azure Stack HCI OS on all cluster nodes   
-> **MASTER REFERENCE**: [Microsoft Learn - Deploy Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-introduction?view=azloc-2609)
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Azure Local cluster OS installation
+> **PURPOSE**: Choose the OS installation path and follow its tasks
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-introduction?view=azloc-2610)
 
 **Status**: Active
 
 ## Overview
 
-Azure Local supports two methods for installing the Azure Stack HCI OS on cluster nodes:
+Phase 02 has two paths. Both end with the Azure Stack HCI OS on every node, but they hand over in different states, so the phases after them differ too.
 
-1. **ISO-Based Manual Installation** (GA) — Download the ISO, mount via iDRAC/BMC virtual media, and manually run Windows Setup on each node
-2. **Simplified Machine Provisioning** (Preview) — Use a USB-based maintenance environment with FIDO Device Onboarding (FDO) to provision machines from Azure automatically. You can follow Microsoft's portal steps, or run the [automated route](./simplified-provisioning/automation/index.mdx) with the azurelocal-ztp scripts
+| Path | What it is | Next |
+|------|-----------|------|
+| **[Manual OS Installation (ISO)](./manual-installation/index.mdx)** | You install from the ISO or your OEM's image on each node through the BMC console. GA. | All of [Phase 03](../phase-03-os-configuration/index.mdx), then [Phase 04](../phase-04-arc-registration/index.mdx) |
+| **[Simplified Machine Provisioning](./simplified-provisioning/index.mdx)** | Azure installs the OS, sets the host name and registers the machine with Arc. Preview. By hand in the portal, or fully automated with azurelocal-ztp. | Simplified provisioning Task 06, or the ZTP Prepare stage. Phase 04 is skipped |
 
-Choose the method that best fits your environment using the comparison below.
+[Choose your route](../choose-your-route.mdx) has the flow chart for the whole of Part 4 and a decision matrix of every OS step on each path.
+
+:::tip Zero-touch provisioning: azurelocal-ztp
+**Simplified provisioning can run with no one in the rack.** The [azurelocal-ztp](https://azurelocal.cloud/azurelocal-ztp/) automation boots each machine from a virtual USB over the BMC, collects the ownership vouchers, claims the machines in Azure, installs the OEM network drivers and SBE, and checks every machine until it's ready for Validate. One command from a Windows management host, or one pipeline.
+
+- Documentation: [azurelocal.cloud/azurelocal-ztp](https://azurelocal.cloud/azurelocal-ztp/)
+- Source: [github.com/AzureLocal/azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp)
+- On this site: [Automated route](./simplified-provisioning/automation/index.mdx)
+
+Proven on Dell AX-760 with iDRAC 7.30. Not Microsoft-supported.
+:::
 
 ---
 
-## Installation Method Comparison
+## Path comparison
 
-| Aspect | ISO (Manual) | Simplified Provisioning (Preview) |
+| Aspect | Manual (ISO) | Simplified provisioning (preview) |
 |--------|-------------|-----------------------------------|
-| **Status** | ✅ GA — production supported | ⚠️ Preview — East US only |
-| **OS Installation** | Manual via iDRAC/BMC console | Automated from Azure |
-| **Physical Access** | Required for iDRAC virtual media | Required for initial USB boot |
-| **Network Configuration** | Manual (SConfig or PowerShell) | Automated from Azure portal |
-| **Azure Arc Registration** | Separate step ([Phase 04](../phase-04-arc-registration/index.mdx)) | Included in provisioning flow |
-| **Arc Gateway Support** | ✅ Supported | ❌ Not supported (preview) |
-| **Supported Hardware** | All [Azure Local Catalog](https://aka.ms/AzureStackHCICatalog) hardware | Dell AX-650/750, Lenovo MX650 V3/V4, HPE DL360 Gen11 |
-| **Best For** | Production deployments, all hardware | Automated provisioning of supported SKUs |
+| **Status** | ✅ GA, production supported | ⚠️ Preview, East US only |
+| **OS installation** | By hand through the iDRAC or BMC console | By Azure |
+| **Physical access** | iDRAC virtual media | A USB stick per machine, or none with azurelocal-ztp |
+| **Host name** | You set it in Phase 03 | Set by provisioning |
+| **OEM drivers and SBE** | In the OEM image, or you install them | You install them (Task 06), or azurelocal-ztp does |
+| **Network configuration** | Phase 03 | DHCP from provisioning; static IP, one gateway, DNS and time in Task 06 or by azurelocal-ztp |
+| **Azure Arc registration** | Phase 04 | Done by provisioning |
+| **Arc machine name** | The host name | `<device-id>-1`, see the [known issue](../choose-your-route.mdx#known-issue-arc-machine-names-at-deploy) |
+| **Arc gateway** | ✅ Supported | ❌ Not supported in the preview |
+| **Validated hardware** | All [Azure Local catalog](https://aka.ms/AzureStackHCICatalog) hardware | Dell AX-650/750, Lenovo MX650 V3/V4, HPE DL360 Gen11 |
 
 :::tip Recommendation
-Use **ISO-based installation** for production deployments until Simplified Provisioning reaches GA. Use Simplified Provisioning for evaluation and supported hardware in East US.
+Use the **manual (ISO)** path for production deployments until simplified provisioning reaches GA. Use simplified provisioning for evaluation, and on its validated hardware in East US.
 :::
 
 ---
 
-## Method 1: ISO-Based Manual Installation
+## Path 1: Manual OS Installation (ISO)
 
-The traditional approach: prepare Dell BOSS cards, mount the ISO via iDRAC virtual media, and manually install the OS on each node.
+| Task | Description | Duration |
+|------|-------------|----------|
+| 1 | [Delete and Recreate Virtual Disk on Dell BOSS Card](./manual-installation/task-01-delete-and-recreate-virtual-disk-on-dell-boss-card.mdx) | 15 min |
+| 2 | [Mount and Verify Dell Gold Image ISO](./manual-installation/task-02-mount-and-verify-dell-gold-image-iso.mdx) | 15 min |
+| 3 | [Manual OS Installation](./manual-installation/task-03-manual-os-installation.mdx) | 30–45 min |
+| 4 | [Verify OS Deployment](./manual-installation/task-04-verify-os-deployment.mdx) | 15 min |
 
-:::warning Important Notes
-- **BOSS deletion triggers reboot** — Deleting and recreating BOSS virtual disks creates a configuration job that requires a reboot to apply
-- **Automatic boot to ISO** — After the BOSS recreation reboot, the server boots from the ISO automatically (BOSS has no OS yet)
-- **No automated OS deployment** — Installation is performed manually through iDRAC Virtual Console
-- **Do NOT domain join nodes** — Nodes must remain in workgroup until after Azure Local cluster deployment
-:::
-
-### ISO Tasks
-
-| Task | Description | Duration | Link |
-|------|-------------|----------|------|
-| 1 | Delete and Recreate Virtual Disk on Dell BOSS Card | 15 min | [Task 1](./task-01-delete-and-recreate-virtual-disk-on-dell-boss-card.mdx) |
-| 2 | Mount and Verify Dell Gold Image ISO | 15 min | [Task 2](./task-02-mount-and-verify-dell-gold-image-iso.mdx) |
-| 3 | Manual OS Installation | 30–45 min | [Task 3](./task-03-manual-os-installation.mdx) |
-| 4 | Verify OS Deployment | 15 min | [Task 4](./task-04-verify-os-deployment.mdx) |
+Start at the [Manual OS Installation overview](./manual-installation/index.mdx).
 
 ---
 
-## Method 2: Simplified Machine Provisioning (Preview)
+## Path 2: Simplified Machine Provisioning (Preview)
 
-An automated approach that uses a USB-based maintenance environment with FIDO Device Onboarding to provision machines directly from Azure.
+### By hand, in the portal
 
-:::warning Preview Feature
-Simplified machine provisioning is **in preview**. Only East US region is supported. Arc Gateway is not supported. Review the [Microsoft preview terms](https://azure.microsoft.com/support/legal/preview-supplemental-terms/) before use.
-:::
+| Task | Description | Duration |
+|------|-------------|----------|
+| 1 | [Create USB Installation Media](./simplified-provisioning/task-01-create-usb-media.mdx) | 15 min |
+| 2 | [Prepare Machines](./simplified-provisioning/task-02-prepare-machines.mdx) | 30 min per machine |
+| 3 | [Provision Machines from Azure](./simplified-provisioning/task-03-provision-from-azure.mdx) | 15 min + wait |
+| 4 | [Monitor Machine Setup](./simplified-provisioning/task-04-monitor-progress.mdx) | 30–60 min |
+| 5 | [Verify Azure Arc Connectivity](./simplified-provisioning/task-05-verify-arc.mdx) | 10 min |
+| 6 | [Prepare Machines for Validate](./simplified-provisioning/task-06-prepare-for-validate.mdx) | 30 min |
 
-### Simplified Provisioning Tasks
-
-| Task | Description | Duration | Link |
-|------|-------------|----------|------|
-| 1 | Create USB Installation Media | 15 min | [Task 1](./simplified-provisioning/task-01-create-usb-media.mdx) |
-| 2 | Prepare Machines | 30 min/machine | [Task 2](./simplified-provisioning/task-02-prepare-machines.mdx) |
-| 3 | Provision Machines from Azure | 15 min + wait | [Task 3](./simplified-provisioning/task-03-provision-from-azure.mdx) |
-| 4 | Monitor Machine Setup | 30–60 min | [Task 4](./simplified-provisioning/task-04-monitor-progress.mdx) |
-| 5 | Verify Azure Arc Connectivity | 10 min | [Task 5](./simplified-provisioning/task-05-verify-arc.mdx) |
-
-For full details, see the [Simplified Provisioning Guide](./simplified-provisioning/index.mdx).
-
-### Automated Route (azurelocal-ztp)
-
-You can also run simplified provisioning without anyone in the rack, using the [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) scripts from a Windows management host or a pipeline. The automation builds a virtual USB image per machine, attaches it through the BMC, claims the machines in Azure, and prepares them for cluster Validate. It was proven on Dell AX-760 with iDRAC 7.30 and is not Microsoft-supported.
+### Automated, with azurelocal-ztp
 
 | Page | Description |
 |------|-------------|
@@ -113,114 +106,40 @@ You can also run simplified provisioning without anyone in the rack, using the [
 | [Prerequisites](./simplified-provisioning/automation/prerequisites.mdx) | Azure, BMC, network and management host |
 | [Operator Inputs](./simplified-provisioning/automation/operator-inputs.mdx) | The environment file and the OEM SBE |
 | [Run from a Management Host](./simplified-provisioning/automation/run-from-management-host.mdx) | Plan, run and resume on Windows |
+| [Monitor with Sonar](./simplified-provisioning/automation/monitor-with-sonar.mdx) | Follow the run live |
 | [Run from a Pipeline](./simplified-provisioning/automation/run-from-pipeline.mdx) | Self-hosted runner, approval before Boot |
 | [Output and Handoff](./simplified-provisioning/automation/output-and-handoff.mdx) | Ready for Validate, and the handoff to cluster deployment |
-| [Troubleshooting and Known Issues](./simplified-provisioning/troubleshooting.mdx) | Known issues and Learn's recovery steps |
+
+Both: [Troubleshooting and Known Issues](./simplified-provisioning/troubleshooting.mdx).
 
 ---
 
-## Prerequisites
+## Workflow
 
-| Requirement | Description | Source |
-|-------------|-------------|--------|
-| Phase 01 Complete | BIOS and iDRAC settings validated and compliant (Tasks 04/05) | [Phase 01](../phase-01-hardware-provisioning/index.mdx) |
-| Dell BOSS Cards | Boot Optimized Storage Solution cards installed in all nodes (ISO method) | Hardware |
-| iDRAC Access | Virtual Console and Virtual Media control available (ISO method) | `variables.yml: nodes.<name>.idrac_ip` |
-| Gold Image ISO | Dell Azure Local Gold Image ISO available (ISO method) | Build team |
-| USB Flash Drive | At least 8 GB (Simplified Provisioning method) | Operator |
-| Windows 11 PC | For USB prep tool and Configurator app (Simplified Provisioning method) | Operator |
-
----
-
-## Dell BOSS Card Overview
-
-The Dell Boot Optimized Storage Solution (BOSS) card provides dedicated boot storage for Azure Local nodes:
-
-| Feature | Description |
-|---------|-------------|
-| Configuration | Two M.2 SATA SSDs configured as RAID-1 mirror |
-| Purpose | OS boot resilience — OS failure does not affect data drives |
-| Controller | Dell BOSS controller (separate from the storage RAID controller) |
-| Presentation | Appears as a single virtual disk to the OS |
-| Requirement | Requires a full delete → create → initialize cycle before a fresh OS install |
-
-:::info Azure Local Cloud Dell Gold Image
-Azure Local Cloud maintains a Dell Gold Image with pre-configured drivers optimized for Azure Local deployments. The image includes:
-- Pre-installed Dell OpenManage and hardware drivers
-- Optimized Windows Server Core settings for Azure Local
-:::
-
----
-
-## Validation Checklist
-
-### ISO Method
-- [ ] BOSS virtual disks deleted and recreated on all nodes
-- [ ] Dell Gold Image ISO mounted and verified on all nodes (`Inserted: true`)
-- [ ] Nodes rebooted and booted from ISO after BOSS recreation
-- [ ] Azure Stack HCI OS installed successfully on all nodes
-- [ ] OS installed to Dell BOSS card M.2 RAID-1 volume
-- [ ] Administrator passwords set and stored securely
-- [ ] All nodes boot to Server Core command prompt
-- [ ] OS verified per Task 4 checklist
-
-### Simplified Provisioning Method
-- [ ] USB installation media created successfully
-- [ ] All machines booted from USB and maintenance environment completed
-- [ ] Ownership vouchers collected for all machines
-- [ ] Machines provisioned from Azure portal
-- [ ] All machines show "Ready to cluster" in Azure Arc
+```mermaid
+graph TD
+  A[Phase 01 complete] --> B{Installation path?}
+  B -->|Manual, ISO| C[Manual Tasks 1 to 4]
+  C --> D[Phase 03: all OS configuration tasks]
+  D --> E[Phase 04: Arc registration]
+  B -->|Simplified, portal| F[Simplified Tasks 1 to 5]
+  F --> G[Simplified Task 6: prepare for Validate]
+  B -->|Simplified, azurelocal-ztp| H[One run: provisioning and Prepare stage]
+  E --> I[Phase 05: Cluster deployment]
+  G --> I
+  H --> I
+```
 
 ---
 
 ## Outcome
 
-Upon completion of this phase (either method):
+- **Manual path:** the OS is on every node. Continue with [Phase 03](../phase-03-os-configuration/index.mdx).
+- **Simplified path:** every machine is Ready to cluster in Azure, with OEM drivers, SBE, one static management address, DNS and time. Phase 04 is skipped; continue with [Phase 05](../phase-05-cluster-deployment/index.mdx).
 
-- Azure Stack HCI OS installed on all cluster nodes
-- Administrator passwords documented securely in Azure Key Vault
-- All nodes boot to Server Core command prompt
-- Nodes ready for Phase 03: OS Configuration
-
----
-
-## Workflow Diagram
-
-```mermaid
-graph TD
-  A[Phase 01 Complete] --> B{Installation Method?}
-  B -->|ISO Manual| C[Task 1: Delete/Recreate BOSS VD]
-  C --> D[Task 2: Mount ISO via iDRAC]
-  D --> E[Task 3: Manual OS Installation]
-  E --> F[Task 4: Verify Installation]
-  F --> G{All Nodes Complete?}
-  G -->|No| C
-  G -->|Yes| H[Phase 03: OS Configuration]
-
-  B -->|Simplified Provisioning| I[Task 1: Create USB Media]
-  I --> J[Task 2: Prepare Machines]
-  J --> K[Task 3: Provision from Azure]
-  K --> L[Task 4: Monitor Progress]
-  L --> M[Task 5: Verify Arc]
-  M --> H
-```
-
----
-
-## Quick Start
-
-Verify iDRAC Virtual Console and Virtual Media access for all nodes before starting. iDRAC IPs are defined in `variables.yml` under `nodes.<name>.idrac_ip`.
-
-```powershell
-# Test iDRAC connectivity for all nodes
-Import-Module powershell-yaml
-$config = Get-Content ".\config\variables.yml" -Raw | ConvertFrom-Yaml
-$config.nodes.Values | ForEach-Object {
- $result = Test-NetConnection -ComputerName $_.idrac_ip -Port 443 -WarningAction SilentlyContinue
- $status = if ($result.TcpTestSucceeded) { "Reachable" } else { "Unreachable" }
- Write-Host "$($_.hostname) iDRAC ($($_.idrac_ip)): $status"
-}
-```
+:::warning Before Validate, on either path
+Check [Microsoft Learn's OS installation steps](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610) and your OEM's deployment guide for your build and hardware.
+:::
 
 ---
 
@@ -238,4 +157,4 @@ $config.nodes.Values | ForEach-Object {
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
 | 1.1 | 2026-03-04 | Azure Local Cloud | Fix frontmatter, badges, stage references, standards alignment |
-| 1.2 | 2026-05-01 | Azure Local Cloud | Add Simplified Machine Provisioning (Preview) section, update to decision page format |
+| 2.0 | 2026-11-06 | Azure Local Cloud | Split into two paths: Manual OS Installation and Simplified Machine Provisioning; azurelocal-ztp call-out; simplified Task 06 |

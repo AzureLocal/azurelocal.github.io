@@ -209,4 +209,6 @@ function openViewer(source) {
 export { enableImageZoom };
 
 // Docusaurus renames images at build time (/assets/images/ztp-flow-<hash>.png), so match the file name.
-enableImageZoom('.markdown img[src*="ztp-"]');
+enableImageZoom(
+  '.markdown img[src*="ztp-"], .markdown img[src*="cluster-deployment-routes"]'
+);
