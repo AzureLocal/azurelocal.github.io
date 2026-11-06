@@ -113,7 +113,11 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 
 **Cause.** The provisioned machine (`edgeMachines`) is named in the Azure Local site after the name you gave it. The Azure Arc for Servers machine is named by the service, `<device-id>-1`, and the `arcMachineResourceId` set at claim time is overwritten. On build `12.2690.1003.15`, an earlier Deploy failed because the Arc machine names are device IDs.
 
-**What you do.** Give cluster deployment each machine's `arcMachineResourceId` and Arc machine name from the handoff file. The handoff reads them after the Ready stage, so they point at the service-created `<device-id>-1` machine. See [Output and handoff](./automation/output-and-handoff.mdx#what-to-hand-to-cluster-deployment). Check the names before Deploy.
+**Why Deploy fails.** The step *Deploy Arc infrastructure components* installs an Arc extension on each node's Arc machine. In the deployment package for that build, the step names the Arc machine after the node's host name, not from the machine's `arcMachineResourceId`. On the simplified route no Arc machine carries the host name, so Azure returns `ParentResourceNotFound`.
+
+**Why Validate doesn't catch it.** Validate runs the readiness checks only. The deployment content that runs this step is downloaded when Deploy starts, so it isn't on the machines during Validate. Validate's Arc checks use the resource IDs you pass in, and those are correct. The ISO route never hits this, because there the Arc machine carries the host name.
+
+**What you do.** Give cluster deployment each machine's `arcMachineResourceId` and Arc machine name from the handoff file. That's needed, but on an affected build it doesn't prevent the failure, and no workaround is known. Check Microsoft's [known issues](https://learn.microsoft.com/en-us/azure/azure-local/known-issues?view=azloc-2610) for your build, or use the ISO route for that build. The handoff reads them after the Ready stage, so they point at the service-created `<device-id>-1` machine. See [Output and handoff](./automation/output-and-handoff.mdx#what-to-hand-to-cluster-deployment). Check the names before Deploy.
 
 ### A resubmitted job keeps the earlier error
 
@@ -135,7 +139,7 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 
 **Proven on Dell AX-760 / iDRAC 7.30.**
 
-The iDRAC's USB link to the operating system (Remote NDIS, `169.254.0.x`) appears as a network adapter. It isn't a cluster port, has no gateway, and must stay out of your network intents.
+The iDRAC's USB link to the operating system (Remote NDIS, `169.254.0.x`) appears as a network adapter. It isn't a cluster port, has no gateway, and must stay out of your network intents. Don't disable it or turn off its DHCP client: Dell requires it for the SBE firmware plug-in and SBE health checks ([Dell SBE release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/)).
 
 ---
 

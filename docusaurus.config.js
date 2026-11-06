@@ -48,6 +48,16 @@ const config = {
     [
       '@docusaurus/plugin-client-redirects',
       {
+        // Phase 02 manual tasks moved into manual-installation/ on 2026-11-06.
+        redirects: [
+          'task-01-delete-and-recreate-virtual-disk-on-dell-boss-card',
+          'task-02-mount-and-verify-dell-gold-image-iso',
+          'task-03-manual-os-installation',
+          'task-04-verify-os-deployment',
+        ].map((page) => ({
+          from: `/docs/implementation/04-cluster-deployment/phase-02-os-installation/${page}`,
+          to: `/docs/implementation/04-cluster-deployment/phase-02-os-installation/manual-installation/${page}`,
+        })),
         // Docs used to be versioned (2411 and next). Keep the old URLs working.
         createRedirects(existingPath) {
           if (existingPath === '/docs' || existingPath.startsWith('/docs/')) {

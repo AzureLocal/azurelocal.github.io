@@ -1,0 +1,210 @@
+---
+title: "Task 06: Prepare Machines for Validate"
+sidebar_label: "Task 06: Prepare for Validate"
+sidebar_position: 6
+description: "After simplified machine provisioning, install the OEM drivers and SBE, set one static management address with one default gateway, DNS and time, and check every machine before cluster Validate."
+category: Runbook
+scope: OS steps that simplified machine provisioning leaves to you before cluster Validate
+purpose: Bring provisioned machines from Ready to cluster to ready for Validate
+author: Azure Local Cloud
+created: 2026-11-06
+updated: 2026-11-06
+version: "1.0.0"
+tags: ["azure-local", "simplified-provisioning", "os-configuration", "drivers", "sbe", "network"]
+keywords: ["ready for Validate", "OEM drivers", "SBE", "C:\\SBE", "static IP", "default gateway", "DNS", "NTP", "Remote NDIS", "pnputil"]
+status: Active
+---
+
+# Task 06: Prepare Machines for Validate
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: OS steps after simplified provisioning, before cluster Validate
+> **PURPOSE**: Bring each machine from Ready to cluster to ready for Validate
+> **MASTER REFERENCE**: [Microsoft Learn — Install drivers and firmware](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#install-drivers-and-firmware)
+
+**Status**: Active
+
+:::tip Using azurelocal-ztp? Skip this task
+The [azurelocal-ztp](https://azurelocal.cloud/azurelocal-ztp/) Prepare stage does every step on this page on all machines at once, and checks each one before it reports the machine ready for Validate. See the [automated route](./automation/index.mdx).
+:::
+
+---
+
+## Overview
+
+"Ready to cluster" in Azure doesn't mean ready for cluster Validate. Simplified provisioning installs the OS, sets the host name, connects Azure Arc and installs the mandatory extensions. It leaves the rest of the OS as a fresh install. Right after provisioning, live runs on two Dell AX-760 machines showed:
+
+| Setting | Left by provisioning | Needed for Validate |
+|---------|---------------------|---------------------|
+| Network drivers | Microsoft's inbox drivers | The OEM's drivers. [Inbox drivers aren't supported](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements) |
+| `C:\SBE` | Empty | The OEM's SBE files, if your OEM provides an SBE |
+| Management address | DHCP | Static. Learn recommends one management IP |
+| Default gateway | On two adapters | On the management adapter only. [Validation fails with more than one](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network) |
+| DNS | From DHCP | Your AD DNS servers. DNS can't change after deployment |
+| Time | `time.windows.com`, unless the site sets a time server | Your time source |
+
+The [decision matrix](../../choose-your-route.mdx#decision-matrix) compares this with the ISO path. Check [Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610) and your OEM's deployment guide for anything your build or hardware adds.
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Task 05 complete | Every machine shows **Ready to cluster** |
+| Firmware | At your OEM's support-matrix level for the SBE you'll use. The SBE can't update firmware or drivers during deployment ([Dell SBE release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/)) |
+| SBE files | From your OEM, validated for your OS version: the package `.zip`, its `.xml`, and the discovery manifest, for example `SBE_Discovery_Dell.xml` |
+| Management address plan | The static address, prefix, gateway and DNS servers for each machine. Give each management MAC a DHCP reservation for its address, so you can sign in on it before it's static |
+| Local administrator | The account and password you set in the site's Key Vault secret at provisioning |
+| WinRM from your management host | Add the machine addresses to `TrustedHosts` if you connect by IP: `Set-Item WSMan:\localhost\Client\TrustedHosts -Value '<ip1>,<ip2>' -Concatenate` |
+
+---
+
+## Steps
+
+Run the steps on each machine, from your management host over PowerShell remoting, or on the machine's console.
+
+### Step 1: Copy the SBE to `C:\SBE`
+
+```powershell
+$cred = Get-Credential -Message 'Local administrator from the provisioning site secret'
+$s = New-PSSession -ComputerName <machine-ip> -Credential $cred
+Invoke-Command -Session $s { New-Item -ItemType Directory -Path C:\SBE -Force | Out-Null }
+Copy-Item -ToSession $s -Path 'D:\sbe\<oem-folder>\*' -Destination 'C:\SBE\'
+Invoke-Command -Session $s { Get-ChildItem C:\SBE }
+```
+
+Learn: copy the SBE to each machine and place it in `C:\SBE` so the deployment detects it ([Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#install-drivers-and-firmware)).
+
+### Step 2: Install the OEM network drivers
+
+Use the drivers your OEM supplies for this SBE. For Dell, the network drivers are inside the SBE package. Expand the package on the management host, copy the driver folders for your adapters to the machine, and install them:
+
+```powershell
+Copy-Item -ToSession $s -Path 'D:\sbe\<expanded>\<driver-folder>' -Destination 'C:\Drivers\' -Recurse
+Invoke-Command -Session $s { pnputil /add-driver 'C:\Drivers\*.inf' /subdirs /install }
+```
+
+`pnputil` exit code 3010 means a restart is needed. Restart, then check each adapter's driver:
+
+```powershell
+Invoke-Command -Session $s { Get-NetAdapter | Sort-Object Name | Format-Table Name, InterfaceDescription, DriverVersion, Status }
+```
+
+:::caution The network drops during this step
+A network driver install resets the adapter, which can drop your remote session. Run the install in a way that survives it, for example as a scheduled task on the machine, or use the BMC console.
+:::
+
+### Step 3: Static management address and DNS
+
+On the management adapter, keep the address DHCP gave it and make it static. The address changes partway through, so run this from the BMC console, or as a scheduled task on the machine. Over a remote session the connection drops at the first change.
+
+```powershell
+Invoke-Command -Session $s {
+  $nic = Get-NetAdapter | Where-Object MacAddress -eq '<management-mac>'
+  Set-NetIPInterface -InterfaceIndex $nic.ifIndex -Dhcp Disabled
+  Get-NetIPAddress -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false
+  Get-NetRoute -InterfaceIndex $nic.ifIndex -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false
+  New-NetIPAddress -InterfaceIndex $nic.ifIndex -IPAddress '<static-ip>' -PrefixLength <prefix> -DefaultGateway '<gateway>'
+  Set-DnsClientServerAddress -InterfaceIndex $nic.ifIndex -ServerAddresses '<dns-1>', '<dns-2>'
+}
+```
+
+Then connect to the static address for the next steps.
+
+### Step 4: One default gateway
+
+Turn DHCP off and remove any address and default route on every other physical adapter, **except** the iDRAC USB NIC (`Remote NDIS Compatible Device`):
+
+```powershell
+Invoke-Command -Session $s {
+  $mgmt = Get-NetAdapter | Where-Object MacAddress -eq '<management-mac>'
+  Get-NetAdapter -Physical | Where-Object { $_.ifIndex -ne $mgmt.ifIndex -and $_.InterfaceDescription -notmatch 'Remote NDIS' } | ForEach-Object {
+    Set-NetIPInterface -InterfaceIndex $_.ifIndex -Dhcp Disabled -ErrorAction SilentlyContinue
+    Get-NetRoute -InterfaceIndex $_.ifIndex -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false
+    Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -PrefixOrigin Dhcp -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false
+  }
+  Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Format-Table InterfaceAlias, NextHop
+}
+```
+
+:::warning Leave the iDRAC USB NIC alone
+Dell requires the iDRAC pass-through NIC to stay enabled with its `169.254.x` address and its DHCP client on. SBE health checks fail without it ([Dell SBE release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/)).
+:::
+
+### Step 5: Time
+
+```powershell
+Invoke-Command -Session $s {
+  w32tm /config /manualpeerlist:"<ntp-1>,0x8 <ntp-2>,0x8" /syncfromflags:manual /update
+  Restart-Service w32time
+  w32tm /resync /force
+  w32tm /query /status
+}
+```
+
+From [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#configure-the-operating-system-using-sconfig). The machine must not use the local CMOS clock. Once it's domain joined, it syncs from the PDC emulator.
+
+### Step 6: Check the machine is still Ready to cluster
+
+The network changes reset Arc's connection briefly. In the Azure portal, under **Azure Arc** > **Operations** > **Provisioning (preview)** > **Provisioned machines**, each machine must still show **Ready to cluster**, and its Arc machine must be **Connected**.
+
+---
+
+## Don't
+
+- **Don't install Windows updates** with SConfig or Azure Update Manager before deployment. That causes a deployment failure ([Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#configure-the-operating-system-using-sconfig)).
+- **Don't disable the iDRAC USB NIC** or turn off its DHCP.
+- **Don't rename the machines.** The host name came from provisioning and matches the Azure resources.
+
+---
+
+## Validation
+
+Run on each machine:
+
+```powershell
+Invoke-Command -Session $s {
+  'Default gateways: ' + ((Get-NetRoute -DestinationPrefix '0.0.0.0/0').InterfaceAlias -join ', ')
+  'C:\SBE: ' + ((Get-ChildItem C:\SBE -File).Name -join ', ')
+  'Time source: ' + (w32tm /query /source)
+  Get-NetAdapter -Physical | Format-Table Name, DriverVersion, Status
+  Get-NetIPAddress -AddressFamily IPv4 | Where-Object PrefixOrigin -ne 'WellKnown' | Format-Table InterfaceAlias, IPAddress, PrefixOrigin
+}
+```
+
+- [ ] Exactly one default gateway, on the management adapter
+- [ ] The management address is static (`PrefixOrigin` = `Manual`), with your DNS servers
+- [ ] Every network adapter runs the OEM driver version for your SBE
+- [ ] `C:\SBE` holds the SBE package, its `.xml` and the discovery manifest
+- [ ] Time syncs from your time source
+- [ ] The iDRAC USB NIC is still enabled with its `169.254.x` address
+- [ ] Every machine still shows **Ready to cluster**, Arc **Connected**
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 05: Verify Arc](./task-05-verify-arc.mdx) | [↑ Simplified Provisioning](./index.mdx) | [Phase 05: Cluster Deployment →](../../phase-05-cluster-deployment/index.mdx) |
+
+---
+
+## References
+
+- [Microsoft Learn — Install the Azure Stack HCI OS: drivers, firmware and SConfig steps](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610)
+- [Microsoft Learn — Network considerations, decision 8](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network)
+- [Microsoft Learn — Host network driver requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements)
+- [Dell — SBE 2606 release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/)
+- [azurelocal-ztp — Prepare stage](https://azurelocal.cloud/azurelocal-ztp/architecture#the-prepare-gates)
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-11-06 | Azure Local Cloud | Initial release |
