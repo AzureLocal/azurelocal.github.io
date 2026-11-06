@@ -8,8 +8,8 @@ scope: Running the azurelocal-ztp automation interactively
 purpose: Run the end-to-end provisioning from a Windows management host, with a plan first and resume after a stop
 author: Azure Local Cloud
 created: 2026-11-05
-updated: 2026-11-05
-version: "1.0.0"
+updated: 2026-11-06
+version: "1.1.0"
 tags: ["azure-local", "simplified-provisioning", "zero-touch", "runbook", "powershell"]
 keywords: ["Invoke-ZtpEnvironment", "management host", "plan", "Execute", "resume", "From", "Sonar"]
 status: Active
@@ -65,7 +65,7 @@ git clone https://github.com/AzureLocal/azurelocal-ztp.git
 Set-Location .\azurelocal-ztp
 ```
 
-The run writes its working files, such as downloaded ISOs, images, vouchers and state, to a `_media` folder next to the repository folder, not inside it.
+The run writes its working files, such as downloaded ISOs, images, vouchers and state, to a `_media` folder at the root of the clone. Git ignores that folder. Keep the clone in a place that lasts, because resume depends on what is in `_media`.
 
 ### Step 2: Sign in to Azure
 
@@ -122,7 +122,13 @@ To provision only some machines, name them. The names are those in `cluster_node
 
 ### Step 5: Watch the run
 
-The orchestrator writes structured events to a JSON-lines file, `ztp-events.jsonl`, in the `ztp-state` folder under `_media`. You can follow the run live and read-only with [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/). The repository's `Start-ZtpMonitor.ps1` writes a Sonar configuration for the event file and the machines and starts Sonar.
+The orchestrator writes structured events to a JSON-lines file, `ztp-events.jsonl`, in the `ztp-state` folder under `_media`. Follow it live and read-only with [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/): start it in a second window with the repository's `Start-ZtpMonitor.ps1`. [Monitor with Sonar](./monitor-with-sonar.mdx) has the steps, what the page shows and what's normal.
+
+To read the event file without Sonar:
+
+```powershell
+Get-Content -Wait -Tail 20 .\_media\ztp-state\ztp-events.jsonl
+```
 
 In the Azure portal, **Azure Arc** > **Operations** > **Provisioning (preview)** > **Provisioned machines** shows each machine's status as Azure sees it.
 
@@ -177,7 +183,7 @@ Each set of machines keeps its own state, named after the machines. Running mach
 
 ## Troubleshooting
 
-See [Troubleshooting and known issues](../troubleshooting.mdx). The ones you are most likely to meet are the first OS install attempt failing with 5901, and a machine that takes up to 35 minutes to register after the claim. Both recovered on their own on the proven runs.
+See [Troubleshooting and known issues](../troubleshooting.mdx). The ones you are most likely to meet are the first OS install attempt failing with 5901, and a machine that takes up to about 45 minutes to register after the claim. Both recovered on their own on the proven runs.
 
 ---
 
@@ -185,10 +191,11 @@ See [Troubleshooting and known issues](../troubleshooting.mdx). The ones you are
 
 | | | |
 |:--|:--:|--:|
-| ← [Operator inputs](./operator-inputs.mdx) | [↑ Simplified Provisioning](../index.mdx) | [Run from a pipeline →](./run-from-pipeline.mdx) |
+| ← [Operator inputs](./operator-inputs.mdx) | [↑ Simplified Provisioning](../index.mdx) | [Monitor with Sonar →](./monitor-with-sonar.mdx) |
 
 ---
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |
+| 1.1 | 2026-11-06 | Azure Local Cloud | Correct the `_media` location; link the Sonar page; registration delay up to about 45 minutes |

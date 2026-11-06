@@ -8,8 +8,8 @@ scope: Troubleshooting simplified machine provisioning, portal and automated rou
 purpose: List known issues with causes, what the automation does, and what to do, next to Microsoft Learn's recovery steps
 author: Azure Local Cloud
 created: 2026-11-05
-updated: 2026-11-05
-version: "1.0.0"
+updated: 2026-11-06
+version: "1.1.0"
 tags: ["azure-local", "simplified-provisioning", "troubleshooting", "known-issues", "zero-touch", "idrac"]
 keywords: ["5901", "SetupHybridComputeRP", "ProvisionOs", "RegisterMachine", "AwaitingConnection", "iDRAC 7.30", "VRM0010", "arcMachineResourceId", "ParentResourceNotFound"]
 status: Active
@@ -45,7 +45,7 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 | Symptom | Section | Source |
 |---------|---------|--------|
 | OS install fails at `SetupHybridComputeRP`, code 5901, on the first attempt | [5901](#first-os-install-attempt-fails-with-5901) | Proven on Dell AX-760 / iDRAC 7.30 |
-| A machine takes a long time to register after the claim | [Registration delay](#a-machine-takes-up-to-35-minutes-to-register-after-the-claim) | Proven on Dell AX-760 / iDRAC 7.30 |
+| A machine takes a long time to register after the claim | [Registration delay](#a-machine-takes-a-long-time-to-register-after-the-claim) | Proven on Dell AX-760 / iDRAC 7.30 |
 | OS installation failed and doesn't retry | [Reattempt a failed OS provisioning](#reattempt-a-failed-os-provisioning) | Learn |
 | The boot never reaches the maintenance environment, or the BMC rejects the media | [iDRAC 7.30 behaviors](#idrac-730-behaviors-the-boot-stage-works-around) | Proven on Dell AX-760 / iDRAC 7.30 |
 | The machine reinstalls the maintenance environment every 10 minutes | [USB boot loop](#usb-boot-loop-with-the-maintenance-environment) | Learn |
@@ -65,21 +65,21 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 
 **Proven on Dell AX-760 / iDRAC 7.30.**
 
-**Symptom.** The `ProvisionOs` job fails at the step `SetupHybridComputeRP` with error 5901, "The device could not read or update its Azure registration", and job code `Retryable`. It happened on the first OS install attempt of **every** machine, on every run.
+**Symptom.** The `ProvisionOs` job fails at the step `SetupHybridComputeRP` with error 5901, "The device could not read or update its Azure registration", and job code `Retryable`. On the earlier runs it happened on the first OS install attempt of every machine. On the 2026-11-06 run, one of the two machines passed on its first attempt and the other hit 5901. Expect it, but not on every machine.
 
 **What was seen.** The maintenance environment's log showed a 403 when it read the new Azure Arc machine. The role that allows the read is assigned seconds after the machine is created.
 
 **Likely cause (not confirmed).** Azure role assignments can take time to propagate. The most likely explanation is that propagation took longer than the device's retry window, which is about 20 minutes. The 403 was confirmed only up to about minute 6 of that window.
 
-**What the automation does.** The **Ready** stage resubmits the failed `ProvisionOs` job once, by sending the PUT for `jobs/ProvisionOs` again. Learn says the service doesn't retry a failed OS installation, so the automation does the resubmit for you. On the proven runs the single resubmit passed in about 2 minutes every time.
+**What the automation does.** The **Ready** stage resubmits the failed `ProvisionOs` job once, by sending the PUT for `jobs/ProvisionOs` again. Learn says the service doesn't retry a failed OS installation, so the automation does the resubmit for you. On the proven runs the single resubmit passed every time.
 
 **What you do.** Usually nothing. If the resubmit also fails, the run stops with the reason. Then follow [Reattempt a failed OS provisioning](#reattempt-a-failed-os-provisioning), and check the role assignments on the resource group.
 
-### A machine takes up to 35 minutes to register after the claim
+### A machine takes a long time to register after the claim
 
 **Proven on Dell AX-760 / iDRAC 7.30.**
 
-**Symptom.** After the claim, a machine stays at `RegisterMachine` `NotStarted`, with lifecycle `AwaitingConnection`, for up to about 35 minutes. Another machine in the same run registered in 6 minutes.
+**Symptom.** After the claim, a machine stays at `RegisterMachine` `NotStarted`, with lifecycle `AwaitingConnection`, for up to about 45 minutes: 42 minutes on the 2026-11-06 run. Another machine in the same run can register in a few minutes.
 
 **Outcome.** It recovered by itself each time.
 
@@ -253,3 +253,4 @@ For the automation, the event file `ztp-events.jsonl` in the `ztp-state` folder 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |
+| 1.1 | 2026-11-06 | Azure Local Cloud | Registration delay up to about 45 minutes; 5901 not on every machine |
