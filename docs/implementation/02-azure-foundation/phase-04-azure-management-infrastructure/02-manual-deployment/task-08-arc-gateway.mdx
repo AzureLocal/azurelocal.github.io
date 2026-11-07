@@ -1,9 +1,9 @@
 ---
-title: "Task 08: Arc Gateway"
-sidebar_label: "Task 08: Arc Gateway"
+title: 'Task 08: Arc Gateway'
+sidebar_label: 'Task 08: Arc Gateway'
 sidebar_position: 8
-description: "Deploy an Azure Arc Gateway to enable Arc-enabled server connectivity through a centralized gateway endpoint."
-category: "Runbook"
+description: 'Deploy an Azure Arc Gateway to enable Arc-enabled server connectivity through a centralized gateway endpoint.'
+category: 'Runbook'
 scope: Arc Gateway deployment
 purpose: Create Arc Gateway for hybrid server connectivity
 author: Hybrid Cloud Solutions
@@ -21,7 +21,7 @@ keywords:
   - hybrid compute
   - gateway endpoint
   - Arc-enabled servers
-status: "Active"
+status: 'Active'
 ---
 
 import Tabs from '@theme/Tabs';
@@ -32,9 +32,9 @@ import TabItem from '@theme/TabItem';
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
-> **DOCUMENT CATEGORY**: Runbook   
-> **SCOPE**: Arc Gateway deployment   
-> **PURPOSE**: Create Arc Gateway for hybrid server connectivity   
+> **DOCUMENT CATEGORY**: Runbook  
+> **SCOPE**: Arc Gateway deployment  
+> **PURPOSE**: Create Arc Gateway for hybrid server connectivity  
 > **MASTER REFERENCE**: [Microsoft Learn - Arc Gateway](https://learn.microsoft.com/en-us/azure/azure-arc/servers/arc-gateway)
 
 **Status**: Active
@@ -44,7 +44,7 @@ import TabItem from '@theme/TabItem';
 This task deploys an Azure Arc Gateway resource. The Arc Gateway provides a centralized network endpoint that Arc-enabled servers use to communicate with Azure services, reducing the number of required firewall rules for on-premises infrastructure.
 
 :::info Task Classification
-**Execution Target**: Azure-Only (control-plane API operation) 
+**Execution Target**: Azure-Only (control-plane API operation)
 **Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
 :::
 
@@ -61,25 +61,25 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 :::
 
 :::info Terraform Reference
-**Module:** `azurelocal-toolkit` 
-**File:** `arcgw.tf` 
+**Module:** `azurelocal-toolkit`
+**File:** `arcgw.tf`
 **Mode:** Cluster
 :::
 
 ### Components Created
 
-| Resource | Name Pattern | Purpose |
-|----------|-------------|---------|
+| Resource    | Name Pattern                                        | Purpose                      |
+| ----------- | --------------------------------------------------- | ---------------------------- |
 | Arc Gateway | `arcgw-{instance}{env}{location}-{env}-{region}-01` | Centralized Arc connectivity |
 
 ### Arc Gateway Configuration
 
-| Setting | Value | Source |
-|---------|-------|--------|
-| Name | Per naming convention | `cluster.deployment.arc_gateway.name` |
-| Resource Group | Cluster RG | `cluster.deployment.arc_gateway.resource_group` |
-| Gateway Type | Public | Only valid value currently |
-| Allowed Features | All (`*`) | Default |
+| Setting          | Value                 | Source                                          |
+| ---------------- | --------------------- | ----------------------------------------------- |
+| Name             | Per naming convention | `cluster.deployment.arc_gateway.name`           |
+| Resource Group   | Cluster RG            | `cluster.deployment.arc_gateway.resource_group` |
+| Gateway Type     | Public                | Only valid value currently                      |
+| Allowed Features | All (`*`)             | Default                                         |
 
 ## Prerequisites
 
@@ -89,11 +89,11 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 
 ## Variables from variables.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Subscription ID | `azure.subscriptions.<name>.id` | *(per environment)* |
-| Resource Group | `cluster.deployment.arc_gateway.resource_group` | `rg-c01-azl-eus-01` |
-| Arc Gateway Name | `cluster.deployment.arc_gateway.name` | `arcgw-c01azleus-azl-eus-01` |
+| Variable         | Config Path                                     | Example (IIC)                |
+| ---------------- | ----------------------------------------------- | ---------------------------- |
+| Subscription ID  | `azure.subscriptions.<name>.id`                 | _(per environment)_          |
+| Resource Group   | `cluster.deployment.arc_gateway.resource_group` | `rg-c01-azl-eus-01`          |
+| Arc Gateway Name | `cluster.deployment.arc_gateway.name`           | `arcgw-c01azleus-azl-eus-01` |
 
 ---
 
@@ -101,11 +101,11 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 
 ### Landing Zone Placement
 
-| Field | Value | Config Path |
-|-------|-------|-------------|
-| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
-| Resource Group | `rg-{cluster}-{env}-{region}-01` | `cluster.deployment.arc_gateway.resource_group` |
-| Arc Gateway Name | Per config | `cluster.deployment.arc_gateway.name` |
+| Field            | Value                            | Config Path                                     |
+| ---------------- | -------------------------------- | ----------------------------------------------- |
+| Subscription     | Customer subscription            | `azure.subscriptions.<name>.id`                 |
+| Resource Group   | `rg-{cluster}-{env}-{region}-01` | `cluster.deployment.arc_gateway.resource_group` |
+| Arc Gateway Name | Per config                       | `cluster.deployment.arc_gateway.name`           |
 
 ### Execution Options
 
@@ -119,25 +119,28 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 #### Procedure
 
 1. **Register Resource Provider** (if not already):
- - Subscription → **Resource providers** → Search `Microsoft.HybridCompute` → **Register**
+
+- Subscription → **Resource providers** → Search `Microsoft.HybridCompute` → **Register**
 
 2. **Create Arc Gateway**:
- - Search for **Arc Gateways** (or **Azure Arc** → **Arc Gateways**)
- - Click **+ Create**
- | Field | Value | Source |
- |-------|-------|--------|
- | Name | Per config | `cluster.deployment.arc_gateway.name` |
- | Subscription | Target subscription | `azure.subscriptions.<name>.id` |
- | Resource Group | Cluster RG | `cluster.deployment.arc_gateway.resource_group` |
- | Region | Your region | `azure.region` |
- | Gateway Type | Public | Only option |
+
+- Search for **Arc Gateways** (or **Azure Arc** → **Arc Gateways**)
+- Click **+ Create**
+  | Field | Value | Source |
+  |-------|-------|--------|
+  | Name | Per config | `cluster.deployment.arc_gateway.name` |
+  | Subscription | Target subscription | `azure.subscriptions.<name>.id` |
+  | Resource Group | Cluster RG | `cluster.deployment.arc_gateway.resource_group` |
+  | Region | Your region | `azure.region` |
+  | Gateway Type | Public | Only option |
 
 3. **Review + create**: Verify → Click **Create** → Record the **Gateway Endpoint** URL
 
 4. **Note the Gateway ID**: Copy the full resource ID — it will be needed during Azure Local cluster deployment:
- ```
- /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.HybridCompute/gateways/{name}
- ```
+
+```
+/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.HybridCompute/gateways/{name}
+```
 
 #### Validation
 
@@ -304,11 +307,11 @@ In the CAF/WAF model, the Arc Gateway is typically deployed in the **Management*
 
 ### Landing Zone Placement
 
-| Field | Value | Config Path |
-|-------|-------|-------------|
-| Subscription | **Management** subscription | `azure.subscriptions.management.id` |
-| Resource Group | Per config | `cluster.deployment.arc_gateway.resource_group` |
-| Arc Gateway Name | Per config | `cluster.deployment.arc_gateway.name` |
+| Field            | Value                       | Config Path                                     |
+| ---------------- | --------------------------- | ----------------------------------------------- |
+| Subscription     | **Management** subscription | `azure.subscriptions.management.id`             |
+| Resource Group   | Per config                  | `cluster.deployment.arc_gateway.resource_group` |
+| Arc Gateway Name | Per config                  | `cluster.deployment.arc_gateway.name`           |
 
 ### Execution Options
 
@@ -360,15 +363,14 @@ $ResourceGroup = "rg-azl-arc-gw-eus-01"
 
 ## Troubleshooting
 
-| Issue | Root Cause | Remediation |
-|-------|-----------|-------------|
+| Issue                            | Root Cause                            | Remediation                                    |
+| -------------------------------- | ------------------------------------- | ---------------------------------------------- |
 | Resource provider not registered | `Microsoft.HybridCompute` not enabled | Register via Subscription → Resource providers |
-| 403 Forbidden on REST API | Insufficient permissions | Need Contributor on resource group |
-| Gateway endpoint not available | Deployment still propagating | Wait 5 minutes and query again |
-| Arc agent cannot reach gateway | Firewall blocking gateway endpoint | Allow `*.gw.arc.azure.net` on port 443 |
+| 403 Forbidden on REST API        | Insufficient permissions              | Need Contributor on resource group             |
+| Gateway endpoint not available   | Deployment still propagating          | Wait 5 minutes and query again                 |
+| Arc agent cannot reach gateway   | Firewall blocking gateway endpoint    | Allow `*.gw.arc.azure.net` on port 443         |
 
 ---
-
 
 ---
 
@@ -376,15 +378,15 @@ $ResourceGroup = "rg-azl-arc-gw-eus-01"
 
 The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
 
-| Method | Description |
-|--------|-------------|
+| Method    | Description                                                      |
+| --------- | ---------------------------------------------------------------- |
 | Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+| Bash      | Linux/macOS compatible shell scripts for pipeline environments   |
 
 ## Navigation
 
-| Previous | Up | Next |
-|----------|-----|------|
+| Previous                                      | Up                                     | Next                                                        |
+| --------------------------------------------- | -------------------------------------- | ----------------------------------------------------------- |
 | [Task 07: NAT Gateway](./task-07-nat-gateway) | [Manual Deployment Index](./index.mdx) | [Task 09: Log Analytics Workspace](./task-09-log-analytics) |
 
 ---
@@ -402,6 +404,6 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 
 ## Version Control
 
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| Version | Date       | Author            | Changes         |
+| ------- | ---------- | ----------------- | --------------- |
+| 1.0.0   | 2025-03-25 | Azure Local Cloud | Initial release |
