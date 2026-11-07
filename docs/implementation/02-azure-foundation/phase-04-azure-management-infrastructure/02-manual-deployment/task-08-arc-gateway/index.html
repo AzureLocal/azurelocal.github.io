@@ -10,8 +10,8 @@
 <link rel="preconnect" href="https://www.googletagmanager.com">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-2D9XDHSXJW"></script>
 <script>function gtag(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],gtag("js",new Date),gtag("config","G-2D9XDHSXJW",{anonymize_ip:!0})</script><link rel="stylesheet" href="/assets/css/styles.28fd935e.css">
-<script src="/assets/js/runtime~main.f4932de0.js" defer="defer"></script>
-<script src="/assets/js/main.727f58b7.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.bad2dc93.js" defer="defer"></script>
+<script src="/assets/js/main.717560ae.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -31,6 +31,7 @@
 <p>This task deploys an Azure Arc Gateway resource. The Arc Gateway provides a centralized network endpoint that Arc-enabled servers use to communicate with Azure services, reducing the number of required firewall rules for on-premises infrastructure.</p>
 <div class="theme-admonition theme-admonition-info admonition_xJq3 alert alert--info"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 14 16"><path fill-rule="evenodd" d="M7 2.3c3.14 0 5.7 2.56 5.7 5.7s-2.56 5.7-5.7 5.7A5.71 5.71 0 0 1 1.3 8c0-3.14 2.56-5.7 5.7-5.7zM7 1C3.14 1 0 4.14 0 8s3.14 7 7 7 7-3.14 7-7-3.14-7-7-7zm1 3H6v5h2V4zm0 6H6v2h2v-2z"></path></svg></span>Task Classification</div><div class="admonitionContent_BuS1"><p><strong>Execution Target</strong>: Azure-Only (control-plane API operation)
 <strong>Tab Profile</strong>: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script</p></div></div>
+<div class="theme-admonition theme-admonition-danger admonition_xJq3 alert alert--danger"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 12 16"><path fill-rule="evenodd" d="M5.05.31c.81 2.17.41 3.38-.52 4.31C3.55 5.67 1.98 6.45.9 7.98c-1.45 2.05-1.7 6.53 3.53 7.7-2.2-1.16-2.67-4.52-.3-6.61-.61 2.03.53 3.33 1.94 2.86 1.39-.47 2.3.53 2.27 1.67-.02.78-.31 1.44-1.13 1.81 3.42-.59 4.78-3.42 4.78-5.56 0-2.84-2.53-3.22-1.25-5.61-1.52.13-2.03 1.13-1.89 2.75.09 1.08-1.02 1.8-1.86 1.33-.67-.41-.66-1.19-.06-1.78C8.18 5.31 8.68 2.45 5.05.32L5.03.3l.02.01z"></path></svg></span>Decide before you deploy the cluster</div><div class="admonitionContent_BuS1"><p>The Arc gateway can only be enabled during deployment of a new Azure Local instance (software version 2506 or later). It cannot be enabled after deployment. Decide whether to use it, and create the gateway resource in the subscription that will host the instance, before you register the machines.</p><p>If your environment inspects or terminates TLS, Arc gateway is not recommended and does not support TLS-terminating proxies. Skip TLS inspection for the gateway endpoint (<code>&lt;your URL prefix&gt;.gw.arc.azure.com</code>).</p><p>Source: <a href="https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-arc-gateway-overview?view=azloc-2609#supported-and-unsupported-scenarios" target="_blank" rel="noopener noreferrer" class="">Overview of Azure Arc gateway for Azure Local</a> and <a href="https://learn.microsoft.com/en-us/azure/azure-arc/servers/arc-gateway#current-limitations" target="_blank" rel="noopener noreferrer" class="">Azure Arc gateway limitations</a>.</p></div></div>
 <div class="theme-admonition theme-admonition-warning admonition_xJq3 alert alert--warning"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8.893 1.5c-.183-.31-.52-.5-.887-.5s-.703.19-.886.5L.138 13.499a.98.98 0 0 0 0 1.001c.193.31.53.501.886.501h13.964c.367 0 .704-.19.877-.5a1.03 1.03 0 0 0 .01-1.002L8.893 1.5zm.133 11.497H6.987v-2.003h2.039v2.003zm0-3.004H6.987V5.987h2.039v4.006z"></path></svg></span>Azure API Resource</div><div class="admonitionContent_BuS1"><p>The Arc Gateway uses the <code>Microsoft.HybridCompute/gateways</code> resource type. As of this writing, it requires the AzAPI provider in Terraform (not yet in azurerm).</p></div></div>
 <div class="theme-admonition theme-admonition-info admonition_xJq3 alert alert--info"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 14 16"><path fill-rule="evenodd" d="M7 2.3c3.14 0 5.7 2.56 5.7 5.7s-2.56 5.7-5.7 5.7A5.71 5.71 0 0 1 1.3 8c0-3.14 2.56-5.7 5.7-5.7zM7 1C3.14 1 0 4.14 0 8s3.14 7 7 7 7-3.14 7-7-3.14-7-7-7zm1 3H6v5h2V4zm0 6H6v2h2v-2z"></path></svg></span>Terraform Reference</div><div class="admonitionContent_BuS1"><p><strong>Module:</strong> <code>azurelocal-toolkit</code>
 <strong>File:</strong> <code>arcgw.tf</code>
@@ -63,13 +64,8 @@
 </ol><ul>
 <li class="">Search for <strong>Arc Gateways</strong> (or <strong>Azure Arc</strong> → <strong>Arc Gateways</strong>)</li>
 <li class="">Click <strong>+ Create</strong>
-| Field | Value | Source |
-|-------|-------|--------|
-| Name | Per config | <code>cluster.deployment.arc_gateway.name</code> |
-| Subscription | Target subscription | <code>azure.subscriptions.&lt;name&gt;.id</code> |
-| Resource Group | Cluster RG | <code>cluster.deployment.arc_gateway.resource_group</code> |
-| Region | Your region | <code>azure.region</code> |
-| Gateway Type | Public | Only option |</li>
+<table><thead><tr><th>Field</th><th>Value</th><th>Source</th></tr></thead><tbody><tr><td>Name</td><td>Per config</td><td><code>cluster.deployment.arc_gateway.name</code></td></tr><tr><td>Subscription</td><td>Target subscription</td><td><code>azure.subscriptions.&lt;name&gt;.id</code></td></tr><tr><td>Resource Group</td><td>Cluster RG</td><td><code>cluster.deployment.arc_gateway.resource_group</code></td></tr><tr><td>Region</td><td>Your region</td><td><code>azure.region</code></td></tr><tr><td>Gateway Type</td><td>Public</td><td>Only option</td></tr></tbody></table>
+</li>
 </ul><ol start="3">
 <li class="">
 <p><strong>Review + create</strong>: Verify → Click <strong>Create</strong> → Record the <strong>Gateway Endpoint</strong> URL</p>
