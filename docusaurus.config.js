@@ -135,9 +135,7 @@ const config = {
             items: [
               { type: 'html', value: '<strong>Plan and assess</strong>' },
               { label: 'Surveyor', href: 'https://azurelocal.cloud/azurelocal-surveyor/', title: 'S2D capacity planning and workload sizing' },
-              { label: 'Trailwright', href: 'https://labs.hybridsolutions.cloud/azurelocal-trailwright/', title: 'Platform configuration and deployment design' },
-              { label: 'Hyper-V Surveyor', href: 'https://labs.hybridsolutions.cloud/hyperv-surveyor/', title: 'Hyper-V counterpart of Surveyor' },
-              { label: 'Hyper-V Trailwright', href: 'https://labs.hybridsolutions.cloud/hyperv-trailwright/', title: 'Hyper-V platform configuration and deployment design' },
+              { label: 'Trailwright', href: 'https://azurelocal.cloud/azurelocal-trailwright/', title: 'Platform configuration and deployment design' },
               { label: 'Ranger', href: 'https://azurelocal.cloud/azurelocal-ranger/', title: 'Read-only discovery, documentation, audit and reporting' },
               { type: 'html', value: '<strong>Deploy</strong>' },
               { label: 'Zero Touch Provisioning (ZTP)', href: 'https://azurelocal.cloud/azurelocal-ztp/', title: 'Simplified machine provisioning automation using BMC and Redfish' },
@@ -148,7 +146,6 @@ const config = {
               { type: 'html', value: '<strong>Operate and test</strong>' },
               { label: 'Load Testing Framework', href: 'https://azurelocal.cloud/azurelocal-loadtools/', title: 'FIO, HammerDB, iPerf and VMFleet benchmarking' },
               { label: 'S2D Cartographer', href: 'https://azurelocal.cloud/azurelocal-s2d-cartographer/', title: 'Storage Spaces Direct inventory, capacity analysis and health' },
-              { label: 'Hybrid Health Monitoring', href: 'https://labs.hybridsolutions.cloud/hybrid-health-monitoring/', title: 'Hybrid infrastructure health monitoring' },
               { type: 'html', value: '<strong>Migrate</strong>' },
               { label: 'VMware Migration', href: 'https://azurelocal.cloud/azurelocal-vmware-migration/', title: 'Runbooks and tooling for migrating VMware vSphere workloads' },
               { label: 'Nutanix Migration', href: 'https://azurelocal.cloud/azurelocal-nutanix-migration/', title: 'Migrating Nutanix AHV and ESXi workloads with partner tools' },
