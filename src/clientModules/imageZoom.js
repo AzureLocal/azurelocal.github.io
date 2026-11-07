@@ -209,6 +209,7 @@ function openViewer(source) {
 export { enableImageZoom };
 
 // Docusaurus renames images at build time (/assets/images/ztp-flow-<hash>.png), so match the file name.
+// os-configuration- also matches provisioning-to-os-configuration, os-configuration-flow and os-configuration-pipeline.
 enableImageZoom(
-  '.markdown img[src*="ztp-"], .markdown img[src*="cluster-deployment-routes"]'
+  '.markdown img[src*="ztp-"], .markdown img[src*="cluster-deployment-routes"], .markdown img[src*="bare-metal-to-cluster"], .markdown img[src*="os-configuration-"]'
 );

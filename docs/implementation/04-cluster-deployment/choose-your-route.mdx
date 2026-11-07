@@ -8,8 +8,8 @@ scope: Choosing between the ISO route and simplified machine provisioning, and t
 purpose: Show, for each route, which Part 4 phases and OS configuration tasks to run before cluster Validate and Deploy
 author: Azure Local Cloud
 created: 2026-11-06
-updated: 2026-11-06
-version: "1.0.0"
+updated: 2026-11-07
+version: "1.1.0"
 tags: ["azure-local", "cluster-deployment", "simplified-provisioning", "zero-touch", "os-configuration", "decision-matrix"]
 keywords: ["route", "decision matrix", "ISO", "simplified machine provisioning", "ZTP", "OS configuration", "Arc registration", "SBE", "drivers"]
 status: Active
@@ -38,7 +38,7 @@ Every machine has to reach the same state before cluster **Validate**: the Azure
 | **ISO or OEM image** | You install from the Microsoft ISO or your OEM's image ([Manual OS Installation](./phase-02-os-installation/manual-installation/index.mdx)), configure the OS ([Phase 03](./phase-03-os-configuration/index.mdx)), then register with Arc ([Phase 04](./phase-04-arc-registration/index.mdx)) | GA |
 | **Simplified machine provisioning** | Azure installs the OS and registers the machine with Arc. You do it [in the portal](./phase-02-os-installation/simplified-provisioning/index.mdx), then [Task 06](./phase-02-os-installation/simplified-provisioning/task-06-prepare-for-validate.mdx), or end to end with the [azurelocal-ztp automation](./phase-02-os-installation/simplified-provisioning/automation/index.mdx) | Preview, East US only, no Arc gateway |
 
-Simplified provisioning does **not** do everything Phase 03 does. It leaves Microsoft's inbox network drivers, an empty `C:\SBE`, DHCP, and a default gateway on more than one adapter. Those still have to be fixed before Validate. The [decision matrix](#decision-matrix) below lists each step.
+Simplified provisioning does **not** do everything Phase 03 does, and azurelocal-ztp ends at the Handoff. They leave Microsoft's inbox network drivers, an empty `C:\SBE`, DHCP and a default gateway on more than one adapter, and (in management Modes B and C) no static management address. Those still have to be fixed before Validate, by [Phase 03 OS configuration](./phase-03-os-configuration/index.mdx), preferably the [automated run](./phase-03-os-configuration/automated-os-configuration.mdx). The [decision matrix](#decision-matrix) below lists each step.
 
 :::warning Check Microsoft and your OEM before Validate
 OS requirements change between Azure Local releases and between OEM images. Before you run Validate, check [Microsoft Learn's OS installation steps](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610) and your OEM's deployment guide for your build and hardware, for example Dell's [deployment and operations guide](https://www.dell.com/en-us/infohub/articles/deployment-and-operations-guide-with-scalable-networking). This page is a map, not a replacement for them.
@@ -46,9 +46,26 @@ OS requirements change between Azure Local releases and between OEM images. Befo
 
 ---
 
+## Bare metal to a deployed cluster
+
+![Flow chart of Part 4 from bare metal to a deployed cluster. Phase 01 hardware and iDRAC, then the OS is installed either by a manual ISO install (Phase 02) or by simplified provisioning with azurelocal-ztp, which ends at the Handoff. Both lead to Phase 03 OS configuration, preferably the automated run, with method detection per node. The ISO route then goes through Phase 04 Arc registration; the simplified route skips it. Phase 05 ARM Validate, then ARM Deploy, then Phase 06 post-deployment. Active Directory preparation and the Azure resource providers come before Validate.](/img/cluster-deployment/bare-metal-to-cluster.png)
+
+Select the diagram to open it full screen and zoom. Source: [`bare-metal-to-cluster.drawio`](https://github.com/AzureLocal/azurelocal.github.io/blob/main/docs/assets/diagrams/bare-metal-to-cluster.drawio).
+
+| Phase | Pages |
+|-------|-------|
+| Phase 01: Hardware and iDRAC | [Hardware provisioning](./phase-01-hardware-provisioning/index.mdx) |
+| Phase 02: OS provisioning | [Manual ISO install](./phase-02-os-installation/manual-installation/index.mdx) or [simplified provisioning with azurelocal-ztp](./phase-02-os-installation/simplified-provisioning/automation/index.mdx) |
+| Phase 03: OS configuration | [Which method did I use?](./phase-03-os-configuration/which-method-then-os-configuration.mdx), [Automated OS configuration](./phase-03-os-configuration/automated-os-configuration.mdx), [How the run works](./phase-03-os-configuration/how-the-run-works.mdx), or the [manual tasks](./phase-03-os-configuration/index.mdx#manual-tasks) |
+| Phase 04: Arc registration | [Arc registration](./phase-04-arc-registration/index.mdx) (ISO route only) |
+| Phase 05: ARM Validate and Deploy | [Cluster deployment](./phase-05-cluster-deployment/index.mdx) |
+| Phase 06: Post-deployment | [Post-deployment](./phase-06-post-deployment/index.mdx) |
+
+---
+
 ## The flow
 
-![Flow chart of Part 4. After Phase 01, the route splits on how the OS is installed. The ISO or OEM image route runs Phase 02 install, all Phase 03 OS configuration tasks and Phase 04 Arc registration. The simplified provisioning route runs Phase 02 simplified provisioning, then either the azurelocal-ztp Prepare stage or simplified provisioning Task 06 by hand, and skips Phase 04. Both routes meet at Phase 05 cluster deployment and Phase 06 post-deployment.](/img/cluster-deployment/cluster-deployment-routes.png)
+![Flow chart of Part 4. After Phase 01, the route splits on how the OS is installed. The ISO or OEM image route runs Phase 02 install, all Phase 03 OS configuration tasks and Phase 04 Arc registration. The simplified provisioning route runs Phase 02 simplified provisioning, then either azurelocal-ztp to its Handoff followed by Phase 03 automated OS configuration, or simplified provisioning Task 06 by hand, and skips Phase 04. Both routes meet at Phase 05 cluster deployment and Phase 06 post-deployment.](/img/cluster-deployment/cluster-deployment-routes.png)
 
 Select the diagram to open it full screen and zoom. Source: [`cluster-deployment-routes.drawio`](https://github.com/AzureLocal/azurelocal.github.io/blob/main/docs/assets/diagrams/cluster-deployment-routes.drawio).
 
@@ -73,9 +90,9 @@ Each row is a step that has to be done, or checked, before cluster Validate. Col
 
 - **ISO / OEM image**: you install from an ISO and follow Phases 02 to 04.
 - **Simplified, portal**: you provision with Microsoft's simplified machine provisioning in the portal.
-- **Simplified, azurelocal-ztp**: you run the [azurelocal-ztp automation](https://azurelocal.cloud/azurelocal-ztp/) through its Prepare stage.
+- **Simplified, azurelocal-ztp**: you run the [azurelocal-ztp automation](https://azurelocal.cloud/azurelocal-ztp/) to its Handoff, then [Phase 03 OS configuration](./phase-03-os-configuration/automated-os-configuration.mdx) (the automated run).
 
-Legend: **You** = a step you run · **Microsoft** = done by the provisioning service · **ZTP** = done and checked by azurelocal-ztp · **Optional** · **n/a**.
+Legend: **You** = a step you run · **Microsoft** = done by the provisioning service · **ZTP** = done and checked by azurelocal-ztp · **OS config run** = done by the toolkit's [automated OS configuration](./phase-03-os-configuration/automated-os-configuration.mdx) · **Optional** · **n/a**.
 
 On the portal path, [Simplified Provisioning Task 06: Prepare Machines for Validate](./phase-02-os-installation/simplified-provisioning/task-06-prepare-for-validate.mdx) covers the **You** rows of the OS configuration table.
 
@@ -83,11 +100,11 @@ On the portal path, [Simplified Provisioning Task 06: Prepare Machines for Valid
 
 | Step | ISO / OEM image | Simplified, portal | Simplified, azurelocal-ztp | Source |
 |------|-----------------|-------------------|---------------------------|--------|
-| BIOS settings: virtualization, Secure Boot, TPM, system profile | You ([Phase 01](./phase-01-hardware-provisioning/index.mdx)) | You. Secure Boot and TPM are required | You. ZTP doesn't check BIOS settings | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#step-2-prepare-machines), [Dell BIOS and iDRAC](https://dell.github.io/azurestack-docs/docs/hci/biosandidrac/) |
+| BIOS settings: virtualization, Secure Boot, TPM, system profile | You ([Phase 01](./phase-01-hardware-provisioning/index.mdx)) | You. Secure Boot and TPM are required | ZTP applies `hardware.bios` and an install-only `bios_during_provisioning` (an FC card slot off during the install) and restores it afterwards. It doesn't check the rest | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#step-2-prepare-machines), [Dell BIOS and iDRAC](https://dell.github.io/azurestack-docs/docs/hci/biosandidrac/) |
 | NIC settings for RDMA, for example "NIC + RDMA Mode" on Intel E810 | You (Phase 01) | You | You | Dell deployment guide |
 | Firmware at the OEM support-matrix level | You. Some OEM images update firmware during imaging | You | You. ZTP doesn't update firmware | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#install-drivers-and-firmware), [Dell SBE release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/): the SBE can't update firmware or drivers during deployment |
 | Active Directory: OU and LCM user | You ([Part 3](../03-onprem-readiness/index.mdx)) | You | You | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610) |
-| DHCP reservation for each management MAC | Optional | Recommended | You. Prepare signs in on that address before it makes it static | [Learn decision 8](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network) |
+| DHCP reservation for each management MAC | Optional | Recommended | You. Mode A (a reservation per management MAC) is the only mode where ZTP ends with every management address right | [Learn decision 8](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network) |
 
 ### Install and Arc
 
@@ -101,26 +118,28 @@ On the portal path, [Simplified Provisioning Task 06: Prepare Machines for Valid
 
 ### OS configuration (Phase 03)
 
+On the ISO route the automated run can do every **You** row in this table. On the simplified route it does everything the **ZTP** column leaves to OS configuration. See [Which method did I use?](./phase-03-os-configuration/which-method-then-os-configuration.mdx).
+
 | Step | ISO / OEM image | Simplified, portal | Simplified, azurelocal-ztp | Source |
 |------|-----------------|-------------------|---------------------------|--------|
 | WinRM for remote management | You ([task 01](./phase-03-os-configuration/task-01-enable-winrm-for-remote-management.mdx)) | Already on | Already on | Seen on live runs |
-| OEM drivers | You, unless your OEM image includes them | **You**. Provisioning leaves Microsoft's inbox drivers | ZTP installs the network drivers from the SBE | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#install-drivers-and-firmware), [inbox drivers aren't supported](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements) |
-| SBE files in `C:\SBE` | You, unless your OEM image includes them | **You** | ZTP, with the hash checked against the OEM's manifest | Learn, Dell SBE release notes |
-| Static management IP | You ([task 03](./phase-03-os-configuration/task-03-configure-static-ip-address.mdx)) | **You**. Provisioning uses DHCP | ZTP | Learn |
-| One default gateway, on the management adapter only | You ([task 04](./phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter.mdx)) | **You**. Live runs had a gateway on two adapters | ZTP | [Learn decision 8](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network) |
-| DNS servers that resolve your domain | You ([tasks 05 and 06](./phase-03-os-configuration/task-05-configure-dns-servers.mdx)) | Check: provisioning takes them from DHCP | ZTP | Learn. DNS can't change after deployment |
-| Time server | You ([task 07](./phase-03-os-configuration/task-07-configure-time-synchronization-ntp.mdx)) | Set the site's time server, or set it on each machine | ZTP sets `onprem.ntp_servers` and waits for sync | Learn |
+| OEM drivers | You, unless your OEM image includes them | **You**. Provisioning leaves Microsoft's inbox drivers | OS config run: the network drivers from the SBE | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#install-drivers-and-firmware), [inbox drivers aren't supported](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements) |
+| SBE files in `C:\SBE` | You, unless your OEM image includes them | **You** | OS config run: delivered by `hardware.sbe.delivery`, hash checked against the OEM's manifest | Learn, Dell SBE release notes |
+| Static management IP | You ([task 03](./phase-03-os-configuration/task-03-configure-static-ip-address.mdx)) | **You**. Provisioning uses DHCP | Mode A: ZTP verifies the reserved address. Modes B and C: OS config run sets it by MAC (the OS install reset it) | Learn |
+| One default gateway, on the management adapter only | You ([task 04](./phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter.mdx)) | **You**. Live runs had a gateway on two adapters | OS config run | [Learn decision 8](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network) |
+| DNS servers that resolve your domain | You ([tasks 05 and 06](./phase-03-os-configuration/task-05-configure-dns-servers.mdx)) | Check: provisioning takes them from DHCP | OS config run | Learn. DNS can't change after deployment |
+| Time server | You ([task 07](./phase-03-os-configuration/task-07-configure-time-synchronization-ntp.mdx)) | Set the site's time server, or set it on each machine | OS config run sets `networking.ntp_servers` | Learn |
 | Keep the iDRAC USB NIC (Remote NDIS) enabled, with DHCP | Leave it alone | Leave it alone | Left alone | [Dell SBE release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/): SBE health checks need it |
 | Disable disconnected adapters | You ([task 09](./phase-03-os-configuration/task-09-disable-unused-network-adapters.mdx)) | Optional | Optional. Not needed when every port is cabled | Dell deployment guide |
 | RDP | Optional ([task 02](./phase-03-os-configuration/task-02-enable-rdp.mdx)) | Optional | Optional, not done | Learn, Dell |
 | ICMP (ping) | Optional ([task 08](./phase-03-os-configuration/task-08-enable-icmp-ping.mdx)) | Optional | Optional, not done | Dell |
-| Clean non-OS drives | You, on reused hardware ([task 11](./phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional.mdx)) | Check on reused hardware | Check on reused hardware. ZTP doesn't wipe drives | Learn |
+| Clean non-OS drives | You, on reused hardware ([task 11](./phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional.mdx)) | Check on reused hardware | Check on reused hardware. The OS config run wipes them only with `os_configuration.clear_storage` | Learn |
 | Don't install Windows updates before deployment | Don't | Don't | ZTP doesn't | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#configure-the-operating-system-using-sconfig) |
 | Domain join before deployment | Optional from 2604 | Optional | Not done. Deployment joins the machines | Learn |
-| Deployment admin account | You | You | ZTP creates `credentials.local_admin_username` | Learn ARM template parameters |
+| Deployment admin account | You | You | OS config run creates `identity.local_admin` | Learn ARM template parameters |
 
 :::info What "seen on live runs" means
-Rows marked that way were read from two Dell AX-760 machines right after simplified provisioning, before any change: inbox drivers, an empty `C:\SBE`, DHCP on the management adapter, a default gateway on two adapters, DNS from DHCP, and `time.windows.com` as the time source. Cluster Validate then passed after the azurelocal-ztp Prepare stage, without RDP, ICMP, disabled adapters or a drive wipe.
+Rows marked that way were read from two Dell AX-760 machines right after simplified provisioning, before any change: inbox drivers, an empty `C:\SBE`, DHCP on the management adapter, a default gateway on two adapters, DNS from DHCP, and `time.windows.com` as the time source. Cluster Validate then passed once the drivers, the SBE, the static address, one gateway, DNS and time were in place, without RDP, ICMP, disabled adapters or a drive wipe.
 :::
 
 ---

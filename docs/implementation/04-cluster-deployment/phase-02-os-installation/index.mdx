@@ -35,12 +35,12 @@ Phase 02 has two paths. Both end with the Azure Stack HCI OS on every node, but 
 | Path | What it is | Next |
 |------|-----------|------|
 | **[Manual OS Installation (ISO)](./manual-installation/index.mdx)** | You install from the ISO or your OEM's image on each node through the BMC console. GA. | All of [Phase 03](../phase-03-os-configuration/index.mdx), then [Phase 04](../phase-04-arc-registration/index.mdx) |
-| **[Simplified Machine Provisioning](./simplified-provisioning/index.mdx)** | Azure installs the OS, sets the host name and registers the machine with Arc. Preview. By hand in the portal, or fully automated with azurelocal-ztp. | Simplified provisioning Task 06, or the ZTP Prepare stage. Phase 04 is skipped |
+| **[Simplified Machine Provisioning](./simplified-provisioning/index.mdx)** | Azure installs the OS, sets the host name and registers the machine with Arc. Preview. By hand in the portal, or fully automated with azurelocal-ztp. | [Phase 03 OS configuration](../phase-03-os-configuration/index.mdx) (the automated run, or simplified provisioning Task 06 by hand). Phase 04 is skipped |
 
 [Choose your route](../choose-your-route.mdx) has the flow chart for the whole of Part 4 and a decision matrix of every OS step on each path.
 
 :::tip Zero-touch provisioning: azurelocal-ztp
-**Simplified provisioning can run with no one in the rack.** The [azurelocal-ztp](https://azurelocal.cloud/azurelocal-ztp/) automation boots each machine from a virtual USB over the BMC, collects the ownership vouchers, claims the machines in Azure, installs the OEM network drivers and SBE, and checks every machine until it's ready for Validate. One command from a Windows management host, or one pipeline.
+**Simplified provisioning can run with no one in the rack.** The [azurelocal-ztp](https://azurelocal.cloud/azurelocal-ztp/) automation boots each machine from a virtual USB over the BMC, collects the ownership vouchers, claims the machines in Azure, waits for the OS install, verifies each management address and puts back any BIOS value it changed for the install, then ends at the Handoff. One command from a Windows management host, or one pipeline. [OS configuration](../phase-03-os-configuration/automated-os-configuration.mdx) follows.
 
 - Documentation: [azurelocal.cloud/azurelocal-ztp](https://azurelocal.cloud/azurelocal-ztp/)
 - Source: [github.com/AzureLocal/azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp)
@@ -59,8 +59,8 @@ Proven on Dell AX-760 with iDRAC 7.30. Not Microsoft-supported.
 | **OS installation** | By hand through the iDRAC or BMC console | By Azure |
 | **Physical access** | iDRAC virtual media | A USB stick per machine, or none with azurelocal-ztp |
 | **Host name** | You set it in Phase 03 | Set by provisioning |
-| **OEM drivers and SBE** | In the OEM image, or you install them | You install them (Task 06), or azurelocal-ztp does |
-| **Network configuration** | Phase 03 | DHCP from provisioning; static IP, one gateway, DNS and time in Task 06 or by azurelocal-ztp |
+| **OEM drivers and SBE** | In the OEM image, or you install them | You install them (Task 06), or the Phase 03 automated run does |
+| **Network configuration** | Phase 03 | DHCP from provisioning (a reservation per management MAC, Mode A, is recommended); static IP, one gateway, DNS and time in Task 06 or Phase 03 |
 | **Azure Arc registration** | Phase 04 | Done by provisioning |
 | **Arc machine name** | The host name | `<device-id>-1`, see the [known issue](../choose-your-route.mdx#known-issue-arc-machine-names-at-deploy) |
 | **Arc gateway** | ✅ Supported | ❌ Not supported in the preview |
@@ -104,11 +104,11 @@ Start at the [Manual OS Installation overview](./manual-installation/index.mdx).
 |------|-------------|
 | [Automation Overview](./simplified-provisioning/automation/index.mdx) | Design, flow chart, stages and gates |
 | [Prerequisites](./simplified-provisioning/automation/prerequisites.mdx) | Azure, BMC, network and management host |
-| [Operator Inputs](./simplified-provisioning/automation/operator-inputs.mdx) | The environment file and the OEM SBE |
+| [Operator Inputs](./simplified-provisioning/automation/operator-inputs.mdx) | The environment file, and where the SBE belongs |
 | [Run from a Management Host](./simplified-provisioning/automation/run-from-management-host.mdx) | Plan, run and resume on Windows |
 | [Monitor with Sonar](./simplified-provisioning/automation/monitor-with-sonar.mdx) | Follow the run live |
 | [Run from a Pipeline](./simplified-provisioning/automation/run-from-pipeline.mdx) | Self-hosted runner, approval before Boot |
-| [Output and Handoff](./simplified-provisioning/automation/output-and-handoff.mdx) | Ready for Validate, and the handoff to cluster deployment |
+| [Output and Handoff](./simplified-provisioning/automation/output-and-handoff.mdx) | The Handoff, and what OS configuration and cluster deployment take from it |
 
 Both: [Troubleshooting and Known Issues](./simplified-provisioning/troubleshooting.mdx).
 
@@ -123,19 +123,20 @@ graph TD
   C --> D[Phase 03: all OS configuration tasks]
   D --> E[Phase 04: Arc registration]
   B -->|Simplified, portal| F[Simplified Tasks 1 to 5]
-  F --> G[Simplified Task 6: prepare for Validate]
-  B -->|Simplified, azurelocal-ztp| H[One run: provisioning and Prepare stage]
+  F --> G[Simplified Task 6: prepare for Validate, or Phase 03]
+  B -->|Simplified, azurelocal-ztp| H[One run: provisioning to the Handoff]
+  H --> J[Phase 03: automated OS configuration]
   E --> I[Phase 05: Cluster deployment]
   G --> I
-  H --> I
+  J --> I
 ```
 
 ---
 
 ## Outcome
 
-- **Manual path:** the OS is on every node. Continue with [Phase 03](../phase-03-os-configuration/index.mdx).
-- **Simplified path:** every machine is Ready to cluster in Azure, with OEM drivers, SBE, one static management address, DNS and time. Phase 04 is skipped; continue with [Phase 05](../phase-05-cluster-deployment/index.mdx).
+- **Manual path:** the OS is on every node. There is no unattended ISO install, so a person does this on each node. Continue with [Phase 03](../phase-03-os-configuration/index.mdx), preferably the [automated run](../phase-03-os-configuration/automated-os-configuration.mdx).
+- **Simplified path:** every machine is Ready to cluster in Azure. With azurelocal-ztp that is the Handoff; run [Phase 03 OS configuration](../phase-03-os-configuration/index.mdx) next for the OEM drivers, SBE, one static management address, DNS and time (or [Task 06](./simplified-provisioning/task-06-prepare-for-validate.mdx) by hand on the portal route). Phase 04 is skipped; continue with [Phase 05](../phase-05-cluster-deployment/index.mdx).
 
 :::warning Before Validate, on either path
 Check [Microsoft Learn's OS installation steps](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610) and your OEM's deployment guide for your build and hardware.
