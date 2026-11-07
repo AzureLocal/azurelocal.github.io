@@ -51,7 +51,7 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 | The machine reinstalls the maintenance environment every 10 minutes | [USB boot loop](#usb-boot-loop-with-the-maintenance-environment) | Learn |
 | Cluster deployment can't find the Arc machine | [Arc machine names](#arc-machine-names-are-device-ids) | Proven on Dell AX-760 / iDRAC 7.30 |
 | The ProvisionOs job still shows an error after a successful resubmit | [Stale job error](#a-resubmitted-job-keeps-the-earlier-error) | Proven on Dell AX-760 / iDRAC 7.30 |
-| A remote restart returns an error or the session drops | [Restart over WinRM](#restart-over-winrm-drops-the-session) | Proven on Dell AX-760 / iDRAC 7.30 |
+| A remote restart returns an error or the session drops | [Restart over WinRM](#restart-over-winrm-drops-the-session) | Proven on Dell AX-760 / iDRAC 7.30 (OS configuration, not ZTP) |
 | Validate fails on drivers or default gateways | [Inbox drivers and gateways](#inbox-drivers-and-default-gateways-after-a-fresh-os) | Learn |
 | The Image drop-down is empty in the portal | [Empty image drop-down](#operating-system-image-drop-down-is-empty) | Learn |
 | ARM template validation fails with `hciRPServiceprincipalID` | [Template validation](#arm-template-validation-fails-when-you-provision) | Learn |
@@ -133,7 +133,7 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 
 **Symptom.** A restart inside a remote WinRM call kills the session before the call returns, so the caller sees an error although the restart worked.
 
-**What the automation does.** The Prepare stage schedules the restart about 10 seconds out so the call returns first, then waits for the machine to come back with a new boot time. If you restart machines yourself during preparation, do the same.
+**What the automation does.** ZTP itself opens no WinRM session to the installed OS. [OS configuration](../../phase-03-os-configuration/automated-os-configuration.mdx) restarts a machine with a separate call and then waits for a new boot time. If you restart machines yourself during OS configuration, do the same.
 
 ### The iDRAC USB link shows up as an adapter
 
@@ -210,7 +210,7 @@ The full script is on Learn: [Reattempt a failed OS provisioning](https://learn.
 
 **What was seen.** **Proven on Dell AX-760 / iDRAC 7.30.** After a fresh OS, a machine has inbox drivers, DHCP and a default gateway on more than one port, and an empty `C:\SBE`. Dell states that the SBE can't install drivers or firmware during deployment, so the drivers must go on before Validate and Deploy.
 
-**What the automation does.** The [Prepare stage](./automation/index.mdx#prepare-stage) installs the SBE's network drivers, sets one static management address, and turns off DHCP and the gateway on the other adapters.
+**What the automation does.** ZTP does not. [OS configuration](../../phase-03-os-configuration/automated-os-configuration.mdx) installs the SBE's network drivers, sets one static management address by MAC (Modes B and C), and turns off DHCP and the gateway on the other adapters. See [where ZTP ends](./automation/index.mdx#where-ztp-ends).
 
 **Check by hand.**
 

@@ -36,8 +36,8 @@ status: Active
 
 - every ZTP stage as it starts and ends, from the virtual USB boot to the voucher;
 - each machine's provisioning in Azure: its lifecycle, its stages and the `ProvisionOs` job steps;
-- each machine's **Prepare for Validate** stage: drivers installed, restart, ready for Validate;
-- once you deploy the cluster, Validate and Deploy, with the seed node's logs.
+- the Device, Network and Restore stages (the management address result and the BIOS restore);
+- once you deploy the cluster, Validate and Deploy, with the seed node's logs. OS configuration, between the Handoff and Validate, is not a ZTP stage and is not followed by this page.
 
 Sonar **only reads**. It never resubmits a job, never changes Azure, and never touches the machines or the event file. The ZTP run checks every stage itself and stops when a check fails, so Sonar is for watching, not for control. You don't need it for the run to succeed.
 
@@ -126,10 +126,10 @@ Sonar opens `http://localhost:8642/` in your browser, or the `-Port` you chose. 
 | Part of the page | What it shows during the run |
 |------------------|------------------------------|
 | Header | The cluster name, the phase chip, the overall status such as "1 of 2 machines ready", elapsed time, last poll, and one chip per machine |
-| Provisioning panel | One item per machine: lifecycle, progress bar, Arc machine, extensions, and the lifecycle message. Expand it for the lifecycle stages, the `ProvisionOs` job steps with their timers, and **Prepare for Validate** |
+| Provisioning panel | One item per machine: lifecycle, progress bar, Arc machine, extensions, and the lifecycle message. Expand it for the lifecycle stages and the `ProvisionOs` job steps with their timers |
 | Live logs | The `[ztp]` lines from the event file, by time and coloured by level. Pick `ztp-events` in the file filter to see only those. |
 
-The run is done when every machine's Prepare stage shows ready for Validate and the phase chip reads **Ready for Validate**. That matches the run's own last line, `<node> is ready for Validate`.
+The run is done when every machine is Provisioned and Ready to cluster, and the Handoff is written. That matches the run's own last line, which says ZTP is done and names OS configuration as the next step. The machines are not yet ready for Validate.
 
 ### Step 5: Leave it running for cluster deployment
 
@@ -145,8 +145,8 @@ These were seen on the proven runs, on Dell AX-760 with iDRAC 7.30. They recover
 |--------------|---------------|
 | A machine at `AwaitingConnection` for a long time after the claim | Its registration is late. On the proven runs it took up to about 45 minutes, and recovered on its own. |
 | A machine turns **failed** at `SetupHybridComputeRP` with 5901, then **running** again a minute later | The first OS install attempt failed, and ZTP resubmitted it once. Sonar shows the failure while the job reports it. Once the new attempt starts, the old error moves to the machine's previous errors and the machine is running again. It didn't happen on every machine. |
-| A machine stays **running** after Azure reports Provisioned | ZTP's Prepare stage is still installing drivers and setting the network. The machine is done when Prepare reports ready for Validate. |
-| A restart in the Prepare stage | A driver asked for it. Prepare waits for the machine to come back with a new boot time and carries on. |
+| A machine stays **running** after Azure reports Provisioned | ZTP's Network stage is verifying the management address, or Restore is putting BIOS values back, which restarts the machine and waits until Arc is Connected again. |
+| A restart after Provisioned | Restore restarts the machine to apply the BIOS values it set back. It waits until Arc is Connected and the machine is ready to cluster again. |
 
 If Sonar and the run disagree, the run is right: it stops with the reason when a check fails. The Azure portal also shows each machine under **Azure Arc** > **Operations** > **Provisioning (preview)** > **Provisioned machines**.
 

@@ -2,16 +2,16 @@
 title: "Zero-Touch Provisioning Automation (Preview)"
 sidebar_label: "Automation Overview"
 sidebar_position: 1
-description: "How the azurelocal-ztp scripts take Azure Local machines from bare metal to ready for cluster Validate with no one in the rack: stages, gates, what runs where, parallel nodes, and resume."
+description: "How the azurelocal-ztp scripts take Azure Local machines from bare metal to Provisioned and Arc-connected, ending at the Handoff, with no one in the rack: stages, gates, management address modes, what runs where, parallel nodes, and resume. OS configuration follows."
 category: Runbook
 scope: Automated simplified machine provisioning with azurelocal-ztp
-purpose: Explain the design of the end-to-end zero-touch automation and how to choose it over the portal route
+purpose: Explain the design of the zero-touch provisioning automation, where it ends (the Handoff), and how to choose it over the portal route
 author: Azure Local Cloud
 created: 2026-11-05
-updated: 2026-11-06
-version: "1.0.0"
+updated: 2026-11-07
+version: "1.1.0"
 tags: ["azure-local", "simplified-provisioning", "zero-touch", "automation", "redfish", "bmc", "preview"]
-keywords: ["azurelocal-ztp", "zero touch provisioning", "Redfish virtual USB", "iDRAC", "ownership voucher", "SBE", "Invoke-ZtpEnvironment", "ready for Validate"]
+keywords: ["azurelocal-ztp", "zero touch provisioning", "Redfish virtual USB", "iDRAC", "ownership voucher", "Handoff", "Invoke-ZtpEnvironment", "management address modes", "BIOS isolation"]
 status: Active
 ---
 
@@ -23,7 +23,7 @@ status: Active
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Automated simplified machine provisioning with azurelocal-ztp
-> **PURPOSE**: Take machines from bare metal to ready for cluster Validate with no one in the rack
+> **PURPOSE**: Take machines from bare metal to Provisioned and Arc-connected, ending at the Handoff, with no one in the rack
 > **MASTER REFERENCE**: [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
 
 **Status**: Active
@@ -34,21 +34,21 @@ Simplified machine provisioning is **in preview**. Review the [Supplemental Term
 - **Region**: East US only (Learn).
 - **Arc gateway**: Not supported (Learn).
 - **Hardware**: Learn lists Dell AX-750 and AX-650, Lenovo ThinkAgile MX650 V3 and V4, and HPE ProLiant DL360 Gen11 as validated hardware. The automation was **proven on Dell AX-760 with iDRAC 7.30**. That model is not on Learn's validated list for this flow, so the result is a proof, not Microsoft support.
-- **Scope**: The automation stops at "ready for Validate". It does not prepare Active Directory, run Validate, or deploy the cluster.
+- **Scope**: The automation ends at the **Handoff**: the machines are Provisioned and Arc-connected. It does not configure the OS (drivers, the SBE, DHCP and gateways on the other ports, DNS, time, the deployment administrator, and the static management address in Modes B and C), prepare Active Directory, run Validate, or deploy the cluster. [OS configuration](../../../phase-03-os-configuration/index.mdx) comes next.
 :::
 
 ---
 
 ## Overview
 
-The [portal route](../index.mdx) of simplified machine provisioning needs a person in the rack for the USB boot, then a person in the Azure portal to upload vouchers. The [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) scripts replace both with automation. Given one environment file and one folder of OEM files, they:
+The [portal route](../index.mdx) of simplified machine provisioning needs a person in the rack for the USB boot, then a person in the Azure portal to upload vouchers. The [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) scripts replace both with automation. Given one environment file (the master `infrastructure.yml`), they:
 
 1. Build one virtual USB image per machine from Microsoft's maintenance environment.
 2. Attach each image through the machine's BMC (Redfish), boot the machine once from it, and collect the ownership voucher it writes.
-3. Claim the machines in Azure with the vouchers, so Azure installs the OS and registers each machine with Azure Arc.
-4. Install the OEM's network drivers and set one static management address on each machine.
+3. Set each static management address in the maintenance environment before the claim (Modes B and C), then claim the machines in Azure with the vouchers, so Azure installs the OS and registers each machine with Azure Arc.
+4. Verify each management address through Azure, and put back any BIOS setting that was changed for the install only.
 
-The run ends when every machine reports **"ready for Validate"**. The azurelocal-ztp repository holds the scripts, the full parameter reference and example pipelines. This section explains the design and how to run it. It does not copy the scripts.
+The run ends at the **Handoff**: every machine is Provisioned, Arc-connected and ready to cluster again, and one handoff file records what Azure generated. OS configuration is a separate step that follows; see [Where ZTP ends](#where-ztp-ends). The azurelocal-ztp repository holds the scripts, the full parameter reference and example pipelines. This section explains the design and how to run it. It does not copy the scripts.
 
 :::info Virtual USB image, not virtual media ISO
 Other pages on this site describe azurelocal-ztp as mounting the maintenance ISO as BMC virtual media. The current automation builds a **raw virtual USB image** per machine and attaches it to the BMC's USB-stick slot. The maintenance environment writes the ownership voucher back to the media it booted from, and the automation reads the voucher from that image.
@@ -68,29 +68,33 @@ Other pages on this site describe azurelocal-ztp as mounting the maintenance ISO
 
 ## The flow
 
-![Flow chart of the zero-touch automation in four lanes: Operator, Management host, Azure, and Machine and BMC. It runs from the environment file through Resolve, Media, Boot, Bootstrap, Vouchers, Azure, Ready, Handoff and Prepare to the end state, ready to join the cluster.](/img/ztp/ztp-flow.png)
+![Flow chart of the zero-touch automation in four lanes: Operator, Management host, Azure, and Machine and BMC. It runs from the environment file through Start, Resolve, Media, Boot, Bootstrap, Vouchers, Device, Azure, the registration and OS install, Ready, Network (verify-only), Restore and Handoff, where ZTP ends. Notes show the three management address modes A, B and C and the BIOS isolation of Fibre Channel cards during the install. A dashed arrow leads to OS configuration, which is not part of ZTP.](/img/ztp/ztp-flow.png)
 
-The chart has four lanes. The operator supplies two inputs. The management host does the work it can do locally. Azure claims the machines and installs the OS. The machines and their BMCs carry out the boot and the on-machine preparation. Each arrow that crosses a lane carries a gate, shown as a label on the line.
+Select the diagram to open it full screen and zoom. Source: [`ztp-flow.drawio`](https://github.com/AzureLocal/azurelocal.github.io/blob/main/docs/assets/diagrams/ztp-flow.drawio).
+
+The chart has four lanes. The operator fills in one file and runs one command. The management host does the work it can do locally. Azure claims the machines and installs the OS. The machines and their BMCs carry out the boot. Each arrow that crosses a lane carries a gate, shown as a label on the line. The chart ends at the Handoff; what comes after is on [Which provisioning method, then OS configuration](../../../phase-03-os-configuration/which-method-then-os-configuration.mdx).
 
 ---
 
 ## Stages and gates
 
-You start the whole run with `Invoke-ZtpEnvironment.ps1`. It validates the environment file, writes the settings that the stage scripts need, and calls `Invoke-ZtpProvisioning.ps1` (Resolve to Handoff) and then `Initialize-ZtpNode.ps1` (Prepare).
+You start the whole run with `Invoke-ZtpEnvironment.ps1`. It validates the environment file, writes the settings that the stage scripts need, and calls `Invoke-ZtpProvisioning.ps1`, which runs the eleven stages from Resolve to Handoff.
 
 Each stage runs only after the previous stage's gate passes. A gate that fails or times out stops the run with the reason.
 
 | Stage | What it does | Gate or evidence |
 |-------|--------------|------------------|
-| **Resolve** | Finds, downloads and hash-verifies the newest maintenance ISO for the train you pin. Stages the OEM SBE named by the package you supplied. That package pins the SBE version. | ISO SHA-256. SBE SHA-256 matches the OEM manifest. |
+| **Resolve** | Finds, downloads and hash-verifies the maintenance ISO for the train you pin. ZTP resolves no SBE: the SBE belongs to OS configuration. | ISO SHA-256. |
 | **Media** | Builds one raw virtual USB image per machine from the ISO. Optionally sets a password for the maintenance environment's `edgeuser` account (only its hash enters the image). | One image per machine. |
-| **Boot** | Shares the images over SMB (read-write, inbound TCP 445 allowed only from the BMC addresses, through a dedicated local account), closes stale SMB handles, inserts each image into the BMC's USB-stick slot, sets a one-time boot, and resets the machine. **All machines run in parallel**, one worker each. | The BMC reports the one-time boot override (`Once`, `Floppy`) before the reset. The iDRAC log is watched for 10 minutes for event `OSE1002`, logged as "C: boot completed", which the automation reads as the installed OS booting. |
+| **Boot** | Sets each machine's BIOS from `hardware.bios` with `bios_during_provisioning` merged over it (the temporary values win; for example a Fibre Channel card slot Disabled), and saves the original value of each changed setting. Shares the images over SMB (read-write, inbound TCP 445 allowed only from the BMC addresses, through a dedicated local account), closes stale SMB handles, inserts each image into the BMC's USB-stick slot, sets a one-time boot, and resets the machine. **All machines run in parallel**, one worker each. | The BMC reports the one-time boot override (`Once`, `Floppy`) before the reset. The iDRAC log is watched for 10 minutes for event `OSE1002`, logged as "C: boot completed", which the automation reads as the installed OS booting. |
 | **Bootstrap** | Waits for the maintenance environment to run and to write the voucher back into each image. | A voucher per machine. |
 | **Vouchers** | Reads each voucher from the image, checks it matches the machine serial, replaces a spent local copy, ejects the media, and removes the share. | A valid voucher per serial. |
-| **Azure** | Prerequisite gate, Bicep validate, plan, and claim. | Deployment accepted. |
+| **Device** | Modes B and C only. In the maintenance environment, before the claim: finds each machine (a scan of the provisioning DHCP range on TCP 20001, matched by its management MAC), sets the static management address, mask, gateway, DNS and VLAN on that port through the maintenance environment's Configurator service, and reads it back. | The static configuration is on the management adapter, in the maintenance environment. |
+| **Azure** | Prerequisite gate, Bicep validate, plan, and claim. With `static_method: device` (the default) the site's network setting is Automatic and the claim carries no Manual adapter. | Deployment accepted. |
 | **Ready** | Waits for "Ready to cluster" on every machine. Resubmits a failed `ProvisionOs` job once, by sending the PUT for `jobs/ProvisionOs` again. | Provisioned, job succeeded, Arc Connected, extensions done. |
-| **Handoff** | Writes one handoff file per run and the cluster inputs. | Files written. |
-| **Prepare** | Runs `Initialize-ZtpNode.ps1` on all machines in parallel. See [Prepare stage](#prepare-stage). | "`<node>` is ready for Validate". |
+| **Network** | **Verify-only.** Reads each machine's per-NIC report from Azure, finds the management port by its MAC and compares it with the file, by mode (see [Management address modes](#management-address-modes)). It sends and waits on no Azure job. | Every machine has a result. Only a management MAC that no adapter reports stops the stage. |
+| **Restore** | Sets each `bios_during_provisioning` setting back to its final `hardware.bios` value (or the saved original), restarts the machine through Redfish, waits until the BIOS reports the values, then waits until Arc is Connected and the machine is ready to cluster again. Does nothing without `bios_during_provisioning`. | Each restarted machine is Connected and ready to cluster. |
+| **Handoff** | Writes the handoff file (schema 2) and the cluster inputs. | Files written. |
 
 The **Azure** stage prerequisite gate checks that:
 
@@ -104,19 +108,25 @@ The plan refuses to submit if a voucher is missing or invalid.
 Learn states that simplified machine provisioning doesn't retry a failed OS installation from the service, and it gives a manual resubmit procedure. The **Ready** stage does that resubmit once, automatically. See [Troubleshooting and known issues](../troubleshooting.mdx#first-os-install-attempt-fails-with-5901).
 :::
 
-### Prepare stage
+### Management address modes
 
-A new Azure Local machine comes out of provisioning with Microsoft's inbox network drivers, DHCP and a default gateway on more than one port, and an empty `C:\SBE`. Learn says [inbox drivers aren't supported](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements), and that [network validation fails if more than one physical adapter has a default gateway](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network). Dell states that the SBE can't install drivers or firmware during deployment, so the drivers go on before Validate and Deploy. The Prepare stage installs them. It runs these gates in order:
+The mode is set in the master file (`ip_assignment` on the management port, with `static_method`). It decides what is on the management port when ZTP ends.
 
-| Gate | What must be true |
-|------|-------------------|
-| **1. Azure Ready** | Azure reports the machine Ready to cluster: provisioned, `ProvisionOs` succeeded, Arc Connected, extensions done. |
-| **2. Sign-in** | The machine accepts a sign-in with the ZTP administrator secret. |
-| *(changes)* | The SBE files are copied to `C:\SBE` and hash-checked. Network drivers are chosen from the SBE by PCI hardware ID, and their catalog signatures are checked. The deployment administrator is created. Then, as SYSTEM in a scheduled task, the machine installs the drivers (`pnputil`), sets a static IP on the management MAC, turns DHCP and the gateway off on every other routable adapter and on same-model siblings, and sets DNS and time. If the static address fails, DHCP comes back on. |
-| **3. Result** | The machine answers again and reports success. If a driver or Windows asks for a restart, the machine restarts once and the run waits for a new boot time. |
-| **4. Checks** | Static address, one default gateway, every adapter on the SBE's driver, `C:\SBE` complete, and the deployment administrator present. Then Azure reports the machine Ready again, so Arc survived the change. |
+| Mode | Management port during provisioning | After the OS install | What Network does | What OS configuration does |
+|------|-------------------------------------|----------------------|-------------------|----------------------------|
+| **A, Reserved** (recommended) | DHCP; the DHCP server reserves the node's address for the management MAC | The reserved address | Verifies it | Leaves it and verifies it |
+| **B, Static with DHCP** | The Device stage sets the static; the maintenance environment also takes DHCP | The OS install resets the port to DHCP | Records the node as deferred to OS configuration | Sets the static by MAC |
+| **C, Static without management DHCP** | The Device stage sets the static; Arc is reached over the provisioning port | No address on the management port | Records the node as deferred to OS configuration | Sets the static by MAC, before any other port loses DHCP |
 
-The changes run as SYSTEM in a scheduled task so a dropped remote session doesn't stop them. The restart is scheduled about 10 seconds out so the remote call returns before the machine goes down.
+Use Mode A when you can. It is the only mode where ZTP ends with every management address right. Microsoft's OS install resets every port, and Microsoft's post-install per-NIC job did not start on the live runs, so ZTP no longer tries to set an address after the install.
+
+### BIOS isolation during the install
+
+Some hardware must look different during the install than in production. An Emulex Fibre Channel card, for example, can present a SAN LUN that the OS install picks as its target. Put the final value under `hardware.bios` and the install-only value under `hardware.bios_during_provisioning`. Boot applies the temporary values before the maintenance boot and saves each original value. Restore sets them back after Network, restarts the machine, and waits until Arc is Connected again.
+
+### Where ZTP ends
+
+ZTP ends at the Handoff. The machines are Provisioned and Arc-connected with their BIOS on its final settings, and they are **not yet ready for Validate**. OS configuration comes next: the OEM's network drivers and the SBE in `C:\SBE`, DHCP and extra default gateways off on the other ports, the static management address in Modes B and C, DNS, time, the host name and the deployment administrator. The toolkit does that, in [Phase 03: OS configuration](../../../phase-03-os-configuration/index.mdx), preferably with the [automated run](../../../phase-03-os-configuration/automated-os-configuration.mdx).
 
 :::note The iDRAC USB link is not a cluster port
 The iDRAC presents a USB link to the operating system (Remote NDIS, `169.254.0.x`) as a network adapter. It has no gateway, is not a cluster port, and must stay out of your network intents.
@@ -128,9 +138,9 @@ The iDRAC presents a USB link to the operating system (Remote NDIS, `169.254.0.x
 
 | Where | What runs there |
 |-------|-----------------|
-| **Management host (Windows)** | The environment file check, Resolve, Media, the SMB share, the BMC calls (Redfish over HTTPS), voucher read-back, the Azure calls, the handoff, and the Prepare gates. |
+| **Management host (Windows)** | The environment file check, Resolve, Media, the SMB share, the BMC calls (Redfish over HTTPS), voucher read-back, the Device calls to the maintenance environment, the Azure calls, the handoff. |
 | **BMC** | Attaches the image, applies the one-time boot, and resets the machine. The iDRAC's SMB client connects out to the management host on TCP 445 to read and write the image. No inbound port is needed on the BMC. |
-| **Machine** | Boots the maintenance environment, writes the voucher, then calls home to Azure. Azure installs the OS onto it. After the OS is up, the Prepare changes run on it, started through WinRM. |
+| **Machine** | Boots the maintenance environment, writes the voucher, then calls home to Azure. Its maintenance environment takes the static management address (Modes B and C), then Azure installs the OS onto it. ZTP opens no connection to the installed OS. |
 | **Azure** | Holds the site, the site configuration, the role assignments and the machine claim. Runs the OS install job and Arc registration. |
 
 The management host must be Windows. The Boot stage shares the images over SMB with Windows commands. See [Prerequisites](./prerequisites.mdx).
@@ -140,8 +150,8 @@ The management host must be Windows. The Boot stage shares the images over SMB w
 ## Parallel machines
 
 - **Boot** uses one worker per machine, so all machines boot at the same time.
-- **Prepare** unpacks and verifies the SBE once, then uses one worker process per machine, so all machines are prepared at the same time.
 - **Resolve, Azure and Handoff** run once for the whole set of machines.
+- **Device, Network and Restore** work through every machine in the set.
 
 A full run took about 1.5 to 2 hours on the proven setup (two machines).
 
@@ -161,10 +171,10 @@ With `-Execute`, the run **reinstalls the named machines**. The Boot stage needs
 
 The orchestrator records each completed stage in a state file. If a run stops, fix the cause and run the same command again. Completed stages aren't repeated.
 
-To force a restart from a stage, pass `-From <Stage>`. That stage and every later stage run again, whatever the state file says. The valid stage names are `Resolve`, `Media`, `Boot`, `Bootstrap`, `Vouchers`, `Azure`, `Ready`, `Handoff` and `Prepare`.
+To force a restart from a stage, pass `-From <Stage>`. That stage and every later stage run again, whatever the state file says. The valid stage names are `Resolve`, `Media`, `Boot`, `Bootstrap`, `Vouchers`, `Device`, `Azure`, `Ready`, `Network`, `Restore` and `Handoff`.
 
 :::caution Don't rebuild media after Boot
-After the Boot stage, each image holds that machine's voucher. A run that starts from `Resolve` or `Media` rebuilds the images, so once vouchers exist use `-From Azure`, `-From Ready` or a later stage.
+After the Boot stage, each image holds that machine's voucher. A run that starts from `Resolve` or `Media` rebuilds the images, so once vouchers exist use `-From Device`, `-From Azure`, `-From Ready` or a later stage.
 :::
 
 ---
@@ -186,11 +196,12 @@ After the Boot stage, each image holds that machine's voucher. A run that starts
 | Page | What it covers |
 |------|----------------|
 | [Prerequisites](./prerequisites.mdx) | Azure, hardware and BMC, network paths, management host |
-| [Operator inputs](./operator-inputs.mdx) | The environment file and the OEM SBE folder |
+| [Operator inputs](./operator-inputs.mdx) | The environment file and where the SBE belongs |
 | [Run from a management host](./run-from-management-host.mdx) | Plan, run, watch, and resume on a Windows host |
-| [Monitor with Sonar](./monitor-with-sonar.mdx) | Follow the run live and read-only with azurelocal-sonar, into cluster Validate and Deploy |
+| [Monitor with Sonar](./monitor-with-sonar.mdx) | Follow the run live and read-only with azurelocal-sonar |
 | [Run from a pipeline](./run-from-pipeline.mdx) | Self-hosted Windows runner, identity, Key Vault secrets, approval before Boot |
-| [Output and handoff](./output-and-handoff.mdx) | "Ready for Validate" and what to give cluster deployment |
+| [Output and handoff](./output-and-handoff.mdx) | The Handoff, what it holds and what comes next |
+| [OS configuration](../../../phase-03-os-configuration/automated-os-configuration.mdx) | What to run after the Handoff |
 | [Troubleshooting and known issues](../troubleshooting.mdx) | Issues found on live runs and Learn's recovery steps |
 
 ---
@@ -221,3 +232,4 @@ The scripts, the full parameter reference, the JSON schemas and the example pipe
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-11-05 | Azure Local Cloud | Initial release — zero-touch provisioning automation |
+| 1.1 | 2026-11-07 | Azure Local Cloud | ZTP ends at the Handoff: Device, verify-only Network and Restore stages, management address modes, BIOS isolation; Prepare and the SBE moved to OS configuration |

@@ -36,7 +36,7 @@ Without `-Execute` the run is a plan and changes nothing. With `-Execute` it **r
 
 ## Overview
 
-You run one command, `Invoke-ZtpEnvironment.ps1`, with the environment file. It does the whole flow from the [overview](./index.mdx): Resolve, Media, Boot, Bootstrap, Vouchers, Azure, Ready, Handoff, and Prepare. This page shows how to run it from a Windows management host. To run it from a pipeline, see [Run from a pipeline](./run-from-pipeline.mdx).
+You run one command, `Invoke-ZtpEnvironment.ps1`, with the environment file. It does the whole flow from the [overview](./index.mdx): Resolve, Media, Boot, Bootstrap, Vouchers, Device, Azure, Ready, Network, Restore and Handoff. It ends at the Handoff; [OS configuration](../../../phase-03-os-configuration/automated-os-configuration.mdx) follows. This page shows how to run it from a Windows management host. To run it from a pipeline, see [Run from a pipeline](./run-from-pipeline.mdx).
 
 The script is in the `scripts/simplified-provisioning` folder of the [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp).
 
@@ -48,8 +48,8 @@ The script is in the `scripts/simplified-provisioning` folder of the [azurelocal
 |-------------|---------|
 | Management host | Meets the [prerequisites](./prerequisites.mdx#management-host): Windows, PowerShell 7, elevated, Az modules, `powershell-yaml`. |
 | Environment file | Filled in, as described in [Operator inputs](./operator-inputs.mdx). |
-| SBE folder | Downloaded, and `ztp.node_preparation.sbe_bundle` points to it. |
-| Network paths | The BMC and WinRM paths in [Prerequisites](./prerequisites.mdx#network-paths) are open. |
+| BIOS values | If a card must be off during the install, `hardware.bios_during_provisioning` names it. |
+| Network paths | The BMC, SMB and maintenance-environment (TCP 20001) paths in [Prerequisites](./prerequisites.mdx#network-paths) are open. |
 | Roles | Your sign-in holds the [Azure roles](./prerequisites.mdx#azure) on the resource group, and Key Vault access for the secrets. |
 
 ---
@@ -106,8 +106,7 @@ The script then:
 
 1. Reads the BMC account from Key Vault.
 2. Creates the resource group if it doesn't exist.
-3. Runs Resolve to Handoff. A failed OS install is resubmitted once automatically.
-4. Runs the Prepare stage on every machine in parallel.
+3. Runs the eleven stages, Resolve to Handoff. A failed OS install is resubmitted once automatically. Restore restarts the machines again if a BIOS value was changed for the install.
 
 Keep the session open. The run takes about 1.5 to 2 hours on the proven setup. Don't close the window or let the host sleep.
 
@@ -145,14 +144,14 @@ To force a restart from a stage, add `-From` with the stage name:
   -Execute
 ```
 
-`-From` takes `Resolve`, `Media`, `Boot`, `Bootstrap`, `Vouchers`, `Azure`, `Ready`, `Handoff` or `Prepare`. The named stage and every later stage run again.
+`-From` takes `Resolve`, `Media`, `Boot`, `Bootstrap`, `Vouchers`, `Device`, `Azure`, `Ready`, `Network`, `Restore` or `Handoff`. The named stage and every later stage run again.
 
 | Where it stopped | Resume with |
 |------------------|-------------|
 | Before the Boot stage | The same command, or `-From Resolve` or `-From Media`. |
-| After Boot, before the claim | `-From Bootstrap`, `-From Vouchers` or `-From Azure`. Don't use `-From Resolve` or `-From Media`, because they rebuild the images that now hold the vouchers. |
+| After Boot, before the claim | `-From Bootstrap`, `-From Vouchers`, `-From Device` or `-From Azure`. Don't use `-From Resolve` or `-From Media`, because they rebuild the images that now hold the vouchers. |
 | After the claim | `-From Ready`. |
-| Prepare failed on one machine | `-From Prepare` with `-Node` naming that machine. Prepare skips steps that are already done. |
+| Network or Restore failed on one machine | `-From Network` or `-From Restore` with `-Node` naming that machine. |
 
 Each set of machines keeps its own state, named after the machines. Running machine `node-02` on its own doesn't disturb the state of a run for the others.
 
@@ -168,15 +167,15 @@ Each set of machines keeps its own state, named after the machines. Running mach
 | Bootstrap, until a valid voucher appears | 90 minutes |
 | Vouchers | 120 minutes |
 | Ready to cluster | 180 minutes |
-| Prepare, Azure Ready gate | 240 minutes |
-| Prepare, sign-in and restart gates | 30 minutes |
+| Device, scan for the maintenance environment | 30 minutes |
+| Restore, settle time after the restart | 5 minutes, then the Ready watch |
 
 ---
 
 ## Validation
 
 - [ ] The plan run showed the expected machines and share host
-- [ ] The run finished with "`<node>` is ready for Validate" for every machine
+- [ ] The run finished with the "ZTP is done" message and a result for every machine
 - [ ] The handoff and cluster input files exist (see [Output and handoff](./output-and-handoff.mdx))
 
 ---

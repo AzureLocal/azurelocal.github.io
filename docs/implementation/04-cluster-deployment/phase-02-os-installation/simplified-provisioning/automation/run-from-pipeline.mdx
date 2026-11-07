@@ -56,7 +56,7 @@ A Microsoft-hosted or Linux runner can't run this automation. The reasons are in
 |--------|--------|
 | **The BMCs read the image from the runner** | The Boot stage publishes the virtual USB images on an SMB share on the machine that runs it. The iDRAC's SMB client connects out to that machine on TCP 445, and the runner allows inbound 445 only from the BMC addresses. A hosted runner sits outside your network and can't accept that connection. |
 | **It uses Windows commands** | The share, the local account and the firewall rule are created with Windows commands. Linux runners can't do this. |
-| **It must reach the machines** | The BMCs (HTTPS) and, after the OS install, the machines (WinRM on TCP 5985) are on the management network. |
+| **It must reach the machines** | The BMCs (HTTPS) and the provisioning network (the maintenance environment on TCP 20001) are on the management network. ZTP opens no connection to the installed OS. |
 | **It must be elevated** | The share, account and rule need administrator rights on the runner. |
 | **It runs for hours** | A run takes about 1.5 to 2 hours on the proven setup. It must not depend on an interactive session or a short job timeout. |
 
@@ -89,7 +89,6 @@ Give the identity these roles. A person with enough rights does this once, befor
 | The resource group for the machines | Owner, or Contributor and Role Based Access Control Administrator | Learn's prerequisite for simplified machine provisioning. Without them the template validation in the Azure stage fails. The deployment also creates role assignments for the provisioned machines. |
 | The Key Vault that holds the provisioning administrator secret | Permission to read secrets, and rights to delegate on the vault | The run reads the secret, and the machine's role delegation includes a Key Vault role on this vault. |
 | The Key Vault that holds the BMC account | Permission to read secrets | The run reads the BMC user name and password. |
-| The Key Vault that holds the deployment administrator secret | Permission to read secrets | The Prepare stage reads it. |
 | The subscription | The `Microsoft.DeviceOnboarding/AzureLocalZTP` feature and the resource providers [registered](./prerequisites.mdx#azure) | The Bootstrap stage checks them before the claim. |
 
 A managed identity has no directory read rights by default, so set `ztp.azl_rp_object_id` in the environment file. That way the run doesn't need to look up the resource provider's object ID.
@@ -132,7 +131,7 @@ on:
         description: "Resume from this stage. Leave empty to start from the beginning."
         required: false
         type: choice
-        options: ["", Resolve, Media, Boot, Bootstrap, Vouchers, Azure, Ready, Handoff, Prepare]
+        options: ["", Resolve, Media, Boot, Bootstrap, Vouchers, Device, Azure, Ready, Network, Restore, Handoff]
 
 jobs:
   plan:
@@ -170,7 +169,7 @@ If a run fails or the approval times out, start the pipeline again with the same
 
 - **Failure partway through:** run again with no `from`. The orchestrator skips stages it recorded as complete.
 - **Force a restart from a stage:** set the `from` input to the stage name. The stage and every later stage run again.
-- **One machine failed in Prepare:** set `from` to `Prepare` and `nodes` to that machine.
+- **One machine failed in Network or Restore:** set `from` to that stage and `nodes` to that machine.
 
 Resume works only on the **same runner**, because the state file is on the runner's disk. Use `Azure` or a later stage once vouchers exist. Don't use `Resolve` or `Media` then, because they rebuild the images that hold the vouchers. See the table in [Run from a management host](./run-from-management-host.mdx#step-6-resume-after-a-stop).
 
@@ -182,7 +181,8 @@ Resume works only on the **same runner**, because the state file is on the runne
 - [ ] The identity holds the roles above, and no secret value is stored in the pipeline
 - [ ] The run job is bound to an environment with a required reviewer
 - [ ] The plan job output is visible to the reviewer
-- [ ] A run ends with "`<node>` is ready for Validate" for every machine
+- [ ] A run ends with the "ZTP is done" message and a result for every machine
+- [ ] OS configuration runs next, as its own pipeline with its own approval gate: see [Automated OS configuration](../../../phase-03-os-configuration/automated-os-configuration.mdx#from-a-pipeline)
 
 ---
 

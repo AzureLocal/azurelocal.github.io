@@ -1,21 +1,21 @@
 ---
-title: "Operator Inputs: Environment File and OEM SBE"
+title: "Operator Inputs: The Environment File"
 sidebar_label: "Operator Inputs"
 sidebar_position: 3
 description: "The two things the operator supplies to the azurelocal-ztp automation: the environment file and the folder of OEM Solution Builder Extension files."
 category: Runbook
 scope: Operator inputs for the azurelocal-ztp zero-touch automation
-purpose: Describe the environment file keys the automation reads and the OEM SBE folder it needs
+purpose: Describe the environment file keys the automation reads, and where the OEM SBE belongs (OS configuration, not ZTP)
 author: Azure Local Cloud
 created: 2026-11-05
 updated: 2026-11-06
 version: "1.0.0"
-tags: ["azure-local", "simplified-provisioning", "zero-touch", "environment-file", "sbe"]
+tags: ["azure-local", "simplified-provisioning", "zero-touch", "environment-file", "sbe", "bios"]
 keywords: ["environment file", "infrastructure.yml", "SBE", "Solution Builder Extension", "sbe_bundle", "Invoke-ZtpEnvironment"]
 status: Active
 ---
 
-# Operator Inputs: Environment File and OEM SBE
+# Operator Inputs: The Environment File
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
@@ -23,7 +23,7 @@ status: Active
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Operator inputs for the azurelocal-ztp zero-touch automation
-> **PURPOSE**: Fill in the environment file and download the OEM SBE
+> **PURPOSE**: Fill in the environment file, and know where the OEM SBE belongs
 > **MASTER REFERENCE**: [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp)
 
 **Status**: Active
@@ -32,10 +32,15 @@ status: Active
 
 ## Overview
 
-The operator supplies two inputs. Everything else is automated, with a gate at each step.
+The operator supplies one input: **the environment file**, a YAML file that describes the machines, the network, the BIOS settings, the Azure target and the ZTP settings. Everything else is automated, with a gate at each step.
 
-1. **The environment file**, a YAML file that describes the machines, the network, the Azure target and the ZTP settings.
-2. **The OEM SBE folder**, the Solution Builder Extension files that you download from the hardware vendor.
+:::info The master file, and the older layout
+New files use the master `infrastructure.yml` (schema 5), the one file that every tool in the route reads: ZTP, [OS configuration](../../../phase-03-os-configuration/index.mdx) and the cluster deployment. Its schema, examples and variables reference are in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/config/infrastructure) and described in [azurelocal-ztp: schema 5](https://azurelocal.cloud/azurelocal-ztp/infrastructure-schema-5). The example and tables below use the older layout, which ZTP still reads; the keys map one to one.
+:::
+
+:::note The OEM SBE is not a ZTP input
+ZTP resolves and stages no SBE. The SBE (`hardware.sbe.bundle_path` in the master file) is read by OS configuration, which puts it in `C:\SBE` and installs the OEM's network drivers from it. A `ztp.node_preparation` block in an old file is accepted and ignored. See [The OEM SBE](#the-oem-sbe).
+:::
 
 `Invoke-ZtpEnvironment.ps1` validates the environment file, then generates the JSON inputs that the stage scripts need. Those generated files are specific to your environment. Don't copy them between environments or commit them.
 
@@ -65,12 +70,12 @@ site:
   name: "Example site"
 
 hardware:
-  vendor: Dell                     # picks config/oem/dell.json
-  model: AX-760                    # SBE selection; becomes AX760
-
-onprem:
-  ntp_servers:
-    - 192.0.2.123
+  vendor: Dell                     # picks config/oem/dell.json (BMC log services and signals)
+  # BIOS: the final settings, and any that must differ during the install only (see below).
+  # bios:
+  #   Slot2: Enabled
+  # bios_during_provisioning:
+  #   Slot2: Disabled
 
 network_intents:
   management:
@@ -80,16 +85,11 @@ network_intents:
       - 192.0.2.53
       - 192.0.2.54
 
-credentials:
-  # Deployment admin that Prepare creates in local Administrators. Not Administrator or Guest.
-  local_admin_username: <deployment-admin-username>
-  local_admin_password_secret: keyvault://<vault-name>/<deployment-admin-secret-name>
-
 cluster_nodes:
   - name: node-01
     service_tag: <serial-number-1>
     idrac_ip: 198.51.100.11        # BMC address
-    ip_address: 192.0.2.11         # management address; give the MAC below a DHCP reservation for it
+    ip_address: 192.0.2.11         # management address, set on the port with the MAC below
     mac_address: "00-00-5E-00-53-01"
   - name: node-02
     service_tag: <serial-number-2>
@@ -131,10 +131,6 @@ ztp:
     vault: <vault-name>
     username_name: <bmc-username-secret-name>
     password_name: <bmc-password-secret-name>
-
-  node_preparation:
-    # Folder with SBE_<OEM>_<family>_<version>.zip, its .xml and SBE_Discovery_<OEM>.xml from the OEM.
-    sbe_bundle: 'D:\ztp\sbe\<sbe-folder>'
 ```
 
 ### Machines and network
@@ -144,14 +140,15 @@ ztp:
 | `cluster_nodes[].name` | The node name. Also the name of its provisioned machine in Azure. |
 | `cluster_nodes[].service_tag` | The machine serial or service tag. It must match the serial in the voucher. |
 | `cluster_nodes[].idrac_ip` | The BMC address. |
-| `cluster_nodes[].ip_address` | The static management address that the Prepare stage sets. |
-| `cluster_nodes[].mac_address` | The MAC of the management adapter. The Prepare stage puts the static address on the adapter with this MAC and fails if no adapter has it. |
+| `cluster_nodes[].ip_address` | The node's management address. With a static assignment (Mode B or C), the Device stage sets it on the port with the MAC below before the claim; with a DHCP reservation (Mode A), the Network stage verifies it. See [Management address modes](./index.mdx#management-address-modes). |
+| `cluster_nodes[].mac_address` | The MAC of the management port. The Device stage finds the maintenance environment's adapter by it, the Network stage finds the installed machine's adapter by it, and OS configuration finds the port by it too. The installed OS names its ports `Port0` to `Port6`. |
+| `network_intents.management.ip_assignment` | How each management address is set: `dhcp_reservation` (Mode A, recommended), `static` (Mode B or C), `dhcp` or `preconfigured`. |
+| `network_intents.management.static_method` | Who sets a static address: `device` (default, the Device stage) or `site`. |
 | `network_intents.management.subnet` | Management subnet in CIDR form. The prefix length is read from it. |
 | `network_intents.management.gateway` | The one default gateway. |
-| `network_intents.management.dns_servers` | DNS servers set on the node. |
-| `onprem.ntp_servers` | Time servers set on the node. |
-| `hardware.vendor` | The OEM, such as `Dell`. It selects the OEM definition for SBE discovery and BMC log signals. |
-| `hardware.model` | The model, such as `AX-760`. The SBE selection uses it with the dash removed. |
+| `network_intents.management.dns_servers` | DNS servers for the management network. ZTP passes them to the Device stage (Modes B and C); OS configuration sets them on the host. |
+| `hardware.bios` and `hardware.bios_during_provisioning` | BIOS settings by attribute. Boot applies `bios_during_provisioning` over `bios`, so an install-only value wins; Restore sets those attributes back. See [BIOS isolation during the install](./index.mdx#bios-isolation-during-the-install). |
+| `hardware.vendor` | The OEM, such as `Dell`. It selects the OEM definition for the BMC (manager and system IDs, the USB-stick slot, the log signals). |
 
 ### Azure target and identity
 
@@ -172,10 +169,9 @@ ztp:
 | Key | What it is |
 |-----|------------|
 | `ztp.provisioning_iso` | Which maintenance ISO to resolve: `latest`, a train such as `2610`, a build, or a Microsoft download URL. |
-| `ztp.os_version` | The Azure Local OS solution version to install: `latest`, `latest-preview`, or a validated solution recipe version. It also checks the SBE for compatibility. |
+| `ztp.os_version` | The Azure Local OS solution version to install: `latest`, `latest-preview`, or a validated solution recipe version. ZTP does not check it against an SBE: pin a build your OEM supports. |
 | `ztp.share_host` or `ztp.share_host_adapter` | The address of the management host as the BMCs reach it. Use `share_host_adapter` to name the network adapter and let the script read its IPv4 address, or `share_host` to give the address. One of them is required. |
 | `ztp.share_name` | Name of the SMB share for the images. |
-| `ztp.node_preparation.sbe_bundle` | The OEM SBE folder. See [below](#the-oem-sbe-folder). |
 
 ### Secrets
 
@@ -183,9 +179,9 @@ The environment file holds **names and references only**, never values.
 
 | Key | What it points to |
 |-----|-------------------|
-| `ztp.admin_secret.*` | The Key Vault secret that holds the provisioning administrator password, and that administrator's user name. Provisioning sets this account on the installed OS, and the Prepare stage signs in to each node with it. The secret must exist before the run. |
+| `ztp.admin_secret.*` | The Key Vault secret that holds the provisioning administrator password, and that administrator's user name. Provisioning sets this account on the installed OS. The secret must exist before the run. |
 | `ztp.bmc_secret.*` | The vault and the names of the secrets that hold the BMC user name and the BMC password. |
-| `credentials.local_admin_password_secret` | The deployment administrator's password, as `keyvault://<vault>/<secret>`. |
+| `identity.local_admin` (master file) | The deployment administrator's name and Key Vault password reference. ZTP doesn't read it: [OS configuration](../../../phase-03-os-configuration/index.mdx) creates the account. |
 
 :::danger Never commit secret values
 Don't put a password, token or key in the environment file or in any file you commit. The run reads the values from Key Vault at run time.
@@ -193,13 +189,11 @@ Don't put a password, token or key in the environment file or in any file you co
 
 ---
 
-## The OEM SBE folder
+## The OEM SBE
 
-A Solution Builder Extension (SBE) is the hardware vendor's package for an Azure Local release. The automation needs it because the OEM requires its network drivers to be on the machine before Validate and Deploy. For Dell, the SBE can't install drivers or firmware during deployment. The Prepare stage installs the drivers.
+A Solution Builder Extension (SBE) is the hardware vendor's package for an Azure Local release. The OEM requires its network drivers to be on the machine before Validate and Deploy; for Dell, the SBE can't install drivers or firmware during deployment. ZTP does neither: **OS configuration** puts the SBE in `C:\SBE` and installs the drivers from it.
 
-### What to download
-
-Download these from the OEM into one folder. Dell requires a support account for the download.
+Download these from the OEM into one folder outside any repository, and set `hardware.sbe.bundle_path` in the master file to it. Dell requires a support account for the download.
 
 | File | Purpose |
 |------|---------|
@@ -207,16 +201,7 @@ Download these from the OEM into one folder. Dell requires a support account for
 | `SBE_<...>.xml` | The package's metadata. It has the same name as the zip, with `.xml`. |
 | `SBE_Discovery_<oem>.xml` | The OEM's SBE discovery manifest. |
 
-### Set the path
-
-Set `ztp.node_preparation.sbe_bundle` to the folder.
-
-### What the automation does with it
-
-- **Resolve** stages the package you supplied. The package pins the SBE version. The automation checks its SHA-256 against the OEM's published manifest and checks it against the OS build in `ztp.os_version`.
-- **Prepare** verifies the zip again, unpacks the network driver folders once, chooses the drivers for each adapter by PCI hardware ID, checks their catalog signatures, and copies the three files to `C:\SBE` on each node.
-
-The hash check in Resolve runs at the start, so a package that doesn't match the OEM manifest stops the run before it touches a machine. The Prepare stage is the one that needs all three files, and it runs last, after the OS is installed. Check that the folder holds all three before you start, so a missing file doesn't stop the run late.
+How the files reach each node is a separate choice (`hardware.sbe.delivery`); see [Automated OS configuration](../../../phase-03-os-configuration/automated-os-configuration.mdx#the-sbe-delivery-route).
 
 ---
 
@@ -226,7 +211,8 @@ The hash check in Resolve runs at the start, so a package that doesn't match the
 - [ ] Every machine has `name`, `service_tag`, `idrac_ip`, `ip_address` and `mac_address`
 - [ ] `ztp.share_host` or `ztp.share_host_adapter` is set to the address the BMCs reach
 - [ ] The secrets named in the file exist in Key Vault, and the file holds no secret values
-- [ ] The SBE folder holds the zip, its XML and the discovery XML, and `ztp.node_preparation.sbe_bundle` points to it
+- [ ] If the machines have BIOS settings that differ during the install, `bios_during_provisioning` names them and `bios` holds the final values
+- [ ] The SBE folder (for OS configuration, not ZTP) holds the zip, its XML and the discovery XML
 
 ---
 
@@ -242,6 +228,7 @@ The hash check in Resolve runs at the start, so a package that doesn't match the
 
 - [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp) — full parameter reference and JSON schemas
 - [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
+- [azurelocal-toolkit — master infrastructure file](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/config/infrastructure)
 - [Microsoft Learn — Solution Builder Extension updates](https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610)
 
 ---
@@ -249,3 +236,4 @@ The hash check in Resolve runs at the start, so a package that doesn't match the
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |
+| 1.1 | 2026-11-07 | Azure Local Cloud | The SBE moved to OS configuration; BIOS isolation and management address mode keys; the master file |

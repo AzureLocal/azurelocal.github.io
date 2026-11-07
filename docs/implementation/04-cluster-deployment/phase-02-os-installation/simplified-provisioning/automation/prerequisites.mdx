@@ -11,7 +11,7 @@ created: 2026-11-05
 updated: 2026-11-05
 version: "1.0.0"
 tags: ["azure-local", "simplified-provisioning", "zero-touch", "prerequisites", "bmc", "redfish"]
-keywords: ["azurelocal-ztp prerequisites", "Redfish", "SMB 445", "WinRM 5985", "management host", "AzureLocalZTP feature"]
+keywords: ["azurelocal-ztp prerequisites", "Redfish", "SMB 445", "TCP 20001", "management host", "AzureLocalZTP feature"]
 status: Active
 ---
 
@@ -65,7 +65,7 @@ Someone with enough rights gives the automation identity its roles once, before 
 | Firmware | Match the BMC and machine firmware to the OEM's Azure Local support matrix before you start. Only iDRAC 7.30 was proven. |
 | Secure Boot and TPM | Enabled, as Learn requires for the maintenance environment. |
 | Machine state | The machines carry no cluster to keep. The run **reinstalls** them. |
-| OEM SBE | The Solution Builder Extension files from the OEM. See [Operator inputs](./operator-inputs.mdx#the-oem-sbe-folder). |
+| OEM SBE | Not needed by ZTP. OS configuration needs it afterwards; see [Operator inputs](./operator-inputs.mdx#the-oem-sbe). |
 
 :::caution BMC behavior proven on iDRAC 7.30 only
 The Boot stage works around several iDRAC 7.30 behaviors, such as the `InsertMedia` call rejecting `WriteProtected=false`, and `Floppy` being the one-time boot override that reaches the USB-stick slot. These are described in [Troubleshooting and known issues](../troubleshooting.mdx#idrac-730-behaviors-the-boot-stage-works-around). Other BMC models and firmware haven't been proven.
@@ -79,7 +79,7 @@ The Boot stage works around several iDRAC 7.30 behaviors, such as the `InsertMed
 |------|----|------|----------|
 | Management host | BMC | TCP 443 (HTTPS, Redfish) | Insert media, set boot, reset, read power, boot state and logs |
 | **BMC** | **Management host** | **TCP 445 (SMB)** | The iDRAC's SMB client connects out to the share on the host to read and write the virtual USB image |
-| Management host | Machine | TCP 5985 (WinRM) | The Prepare stage, after the OS is installed |
+| Management host | The maintenance environment of each machine (its `maintenance_address`, or the provisioning DHCP range) | TCP 20001 (HTTPS, self-signed) | The Device stage (Modes B and C), before the claim: find the machine by its MAC and set the static management address. Keep the range isolated. |
 | Management host | Azure | HTTPS | Azure Resource Manager, Key Vault, downloads |
 | Machine | Azure | HTTPS | Call-home, OS download, Arc registration. See [Azure Local firewall requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610). |
 
@@ -100,7 +100,7 @@ You can check endpoint and network readiness before the first run with [azureloc
 | Bicep | Available on the host. `Invoke-ZtpEnvironment.ps1` adds the Azure CLI's Bicep folder to `PATH`, so installing the Azure CLI's Bicep is enough. |
 | `powershell-yaml` | Reads the environment file. |
 | Pester 5 | Only needed to run the repository's tests. |
-| Disk | Space for the maintenance ISO, the SBE, and one image per machine. |
+| Disk | Space for the maintenance ISO and one image per machine. |
 | Network | The [paths above](#network-paths). |
 
 The host can be a dedicated server, a VM on the management network, or a self-hosted pipeline runner. See [Run from a pipeline](./run-from-pipeline.mdx).
@@ -125,7 +125,7 @@ The host can be a dedicated server, a VM on the management network, or a self-ho
 - [ ] The administrator, BMC and deployment administrator secrets exist in Key Vault
 - [ ] The management host can reach every BMC on TCP 443, and every BMC can reach the host on TCP 445
 - [ ] The management host runs Windows with PowerShell 7, elevated, signed in to Azure
-- [ ] The OEM SBE files are downloaded
+- [ ] The OEM SBE files are downloaded for the OS configuration step that follows (not needed by ZTP itself)
 
 ---
 

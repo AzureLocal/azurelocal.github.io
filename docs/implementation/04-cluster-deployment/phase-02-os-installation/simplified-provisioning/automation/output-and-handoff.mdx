@@ -2,16 +2,16 @@
 title: "Output and Handoff to Cluster Deployment"
 sidebar_label: "Output and Handoff"
 sidebar_position: 7
-description: "What the azurelocal-ztp automation produces when machines are ready for Validate, and what to give cluster deployment, including each machine's arcMachineResourceId."
+description: "What the azurelocal-ztp automation produces at the Handoff, and what to give OS configuration and cluster deployment, including each machine's arcMachineResourceId and the management address result."
 category: Runbook
 scope: Output of the azurelocal-ztp automation and handoff to cluster deployment
-purpose: Explain the ready-for-Validate end state, the handoff files, and why cluster deployment must use each machine's arcMachineResourceId
+purpose: Explain the Handoff end state, the handoff files, and why OS configuration and cluster deployment must use each machine's arcMachineResourceId
 author: Azure Local Cloud
 created: 2026-11-05
-updated: 2026-11-06
-version: "1.0.0"
+updated: 2026-11-07
+version: "1.1.0"
 tags: ["azure-local", "simplified-provisioning", "zero-touch", "handoff", "arc", "cluster-deployment"]
-keywords: ["ready for Validate", "handoff", "arcMachineResourceId", "arc_machine_names", "ztp-handoff.json", "cluster deployment"]
+keywords: ["Handoff", "managementAddressVerified", "handoff", "arcMachineResourceId", "arc_machine_names", "ztp-handoff.json", "cluster deployment"]
 status: Active
 ---
 
@@ -23,7 +23,7 @@ status: Active
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Output of the azurelocal-ztp automation and handoff to cluster deployment
-> **PURPOSE**: Confirm the end state and hand the machines to cluster deployment
+> **PURPOSE**: Confirm the Handoff and hand the machines to OS configuration
 > **MASTER REFERENCE**: [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
 
 **Status**: Active
@@ -32,35 +32,35 @@ status: Active
 
 ## Overview
 
-The automation stops at **ready for Validate**. At that point each machine has the Azure Local OS, is connected to Azure Arc with its mandatory extensions, has the OEM's network drivers, and has one static management address and one default gateway. The machines are ready to join a cluster.
+The automation ends at the **Handoff**. At that point each machine is Provisioned in Azure, connected to Azure Arc with its mandatory extensions, and has its BIOS on its final settings. The machines are **not yet ready for Validate**: the OEM's drivers, the SBE in `C:\SBE`, DHCP and gateways on the other ports, DNS, time, the host name, the deployment administrator, and (in Modes B and C) the static management address are still to do. That is [OS configuration](../../../phase-03-os-configuration/index.mdx).
 
 The automation does **not**:
 
+- configure the OS (see above),
 - prepare Active Directory,
 - run cluster Validate, or
 - deploy the cluster.
 
-Those are separate steps. See [Prepare your Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610) and the [cluster deployment phase](../../../phase-05-cluster-deployment/index.mdx).
+See [Which provisioning method, then OS configuration](../../../phase-03-os-configuration/which-method-then-os-configuration.mdx), [Prepare your Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610) and the [cluster deployment phase](../../../phase-05-cluster-deployment/index.mdx).
 
 ---
 
 ## The end state
 
-A successful run ends with this line for each machine, then a summary:
+A successful run ends with a message that ZTP is done, with the next step named, and a table per node with the management port marked:
 
 ```text
-<node> is ready for Validate
-All ready for Validate: <node-1>, <node-2>
+ZTP is done: the machines are Provisioned and Arc-connected. ...
+Next: OS configuration (OEM drivers, the SBE in C:\SBE, DHCP off on the other ports, DNS and time, the deployment admin), then Validate and Deploy.
 ```
 
-That line means the Prepare stage's four gates passed for that machine:
+Before it writes the handoff, the run has checked each machine:
 
-| Gate | Evidence |
-|------|----------|
-| 1 | Azure reports the machine Ready to cluster: provisioned, `ProvisionOs` job succeeded, Arc Connected, extensions done |
-| 2 | The machine accepted a sign-in with the ZTP administrator secret |
-| 3 | The machine reported success after the changes, and restarted if a driver or Windows asked |
-| 4 | Static address, one default gateway, every adapter on the SBE's driver, `C:\SBE` complete, deployment administrator present. Azure reports the machine Ready again, so Arc survived the change. |
+| Check | Evidence |
+|-------|----------|
+| Azure reports the machine Ready to cluster | Provisioned, `ProvisionOs` job succeeded, Arc Connected, extensions done (the Ready stage, and again after Restore) |
+| The management address, by mode | Network: Mode A, the reserved address is on the port with the management MAC. Modes B and C, the OS install reset the static, so the machine is recorded as left to OS configuration |
+| The BIOS values changed for the install are back | Restore, recorded as `biosRestored` |
 
 You can also confirm in the Azure portal. Go to **Azure Arc** > **Operations** > **Provisioning (preview)** > **Provisioned machines**. Each machine shows **Ready to cluster**. See [Task 05](../task-05-verify-arc.mdx) for the portal checks.
 
@@ -72,8 +72,8 @@ The run writes its state and outputs to the `ztp-state` folder under the `_media
 
 | File | What it holds |
 |------|---------------|
-| `<run>.ztp-handoff.json` | The handoff: for each machine, its name, serial, provisioned machine name and resource ID, Arc machine name, **`arcMachineResourceId`**, Arc resource group and connectivity. It also records the site, the solution version, and the bootstrap and SBE versions, with timestamps. |
-| `<run>.ztp-cluster-inputs.yaml` | The cluster inputs: an `arc_machine_names` block that maps each node name to its Arc machine name, plus `sbe` and `release` blocks when the handoff has the values. |
+| `<run>.ztp-handoff.json` | The handoff (schema 2), only what Azure generated: for each machine, its name, serial, provisioned machine name and resource ID, Arc machine name, **`arcMachineResourceId`**, the management mode, `managementAddressVerified` with its reason, `biosRestored`, and every port as Azure reports it. It also records the site and the installed OS build (`solution.vsrVersion`). It no longer carries SBE, bootstrap or timestamp blocks. |
+| `<run>.ztp-cluster-inputs.yaml` | The cluster inputs: an `arc_machine_names` block that maps each node name to its Arc machine name, plus `release.azure_local_version`, the build installed. The SBE values for deployment come from OS configuration. |
 | `<run>.arc-machine-names.json` | The map from node to Arc machine name. |
 | `<run>.ztp-provisioning.state.json` | The state file that makes the run resumable. |
 | `ztp-events.jsonl` | Structured events that Sonar can follow. |
@@ -82,9 +82,9 @@ The handoff and cluster inputs hold environment-specific names and resource IDs.
 
 ---
 
-## What to hand to cluster deployment
+## What to hand to OS configuration and cluster deployment
 
-Hand over **each machine's `arcMachineResourceId`** from the handoff file, and the `arc_machine_names` map in the cluster inputs file.
+OS configuration reads the **handoff file** (`-HandoffFile`) for each machine's `arcMachineResourceId`, the installed build and the management address result, and the master `infrastructure.yml` for everything else. Cluster deployment needs **each machine's `arcMachineResourceId`** and the `arc_machine_names` map in the cluster inputs file.
 
 :::caution Use the Arc names from the handoff, not the node names
 Simplified machine provisioning creates two resources for each machine:
@@ -99,28 +99,29 @@ On build 12.2690.1003.15, an earlier Deploy failed at "Deploy Arc infrastructure
 
 To convert a handoff file into the cluster inputs block yourself, the repository has `Convert-ZtpHandoffToClusterInputs.ps1`. It takes `-HandoffPath`, an optional `-Only` of `arc_machine_names`, `sbe` or `release`, and `-Format` of `Yaml` or `Json`. See the script's help for the full parameters.
 
-Check the `release` values against your cluster deployment environment schema before you paste them. Only `arc_machine_names` is needed by the cluster deployment inputs.
+Check the `release` value against your cluster deployment environment schema before you paste it. Only `arc_machine_names` is needed by the cluster deployment inputs.
 
 ---
 
-## Before you start Validate
+## Before you start OS configuration, then Validate
 
 | Check | Why |
 |-------|-----|
 | Active Directory is prepared | Learn lists it as an on-site prerequisite. The automation doesn't do it. |
 | The Arc machine names in your cluster inputs are the ones in the handoff | See the caution above. |
-| Each machine has one static address, one default gateway, and the OEM's drivers | Learn says [inbox drivers aren't supported](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements), and validation fails with more than one physical adapter that has a default gateway. The Prepare stage handles both. |
+| OS configuration has run and every machine matches the file | Learn says [inbox drivers aren't supported](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements), and validation fails with more than one physical adapter that has a default gateway. A ZTP-built machine has inbox drivers, DHCP and often a gateway on more than one port, and no static address in Modes B and C. [OS configuration](../../../phase-03-os-configuration/automated-os-configuration.mdx) fixes all of it. |
 | The iDRAC USB link adapter is not in any network intent | It appears as a network adapter (Remote NDIS, `169.254.0.x`). It isn't a cluster port. |
-| `C:\SBE` holds the SBE files | The Prepare stage copied them and checked the hashes. |
+| `C:\SBE` holds the SBE files | OS configuration delivers them (`hardware.sbe.delivery`) and checks the hashes. ZTP leaves the folder empty. |
 
 ---
 
 ## Validation
 
-- [ ] Every machine printed "ready for Validate"
+- [ ] The run printed that ZTP is done, and every machine has a result in the per-node table
 - [ ] The handoff file lists every machine with an `arcMachineResourceId`
 - [ ] The Arc machine names are not the node names, and your cluster inputs use the handoff values
 - [ ] Every machine shows **Ready to cluster** and **Connected** in the portal
+- [ ] `managementAddressVerified` is true for Mode A machines; for Modes B and C the reason says OS configuration sets the address
 
 ---
 
@@ -128,7 +129,7 @@ Check the `release` values against your cluster deployment environment schema be
 
 | | | |
 |:--|:--:|--:|
-| ← [Run from a pipeline](./run-from-pipeline.mdx) | [↑ Simplified Provisioning](../index.mdx) | [Troubleshooting and known issues →](../troubleshooting.mdx) |
+| ← [Run from a pipeline](./run-from-pipeline.mdx) | [↑ Simplified Provisioning](../index.mdx) | [Automated OS configuration →](../../../phase-03-os-configuration/automated-os-configuration.mdx) |
 
 ---
 
@@ -144,3 +145,4 @@ Check the `release` values against your cluster deployment environment schema be
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |
+| 1.1 | 2026-11-07 | Azure Local Cloud | The end state is the Handoff; OS configuration follows; schema 2 handoff |

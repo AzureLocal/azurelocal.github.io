@@ -37,9 +37,9 @@ import TabItem from '@theme/TabItem';
 1. Builds a virtual USB image per machine and boots every machine from it over the BMC (Redfish)
 2. Reads each ownership voucher back and claims the machines in Azure with Bicep
 3. Waits for Ready to cluster, and resubmits a failed OS install once
-4. Installs the OEM network drivers and SBE, sets one static management address, one gateway, DNS and time, and checks every machine until it's ready for Validate
+4. Verifies each management address, puts back any BIOS value it changed for the install only, and ends at the **Handoff**: Provisioned and Arc-connected
 
-One environment file and the OEM's SBE folder are the only inputs. Run it from a Windows management host or a pipeline, and follow it live with [Sonar](./automation/monitor-with-sonar.mdx).
+One environment file is the only input. [OS configuration](../phase-03-os-configuration/automated-os-configuration.mdx) (OEM drivers and SBE, static address, one gateway, DNS, time, host name, deployment admin) follows the Handoff. Run it from a Windows management host or a pipeline, and follow it live with [Sonar](./automation/monitor-with-sonar.mdx).
 
 | Where | Link |
 |-------|------|
@@ -113,8 +113,8 @@ This section covers two routes to the same end state: machines with the OS insta
 |--|-----------------------------|----------------------------------|
 | **How** | You create USB media, boot each machine, collect vouchers, and provision in the Azure portal | One command, or one pipeline, from a Windows management host |
 | **Physical access** | Someone attaches USB media and powers on each machine | None after the machines are racked, cabled and reachable by BMC |
-| **Needs** | Windows 11 PC, USB drive, the Azure portal | Windows management host with BMC access, an environment file, the OEM SBE files |
-| **Ends at** | Ready for Validate after Task 6 (drivers, SBE, static IP, one gateway, DNS, time) | Machines are ready for Validate: OEM drivers, one static management address, SBE files in `C:\SBE` |
+| **Needs** | Windows 11 PC, USB drive, the Azure portal | Windows management host with BMC access and an environment file |
+| **Ends at** | Ready for Validate after Task 6 (drivers, SBE, static IP, one gateway, DNS, time), or after Phase 03 | The Handoff: Provisioned and Arc-connected. Phase 03 OS configuration (automated or by hand) follows |
 | **Support** | Microsoft's documented steps (preview) | Proven on Dell AX-760 / iDRAC 7.30. Not on Learn's validated list for this flow |
 | **Start here** | [Task 1: Create USB Installation Media](./task-01-create-usb-media.mdx), through [Task 6](./task-06-prepare-for-validate.mdx) | [Zero-Touch Provisioning Automation](./automation/index.mdx) |
 
@@ -182,11 +182,11 @@ graph TD
 |------|-------------|
 | [Automation Overview](./automation/index.mdx) | Design, flow chart, stages and gates, parallel machines, resume |
 | [Prerequisites](./automation/prerequisites.mdx) | Azure, hardware and BMC, network paths, management host |
-| [Operator Inputs](./automation/operator-inputs.mdx) | The environment file and the OEM SBE folder |
+| [Operator Inputs](./automation/operator-inputs.mdx) | The environment file, and where the SBE belongs |
 | [Run from a Management Host](./automation/run-from-management-host.mdx) | Plan, run, watch and resume on Windows |
 | [Run from a Pipeline](./automation/run-from-pipeline.mdx) | Self-hosted Windows runner, identity, Key Vault, approval before Boot |
 | [Monitor with Sonar](./automation/monitor-with-sonar.mdx) | Follow the run live, read-only |
-| [Output and Handoff](./automation/output-and-handoff.mdx) | Ready for Validate, and what to give cluster deployment |
+| [Output and Handoff](./automation/output-and-handoff.mdx) | The Handoff, and what to give OS configuration and cluster deployment |
 
 ### Both routes
 
@@ -202,7 +202,7 @@ Upon completion of this section:
 
 - All Azure Local machines have the Azure Stack HCI OS installed, with the host name set by provisioning
 - All machines are registered with Azure Arc, with the mandatory extensions
-- After [Task 6](./task-06-prepare-for-validate.mdx), or the azurelocal-ztp Prepare stage: OEM drivers and SBE, one static management address with one gateway, DNS and time
+- After [Task 6](./task-06-prepare-for-validate.mdx), or [Phase 03 OS configuration](../../phase-03-os-configuration/index.mdx) after the azurelocal-ztp Handoff: OEM drivers and SBE, one static management address with one gateway, DNS and time
 - [Phase 04](../../phase-04-arc-registration/index.mdx) is skipped. Continue with [Phase 05: Cluster Deployment](../../phase-05-cluster-deployment/index.mdx). See the [decision matrix](../../choose-your-route.mdx#decision-matrix)
 ---
 
