@@ -146,10 +146,6 @@ const config = {
               { type: 'html', value: '<strong>Operate and test</strong>' },
               { label: 'Load Testing Framework', href: 'https://azurelocal.cloud/azurelocal-loadtools/', title: 'FIO, HammerDB, iPerf and VMFleet benchmarking' },
               { label: 'S2D Cartographer', href: 'https://azurelocal.cloud/azurelocal-s2d-cartographer/', title: 'Storage Spaces Direct inventory, capacity analysis and health' },
-              { type: 'html', value: '<strong>Migrate</strong>' },
-              { label: 'VMware Migration', href: 'https://azurelocal.cloud/azurelocal-vmware-migration/', title: 'Runbooks and tooling for migrating VMware vSphere workloads' },
-              { label: 'Nutanix Migration', href: 'https://azurelocal.cloud/azurelocal-nutanix-migration/', title: 'Migrating Nutanix AHV and ESXi workloads with partner tools' },
-              { label: 'VM Conversion Toolkit', href: 'https://azurelocal.cloud/azurelocal-vm-conversion-toolkit/', title: 'Convert Hyper-V Gen 1 VMs to Gen 2 while keeping Azure Arc management' },
             ],
           },
           {
