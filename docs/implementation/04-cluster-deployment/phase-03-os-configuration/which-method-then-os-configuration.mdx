@@ -1,0 +1,136 @@
+---
+title: "Which Provisioning Method, Then OS Configuration"
+sidebar_label: "Which Method Did I Use?"
+sidebar_position: -3
+description: "A decision flow from the way the OS was installed (azurelocal-ztp simplified provisioning, or a manual ISO install) to OS configuration, method detection, the two paths, the converge check, ARM Validate and ARM Deploy, and how to tell which method you used."
+category: Runbook
+scope: How the OS install method decides what OS configuration does
+purpose: Show how the provisioning method leads into OS configuration, what method detection checks, and how to tell which method was used
+author: Azure Local Cloud
+created: 2026-11-07
+updated: 2026-11-07
+version: "1.0.0"
+tags: ["azure-local", "os-configuration", "provisioning", "ztp", "iso", "method-detection", "decision-flow"]
+keywords: ["scenario.os_install", "method detection", "ZTP handoff", "ISO install", "simplified provisioning", "Arc Run Command", "WinRM", "converge check"]
+status: Active
+---
+
+# Which Provisioning Method, Then OS Configuration
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: How the OS install method decides what OS configuration does
+> **PURPOSE**: Know which path your machines take from the OS install to ARM Deploy, and which method you used
+> **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
+
+**Status**: Active
+
+---
+
+## Overview
+
+There are two ways the OS gets onto a machine, and OS configuration always starts **after** the OS install:
+
+| Method | Who installs the OS | What exists when OS configuration starts |
+|--------|--------------------|------------------------------------------|
+| **Simplified provisioning** ([azurelocal-ztp](../phase-02-os-installation/simplified-provisioning/automation/index.mdx), or the [portal tasks](../phase-02-os-installation/simplified-provisioning/index.mdx)) | Azure, after the machine is claimed with its ownership voucher | An Arc-connected, Provisioned machine named `<device-id>-1`. With ZTP, also a handoff file |
+| **Manual ISO install** ([Phase 02, manual](../phase-02-os-installation/manual-installation/index.mdx)) | A person, at the BMC console, on every machine | An installed OS with no Arc machine yet |
+
+:::info There is no unattended ISO install for Azure Local
+Microsoft's installer for Azure Local is interactive. Nothing in this repository or in azurelocal-ztp installs the OS from an ISO without a person. If you want no one in the rack, use simplified provisioning with azurelocal-ztp. OS configuration then starts from the ZTP Handoff.
+:::
+
+---
+
+## The flow
+
+![Decision flow from the OS install method to OS configuration. After Phase 01 the OS is installed either by a manual ISO install or by simplified provisioning with azurelocal-ztp, which ends at the Handoff. Method detection per node checks scenario.os_install against the evidence: the ZTP handoff file, the Arc machine and whether the node answers. The simplified path runs over Azure Arc Run Command and first verifies what ZTP did; the ISO path runs over WinRM with the vault local administrator, sets the computer name and the static management address by MAC and registers the node with Arc. Both then do the remaining steps, and a converge check follows. A converged cluster goes to ARM Validate and then ARM Deploy; anything else ends with a non-zero exit code.](/img/os-configuration/provisioning-to-os-configuration.png)
+
+Select the diagram to open it full screen and zoom. Source: [`provisioning-to-os-configuration.drawio`](https://github.com/AzureLocal/azurelocal.github.io/blob/main/docs/assets/diagrams/provisioning-to-os-configuration.drawio).
+
+The two paths share most of their work. They differ in how they reach the node, and in what has to happen first:
+
+| | Simplified path | ISO path |
+|---|-----------------|----------|
+| **Reaches the node by** | Azure Arc Run Command: the script goes through Azure to the Connected Machine agent. HTTPS to Azure only | WinRM, from a host that reaches the nodes' management subnet (TCP 5985), signed in with the local administrator from Key Vault |
+| **First** | Verify what ZTP did: Provisioned, Arc Connected, the management address result for its mode, BIOS restored | Prepare the node: computer name, static management address by MAC, WinRM, RDP and ICMP; register it with Arc |
+| **Management address** | Mode A: verified. Modes B and C: set by MAC (the OS install reset it) | Set by MAC |
+| **Then, only where the node differs from the file** | DHCP and extra gateways off, unused ports disabled, OEM drivers and SBE, DNS, time, local administrator, MPIO and SAN checks, optional storage wipe | The same |
+| **Arc machine** | Exists, named `<device-id>-1`; the run finds it from the handoff | Created by the registration step |
+
+---
+
+## Method detection
+
+At the start of the [automated run](./automated-os-configuration.mdx), each node's method is **declared** in the master file and **checked against evidence**. Nothing is guessed from the file alone.
+
+| Declared | Evidence the run looks for |
+|----------|----------------------------|
+| `scenario.os_install: simplified` | the ZTP handoff file is present and lists the node; the node's Arc machine exists and is `Connected`; the node answers |
+| `scenario.os_install: iso` | no Arc machine for the node yet; the node answers on its management address over WinRM |
+
+- **They agree:** the node takes its path.
+- **They disagree** (for example the file says `iso` but the Arc machine is already Connected): the run reports the mismatch for that node, with what it found, and does not carry on for it. Correct `scenario.os_install` or the node's state, then run again.
+
+:::note Check the shipped behaviour
+Method detection is part of the wrapper in the azurelocal-toolkit. The wording above follows its design. If the shipped wrapper words a rule differently, the wrapper's `Get-Help` is the reference.
+:::
+
+---
+
+## Which method did I use?
+
+If you are not sure how the machines in front of you were installed, check these in order:
+
+| Question | Simplified (ZTP) | Simplified (portal) | ISO |
+|----------|------------------|---------------------|-----|
+| Did you run `Invoke-ZtpEnvironment.ps1`? | Yes | No | No |
+| Is there a `<run>.ztp-handoff.json` in the `ztp-state` folder under the media folder? | Yes | No | No |
+| In the Azure portal, under **Azure Arc** > **Operations** > **Provisioning (preview)** > **Provisioned machines**, is the machine listed as **Ready to cluster**? | Yes | Yes | No |
+| Is the Arc machine named `<device-id>-1` and `Connected`? | Yes | Yes | No Arc machine until Phase 04 |
+| Did anyone use the install wizard at the BMC console? | No | No | Yes |
+| Does the computer name look like `WIN-...` until you set it? | No: provisioning set it | No | Yes |
+
+Still unsure: run the **plan**. It changes nothing, and for every node it prints the method it detected and the evidence behind it. Then set `scenario.os_install` to match.
+
+:::tip A portal-provisioned machine has no handoff file
+That is fine. Set `scenario.os_install: simplified`, give each node's `arc_machine_name` (the `<device-id>-1` name from the portal), and leave the handoff out. The run finds the Arc machine by name in `azure.resource_group`.
+:::
+
+---
+
+## After OS configuration
+
+When every node matches the file, the run ends with a report and a zero exit code. Then:
+
+1. Prepare Active Directory (or choose local identity) and confirm the Azure resource providers are registered.
+2. [Phase 05: ARM Validate](../phase-05-cluster-deployment/index.mdx), which reads the OS configuration report for the adapter names by MAC and the SAN disks. Validate never deploys.
+3. [Phase 05: ARM Deploy](../phase-05-cluster-deployment/index.mdx), a separate run that needs a successful Validate.
+
+On the ISO route, if you registered the nodes by hand, continue with [Phase 04: Arc registration](../phase-04-arc-registration/index.mdx) first. The simplified route skips Phase 04.
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Phase 03: OS Configuration](./index.mdx) | [↑ Part 4: Cluster Deployment](../index.mdx) | [Automated OS configuration →](./automated-os-configuration.mdx) |
+
+---
+
+## References
+
+- [Automated OS configuration](./automated-os-configuration.mdx)
+- [How the run works, step by step](./how-the-run-works.mdx)
+- [Choose your route](../choose-your-route.mdx)
+- [azurelocal-toolkit: OS configuration and ARM deployment](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/os-configuration-and-arm-deployment.md)
+- [Microsoft Learn: Simplified machine provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
+
+---
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-11-07 | Azure Local Cloud | Initial release |
