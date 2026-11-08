@@ -28,15 +28,21 @@ This part documents the supported delivery pipeline platforms for Azure Local au
 
 | Platform | Best For | Azure Auth Model | Approval Model |
 |---|---|---|---|
-| **GitLab CI/CD** | Teams standardizing on GitLab and modular stage-based delivery | Service principal variables | Manual job approvals and protected environments |
-| **GitHub Actions** | Teams standardizing on GitHub repositories and environment rules | OIDC or service principal secrets | Environment protection rules and workflow approvals |
-| **Azure DevOps Pipelines** | Teams already operating in Azure DevOps | ARM service connections | Environment approvals and checks |
+| **GitLab CI/CD** | Teams standardizing on GitLab and modular stage-based delivery | OIDC through `id_tokens` (a federated app registration) or a managed identity for the OS configuration and ARM pipelines; service principal variables for the Terraform and Ansible pipeline | Manual jobs in protected environments |
+| **GitHub Actions** | Teams standardizing on GitHub repositories and environment rules | OIDC (`azure/login`) with no client secret for the OS configuration and ARM pipelines | Environment protection rules (required reviewers) |
+| **Azure DevOps Pipelines** | Teams already operating in Azure DevOps | ARM service connections, with workload identity federation for the OS configuration and ARM pipelines | Environment approvals and checks |
 
 ## Common Pipeline Flow
 
-```text
-validate -> plan -> deploy-foundation -> configure-onprem -> deploy-cluster -> configure-operations -> validate-deployment
-```
+The toolkit ships three families of pipeline files for each platform. They are separate pipelines, not one chain.
+
+| Family | Stages | Calls |
+|---|---|---|
+| **Terraform and Ansible deploy** | `validate -> plan -> deploy-foundation -> configure-onprem -> deploy-cluster -> configure-operations -> validate-deployment` | Terraform, Ansible playbooks, Azure CLI. It does **not** call the schema 5 ARM deployment script |
+| **OS configuration** (Phase 03) | Plan (read only), then Apply behind an approval | `Invoke-AzureLocalOsConfiguration.ps1`. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx) |
+| **ARM Validate and Deploy** (Phase 05) | Preconditions, Validate, then Deploy behind an approval | `Invoke-AzureLocalArmDeployment.ps1`. See [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx) |
+
+Order for a new instance: provisioning (azurelocal-ztp or an ISO) -> OS configuration pipeline -> the **pre-cluster verification gate** -> ARM Validate and Deploy pipeline. The OS configuration pipeline publishes the artifact `os-configuration-report`, which the ARM pipeline takes as its OS configuration report. The gate's details are described on the [ARM Validate and Deploy page](../03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate).
 
 ## How to Use This Part
 
@@ -52,6 +58,7 @@ validate -> plan -> deploy-foundation -> configure-onprem -> deploy-cluster -> c
 | [GitLab CI/CD](./gitlab-cicd.mdx) | Primary reference pipeline with modular stages and reusable templates |
 | [GitHub Actions](./github-actions.mdx) | GitHub-native workflow equivalent with environment protection |
 | [Azure DevOps Pipelines](./azure-devops-pipelines.mdx) | Azure DevOps implementation using service connections and agent pools |
+| [ARM Validate and Deploy](../03-automation-guides/arm-validate-deploy.mdx) | The pipeline that runs Microsoft's ARM template through Validate, approval and Deploy, on all three platforms |
 
 ---
 

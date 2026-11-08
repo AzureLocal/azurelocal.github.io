@@ -105,6 +105,30 @@ Install the Terraform extension from the marketplace:
 - **Variable Groups**: Centralized secret management
 - **Deployment Strategy**: `runOnce` strategy for controlled rollouts
 
+## OS Configuration Pipeline
+
+**File**: `pipelines/azure-devops/os-configuration.yml` (create a pipeline from the existing YAML file; no trigger). It runs `Invoke-AzureLocalOsConfiguration.ps1` and nothing else.
+
+| Stage | Description |
+|---|---|
+| `Plan` | Read only. Publishes the plan report and the wipe list as the build artifact `os-configuration-plan` |
+| `ConfirmStorageWipe` | Exists only when the mode is Apply **and** `clear_storage` is true: a second, separate approval (environment `azure-local-os-configuration-clear-storage`) after reading the wipe list |
+| `Apply` | Runs for mode Apply, after a reviewer of the environment `azure-local-os-configuration` approves |
+
+Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVault` and a route to the nodes' management subnet; an Azure Resource Manager service connection with workload identity federation; and add Approvals (and an Exclusive lock) to the environments. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+
+## ARM Validate and Deploy Pipeline
+
+**File**: `pipelines/azure-devops/arm-deployment.yml`.
+
+| Stage | Description |
+|---|---|
+| `Preconditions` | Read only. Parameters and every precondition. Always runs |
+| `Validate` | Runs for mode Validate and ValidateAndDeploy |
+| `Deploy` | A deployment job in the environment `azure-local-deploy`; add an Approvals check to that environment (Pipelines, Environments, Approvals and checks). It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
+
+Parameters: `mode`, `infrastructureFile`, `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`, `azureServiceConnection` (workload identity federation, no client secret) and `agentPool`. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+
 ## Repository
 
 Source: `azurelocal-toolkit/pipelines/azure-devops/`

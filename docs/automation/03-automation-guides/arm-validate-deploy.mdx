@@ -1,0 +1,282 @@
+---
+title: "ARM Validate and Deploy automation"
+sidebar_label: "ARM Validate and Deploy"
+sidebar_position: 6
+slug: /automation/arm-validate-deploy
+description: "One command, from a jump server or a pipeline, that checks readiness, validates, waits for approval, deploys the Azure Local instance with Microsoft's ARM template and explains failures; where the pre-cluster verification gate sits before it."
+category: "Reference"
+scope: "Automation of the ARM Validate and Deploy step of cluster deployment (Phase 05)"
+purpose: "Document how the toolkit's Invoke-AzureLocalArmDeployment.ps1 runs the cluster ARM deployment from a jump server or a CI/CD pipeline"
+author: "Azure Local Cloud"
+created: 2026-11-08
+updated: 2026-11-08
+version: "1.0.0"
+tags:
+  - azure-local
+  - automation
+  - arm-deployment
+  - validate
+  - deploy
+  - pipelines
+keywords:
+  - Invoke-AzureLocalArmDeployment
+  - ARM Validate
+  - ARM Deploy
+  - deploymentSettings
+  - pre-cluster verification gate
+  - approval
+status: "Active"
+---
+
+# ARM Validate and Deploy automation
+
+[![Reference](https://img.shields.io/badge/Type-Reference-purple?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/?view=azloc-2610)
+[![PowerShell](https://img.shields.io/badge/Scripting-PowerShell_7-5391FE?style=flat-square&logo=powershell)](https://learn.microsoft.com/en-us/powershell/)
+
+> **DOCUMENT CATEGORY**: Reference
+> **SCOPE**: Automating the cluster ARM Validate and Deploy step (implementation Phase 05)
+> **PURPOSE**: Run Microsoft's quickstart template through Validate, approval and Deploy with one command, on a jump server or in a pipeline
+> **MASTER REFERENCE**: [azurelocal-toolkit: ARM Validate and Deploy run guide](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/arm-deployment-guide.md)
+
+**Status**: Active
+**Validated against**: the toolkit's `docs/arm-deployment-guide.md` on `main`, and Microsoft Learn view `azloc-2610`
+
+---
+
+## Overview
+
+After the machines are provisioned (ZTP or an ISO install) and their operating system is configured, the cluster is created by an ARM deployment: Microsoft's quickstart template (`Microsoft.AzureStackHCI/clusters` with `deploymentSettings`), run first in **Validate** mode and then in **Deploy** mode. The toolkit automates that step with `Invoke-AzureLocalArmDeployment.ps1`, which works the same on a jump server and in GitHub Actions, GitLab CI or Azure DevOps.
+
+```text
+infrastructure.yml  +  OS configuration report  +  ZTP handoff (optional)
+    -> Plan (preconditions) -> Validate -> approval -> Deploy -> report, events, exit code
+```
+
+It covers Active Directory or local identity; Storage Spaces Direct, a Fibre Channel SAN, or hybrid (deployed as Storage Spaces Direct, the SAN connected afterwards); switchless or switched storage; and 1 to 16 machines. Running it twice is safe.
+
+This page automates the manual routes in [Phase 05: Cluster Deployment](../../implementation/04-cluster-deployment/phase-05-cluster-deployment/index.mdx) (portal and ARM template). The manual runbooks stay the reference for each Azure setting.
+
+### Where it sits in the flow
+
+| Order | Stage | Page |
+|-------|-------|------|
+| 1 | Provisioning: azurelocal-ztp (ends at the Handoff) or an ISO install | [Simplified provisioning automation](../../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/automation/index.mdx) |
+| 2 | OS configuration of every node (plan, approval, apply, verify; writes `report.json`) | [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx) |
+| 3 | **Pre-cluster verification gate** | [Below](#pre-cluster-verification-gate) |
+| 4 | **ARM Validate, approval, ARM Deploy** | This page |
+| 5 | Post-deployment tasks | [Phase 06](../../implementation/04-cluster-deployment/phase-06-post-deployment/index.mdx) |
+
+---
+
+## What it does
+
+1. **Reads** the master `infrastructure.yml`, the OS configuration report and, if you have one, the ZTP handoff.
+2. **Generates** every parameter of the right Microsoft template for your design and shows which file key fed which parameter.
+3. **Checks readiness**, read-only (see [What it checks first](#what-it-checks-first)).
+4. **Validates** and waits (10 to 30 minutes), reading Microsoft's step list as it goes.
+5. **Waits for approval.** A pipeline has the platform's approval gate between the Validate job and the Deploy job.
+6. **Deploys** and waits (2.5 to 3 hours).
+7. **Explains a failure**: the failing step with the number the portal shows, the error text, the matching known issue with its cause and remediation, and what may be retried.
+8. **Reports**: an event feed (JSON Lines), `report.json`, `summary.md` and an exit code of 0, 1 or 2.
+
+It is **idempotent**. A Validate that already passed with the same parameters isn't run again. A deployment that is running is attached to, not duplicated. A deployment that failed is resubmitted only when you pass `-Resume`, because Microsoft warns that another Validate after a failure can break license sync.
+
+---
+
+## Pre-cluster verification gate
+
+The toolkit defines a **pre-cluster verification gate**: a stage that runs after OS configuration and before the cluster ARM Validate.
+
+:::warning Gate details are pending in the toolkit
+The gate's own run guide, `docs/pre-cluster-verification.md` in the azurelocal-toolkit repository, had not landed on the toolkit's `main` branch when this page was written (2026-11-08), and `docs/arm-deployment-guide.md` does not describe it. To avoid inventing behaviour, this page does **not** list the gate's individual checks, parameters, outputs or exit codes. Take them from that document once it is on `main`, and update this section in the same change. Open item for the documentation owner.
+:::
+
+What is already documented and checked on `main` before Validate:
+
+- The OS configuration run ends with a **verify pass** and a per-node `converged` result in `report.json` (a node is converged only when nothing is left to change). See [How the run works](../../implementation/04-cluster-deployment/phase-03-os-configuration/how-the-run-works.mdx).
+- `Invoke-AzureLocalArmDeployment.ps1` re-checks, read-only and in `-Mode Plan`, the conditions listed in [What it checks first](#what-it-checks-first), including `OsConfigurationConverged` (the report says every node converged for this cluster), `OsBuildConsistent`, `DnsAndTime`, `ArcMachinesConnected` and `ArcMachineNaming`.
+- The Environment Checker validators are a separate, manual readiness assessment: [Task 05: Environment Checker Readiness](../../implementation/03-onprem-readiness/phase-02-enterprise-readiness/task-05-environment-checker-readiness.mdx). Azure also runs them itself during Validate.
+
+---
+
+## Run it from a jump server
+
+You need PowerShell 7 on Windows or Linux, the `powershell-yaml`, `Az.Accounts` and `Az.KeyVault` modules, and a sign-in. The script does not sign in.
+
+```powershell
+Connect-AzAccount            # or: Connect-AzAccount -Identity   (an Azure VM with a managed identity)
+
+$arm    = './scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1'
+$common = @{ InfrastructureFile = './infrastructure.yml'; OsConfigurationReport = './osconfig-report' }
+
+& $arm @common -Mode Plan     -ReportDirectory ./arm-plan        # reads only; add -Offline to touch no Azure at all
+& $arm @common -Mode Validate -ReportDirectory ./arm-validate    # 10 to 30 minutes
+& $arm @common -Mode Deploy   -ReportDirectory ./arm-deploy      # 2.5 to 3 hours, only after a Validate of these parameters
+```
+
+`-Mode ValidateAndDeploy` does the last two in one run with a gate between them (`-ApprovalMode stop|prompt|none`). The default, `stop`, ends after a good Validate in state `AwaitingApproval` with exit code 0; run `-Mode Deploy` to continue. `-WhatIf` does everything except submit.
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The master file (schema 5). Required |
+| `-OsConfigurationReport` | The OS configuration run's `report.json`, a node-level report, or its report directory. Gives the OS names of the network ports (found by MAC), the SAN disks (a LUN number becomes the disk's UniqueId), and proves every node converged |
+| `-HandoffFile` | The ZTP handoff: Arc machine resource IDs and the solution build |
+| `-Mode` | `Plan` (default), `Validate`, `Deploy`, `ValidateAndDeploy` |
+| `-ReportDirectory` | Where the events, report, summary and parameter files go. Not for a repository |
+| `-Resume` | Resubmit a failed Deploy (and attach to a running one) |
+| `-AcknowledgeKnownIssues` | Known issue ids you accept, for example `arc-device-id-name` |
+| `-Settings`, `-ConfigPath` | Run settings as a hashtable or JSON file; they win over the master file's `deployment` block |
+| `-AllowRevalidate` | Validate an instance in a failed deployment state. Microsoft says not to; support-guided recovery only |
+| `-RegisterResourceProviders` | Opt in: register the mandatory resource providers that are not registered and wait until they are `Registered` (Validate and Deploy only). Without it the run never changes Azure |
+| `-TemplateFile` | A local copy of the quickstart template instead of the download |
+| `-Offline` | Plan only: no Azure call at all |
+
+---
+
+## Run it from a pipeline
+
+Copy the file for your platform. Each runs the same script: **preconditions** (Plan), then **Validate**, then **Deploy** behind the platform's approval, and publishes `report.json`, `summary.md` and the event feed of every job. No client secret is stored anywhere; the files hold placeholders only, and you set the real values as variables of the project.
+
+| Platform | File in the toolkit | Jobs or stages | Approval | Sign-in |
+|----------|---------------------|----------------|----------|---------|
+| GitHub Actions | `pipelines/github-actions/arm-deployment.yml` (copy to `.github/workflows/`) | `preconditions`, `validate`, `deploy` | Environment `azure-local-deploy` with required reviewers | `azure/login`, OIDC |
+| GitLab CI | `pipelines/gitlab/stages/arm-deployment.yml` (declares its own stages, include it from a pipeline of its own) | `arm-preconditions`, `arm-validate`, `arm-deploy` | `arm-deploy` is a manual job in the protected environment `azure-local-deploy` | `id_tokens` and a federated token, or a managed identity |
+| Azure DevOps | `pipelines/azure-devops/arm-deployment.yml` | Stages `Preconditions`, `Validate`, `Deploy` | Approvals check on the environment `azure-local-deploy` | A service connection with workload identity federation |
+
+Pipeline inputs: the mode (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), the path of `infrastructure.yml`, the OS configuration report (the artifact of the OS configuration pipeline, or a repository path), the optional ZTP handoff, `resume`, and the known issue ids to acknowledge.
+
+- Use a self-hosted runner that reaches Azure over HTTPS (Linux with PowerShell 7 is enough). The Active Directory check also needs a domain-joined runner with the ActiveDirectory module; on any other runner it is reported as **Skipped**, never as passed.
+- The Deploy job re-runs every precondition and checks that **these parameters were validated** (the Validate's ARM deployment is named from a hash of the parameters), so an approval cannot start a Deploy of something that was never validated. The reviewer reads the Validate job's `summary.md`.
+- Passwords are read from the Key Vaults named by the `keyvault://` references in the master file. The identity needs `Get` on those secrets.
+
+The OS configuration step has its own pipelines (`pipelines/github/os-configuration.yml`, `pipelines/gitlab/os-configuration.gitlab-ci.yml`, `pipelines/azure-devops/os-configuration.yml`) with an approval before apply: see the pipeline pages for [GitHub Actions](../02-cicd-pipelines/github-actions.mdx), [GitLab CI/CD](../02-cicd-pipelines/gitlab-cicd.mdx) and [Azure DevOps](../02-cicd-pipelines/azure-devops-pipelines.mdx).
+
+---
+
+## What it checks first
+
+All checks are read-only. Each is `Passed`, `Failed` (stops the run, exit 1), `Warning`, or `Skipped` (with the reason). The report lists all of them. Skip a check on purpose with `deployment.skip_preconditions`; it still appears as Skipped.
+
+| Check | What it looks for | Typical fix |
+|-------|-------------------|-------------|
+| `AzureContext` | Signed in; the subscription and tenant are the file's | `Set-AzContext`, or fix `azure.subscription_id` |
+| `ResourceGroup` | `azure.resource_group` exists | Create it |
+| `ResourceProviders` | All 13 resource providers Microsoft requires are Registered. Any one that is not is **Failed**, never a Warning | `Register-AzResourceProvider -ProviderNamespace <name>`, or run with `-RegisterResourceProviders` |
+| `Permissions` | May write deployments, clusters, vaults, storage accounts and role assignments at the resource group | Owner, or Contributor plus User Access Administrator |
+| `NamesAvailable` | Diagnostic and witness storage account names and the new Key Vault's name are free | Pick another name; a soft-deleted vault keeps its name |
+| `KeyVaultSecrets` | Every `keyvault://` reference points at a listed vault and an existing secret (the value is not read) | Create the secret; grant `Get` |
+| `ArcMachinesConnected` | Each node's Arc machine exists, is Connected, is in the instance's resource group | Finish ZTP or Arc registration |
+| `ArcMachineNaming` | The Arc machine is named after the host. A device-ID name (`<id>-1`) fails the Deploy at step 0.41 on build 2690 | See the known issue below |
+| `OsConfigurationConverged` | The OS configuration report says every node converged, for this cluster | Run the OS configuration with `-Mode Apply` |
+| `OsBuildConsistent` | Every node runs the same OS build | Install the same build everywhere |
+| `SbeConsistent`, `SbeValidatedWithSolution` | The Solution Builder Extension is opt-in. With no `hardware.sbe.version` both pass with "deploying without a Solution Builder Extension". With a version the family must be set too, and the SBE must be validated with the solution version the nodes run | Set `hardware.sbe.family`, or remove the version to deploy without an SBE |
+| `DnsAndTime` | DNS servers set and valid, NTP set, no pending Dns or Time change in the OS report | Fix `networking.management.dns_servers` and `ntp_servers` |
+| `ActiveDirectoryPrepared` | The OU is not at the top of the domain; the LCM user name is 20 characters or fewer; the OU and user exist | Run Microsoft's Active Directory preparation |
+| `LocalIdentityPrerequisites` | `identity.local_identity.dns_zone` is set | Set it |
+| `NoLeftoverFailedDeployment` | No failed or running deployment that this run would damage | Resume with `-Mode Deploy -Resume`, never Validate again |
+| `ValidatedBeforeDeploy` | (Deploy only) Validation succeeded for these parameters | Run Validate |
+
+### The mandatory resource providers
+
+The 13 providers are the list in Microsoft Learn, [Assign required permissions for Azure Local deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610): `Microsoft.HybridCompute`, `Microsoft.GuestConfiguration`, `Microsoft.HybridConnectivity`, `Microsoft.AzureStackHCI`, `Microsoft.Kubernetes`, `Microsoft.KubernetesConfiguration`, `Microsoft.ExtendedLocation`, `Microsoft.ResourceConnector`, `Microsoft.HybridContainerService`, `Microsoft.Attestation`, `Microsoft.Storage`, `Microsoft.Insights` and `Microsoft.KeyVault`. A provider that is `Registering` still counts as missing until it is `Registered`.
+
+**Registration is opt in.** By default the run reads and never changes Azure. Pass `-RegisterResourceProviders` (or set `deployment.register_resource_providers: true`) to let a Validate or Deploy run register what is missing. It asks once per provider and reads their state every 10 seconds for up to 15 minutes. Plan mode and `-WhatIf` never change Azure. It needs Owner or Contributor on the subscription.
+
+### The Solution Builder Extension is opt-in
+
+A deployment without an SBE is a normal deployment. When `hardware.sbe` is absent, or has no `version`, the run passes none of the seven SBE parameters of Microsoft's template (`sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource`, `sbeManifestCreationDate`, `partnerProperties`, `partnerCredentiallist`). An SBE is passed only when `hardware.sbe.version` is set. If Azure still names an SBE problem in a run without an SBE (the nodes carry a package in `C:\SBE`), the known issue `sbe-referenced-but-not-configured` says so and offers both ways out.
+
+---
+
+## What it builds from the master file
+
+`parameter-sources.md` in the report directory shows, for your scenario, which `infrastructure.yml` key fed each ARM parameter. A required value that is empty ends the run (exit 2) with a message such as:
+
+```text
+ARM parameter adouPath (required when scenario.identity is active_directory) needs identity.active_directory.ou_path in infrastructure.yml, and it is empty.
+```
+
+All missing keys are listed at once. A design the generator does not support yet (iSCSI SAN, disconnected operations, Azure Government with local identity or a SAN, rack aware with a SAN or local identity) stops with exit 2 and says so.
+
+---
+
+## Re-running, resuming, waiting
+
+| Found in Azure | Validate | Deploy |
+|----------------|----------|--------|
+| Nothing | Submits | Refused: validate first |
+| Validated with these parameters | Not submitted again | Submits |
+| A validation of these parameters running | Attaches and waits | Refused |
+| A deployment running | Refused | Attaches and waits |
+| A failed deployment | **Refused** (Microsoft: another Validate can break license sync) | Refused, unless `-Resume` |
+| A succeeded deployment | Refused | Reports it, submits nothing |
+
+**Resume.** The portal has *Resume deployment*. For the ARM route Microsoft documents a second submission with the same parameters and `deploymentMode` Deploy; `-Resume` does that, under the same deployment name. Whether Azure continues at the failed step or restarts is not documented for the ARM route; the first step events after a resume show where it started. A failure whose known issue says "do not retry" (for example `arc-device-id-name`) blocks the resume until you acknowledge the issue.
+
+**Waiting.** The status is read every 15 s, growing by half each read to 120 s. Validate is given 90 minutes and Deploy 6 hours. At the limit the run ends in `ValidationTimedOut` or `DeploymentTimedOut` with exit 1; Azure keeps working and the next run **attaches** to it. Five failed reads in a row end the wait.
+
+---
+
+## When it fails
+
+The run names the failing step with the number the portal shows (for example `0.41`), copies the step's error text (secrets removed), and looks it up in `config/known-issues/arm-deployment.json`:
+
+| Id | Meaning | Retry |
+|----|---------|-------|
+| `arc-device-id-name` | Step *Deploy Arc infrastructure components*, `ParentResourceNotFound`: Arc machines named `<device-id>-1`, looked up by host name (build 2690) | no |
+| `arc-device-id-name-step-0-41` | Any failure at step 0.41: rule the above out first | no |
+| `unsupported-os-version` | "Unsupported OS version": a build the subscription does not accept, or nodes on different builds | after the fix |
+| `registration-5901` | 403 on the target Arc machine soon after the role assignment | once, after a wait |
+| `role-assignment-already-exists` | A portal attempt in the same resource group left the role assignment | after the fix |
+| `role-assignment-zombie` | Role assignments of deleted resources remain | after the fix |
+| `license-sync-after-failed-validate` | A second Validate after a failure | never Validate |
+| `ad-prerequisites` | OU, LCM user, GPO or rights (pattern, not yet seen in a run) | after the fix |
+| `dns-resolution` | The domain or an Azure endpoint does not resolve (pattern) | after the fix |
+| `vmswitch-not-bound` | Stale validation switch data (Learn) | after the fix |
+
+Add an entry when you understand a new failure; the run then explains it the next time.
+
+**You get the whole reason, not a cut-off line.** Azure reports a failed validation step (for example `0.170` *ValidateCluster*) with a long text: the EnvironmentValidator results as JSON, and inside the Test-Cluster result the `[!!Failed!!]` and `[!!Warning!!]` lines with the sentences that say why. The run keeps all of it in `report.json` (`validate.failedSteps[]`: `errors`, `results`, `checks`, and the Test-Cluster report path on the node), in `summary.md`, and in the events. Only the console line is cut, and it always ends with the path of `report.json`. Secrets are removed from every text.
+
+**Steps of an earlier run are not this run's.** The cluster resource keeps the steps of every earlier attempt until a new attempt runs them again. The run ignores a step older than the moment it submitted (by more than the allowed clock skew, `staleSkewMinutes`, 5) or one whose text names another deployment. Ignored steps are listed in `report.json` (`validate.ignoredSteps`), in `summary.md` and in one `StaleStepsIgnored` event; they are never the failing step.
+
+---
+
+## What you get
+
+| File | For |
+|------|-----|
+| `arm-deployment-events.jsonl` | One JSON line per event (`timestamp, node, stage, step, state, evidence, level, nextAction` plus data). Sonar can follow it |
+| `report.json` | Result, state history, every precondition, validation and deployment sections, failing steps, known issue, approval |
+| `summary.md` | The same for a person; the job summary in a pipeline |
+| `<cluster>.parameters.json` | The ARM parameter file. Secrets are null in it |
+| `parameter-sources.md` | Which key fed which parameter |
+
+Exit codes: **0** the requested part succeeded (Plan clean; Validate passed; Deploy succeeded; ValidateAndDeploy stopped at the approval gate); **1** a precondition failed, or the validation or deployment failed or timed out; **2** bad input (a file or a required key missing, an unsupported design, no Azure sign-in when one is needed).
+
+---
+
+## What is verified, and what is not
+
+Verified by the toolkit's tests with a fake Azure and a fake clock (no subscription touched): the parameters for AD and local identity, S2D and SAN, switchless and switched, 1, 2, 4 and 16 machines; every precondition with a passing and a failing case; the state machine; the wait including a 6 hour time-out; skip, attach, submit and resume decisions; the full failure text kept in the report; the steps of earlier runs ignored; the known-issue mapping on a fixture that copies a failure at step 0.41 on build 2690; the event feed, report, exit codes and secret scrubbing; and that the three pipeline files parse and carry the approval gate.
+
+**Not verified, because it needs Azure or a machine** (state this until a lab run confirms it): that the real deployment status carries the step numbers and times the code reads; the real ARM states during a Deploy; that a resubmitted Deploy resumes at the failed step; the permissions, name-availability and provider REST calls; the Active Directory lookup; the pipelines on a real runner; and Linux runs of the modules this one imports. The first run on a lab instance is the acceptance test: Plan, Validate, then a Deploy that is allowed to fail.
+
+---
+
+## References
+
+- [azurelocal-toolkit: ARM Validate and Deploy run guide](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/arm-deployment-guide.md)
+- [azurelocal-toolkit: design](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/design/arm-validate-deploy.md)
+- [azurelocal-toolkit: OS configuration and ARM deployment](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/os-configuration-and-arm-deployment.md)
+- [Microsoft Learn: Deploy Azure Local using an Azure Resource Manager template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610)
+- [Microsoft Learn: Assign required permissions for Azure Local deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610)
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [PowerShell Scripting Guide](./powershell.mdx) | [Part 3: Automation Guides](./index.mdx) | [Part 3: Automation Guides](./index.mdx) |

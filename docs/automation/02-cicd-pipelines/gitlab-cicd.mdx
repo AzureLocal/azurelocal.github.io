@@ -140,6 +140,29 @@ my-playbook:
     PLAYBOOK: playbooks/01-ad-preparation.yml
 ```
 
+## OS Configuration Pipeline
+
+**File**: `pipelines/gitlab/os-configuration.gitlab-ci.yml` (include it from `.gitlab-ci.yml`, or copy it). It runs `Invoke-AzureLocalOsConfiguration.ps1` and nothing else.
+
+| Stage | Job type | Description |
+|---|---|---|
+| `plan` | Automatic | Read only. Publishes the plan report and the wipe list (the disks that would be wiped on each node when `os_configuration.clear_storage` is true) as artifacts |
+| `apply` | **Manual** | Someone allowed to run protected jobs reads the plan job's log and artifacts, then plays it. `resource_group` keeps two runs from working on the cluster at once |
+
+Sign-in is `AZURE_AUTH` = `oidc` (a federated app registration, through `id_tokens`) or `managed-identity`. No secret is stored: the nodes' local administrator password is read from the Key Vault named by `identity.local_admin.password`. The runner needs a route to the nodes' management network for PowerShell remoting (WinRM), or `-Transport ArcRunCommand` for a site with no route. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+
+## ARM Validate and Deploy Pipeline
+
+**File**: `pipelines/gitlab/stages/arm-deployment.yml`. It declares its own stages (`arm-plan`, `arm-validate`, `arm-deploy`), so include it from a pipeline file of its own, **not** from `.gitlab-ci.yml`, whose stage list belongs to the Terraform and Ansible pipeline above.
+
+| Job | Stage | Description |
+|---|---|---|
+| `arm-preconditions` | `arm-plan` | Read only. Parameters and every precondition. Always runs |
+| `arm-validate` | `arm-validate` | Runs when `ARM_MODE` is `Validate` or `ValidateAndDeploy` |
+| `arm-deploy` | `arm-deploy` | **Manual** job in the protected environment `azure-local-deploy`. It re-checks every precondition and that these parameters validated. `ARM_RESUME=true` resubmits a failed Deploy |
+
+CI/CD variables: `ARM_MODE`, `AZURE_AUTH`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `INFRASTRUCTURE_FILE`, `OS_CONFIGURATION_REPORT`, `HANDOFF_FILE`, `ARM_ACKNOWLEDGE`. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+
 ## Repository
 
 Source: `azurelocal-toolkit/pipelines/gitlab/`

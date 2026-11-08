@@ -94,6 +94,29 @@ git push
 - **Self-Hosted Runner**: On-prem config stages run on runner with network access
 - **Path Filtering**: Only triggers on changes to IaC or config files
 
+## OS Configuration Workflow
+
+**File**: `pipelines/github/os-configuration.yml` (copy to `.github/workflows/os-configuration.yml`). It runs `Invoke-AzureLocalOsConfiguration.ps1` and nothing else.
+
+| Job | Description |
+|---|---|
+| `plan` | Read only. Publishes the plan report and the wipe list as an artifact and in the job summary |
+| `apply` | Runs for mode `Apply` only, after a reviewer of the environment `azure-local-os-configuration` approves it. The reviewer reads the plan job's summary, the wipe list included |
+
+Settings are variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) of an app registration with a federated credential for the repository and the environment, so there is **no client secret**. The runner needs a route to the nodes' management network for PowerShell remoting. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+
+## ARM Validate and Deploy Workflow
+
+**File**: `pipelines/github-actions/arm-deployment.yml` (copy to `.github/workflows/arm-deployment.yml`).
+
+| Job | Description |
+|---|---|
+| `preconditions` | Read only. Generates the ARM parameters and runs every precondition. Always runs |
+| `validate` | Runs for mode `Validate` and `ValidateAndDeploy` |
+| `deploy` | Runs for `ValidateAndDeploy` and `Deploy`, only after a reviewer of the environment `azure-local-deploy` approves. It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
+
+Inputs: `mode` (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), `infrastructure_file`, `os_configuration_run_id` (the artifact `os-configuration-report` of the OS configuration workflow) or `os_configuration_report`, `handoff_file`, `resume`, `acknowledge_known_issues`. One ARM deployment runs at a time per repository. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+
 ## Repository
 
 Source: `azurelocal-toolkit/pipelines/github-actions/`

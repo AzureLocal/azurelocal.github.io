@@ -28,6 +28,7 @@ This guide centralizes the automation assets used to deliver Azure Local in a re
 | 3 | Build the CI/CD foundation | [Part 1: CI/CD Infrastructure](./01-cicd-infra/) |
 | 4 | Choose a delivery platform | [Part 2: CI/CD Pipelines](./02-cicd-pipelines/) |
 | 5 | Use the tool-specific guides | [Part 3: Automation Guides](./03-automation-guides/) |
+| 6 | Automate the cluster ARM Validate and Deploy step | [ARM Validate and Deploy automation](./03-automation-guides/arm-validate-deploy.mdx) |
 
 ## Deployment Paths
 
@@ -36,6 +37,7 @@ This guide centralizes the automation assets used to deliver Azure Local in a re
 | **Terraform + PowerShell** | Terraform | PowerShell scripts | Teams with existing PowerShell operational workflows |
 | **Terraform + Ansible** | Terraform | Ansible playbooks | Teams preferring declarative configuration management |
 | **Ansible Only** | `azure.azcollection` | Ansible playbooks | Teams standardizing on Ansible across cloud and on-premises |
+| **PowerShell scripts from one `infrastructure.yml`** | ARM Validate and Deploy script | OS configuration script | Teams that provision with azurelocal-ztp (or an ISO), then configure and deploy from a jump server or a pipeline: [OS configuration](../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx), then [ARM Validate and Deploy](./03-automation-guides/arm-validate-deploy.mdx) |
 
 ## Why the Guide Is Split into Sections
 
@@ -47,10 +49,14 @@ This separation keeps platform setup, delivery orchestration, and tool implement
 
 ## Architecture
 
+:::info Two input models
+The diagram below is the Terraform and Ansible model, which reads a `variables.yml`-style file through the toolkit's `config-loader.ps1`. The ZTP, OS configuration and ARM Validate/Deploy tools read the **master `infrastructure.yml`** (schema 5.x) instead. That file, its schema, its templates and its variables reference are generated from the toolkit's master registry (`config/variables/schema/master-registry.yaml`), and a new variable is added to the registry first. Secrets are never in the file: a secret key holds only a `keyvault://<vault>/<secret>` reference.
+:::
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        variables.yml                                │
-│              (Single Source of Truth — 970+ variables)               │
+│              (Single Source of Truth for the Terraform and Ansible model)               │
 └────────────┬───────────────────┬──────────────────┬─────────────────┘
              │                   │                  │
      Export-TerraformTfvars  Export-AnsibleVars  Export-BicepParams
@@ -83,11 +89,11 @@ This separation keeps platform setup, delivery orchestration, and tool implement
 | [How to Use This Guide](./02-how-to-use-this-guide.mdx) | Reading order and how to combine this guide with the implementation guide |
 | [Part 1: CI/CD Infrastructure](./01-cicd-infra/) | Runner deployment, project setup, environments, and variables |
 | [Part 2: CI/CD Pipelines](./02-cicd-pipelines/) | Platform-specific delivery pipeline models |
-| [Part 3: Automation Guides](./03-automation-guides/) | Tool-specific guidance for Terraform, Ansible, Bicep, and PowerShell |
+| [Part 3: Automation Guides](./03-automation-guides/) | Tool-specific guidance for Terraform, Ansible, Bicep, and PowerShell, and the [ARM Validate and Deploy](./03-automation-guides/arm-validate-deploy.mdx) automation |
 
 ## Variable System
 
-All automation consumes the central `config/variables/variables.yml` file. Export functions transform YAML into tool-specific formats:
+The Terraform and Ansible model consumes a central variables file and exports it into tool-specific formats. The ZTP, OS configuration and ARM Validate/Deploy tools consume the master `infrastructure.yml` instead (see the note under Architecture); check which model a script reads before you run it. Export functions for the first model:
 
 ```powershell
 . scripts/common/utilities/helpers/config-loader.ps1
@@ -105,7 +111,8 @@ All automation code lives in the [azurelocal-toolkit](https://github.com/AzureLo
 |---|---|
 | `src/terraform/` | Terraform modules and root environment |
 | `src/ansible/` | Ansible roles, playbooks, and inventory |
-| `pipelines/` | CI/CD pipeline definitions |
+| `pipelines/` | CI/CD pipeline definitions: Terraform and Ansible deploy, CI/CD infrastructure, OS configuration, and ARM Validate and Deploy |
 | `scripts/deploy/` | PowerShell deployment scripts |
-| `config/variables/` | Central variable system |
+| `config/variables/` | Central variable system: the master registry, the `infrastructure.yml` schema, templates and the generated variables reference |
+| `docs/` | Operator guides for OS configuration and ARM Validate and Deploy, with their design and audit |
 
