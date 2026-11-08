@@ -8,8 +8,8 @@ scope: Operating system installation
 purpose: Complete Azure Stack HCI OS installation on all cluster nodes via Windows Setup, targeting the BOSS RAID-1 volume prepared in Task 01
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-03-04
-version: "1.1.0"
+updated: 2026-11-08
+version: "1.2.0"
 tags:
   - azure-local
   - os-installation
@@ -175,7 +175,7 @@ After the first reboot, Windows Server Core displays:
 > "The user's password must be changed before signing in."
 
 1. Click **OK**
-2. Enter a strong Administrator password meeting Azure Local Cloud password policy (8+ characters, mixed case, numbers, special characters)
+2. Enter a strong Administrator password that meets Azure password length and complexity requirements: at least 14 characters, containing a lowercase character, an uppercase character, a numeral and a special character (Microsoft Learn 2610). The local administrator password must later be identical on all machines
 3. Confirm the password
 4. Press **Enter** or click the arrow
 5. **"Your password has been changed"** — click **OK**
@@ -188,6 +188,14 @@ Record the Administrator password and store it in the Key Vault referenced in `v
 
 The Server Core command prompt (`C:\Users\Administrator>`) and `SConfig` menu appear. The node is now ready for Phase 03: OS Configuration.
 
+:::danger Do not, while configuring the OS (Microsoft Learn 2610)
+- **Do not install Windows Updates** with SConfig or Azure Update Manager (`Microsoft.SoftwareUpdateManagement.WindowsOsUpdateExtension`). Updates are installed during the deployment, and installing them beforehand causes a deployment failure.
+- **Do not use an underscore (`_`) in the computer name.** It is not supported because it impacts storage path creation. Set the name in [Phase 03, Task 10](../../phase-03-os-configuration/task-10-configure-hostname.mdx).
+- **Do not leave previously used non-OS drives or virtual media in place.** Clean all non-OS drives on each machine you intend to deploy, remove any virtual media used during OS install, and confirm no other root drives exist. This does not apply to a machine repair operation. Do not wipe SAN LUNs or other external storage this way: see [Phase 03, Task 11](../../phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional.mdx).
+- **Do not rely on inbox NIC drivers.** Inbox drivers are not supported for Azure Local; an adapter whose `DriverProvider` is `Microsoft` is using one. Install the OEM driver (check with `Get-NetAdapter -Name <AdapterName> | Select *Driver*`).
+- Copy a Solution Builder Extension to `C:\SBE` **only** if your hardware partner provides one. SBE is opt-in; it is never assumed.
+:::
+
 ### Step 10 — Repeat for All Nodes
 
 Perform Steps 1–9 for each remaining cluster node. Use parallel Virtual Console sessions where possible to reduce total installation time.
@@ -199,7 +207,8 @@ Perform Steps 1–9 for each remaining cluster node. Use parallel Virtual Consol
 - [ ] Windows Setup completed without errors on all nodes
 - [ ] OS installed to Drive 0 (BOSS card) — not to data drives
 - [ ] Correct partition layout: EFI + MSR + Primary
-- [ ] Administrator password set and stored in Key Vault
+- [ ] Administrator password set (14+ characters, complexity met) and stored in Key Vault
+- [ ] No Windows Updates installed through SConfig or Azure Update Manager
 - [ ] Server Core command prompt and SConfig accessible on all nodes
 - [ ] No installation errors or BSODs on first boot
 
@@ -215,11 +224,87 @@ Perform Steps 1–9 for each remaining cluster node. Use parallel Virtual Consol
 | Multiple drives shown, unsure which is BOSS | All drives visible | Select the smallest drive (~238 GB) — that is the BOSS RAID-1 volume |
 | "Windows cannot be installed to this disk" | Leftover partitions from prior install | Delete all existing partitions on Drive 0 before proceeding |
 | Installation hangs at "Getting ready" | ISO corruption or hardware fault | Reboot, re-mount ISO, retry |
-| Password complexity error | Password does not meet policy | Use 8+ characters with uppercase, lowercase, numbers, and symbols |
+| Password complexity error | Password does not meet policy | Use 14+ characters with uppercase, lowercase, numbers, and symbols |
 | BSOD on first boot | Driver issue | Verify correct Dell gold image version is being used |
 | No drives found at all | Missing storage drivers | Use the Dell gold image ISO — it includes required drivers |
 
 ---
+
+## Optional: domain join before deployment
+
+Starting with Azure Local 2604, you can domain join the machines **before** deployment. This is optional and applies to Active Directory deployments. For local identity deployments Microsoft Learn skips the AD prerequisites and verifies after deployment that the nodes report `WORKGROUP`, so do not domain join them.
+
+Microsoft Learn 2610 states: "Starting with version 2604, domain joining before deployment is supported. If you choose to domain join, you must add the deployment user to the local Administrators group. If you don't domain join beforehand, the machines are automatically joined to a domain during the Deployment via Azure portal."
+
+So there are two supported paths:
+
+| Path | What you do | Who joins the domain |
+|------|-------------|----------------------|
+| **Default (workgroup)** | Nothing. Leave the machines in the workgroup. | The deployment (Azure portal or ARM template) joins them. |
+| **Pre-join (2604 or later)** | Follow the steps below on every machine. | You do, before deployment. |
+
+Use the same path on every machine of an instance. Active Directory must already be prepared (OU and deployment user created, see Part 3 Phase 01), the node DNS must be the DNS of the domain you are joining, and the domain controller must be reachable from the machines.
+
+### Join procedure
+
+<Tabs groupId="domain-join-method">
+<TabItem value="sconfig" label="SConfig" default>
+
+1. On each machine, in `SConfig`, choose option **1 Domain/workgroup** and join the machine to your domain.
+2. Restart when prompted.
+3. Continue with [add the deployment user](#add-the-deployment-user-to-local-administrators).
+
+</TabItem>
+<TabItem value="powershell" label="PowerShell">
+
+```powershell title="Join the machine to the domain, directly into the deployment OU (run on each machine)"
+$domain = "<DOMAIN_FQDN>"                              # identity.ad.domain_fqdn
+$ouPath = "<DEPLOYMENT_OU_DISTINGUISHED_NAME>"        # identity.ad.organizational_unit
+Add-Computer -DomainName $domain -OUPath $ouPath -Credential (Get-Credential) -Restart
+```
+
+`-OUPath` is a standard `Add-Computer` parameter. Placing the computer object in the Azure Local deployment OU at join time is Azure Local Cloud practice, so that the object lives in the OU that `New-HciAdObjectsPreCreation` prepared; Learn does not prescribe the join cmdlet. Do not move computer objects to a different OU after deployment: that is not supported.
+
+</TabItem>
+</Tabs>
+
+### Add the deployment user to local Administrators
+
+Run on each domain-joined machine (the deployment user is the LCM deployment account you created during AD preparation). Learn gives this command:
+
+```powershell
+Add-LocalGroupMember -Group "Administrators" -Member "DOMAIN\deploymentuser"
+```
+
+### Validate
+
+Run on each machine and confirm the results:
+
+```powershell
+$cs = Get-CimInstance Win32_ComputerSystem
+[pscustomobject]@{
+  Computer     = $cs.Name
+  PartOfDomain = $cs.PartOfDomain          # Expected: True
+  Domain       = $cs.Domain
+}
+
+# Expected: the deployment user is listed
+Get-LocalGroupMember -Group "Administrators" | Where-Object Name -like "*deploymentuser*"
+
+# Expected: the computer object is in the deployment OU (run where the AD module is available)
+Get-ADComputer -Identity $env:COMPUTERNAME | Select-Object Name, DistinguishedName
+```
+
+| Check | Expected |
+|-------|----------|
+| `PartOfDomain` | `True` on every machine (pre-join path), `False` on every machine (default path) |
+| Deployment user | Member of local Administrators on every pre-joined machine |
+| Computer object | In the deployment OU, not in the default Computers container |
+| Environment Checker | Run the software validator with `-Exclude Test-IsNotPartofDomain`, per Microsoft Learn, so a pre-joined machine does not fail that check |
+
+:::warning Do not mix paths
+If the validation shows `PartOfDomain = True` on a machine you meant to leave in the workgroup, either complete the pre-join steps (add the deployment user) or remove the machine from the domain before you continue. Microsoft Learn documents both paths, not a partial one.
+:::
 
 ---
 
