@@ -455,7 +455,7 @@ Write-Host "VNets: $($discovery.vnets.Count)"
 
 ## Part 5: SAN and FC Fabric Infrastructure
 
-*Complete this section only for disaggregated SAN deployments. Skip if using Storage Spaces Direct.*
+*Complete this section for disaggregated SAN deployments and for hybrid (Storage Spaces Direct plus SAN) designs. Skip if using Storage Spaces Direct only. The iSCSI items below apply when the SAN protocol is iSCSI instead of Fibre Channel.*
 
 **Feeds: Phase 03 Tasks 12–14 (FC HBA drivers, MPIO, LUN presentation)**
 
@@ -501,23 +501,35 @@ Write-Host "VNets: $($discovery.vnets.Count)"
 |-----|---------|----------|-------------|-------|
 | Infrastructure Volume | Azure Local system | 250 GB | ☐ Yes ☐ No | Must be RAW |
 | Performance History | Cluster metrics | 20 GB | ☐ Yes ☐ No | Must be RAW |
-| Workload LUN 1 | `________________________` | `_______ GB` | ☐ Yes ☐ No | Initialize post-deployment |
-| Workload LUN 2 | `________________________` | `_______ GB` | ☐ Yes ☐ No | Initialize post-deployment |
+| Workload LUN 1 | `________________________` | `_______ GB` | ☐ Yes ☐ No | Configured after deployment |
+| Workload LUN 2 | `________________________` | `_______ GB` | ☐ Yes ☐ No | Configured after deployment |
+
+### iSCSI Network Inventory (iSCSI only)
+
+| Setting | Path A | Path B |
+|---------|--------|--------|
+| **Dedicated physical iSCSI port per node (no vNICs)** | `________________________` | `________________________` |
+| **VLAN** | `______` (pattern default 300) | `______` (pattern default 400) |
+| **Target portal IP(s)** | `________________________` | `________________________` |
+| **MTU (storage vendor value, end to end)** | `______` | `______` |
+| **Static /32 routes needed (targets one or more L3 hops away)** | ☐ Yes ☐ No | ☐ Yes ☐ No |
 
 ### FC Zoning Checklist
 
-- [ ] Single-initiator/single-target zoning policy confirmed with SAN admin
+Timing: for a **disaggregated** deployment, zone before Arc registration (the LUNs must be visible and RAW before registration). For a **hybrid** deployment, do not zone until after the Azure Local cluster is deployed.
+
+- [ ] Redundant single-initiator zoning policy confirmed with SAN admin (one initiator to one target is the Azure Local Cloud standard)
 - [ ] WWPN aliases created on both fabric switches (per node and per SAN port)
 - [ ] Zones created on Fabric A: `______` zones
 - [ ] Zones created on Fabric B: `______` zones
 - [ ] Zonesets activated on both fabrics
-- [ ] LUN presentation verified from all nodes (`Get-PhysicalDisk -BusType FC`)
+- [ ] LUN presentation verified from all nodes (`Get-PhysicalDisk | Where-Object BusType -eq 'Fibre Channel'`; the bus type string contains a space)
 - [ ] Infrastructure and performance history LUNs confirmed RAW
 
 **References:**
 - [Storage Architecture Planning](./07-storage-planning.mdx)
-- [Microsoft Learn — FC without backup pattern](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2609)
-- [Microsoft Learn — FC with backup pattern](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2609)
+- [Microsoft Learn — FC without backup pattern](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2610)
+- [Microsoft Learn — FC with backup pattern](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2610)
 
 ---
 

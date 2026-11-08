@@ -61,13 +61,13 @@ Microsoft publishes the following minimums. Microsoft Support may only be provid
 | **Memory** | 32 GB per machine, ECC | 128 GB or more per node, 256+ GB recommended | Add capacity for Arc VM management and workloads |
 | **Boot drive** | 200 GB | 480+ GB SSD | 400 GB or more for machines with more than 768 GB RAM. BOSS card or M.2 recommended |
 | **Data drives** | At least 2 drives per machine, 500 GB or more each | 4+ NVMe | All-flash recommended. Same count, type, capacity, and firmware at deployment |
-| **Host network adapters** | At least 2 adapters from the Windows Server Catalog | 4+ NICs | RDMA-capable for storage |
+| **Host network adapters** | At least 2 adapters from the Windows Server Catalog, qualified for the traffic type they carry (management, compute, storage). Inbox drivers are not supported | 4+ NICs | RDMA-capable adapters for the storage intent. Intent patterns use 2, 4, 6 or 8 ports per node |
 | **TPM, Secure Boot, BIOS** | TPM 2.0 present and enabled, Secure Boot enabled, Intel VT or AMD-V on | Same | Required for deployment |
 
 Maximums: 512 logical processors per host, 24 TB RAM per host, and 2,048 virtual processors per host. GPU memory up to 192 GB per machine is supported.
 
-:::note Verified against Microsoft Learn (October 2026)
-See [System requirements for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2609). The 16 core and 128 GB figures used by the validation script below are the Cloud Standard baseline, not Microsoft requirements. Machines that cannot meet the memory and ECC requirement can use a [virtual deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-virtual?view=azloc-2609) for testing.
+:::note Verified against Microsoft Learn (November 2026, view azloc-2610)
+See [System requirements for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610). The 16 core and 128 GB figures used by the validation script below are the Cloud Standard baseline, not Microsoft requirements. Machines that cannot meet the memory and ECC requirement can use a [virtual deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-virtual?view=azloc-2610) for testing.
 :::
 
 :::tip Size before you buy
@@ -93,12 +93,14 @@ Use [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) to model S2D capac
 | Interface | Speed | RDMA | Purpose |
 |-----------|-------|------|---------|
 | **Management** | 1 GbE or 10 GbE | No | Cluster management, iDRAC |
-| **Storage** | 25 GbE or 100 GbE | **Required** | Storage Spaces Direct (S2D) |
-| **Compute/VM** | 25 GbE or 100 GbE | Optional | VM traffic, SDN |
+| **Storage** | 25 GbE or 100 GbE (10 Gb is the minimum for RDMA) | **Required** for S2D storage traffic (RoCEv2 or iWARP) | Storage Spaces Direct (S2D). Disaggregated SAN deployments have no RDMA storage intent |
+| **Compute/VM** | 25 GbE or 100 GbE | No (guest RDMA is not supported) | VM traffic, SDN |
 
 **RDMA Technologies Supported:**
-- **RoCEv2** (RDMA over Converged Ethernet v2) - Preferred
-- **iWARP** - Alternative for environments without DCB
+- **RoCEv2** (RDMA over Converged Ethernet v2) - Preferred; requires PFC and ETS on every port including the switches
+- **iWARP** - Alternative for environments without DCB; the choice Learn gives for teams that don't manage ToR switches
+
+RDMA adapters only work with adapters that use the same RDMA protocol, InfiniBand isn't supported, and Learn's RDMA vendor table lists Broadcom and Nvidia as RoCE only, Intel and Marvell (Qlogic) as iWARP and RoCE (some Intel models). Jumbo frames: Learn recommends an MTU of 9216 bytes on the physical switches for RDMA storage traffic.
 
 ---
 
@@ -112,7 +114,7 @@ Use [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) to model S2D capac
 | **iDRAC Firmware** | 7.0.0 | Latest stable | iDRAC 9 required |
 | **NIC Firmware** | Varies by model | Latest validated | Check Azure Local catalog |
 | **RAID Controller** | Varies by model | Latest stable | PERC/HBA firmware |
-| **Dell SBE Package** | 4.2.2512 | 4.2.2512.1616+ | Solution Builder Extension |
+| **Dell SBE Package** | 4.2.2512 | 4.2.2512.1616+ | Solution Builder Extension. **Opt-in only**: used only if the hardware partner provides one, never by default |
 
 ### Dell Gold Image
 
@@ -120,10 +122,10 @@ Azure Local Cloud standard Dell Gold Image specifications:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| **Windows Server Build** | 2510 | Azure Local OS |
+| **Windows Server Build** | 2510 | Azure Local OS (value from earlier engagements; the 2610 release runs OS build 26100.33650, so confirm the gold image for the 2610 media with Dell) |
 | **SBE Version** | 4.2.2512.1616 | Dell Solution Builder Extension |
 | **Dell Solution Version** | 12.2510.0.3165 | Integrated solution package |
-| **Azure Local Build** | 2601 | Running version after Arc registration |
+| **Azure Local Build** | 2601 | Running version after Arc registration (earlier engagement value; the latest release is 12.2610.1004.50, see [Releases and Support Lifecycle](./08-release-and-support-lifecycle.mdx)) |
 
 ### Firmware Validation
 
@@ -438,8 +440,8 @@ Example: 4-node cluster, 1 HBA port per node per fabric, 2 SAN target ports per 
 
 **References:**
 - [Storage Architecture Planning](./07-storage-planning.mdx)
-- [Microsoft Learn — FC planning pattern without backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2609)
-- [Microsoft Learn — FC planning pattern with backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2609)
+- [Microsoft Learn — FC planning pattern without backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2610)
+- [Microsoft Learn — FC planning pattern with backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2610)
 
 ---
 

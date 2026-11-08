@@ -62,8 +62,8 @@ This section covers discovery activities performed **once per deployment program
 Decide the identity model before the cluster is deployed. It is chosen during deployment, and the planning and design inputs differ.
 
 - [ ] **Identity model**
-- ☐ Active Directory (domain-joined machines; Active Directory preparation and DNS are prerequisites)
-- ☐ Local identity with Azure Key Vault (previously called AD-less; no Active Directory dependency)
+- ☐ Active Directory (Active Directory preparation and DNS are prerequisites). Machines either stay in a workgroup and are joined to the domain by the deployment, or are joined to the domain before deployment (optional, supported from version 2604; the deployment user must be in the local Administrators group)
+- ☐ Local identity with Azure Key Vault (previously called AD-less; no Active Directory dependency; machines stay in a workgroup, static node IPs only, DHCP is not supported)
 - Reason for the choice: `________________________________`
 - [ ] **If local identity with Azure Key Vault**
 - Key Vault in the landing zone subscription, with public network access enabled so the instance can reach it: ☐ Yes ☐ No
@@ -391,8 +391,10 @@ This section covers Active Directory and enterprise network preparation.
 
 - [ ] **DHCP and DNS**
 - DHCP server: `________________________________`
-- DNS servers: `________________________________`
+- DNS servers: `________________________________` (**cannot be changed after deployment**: the same servers on every node and on the infrastructure IP range, at least one outside the Azure Local instance, no public resolvers such as 8.8.8.8)
 - NTP servers: `________________________________`
+- Node and cluster IP assignment: ☐ Static ☐ DHCP with reservations (the management IP pool is needed either way; local identity requires static)
+- Internal ranges avoided for node, cluster, infrastructure pool, DNS, proxy and gateway IPs: ☐ `10.96.0.0/12` ☐ `10.244.0.0/16` (new 2610 deployments use `10.96.0.0/24` for the Arc resource bridge service range; plan around `10.96.0.0/12` to be safe)
 
 ## Part 3: Site-Specific Discovery
 
@@ -420,9 +422,13 @@ This section covers per-site hardware, network, and workload planning.
 - iDRAC IPs: `________________________________`
 
 - [ ] **Network Interfaces**
+- Network adapter ports per node: ☐ 2 ☐ 4 ☐ 6 ☐ 8 (at least two ports per intent)
+- Intent pattern (hyperconverged): ☐ 2 ports, all traffic in one intent (switch for storage) ☐ 4 ports, management and compute on Port 1 and 2, storage on Port 3 and 4 ☐ 6 ports, management Port 1 and 2, compute Port 3 and 4, storage Port 5 and 6 ☐ 8 ports, adds a second compute or backup intent ☐ Custom
+- Storage connectivity: ☐ Switched ☐ Switchless (1 to 4 nodes; 3 and 4 nodes need an ARM template with explicit storage IPs)
 - Management NICs: `________________________________`
-- Storage NICs: `________________________________`
+- Storage NICs (RDMA-capable, RoCEv2 or iWARP; RDMA and jumbo frames apply to the storage intent; guest RDMA is not supported): `________________________________`
 - VM NICs: `________________________________`
+- If disaggregated: ☐ FC 4 ports ☐ FC 6 ports (guest backup) ☐ iSCSI 6 ports (dedicated iSCSI path A and B); cluster networks on VLANs `______`, `______` (defaults 1711 and 1712), outside Network ATC
 
 ### Section 12: Naming Standards Workshop
 
@@ -454,10 +460,12 @@ This section covers per-site hardware, network, and workload planning.
 
 - [ ] **Storage Topology Decision**
 
-  - Storage topology selected: ☐ Storage Spaces Direct (S2D/hyperconverged) ☐ Disaggregated SAN
+  - Storage topology selected: ☐ Storage Spaces Direct (S2D/hyperconverged) ☐ Hybrid (S2D now, SAN attached after deployment) ☐ Disaggregated SAN (no S2D)
+  - SAN protocol (if any): ☐ Fibre Channel ☐ iSCSI ☐ Dell PowerFlex (software initiator)
   - Decision rationale: `________________________________`
+  - Billing impact reviewed (SAN means the Azure Local L2 tier and no Azure Hybrid Benefit): ☐ Yes
 
-- [ ] **If SAN Disaggregated:**
+- [ ] **If SAN (hybrid or disaggregated):**
 
   - SAN array vendor and model: `________________________________`
   - SAN array firmware version: `________________________________`
@@ -465,22 +473,24 @@ This section covers per-site hardware, network, and workload planning.
   - FC switch vendor and model (Fabric A): `________________________________`
   - FC switch vendor and model (Fabric B): `________________________________`
   - FC switch firmware version: `________________________________`
-  - HBA vendor and model (per node): `________________________________`
+  - HBA vendor and model (per node, Windows Server 2025 certified): `________________________________`
   - Number of HBA ports per node: `______`
   - Dual-fabric topology confirmed: ☐ Yes ☐ No
+  - If iSCSI: dedicated physical iSCSI ports per node (no vNICs): `______`, target portal IPs and VLANs documented: ☐ Yes ☐ Pending
 
-- [ ] **LUN Layout (SAN only)**
+- [ ] **LUN Layout (disaggregated SAN only)**
 
   - Infrastructure LUN size (≥250 GB): `____ GB`
   - Infrastructure LUN provisioned and RAW: ☐ Yes ☐ Pending
   - Performance history LUN size (≥20 GB): `____ GB`
   - Performance history LUN provisioned and RAW: ☐ Yes ☐ Pending
-  - Workload LUN count and sizes: `________________________________`
+  - Workload LUN count and sizes (configured after deployment): `________________________________`
 
-- [ ] **FC Zoning Policy**
-  - Zoning policy: ☐ Single-initiator/single-target (recommended) ☐ Other
-  - WWPNs collected from all nodes: ☐ Yes ☐ Pending (Task 12)
-  - Zones configured in both fabrics: ☐ Yes ☐ Pending
+- [ ] **FC Zoning Policy and Timing**
+  - Zoning policy: ☐ Redundant single-initiator (Microsoft wording) ☐ Single-initiator/single-target (Azure Local Cloud standard) ☐ Other
+  - Disaggregated: WWPNs collected from all nodes (Phase 03 Task 12) and zones configured before Arc registration: ☐ Yes ☐ Pending
+  - Hybrid: zoning deliberately **not** done until after the S2D cluster is deployed: ☐ Confirmed
+
 
 ## Implementation Readiness Checklist
 

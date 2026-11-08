@@ -2,26 +2,30 @@
 title: "Storage Architecture Planning"
 sidebar_label: "Storage Architecture"
 sidebar_position: 8
-description: "Storage architecture decision guide for Azure Local deployments — S2D vs SAN disaggregated topology"
+description: "Storage architecture decision guide for Azure Local deployments: Storage Spaces Direct, hybrid (Storage Spaces Direct plus SAN) and disaggregated SAN over Fibre Channel or iSCSI"
 category: "Reference"
 scope: "Storage architecture planning for Azure Local"
 purpose: "Guide storage architecture decisions and document SAN requirements before deployment"
 author: "Azure Local Cloud"
 created: 2026-05-02
-updated: 2026-05-02
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags:
   - azure-local
   - planning
   - storage
   - san
   - s2d
+  - hybrid
+  - iscsi
 keywords:
   - storage planning
   - S2D
   - SAN
   - disaggregated
+  - hybrid storage
   - Fibre Channel
+  - iSCSI
   - MPIO
 status: "Active"
 ---
@@ -29,40 +33,46 @@ status: "Active"
 # Storage Architecture Planning
 
 [![Runbook](https://img.shields.io/badge/Type-Reference-blue?style=flat-square)](./index.mdx)
-[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/?view=azloc-2610)
 
 > **DOCUMENT CATEGORY**: Reference
 > **SCOPE**: Storage architecture planning
 > **PURPOSE**: Guide storage architecture decisions and document SAN requirements
-> **MASTER REFERENCE**: [Microsoft Learn — Storage overview for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/storage-spaces-direct-overview?view=azloc-2609)
+> **MASTER REFERENCE**: [Microsoft Learn — Storage overview for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/storage-spaces-direct-overview?view=azloc-2610)
 
 **Status**: Active
+**Validated against**: Microsoft Learn, view `azloc-2610` (solution 12.2610.1004.50)
 
 ---
 
 ## Overview
 
-Azure Local supports two storage topologies:
+Azure Local supports three storage topologies:
 
-- **Hyperconverged (Storage Spaces Direct — S2D):** Storage is provided by NVMe and SSD drives local to each cluster node. S2D pools these drives into a single distributed volume namespace managed by Windows Cluster Shared Volumes. No external storage hardware is required.
-- **Disaggregated (External SAN via Fibre Channel or iSCSI):** Storage is provided by an external SAN array connected to cluster nodes over Fibre Channel fabric. This topology requires FC HBAs in each node, dual FC switches for redundancy, and LUN provisioning on the SAN array before deployment.
+- **Hyperconverged (Storage Spaces Direct, S2D):** Storage is provided by NVMe and SSD drives local to each node. S2D pools these drives into a distributed volume namespace managed by Cluster Shared Volumes. No external storage hardware is required. 1 to 16 machines.
+- **Hybrid (S2D plus an external SAN):** A standard hyperconverged instance is deployed first, then Fibre Channel or iSCSI SAN volumes are attached as a day-2 operation and run side by side with S2D. You choose S2D or SAN volumes per workload for VMs, AKS and Azure Virtual Desktop. You cannot deploy a hybrid configuration from the start.
+- **Disaggregated (SAN only):** There is no Storage Spaces Direct. The cluster uses an external SAN over Fibre Channel or iSCSI, and compute and storage scale independently, up to 64 machines. LUNs for the infrastructure volume and performance history must be presented before deployment.
 
-This page covers the decision criteria between the two topologies, LUN layout requirements for SAN deployments, and FC connectivity hardware requirements.
+Supported SAN connectivity is **Fibre Channel (FC)** and **iSCSI**; Dell PowerFlex is supported through a software initiator. iSCSI was in preview from 2605 and is generally available from 2607 for both hybrid and disaggregated deployments. Fibre Channel hybrid requires version 2604 or later. FCoE is not among the supported SAN protocols.
+
+This page covers the decision criteria between the topologies, the LUN layout for SAN deployments, the network and hardware planning each one needs, and the commercial effect of choosing a SAN.
 
 ---
 
-## S2D vs SAN Decision Matrix
+## S2D vs Hybrid vs SAN Decision Matrix
 
-Use this matrix during the discovery and planning phase to inform the storage topology recommendation.
+Use this matrix during discovery and planning to inform the storage topology recommendation.
 
-| Factor | Favors S2D | Favors SAN |
-|--------|-----------|-----------|
-| **Existing SAN infrastructure** | No SAN in place — greenfield | Existing certified FC SAN array already deployed |
-| **Latency requirements** | Standard enterprise workloads — NVMe local latency is sufficient | Sub-millisecond consistency requirements met only by specific array models |
-| **Team FC expertise** | Team is software-defined storage focused | FC fabric administration skills already present |
-| **Future workload growth** | Workloads are node-bound — scale out by adding nodes | Storage must be shared across Azure Local and non-Azure Local workloads |
-| **Budget for SAN array** | Minimizing capital expenditure on dedicated storage hardware | SAN array budget already allocated or amortized from existing investment |
-| **Cluster node count** | 2–16 nodes where S2D resiliency meets RTOs | Large existing SAN estate with multiple host types sharing the same array |
+| Factor | Favors S2D | Favors hybrid (S2D plus SAN) | Favors disaggregated SAN |
+|--------|-----------|------------------------------|--------------------------|
+| **Existing SAN infrastructure** | No SAN in place, greenfield | Existing certified SAN to reuse for some workloads | Existing certified SAN to use as the only storage |
+| **Latency requirements** | Standard enterprise workloads; local NVMe latency is sufficient | Selected workloads need array features or latency that only the array provides | Array-class latency for all workloads |
+| **Team skills** | Software-defined storage focus | S2D skills plus SAN or FC fabric administration | SAN administration skills already present |
+| **Growth model** | Scale out by adding nodes | Shared storage for some workloads, node-bound for the rest | Compute and storage must scale independently (up to 64 machines) |
+| **Budget** | Minimize capital expenditure on dedicated storage | SAN already allocated, S2D hardware still bought | SAN amortized from existing investment, no local capacity drives |
+| **Cluster size** | 1 to 16 nodes where S2D resiliency meets RTOs | 1 to 16 nodes (hyperconverged) | More than 16 nodes, or a large SAN estate shared with other hosts |
+| **Rack aware** | Supported | **Not supported** with external SAN on a hyperconverged instance | Preview for disaggregated FC with synchronous array replication (see [Rack Aware Clustering](./09-rack-aware-clustering.mdx)) |
+| **Billing tier** | Azure Local (L1) | Azure Local (L2) after the trial | Azure Local (L2) after a 60-day free trial |
 
 ---
 
@@ -70,105 +80,156 @@ Use this matrix during the discovery and planning phase to inform the storage to
 
 ### Storage Spaces Direct (S2D)
 
-S2D is the default topology for Azure Local and the right choice in most deployments.
+S2D is the default and, for most deployments, the right choice.
 
 **Select S2D when:**
 
 - There is no existing SAN investment to leverage
 - The deployment is greenfield with no legacy storage dependencies
 - The team prefers software-defined storage administration over FC fabric management
-- All storage capacity and performance requirements can be met by local NVMe drives in the cluster nodes
-- The deployment does not require sharing storage between Azure Local and other platforms
+- Capacity and performance requirements can be met by local NVMe or SSD drives
+- The deployment does not need to share storage with other platforms
 
-S2D is the **preferred topology for most deployments**. It reduces hardware dependencies, simplifies cabling, and aligns with the Azure Local hyperconverged reference architecture.
+It reduces hardware dependencies, simplifies cabling, and aligns with the Azure Local hyperconverged reference architecture.
+
+### Hybrid (S2D plus SAN)
+
+Select hybrid when you need S2D as the base and an existing certified SAN for particular workloads.
+
+**Plan for hybrid when:**
+
+- An existing certified FC or iSCSI SAN array holds data or services that should sit beside Azure Local workloads
+- Some workloads fit the SAN's data services better than S2D
+- You accept that the SAN is attached **after** the cluster is deployed and running
+
+**Planning rules from Microsoft:**
+
+- The SAN is always a day-2 operation on a hyperconverged cluster at **version 2604 or later**. You can't deploy hybrid from the start, so plan the fabric and adapters up front even though you connect them afterwards.
+- **Fibre Channel:** install Windows Server 2025 certified HBAs and drivers on all nodes, but **do not zone HBA World Wide Names until after the Azure Local deployment**. Zoning earlier can confuse the deployment for FC LUNs.
+- **iSCSI:** dedicated **physical** ports for iSCSI are required. vNICs are not supported. NIC firmware and drivers must match the Azure Local hardware catalog and all nodes must use identical NIC configurations.
+- SAN connectivity uses separate adapters and fabrics that **Network ATC does not manage**. The S2D storage network stays as designed for switched or switchless.
+- MPIO is enabled by default from 2604. Volumes are presented as NTFS Cluster Shared Volumes, each appearing as a folder path you map to a storage path.
+- Rack aware clusters are not supported with external SAN storage on hyperconverged deployments.
+
+The day-2 procedure is [Phase 06 Task 10: Enable external storage (hybrid)](../implementation/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid.mdx).
 
 ### Disaggregated SAN
 
-Select SAN disaggregated topology only when specific conditions apply.
+Select the SAN-only topology only when specific conditions apply.
 
-**Select SAN when:**
+**Select disaggregated SAN when:**
 
-- The customer already has FC SAN infrastructure that is certified for Azure Local and is actively maintained
-- There is a documented requirement to share storage between Azure Local nodes and other workloads (physical servers, other hypervisors) attached to the same SAN array
-- Specific IOPS or latency requirements are best met by certified SAN arrays already on-site and those requirements cannot be satisfied by local NVMe in the node configuration being deployed
-- FC HBA expertise and FC fabric administration capability are already present in the operations team — the ongoing operational overhead of dual-fabric FC is accepted
+- The customer already has a certified FC or iSCSI SAN that is actively maintained
+- Storage must be shared with other workloads (physical servers, other hypervisors) on the same array
+- Compute and storage must scale independently, or the cluster needs more than 16 machines
+- IOPS or latency needs are best met by the on-site certified array and cannot be met by local NVMe in the node design
+- SAN administration capability is present and the ongoing overhead is accepted
 
 :::warning Operational overhead
-Disaggregated SAN adds ongoing complexity: FC fabric management, zoning maintenance, LUN masking, array firmware lifecycle, and MPIO driver currency across cluster nodes. Confirm this is accepted before recommending the topology.
+Disaggregated SAN adds ongoing complexity: fabric management (FC zoning or iSCSI paths), LUN masking, array firmware lifecycle, and MPIO currency across all nodes. Confirm this is accepted before recommending the topology.
 :::
 
 ---
 
-## SAN LUN Layout (Disaggregated deployments only)
+## SAN LUN Layout (Disaggregated deployments)
 
-The Azure Local deployment wizard expects specific LUN states at deployment time. LUNs that will be claimed by the wizard must be RAW — no partition table, no file system, no drive letter. Any initialization before deployment runs will cause the wizard to fail.
+At deployment time the system needs two LUNs, and they must be **RAW**: no partition table, no file system, no drive letter. Initializing either of them before the deployment runs makes it fail.
 
-| LUN | Purpose | Minimum Size | Partition State | Notes |
-|-----|---------|--------------|-----------------|-------|
-| Infrastructure Volume | Azure Local system volume | 250 GB | **RAW** (no partition table) | Wizard claims and formats this LUN during deployment |
-| Performance History | Cluster metrics collection | 20 GB | **RAW** | Must remain RAW before deployment wizard runs |
-| Workload CSVs | VM workload data | Per capacity plan | Initialized post-deployment | Provisioned on the SAN array pre-deployment but formatted and added to CSV namespace after the deployment wizard completes |
+| LUN | Purpose | Minimum Size | Partition State at deployment | Notes |
+|-----|---------|--------------|-------------------------------|-------|
+| Infrastructure volume | Azure Local system volume | 250 GB | **RAW** | The deployment claims and formats this LUN |
+| Performance history | Cluster metrics collection | 20 GB | **RAW** | Must stay RAW until deployment |
+| Workload CSVs | VM workload data | Per capacity plan | Not needed at deployment | Learn configures workload LUNs **after** deployment. Presenting them earlier is optional and raises the risk that someone initializes them by accident, so present them after the cluster is up unless you have a reason not to |
 
-:::danger Critical: Do NOT initialize LUNs before deployment
-The Infrastructure Volume and Performance History LUNs must remain RAW (no partition table) until the Azure Local deployment wizard runs. Initializing either LUN — using Disk Management, `diskpart`, or any storage array management tool — before the wizard executes will cause the deployment to fail. Provision these LUNs on the array and present them to the nodes, then leave them untouched.
+Every LUN must be presented to **all** cluster nodes with the same LUN ID (no partial presentation), and all nodes must have identical HBA configuration and zoning. Only NTFS volumes are supported for SAN-backed CSVs, and each LUN is dedicated to one CSV.
+
+:::danger Critical: do not initialize the LUNs before deployment
+The infrastructure and performance history LUNs must stay RAW. Initializing either with Disk Management, `diskpart` or an array tool before the deployment runs causes the deployment to fail. Present them to the nodes and leave them untouched. This also means a local-disk wipe must never touch SAN disks (see Phase 03 Task 11).
 :::
+
+### When the LUNs must be visible
+
+For a disaggregated deployment the machines must **see the LUNs before Azure Arc registration**: install the HBA driver, retrieve the WWPNs, have the SAN administrator unmask the LUNs to the HBAs, configure MPIO, then confirm the LUNs appear in `Get-PhysicalDisk` before you register with Arc. That means FC zoning for a disaggregated cluster is done before Arc registration, in Phase 03. Hybrid is the opposite: do not zone FC until after the cluster is deployed. Don't mix the two rules.
+
+For iSCSI, starting with version 2610 (connected and disconnected deployments) **don't manually enable iSCSI on the machines before deployment**; the deployment wizard includes the iSCSI configuration, including per-node iSCSI settings. For versions 2604 to 2609, configure iSCSI manually first. Only dedicated adapters are supported for iSCSI, and the inbox driver must not be used.
+
+---
+
+## Host Networking for SAN
+
+Microsoft publishes three disaggregated reference patterns. There is no FCoE pattern.
+
+| Pattern | Ethernet ports per node | Notes |
+|---------|------------------------|-------|
+| [Fibre Channel, no backup network](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2610) | 4: management and compute on ports 1 and 2 (SET, Network ATC), cluster networks on standalone ports 3 and 4 | Plus dual-port FC HBAs (port A to switch A, port B to switch B) |
+| [Fibre Channel, with backup network](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2610) | 6: as above plus a guest backup compute intent on ports 5 and 6 (SET) | |
+| [iSCSI, 6 network adapters](https://learn.microsoft.com/en-us/azure/azure-local/plan/iscsi-6-network-adapters-disaggregated-pattern?view=azloc-2610) | 6: management and compute (SET), two standalone cluster ports (VLANs 1711 and 1712), two standalone dedicated iSCSI ports (path A VLAN 300, path B VLAN 400) | Optional in-guest backup network added after deployment; dedicated adapters only |
+
+Rules common to disaggregated deployments:
+
+- There is no S2D and no RDMA storage intent. **RDMA and jumbo-frame storage settings are an S2D storage-intent concern**, not a disaggregated one.
+- Network ATC manages only the management and compute intent. The cluster networks (CSV, Live Migration, heartbeat over SMB Multichannel) run on standalone ports that Network ATC does not manage. The default cluster VLANs are 1711 and 1712.
+- All of this traffic is TCP, so **PFC and lossless Ethernet are not required**. Learn also says host-side DCB or ETS isn't needed on a routed multi-rack fabric because 802.1p CoS is discarded when a leaf routes the frame; engineer the fabric for capacity instead. Learn's FC pattern pages still list CoS and ETS reservations for a single-rack L2 design (priority 0 about 78 to 79 percent, priority 3 CSV and Live Migration 20 percent, priority 7 heartbeat 1 to 2 percent, PFC off). Pick the approach that fits the fabric; this difference between two Learn pages is an open question for the design review.
+- Jumbo frames still help the cluster ports. Azure Local applies the MTU you set in the portal or template to the host adapters; you set the same MTU on the switch ports yourself (a common pairing is 9000 on the host and 9216 on the switch). For IP-based SAN use the MTU your storage vendor specifies, end to end.
+- iSCSI hosts need a persistent /32 route per target IP bound to the storage adapter, with the iSCSI adapters on static IPs and no default gateway, plus MPIO. Only the management interface has a default gateway.
+- Minimum four Ethernet ports per node. iSCSI adapters at least 10 GbE.
 
 ---
 
 ## Fibre Channel Requirements (SAN deployments)
 
-:::info iSCSI
-iSCSI-connected SAN storage is generally available from release 2607, in addition to Fibre Channel. This page and the runbooks cover Fibre Channel. Rack aware clusters do not support external SAN storage. See [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609).
-:::
-
 ### FC HBA Requirements
 
-- **Minimum 2 HBA ports per node** — one port connected to each independent fabric for redundancy. Single-fabric configurations are not recommended for production workloads.
-- **Host Bus Adapters must be validated** for the specific Azure Local node model in use. Check the [Azure Local hardware catalog](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements?view=azloc-2609) and the SAN array's host support matrix for the HBA model and driver version combination.
-- **Dual-fabric zoning is strongly recommended** — two independent FC switches, each carrying one fabric. A single switch failure must not interrupt storage access to the cluster.
-- **Single-initiator/single-target zoning** per Microsoft guidance — each HBA port is zoned only to the array target ports it needs to reach, not to all targets on the fabric.
+- **Minimum 2 HBA ports per node**, one to each independent fabric. Single-fabric designs are not recommended for production.
+- Use **Windows Server 2025 certified HBAs and drivers** that are supported for the node model, and check the SAN vendor's host support matrix for the HBA and driver combination. The [Azure Local catalog](https://aka.ms/azurelocalcatalog) governs Microsoft Support.
+- **Dual-fabric zoning is strongly recommended**: two independent FC switches, each carrying one fabric. A single switch failure must not interrupt storage access.
+- **Redundant single-initiator zoning** following the fabric and array vendor design (this is the wording Microsoft uses in its rack aware SAN article). Many designs also use one initiator to one target; that tighter pattern is the Azure Local Cloud standard here, not a Microsoft requirement. Each HBA port is zoned only to the array target ports it needs.
+- Use the inbox Microsoft DSM (MSDSM) with the array's vendor and product IDs registered. There is **no vendor DSM package to stage**. Vendor IDs and tuning are in Phase 03 Task 13.
 
 ### FC Switch Port Planning
-
-Use this formula to calculate required FC switch ports per fabric before ordering or allocating switch capacity:
 
 ```
 Per-fabric port count = (Node count × 2 HBA ports) + Array target ports per fabric
 ```
 
-Example: 4-node cluster, 2 HBA ports per node, 4 array target ports per fabric:
+Example: 4-node cluster, 2 HBA ports per node, 4 array target ports per fabric: `(4 × 2) + 4 = 12` FC switch ports per fabric. Plan at least 20 percent headroom.
 
-```
-(4 × 2) + 4 = 12 FC switch ports required per fabric
-```
+### Supported arrays
 
-Plan for at least 20% port headroom above the calculated minimum.
-
-### Microsoft Reference Patterns
-
-Microsoft publishes two validated FC disaggregated planning patterns:
-
-- [Fibre Channel planning pattern without backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2609)
-- [Fibre Channel planning pattern with backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2609)
-
-Review both patterns during planning to align your zoning design with Microsoft's validated topology.
+Supported vendors and models are listed in [Supported SAN solutions on Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/san-requirements?view=azloc-2610): Dell PowerStore T/Q (OS 3.0 or later), Everpure FlashArray, Hitachi VSP, HPE Alletra MP 10000, NetApp ONTAP (AFF, ASA), and Lenovo ThinkSystem DS, DM and DG. Machine validation fails for disaggregated deployments that use SANs from unsupported vendors, and the wizard prevents selecting unsupported vendor LUNs.
 
 ---
 
-## Pre-Deployment SAN Checklist
+## Licensing and Billing
 
-Complete this checklist before proceeding to the hardware provisioning phase. All items must be confirmed before the deployment wizard runs.
+Choosing a SAN changes the Azure Local meter (from [Azure Local billing and payment](https://learn.microsoft.com/en-us/azure/azure-local/concepts/billing?view=azloc-2610#azure-local-with-external-storage)):
 
-- [ ] Storage topology decision confirmed (S2D or SAN) and documented in project planning record
-- [ ] If SAN: SAN array model, firmware version, and Azure Local certification status documented
-- [ ] If SAN: FC switch model and firmware version documented for both fabrics
-- [ ] If SAN: LUN layout planned and sized (Infrastructure Volume, Performance History, Workload CSVs)
-- [ ] If SAN: FC zoning policy agreed — single-initiator/single-target recommended; any deviations documented with justification
-- [ ] If SAN: WWPN collection planned — WWPNs will be gathered during Phase 03 OS configuration tasks
-- [ ] If SAN: Infrastructure LUN (minimum 250 GB, RAW — no partition table) provisioned and presented to all cluster nodes
-- [ ] If SAN: Performance History LUN (minimum 20 GB, RAW — no partition table) provisioned and presented to all cluster nodes
-- [ ] If SAN: Workload LUNs sized, provisioned on array, and presented to nodes — initialization and CSV assignment will occur post-deployment
-- [ ] If SAN: MPIO vendor DSM package identified and staged for installation during OS configuration
+| Topology | Tier | Trial |
+|----------|------|-------|
+| Hyperconverged with local storage, up to 16 nodes | Azure Local (L1) | The standard 60-day free trial |
+| Adding external storage to an existing hyperconverged deployment | Azure Local (L2) after the trial | A 30-day trial starts when external storage is added. Billing stays on the current pricing during the trial, and continues at L1 if the cluster's own free trial ends first |
+| New SAN-only disaggregated deployment | Azure Local (L2) | 60-day free trial after registration |
+
+Billing updates automatically when external storage is added or removed. L2 requires cloud-connected management. Azure Hybrid Benefit for Azure Local supports only hyperconverged deployments with cloud-connected management and **no external storage (L1)**; L2 and L3 aren't supported. Factor this into the business case before recommending a SAN.
+
+---
+
+## Pre-Deployment Storage Checklist
+
+Complete before the hardware provisioning phase.
+
+- [ ] Storage topology decision confirmed (S2D, hybrid, or disaggregated SAN) and documented in the project planning record
+- [ ] If SAN: protocol decided (FC or iSCSI) and the matching network pattern chosen (FC 4 or 6 port, iSCSI 6 port)
+- [ ] If SAN: array model, firmware and Azure Local support status documented against the supported-SAN list
+- [ ] If FC: FC switch model and firmware documented for both fabrics
+- [ ] If SAN: billing impact (L2, trial period, no Azure Hybrid Benefit) agreed with the customer
+- [ ] If disaggregated: LUN layout planned (infrastructure 250 GB or more, performance history 20 GB or more; workload LUNs sized for after deployment)
+- [ ] If disaggregated FC: zoning policy agreed (redundant single-initiator; deviations documented) and WWPNs collected during Phase 03 OS configuration; zoning done before Arc registration
+- [ ] If disaggregated: infrastructure and performance-history LUNs presented to all nodes and left RAW
+- [ ] If hybrid FC: HBAs installed and certified, **no zoning** until after the S2D cluster is deployed
+- [ ] If hybrid iSCSI: dedicated physical ports reserved (no vNICs) and kept outside Network ATC
+- [ ] If SAN: MSDSM vendor and product IDs confirmed for the array (no vendor DSM package)
+- [ ] If rack aware is wanted: confirm it is the disaggregated FC preview; hyperconverged rack aware does not support external SAN
 
 ---
 
@@ -176,22 +237,26 @@ Complete this checklist before proceeding to the hardware provisioning phase. Al
 
 **Planning documents:**
 
-- [Discovery Checklist](./02-discovery-checklist.mdx) — Storage Architecture section
-- [Site Assessment](./03-site-assessment.mdx) — SAN and FC Fabric Infrastructure
+- [Discovery Checklist](./02-discovery-checklist.mdx), Storage Architecture section
+- [Site Assessment](./03-site-assessment.mdx), SAN and FC Fabric Infrastructure
+- [Rack Aware Clustering](./09-rack-aware-clustering.mdx)
 
-**Implementation tasks (Phase 03 OS Configuration):**
+**Implementation:**
 
-- Phase 03 Task 12 — Install FC HBA Drivers *(forthcoming)*
-- Phase 03 Task 13 — Configure MPIO and Vendor MSDSM *(forthcoming)*
-
-**Appendices:**
-
-- Appendix P — FC Fabric Configuration *(forthcoming)*
+- [Phase 03 Task 12: Install FC HBA drivers](../implementation/04-cluster-deployment/phase-03-os-configuration/task-12-install-fc-hba-drivers-conditional.mdx)
+- [Phase 03 Task 13: Configure MPIO and vendor MSDSM](../implementation/04-cluster-deployment/phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional.mdx)
+- [Phase 03 Task 14: Verify SAN LUN presentation](../implementation/04-cluster-deployment/phase-03-os-configuration/task-14-verify-san-lun-presentation-conditional.mdx)
+- [Phase 05: SAN deployment runbooks](../implementation/04-cluster-deployment/phase-05-cluster-deployment/deployment-methods/san/index.mdx)
+- [Phase 06 Task 10: Enable external storage (hybrid)](../implementation/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid.mdx)
+- [Appendix P: FC Fabric Configuration](../implementation/appendices/appendix-p-fc-fabric.mdx)
 
 **Microsoft Learn:**
 
-- [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609)
-- [Microsoft Learn — Storage Spaces Direct overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/storage-spaces-direct-overview?view=azloc-2609)
+- [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610)
+- [External storage support for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/external-storage-support?view=azloc-2610)
+- [Install the Azure Local operating system for disaggregated deployments](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610)
+- [Network considerations for cloud deployments](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610)
+- [Storage Spaces Direct overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/storage-spaces-direct-overview?view=azloc-2610)
 
 ---
 
@@ -200,3 +265,4 @@ Complete this checklist before proceeding to the hardware provisioning phase. Al
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-08 | Azure Local Cloud | Rewritten against Learn 2610: hybrid topology, iSCSI, disaggregated host networking, billing, FC zoning timing split by topology, no vendor DSM package |

@@ -187,25 +187,27 @@ azurelocal.mgmt
 
 ### Workshop Objectives
 
-- Determine storage topology (S2D vs SAN disaggregated)
-- Document SAN array and FC fabric details if SAN is selected
+- Determine storage topology (S2D, hybrid S2D plus SAN, or disaggregated SAN)
+- Choose the SAN protocol (Fibre Channel or iSCSI) and document array and fabric details if SAN is selected
 - Define LUN layout and capacity requirements
-- Establish FC zoning policy
+- Establish FC zoning policy and timing (it differs for hybrid and disaggregated)
+- Confirm the billing effect of a SAN (Azure Local L2, no Azure Hybrid Benefit)
 
 ### Discussion Guide
 
 #### Topic 1: Storage Topology Decision (15 min)
 
-| Question | S2D | SAN |
+| Question | S2D | SAN (hybrid or disaggregated) |
 |---------|-----|-----|
 | Existing SAN investment? | Not required | ✅ Leverages existing |
-| Team has FC expertise? | Not required | ✅ Required |
+| Team has FC or iSCSI SAN expertise? | Not required | ✅ Required |
 | Workloads require specific IOPS/latency? | Software-defined, NVMe-backed | Hardware-specific guarantees |
 | Shared storage between workloads? | Azure Local only | Multi-platform possible |
 
 Key questions to ask:
 - Does the customer have an existing SAN that they want to use for Azure Local storage?
-- Is there an FC fabric already in place?
+- Is there an FC fabric already in place, or is the SAN iSCSI (dedicated physical ports, no vNICs)?
+- Should the SAN carry all storage (disaggregated, up to 64 machines) or sit beside S2D (hybrid, attached after the cluster is deployed)?
 - Is there an in-house storage admin who manages the SAN?
 - What are the workload IOPS and latency requirements?
 
@@ -213,9 +215,9 @@ Key questions to ask:
 
 - Array vendor and model
 - Available capacity and number of available LUNs
-- FC port count per controller
-- Supported host operating systems (confirm Windows Server 2025 / Azure Local support)
-- MPIO/DSM availability for the array
+- FC port count per controller (or iSCSI target portal count)
+- Supported host operating systems (confirm the array model is on Microsoft's supported-SAN list for Azure Local)
+- MSDSM vendor and product IDs for the array (Azure Local uses the inbox Microsoft DSM, there is no vendor DSM package to install)
 
 #### Topic 3: LUN Layout Planning (15 min)
 
@@ -233,15 +235,15 @@ Emphasize to the SAN admin: the infrastructure and performance history LUNs must
 
 #### Topic 4: FC Zoning Policy (10 min)
 
-- Confirm zoning policy: single-initiator/single-target is Microsoft's recommendation
+- Confirm zoning policy: Microsoft's wording is redundant single-initiator zoning per the fabric and array vendor design; single-initiator/single-target is the Azure Local Cloud standard
 - Agree on naming convention for WWPN aliases and zone names
 - Identify who will configure zoning: SAN admin, FC switch admin, or deployment team
-- Confirm timing: zoning is configured after HBA WWPNs are collected (Phase 03 Task 12) but before the deployment wizard runs
+- Confirm timing. **Disaggregated:** zoning is configured after HBA WWPNs are collected (Phase 03 Task 12) and before Arc registration, because the LUNs must be visible and RAW before registration. **Hybrid:** do not zone FC HBAs until after the Azure Local deployment; the SAN is attached afterwards
 
 ### Workshop Output
 
 Document the following decisions:
-- [ ] Storage topology selected: ☐ S2D ☐ SAN
+- [ ] Storage topology selected: ☐ S2D ☐ Hybrid ☐ Disaggregated SAN; protocol: ☐ FC ☐ iSCSI
 - [ ] If SAN: SAN array model and firmware confirmed
 - [ ] If SAN: LUN layout approved and documented in `variables.yml`
 - [ ] If SAN: FC zoning policy agreed

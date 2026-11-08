@@ -9,12 +9,12 @@ description: "When to use Azure Local rack aware clusters, their requirements, l
 
 [![Reference](https://img.shields.io/badge/Type-Reference-purple?style=flat-square)](./index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
-[![GA](https://img.shields.io/badge/Status-GA_2601-green?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-overview?view=azloc-2609)
+[![GA](https://img.shields.io/badge/Status-GA_2601-green?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-overview?view=azloc-2610)
 
 > **DOCUMENT CATEGORY**: Reference
 > **SCOPE**: Planning a rack aware Azure Local instance
 > **PURPOSE**: Decide whether a rack aware cluster fits a site, and what it requires
-> **MASTER REFERENCE**: [Microsoft Learn — Azure Local rack aware clustering overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-overview?view=azloc-2609)
+> **MASTER REFERENCE**: [Microsoft Learn — Azure Local rack aware clustering overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-overview?view=azloc-2610)
 
 **Status**: Active
 
@@ -24,7 +24,7 @@ description: "When to use Azure Local rack aware clusters, their requirements, l
 
 A rack aware cluster places the machines of one Azure Local instance in two physical racks, usually in two rooms or buildings. Each rack is a **local availability zone**. A single storage pool spans both racks, and the cluster keeps copies of data evenly distributed between them, so the loss of an entire rack leaves the data available in the other rack.
 
-Rack aware clustering was introduced in preview with release 2510 and became generally available in release 2601. Release 2604 added support for deployments that use local identity with Azure Key Vault (see the note on identity below).
+Rack aware clustering was introduced in preview with release 2510 and became generally available in release 2601. Release 2604 added support for deployments that use local identity with Azure Key Vault (see the note on identity below). Release 2610 added a preview of rack aware clusters on disaggregated SAN storage.
 
 Typical fits are manufacturing plants, hospitals, and airports, where a rack-level failure must not cause data loss or extended downtime.
 
@@ -38,7 +38,7 @@ Typical fits are manufacturing plants, hospitals, and airports, where a rack-lev
 | Deployment type | New deployments only. Converting a standard cluster to rack aware is not supported. |
 | Latency | Round-trip latency between racks of 1 ms or less. |
 | Storage network | A dedicated storage network intent for synchronous replication between racks. |
-| Storage type | External SAN storage is not supported with rack aware clusters. |
+| Storage type | Hyperconverged rack aware clusters use Storage Spaces Direct only: external SAN storage is not supported with them. A separate **disaggregated rack aware cluster with Fibre Channel SAN storage** is in preview from 2610 (see below). |
 
 ### Bandwidth between racks
 
@@ -54,6 +54,21 @@ Typical fits are manufacturing plants, hospitals, and airports, where a rack-lev
 | 4 | 25 GbE | 2 | 200 Gbps |
 
 Room-to-room links must keep a 1:1 ratio between the aggregate storage network capacity inside a zone and the inter-zone connectivity. Microsoft describes four room-to-room patterns (A to D) with different resilience and cost trade-offs.
+
+## Disaggregated rack aware clusters with SAN storage (preview, 2610)
+
+Starting with release 2610, a disaggregated rack aware cluster can use external SAN arrays instead of Storage Spaces Direct. The two-zone topology is unchanged; one SAN array sits in each rack-level failure domain with **synchronous replication** between the arrays configured before the cluster is deployed. The portal deployment wizard supports a disk witness for SAN deployments. This feature is in **preview**, so it falls under the Microsoft preview terms.
+
+| Category | Requirement (from the Learn preview article) |
+|----------|---------------------------------------------|
+| Connectivity | Fibre Channel with redundant fabrics and multipath access. Windows Server 2025 certified HBAs and drivers on all nodes |
+| Zones | Two local availability zones, up to **eight** machines per zone, equal count in each zone (1+1 up to 8+8, 2 to 16 nodes) |
+| Latency | Round-trip latency between racks of **5 ms or less** (the hyperconverged requirement is 1 ms or less) |
+| Replication | Full synchronous replication for every LUN the cluster uses. Supported replication technologies listed by Microsoft: Pure Storage ActiveCluster, Dell PowerStore Metro Volume (PowerFlex is not supported), NetApp SnapMirror Active Sync, Hitachi Global-Active Device, HPE Peer Persistence (transparent-failover variant) |
+| LUNs | Infrastructure, performance history, workload LUNs and a dedicated 1 GB cluster witness disk, all in the replication group before they are presented to the hosts |
+| Deployment type | New deployments only |
+
+See [Deploy a disaggregated rack aware Azure Local cluster with SAN storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-rack-aware-cluster-storage-area-network?view=azloc-2610) and [Storage Architecture Planning](./07-storage-planning.mdx).
 
 ## Supported sizes and volume layout
 
@@ -71,7 +86,7 @@ To scale, add a pair of nodes: 2+2 to 3+3, and 3+3 to 4+4. Adding nodes to a 1+1
 - Deploy from the Azure portal (select **Rack aware cluster** under **Cluster options**) or with an ARM template (`clusterPattern` set to `RackAware`, with `localAvailabilityZones` listing the nodes per zone).
 - The deployment does not validate that the machines in a zone sit in the same physical rack. A wrong assignment can let a single rack failure take down the cluster. Record the rack for each node in your [hardware inventory](./05-hardware-requirements.mdx) and check it twice.
 - Place the witness in a third location, separate from the two racks.
-- **Identity**: the Learn deployment article still states that rack aware clusters deploy with Active Directory only, while the 2604 release notes state that local identity with Azure Key Vault is supported. Check the portal wizard for your build before you plan around local identity.
+- **Identity**: the Learn local identity overview (2610) lists rack aware clustering as a generally available or supported service for local identity with Azure Key Vault, and the 2604 release notes say the same, but the rack aware portal and ARM articles still show the Active Directory fields (domain, OU, deployment account). Check the portal wizard for your build before you plan around local identity.
 
 ## VM placement and failover
 
@@ -91,16 +106,16 @@ Other guidance from Microsoft:
 - Do not apply VM affinity rules with Windows Admin Center or PowerShell. The behavior is not defined.
 - For AKS enabled by Azure Arc, use more control plane nodes than a single zone holds (for example five control plane nodes for a 3+3 cluster). Control plane high availability is not supported because only two zones exist.
 
-> Data verified with Microsoft Learn (rack aware clustering articles, What's new 2510 to 2609), October 2026.
+> Data verified with Microsoft Learn (rack aware clustering articles, What's new 2510 to 2610), checked against view azloc-2610 in November 2026.
 
 ---
 
 ## References
 
-- [Microsoft Learn — Rack aware clustering overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-overview?view=azloc-2609)
-- [Microsoft Learn — Requirements and supported configurations](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-requirements?view=azloc-2609)
-- [Microsoft Learn — Room-to-room connectivity](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-room-to-room-connectivity?view=azloc-2609)
-- [Microsoft Learn — Network reference patterns](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-reference-architecture?view=azloc-2609)
-- [Microsoft Learn — Deploy a rack aware cluster in the Azure portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/rack-aware-cluster-deploy-portal?view=azloc-2609)
-- [Microsoft Learn — VM placement in a rack aware cluster](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-provision-vm-local-availability-zone?view=azloc-2609)
-- [Microsoft Learn — Spread AKS nodes in a rack aware cluster](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-aks-nodes?view=azloc-2609)
+- [Microsoft Learn — Rack aware clustering overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-overview?view=azloc-2610)
+- [Microsoft Learn — Requirements and supported configurations](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-requirements?view=azloc-2610)
+- [Microsoft Learn — Room-to-room connectivity](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-room-to-room-connectivity?view=azloc-2610)
+- [Microsoft Learn — Network reference patterns](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-reference-architecture?view=azloc-2610)
+- [Microsoft Learn — Deploy a rack aware cluster in the Azure portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/rack-aware-cluster-deploy-portal?view=azloc-2610)
+- [Microsoft Learn — VM placement in a rack aware cluster](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-provision-vm-local-availability-zone?view=azloc-2610)
+- [Microsoft Learn — Spread AKS nodes in a rack aware cluster](https://learn.microsoft.com/en-us/azure/azure-local/concepts/rack-aware-cluster-aks-nodes?view=azloc-2610)
