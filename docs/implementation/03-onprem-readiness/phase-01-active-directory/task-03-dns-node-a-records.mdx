@@ -8,8 +8,8 @@ scope: DNS configuration for cluster nodes
 purpose: Pre-create A records for Azure Local nodes
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-03-03
-version: "1.1.0"
+updated: 2026-11-08
+version: "1.2.0"
 tags:
   - azure-local
   - dns
@@ -34,19 +34,31 @@ import TabItem from '@theme/TabItem';
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: DNS configuration for cluster nodes   
 > **PURPOSE**: Pre-create A records for Azure Local nodes   
-> **MASTER REFERENCE**: [Microsoft Learn - Network Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/physical-network-requirements) 
+> **MASTER REFERENCE**: [Microsoft Learn - Custom Active Directory configuration (required DNS records)](https://learn.microsoft.com/en-us/azure/azure-local/plan/configure-custom-settings-active-directory?view=azloc-2610#required-dns-records) 
 
 **Status**: Active
 
 ## Overview
 
-Pre-create forward lookup A records for each Azure Local node hostname before deployment.
+Pre-create forward lookup A records for each Azure Local node hostname before deployment. Whether you must also create the cluster name object (CNO) and virtual client access name (VCO) records depends on your DNS server, as described next.
 
 ### What This Accomplishes
 
 - DNS name resolution for cluster nodes
 - Pre-staged DNS records for controlled environments
 - Documentation of hostname to IP mappings
+
+### Which DNS records are required
+
+Microsoft Learn 2610 ([Custom Active Directory configuration](https://learn.microsoft.com/en-us/azure/azure-local/plan/configure-custom-settings-active-directory?view=azloc-2610#required-dns-records)) says: if your DNS server doesn't support secure dynamic updates, you must create the required DNS records before you deploy.
+
+| Object | Record type | Required when |
+|--------|-------------|---------------|
+| Machine name (every machine in the system) | Host A | DNS server does not support secure dynamic updates |
+| Cluster CNO | Host A | DNS server does not support secure dynamic updates |
+| Cluster VCO (the Cluster-Aware Updating client access point) | Host A | DNS server does not support secure dynamic updates |
+
+Learn notes that Microsoft DNS servers integrated with Active Directory take advantage of secure dynamic updates. This runbook pre-creates the node records for controlled environments either way.
 
 :::info
 
@@ -72,7 +84,7 @@ The active directory information in these documents should have been decided in 
 
 ## DNS Record Creation
 
-Pre-create forward lookup A records for each Azure Local node hostname. Do NOT create cluster name (CNO) or virtual client access name (VCO) records now—those are generated later by the failover cluster process.
+Pre-create forward lookup A records for each Azure Local node hostname. Create the cluster name (CNO) and virtual client access name (VCO) records now only if your DNS server does not support secure dynamic updates (see [Non-dynamic DNS](#non-dynamic-dns-cno-and-vco-records) below). With secure dynamic updates available, those records are registered later by the cluster process.
 
 <Tabs groupId="deployment-method">
 <TabItem value="manual" label="DNS Manager" default>
@@ -219,10 +231,53 @@ $ZoneName = (Get-ADDomain).DNSRoot
 'hcinode01','hcinode02','hcinode03','hcinode04' | ForEach-Object { Resolve-DnsName "$_.${ZoneName}" -ErrorAction SilentlyContinue | Select Name,IPAddress }
 ```
 
+## Non-dynamic DNS: CNO and VCO records
+
+Required only if your DNS server does not support secure dynamic updates (Learn 2610). Create a Host A record for the cluster CNO and one for the cluster VCO in addition to the node records. The names and IP addresses come from your deployment plan; the values below are placeholders.
+
+```powershell
+#Requires -Version 7.0
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$ZoneName    = 'contoso.com'
+$ClusterName = 'clus01'       # cluster CNO name from your plan
+$ClusterIp   = '10.0.0.20'    # IP address allocated to the CNO in your IP plan
+$CauVcoName  = 'clus01-cau'   # Cluster-Aware Updating client access point (VCO) name
+$CauVcoIp    = '10.0.0.21'    # IP address allocated to the VCO in your IP plan
+
+foreach ($rec in @(@{ Name = $ClusterName; Ip = $ClusterIp }, @{ Name = $CauVcoName; Ip = $CauVcoIp })) {
+    if (-not (Get-DnsServerResourceRecord -ZoneName $ZoneName -Name $rec.Name -RRType A -ErrorAction SilentlyContinue)) {
+        Add-DnsServerResourceRecordA -ZoneName $ZoneName -Name $rec.Name -IPv4Address $rec.Ip -CreatePtr:$false
+    }
+}
+```
+
+Learn also notes for environments where secure dynamic updates are not possible that you must create the VCO manually (see [Prestage cluster computer objects in Active Directory Domain Services](https://learn.microsoft.com/en-us/windows-server/failover-clustering/prestage-cluster-adds#more-information)), and that the Windows DNS client dynamic update setting is protected by drift control built into Network ATC. If you disable dynamic update (`Get-NetAdapter "vManagement*" | Set-DnsClient -RegisterThisConnectionsAddress $false`), create the VCO immediately afterwards to avoid the drift rollback. See [Modify security defaults](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-secure-baseline?view=azloc-2610#modify-security-defaults).
+
+## Disjoint namespace
+
+A disjoint namespace exists when the primary DNS suffix of a domain member does not match the DNS name of its Active Directory domain (for example, a computer named with `corp.contoso.com` that is a member of `na.corp.contoso.com`). Before deploying, per Learn 2610:
+
+1. Append the DNS suffix to the management adapter of every node. The suffix must match the Active Directory domain name.
+2. Verify that you can resolve the hostname to the Active Directory FQDN.
+
+```powershell
+# Append the DNS suffix (use the management adapter interface index on each node)
+Set-DnsClient -InterfaceIndex 12 -ConnectionSpecificSuffix "na.corp.contoso.com"
+
+# Verify resolution
+nslookup node1.na.corp.contoso.com
+```
+
+You cannot use group policy to configure the DNS suffix list on an Azure Local instance.
+
 ## Notes
 
-- Only node hostnames are created now; cluster CNO/VCO records are deferred until cluster creation.
-- If dynamic secure updates are allowed and change control permits, this step can be skipped; retain the section for controlled environments.
+- Node hostnames are always created in this task. Cluster CNO and VCO records are required now only when the DNS server does not support secure dynamic updates; otherwise they are registered dynamically.
+- If secure dynamic updates are available and change control permits, the node-record step can be skipped; retain the section for controlled environments.
+- Every machine that becomes part of the Azure Local system requires a DNS record.
+- Verify a record with `nslookup <machine name>`.
 - Reverse (PTR) records are optional; create only if the reverse zone is already in scope.
 
 ## Validation Checklist
@@ -230,6 +285,8 @@ $ZoneName = (Get-ADDomain).DNSRoot
 - [ ] DNS Manager or PowerShell access available
 - [ ] Node hostnames and IPs documented
 - [ ] A records created for all nodes
+- [ ] Secure dynamic updates confirmed supported, or CNO and VCO Host A records created
+- [ ] Disjoint namespace checked (DNS suffix appended on each node if it applies)
 - [ ] Records resolve correctly
 - [ ] Mappings documented in deployment artifacts
 
@@ -245,12 +302,12 @@ After configuring DNS records, proceed to [Task 4 - Service & Admin Accounts](./
 
 **Records Not Resolving**: Verify DNS server configuration and replication.
 
-**Dynamic Updates Blocked**: Use manual creation in controlled environments.
+**Dynamic Updates Blocked**: Create the node, CNO and VCO Host A records manually (see Non-dynamic DNS above).
 
 ### Support Resources
 
 - [DNS Record Management](https://learn.microsoft.com/en-us/windows-server/networking/dns/dns-top)
-- [Azure Local DNS Requirements](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory)
+- [Azure Local required DNS records](https://learn.microsoft.com/en-us/azure/azure-local/plan/configure-custom-settings-active-directory?view=azloc-2610#required-dns-records)
 
 
 
@@ -280,6 +337,7 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
 | 1.1 | 2026-03-03 | Azure Local Cloud | Standardized runbook format |
+| 1.2.0 | 2026-11-08 | Azure Local Cloud | Aligned to Microsoft Learn 2610: CNO and VCO records required when DNS lacks secure dynamic updates, disjoint namespace steps |
 
 ---
 

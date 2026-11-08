@@ -8,8 +8,8 @@ scope: Service and administrative accounts
 purpose: Create break-glass and gMSA accounts
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-03-03
-version: "1.1.0"
+updated: 2026-11-08
+version: "1.2.0"
 tags:
   - azure-local
   - active-directory
@@ -35,7 +35,7 @@ import TabItem from '@theme/TabItem';
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Service and administrative accounts   
 > **PURPOSE**: Create break-glass and gMSA accounts   
-> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory) 
+> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610) 
 
 **Status**: Active
 
@@ -59,9 +59,24 @@ The active directory information in these documents should have been decided in 
 ## Prerequisites
 
 - OU structure created (Step 1)
-- KDS Root Key replicated (from Step 1)
 - Domain admin access for account creation
 - Secure password storage solution (vault)
+- Only for the optional gMSA scaffold: a KDS root key that has replicated to all domain controllers (see below)
+
+### KDS root key (optional gMSA scaffold only)
+
+The break-glass account does not need a KDS root key. The Microsoft Learn 2610 Azure Local AD-preparation and custom-AD articles do not mention a gMSA or a KDS root key, so this runbook set treats the gMSA scaffold as optional. If you create the gMSA, a KDS root key must exist first (one per forest). Check with `Get-KdsRootKey`, and create one only if none exists.
+
+| Environment | Command | Wait |
+|-------------|---------|------|
+| Production or any lab with more than one domain controller | `Add-KdsRootKey -EffectiveImmediately` | Wait 10 hours so the key replicates to all domain controllers before creating the gMSA |
+| Single domain controller test environment only | `Add-KdsRootKey -EffectiveTime (Get-Date).AddHours(-10)` | None. Microsoft documents this backdating technique for single-DC tests only and says not to use it in production |
+
+Source: [Create a Key Distribution Service (KDS) root key](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/group-managed-service-accounts/group-managed-service-accounts/create-the-key-distribution-services-kds-root-key). Do not create more than one root key per forest.
+
+:::note Legacy gMSA wording in the Environment Checker article
+The Learn 2610 Environment Checker article still describes the Active Directory validator as checking that the preparation tool created gMSAs. The 2610 AD-preparation article documents only `New-HciAdObjectsPreCreation -AzureStackLCMUserCredential ... -AsHciOUName ...` from the `AsHciADArtifactsPreCreationTool` module (install version 2402 and uninstall earlier versions first). This repo follows the AD-preparation article; treat the gMSA wording as legacy and rely on the validator result in your environment.
+:::
 
 ## Variables from variables.yml
 
@@ -83,7 +98,7 @@ Lifecycle Manager (LCM) user created in Step 1. Add break‑glass admin and opti
 
 1. In **Active Directory Users and Computers**, inside instance OU create user: `adm-AzureLocal-BreakGlass-<clusterId>`.
 2. Set: Password never expires; User cannot change password; store password securely (vault).
-3. (Optional gMSA) After KDS root key replication completes, create gMSA via AD Administrative Center (if supported) targeting computer principals later.
+3. (Optional gMSA) After a KDS root key exists and has replicated (see the KDS table above), create gMSA via AD Administrative Center (if supported) targeting computer principals later.
 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
@@ -214,6 +229,10 @@ if (-not (Get-ADUser -LDAPFilter "(sAMAccountName=$breakGlassSam)" -SearchBase $
 }
 
 # --- Optional gMSA scaffold ---
+# Requires an existing, replicated KDS root key (see the KDS table above). Create one separately if needed:
+#   production: Add-KdsRootKey -EffectiveImmediately, then wait 10 hours
+#   single-DC test only: Add-KdsRootKey -EffectiveTime (Get-Date).AddHours(-10)
+if (-not (Get-KdsRootKey -ErrorAction SilentlyContinue)) { throw 'No KDS root key found. Create one before creating the gMSA.' }
 $gmsaName = "gMSA-AzureLocal-$ClusterId"
 $gmsaReaders = "SG-AzureLocal-gMSA-Readers-$ClusterId"
 if (-not (Get-ADServiceAccount -LDAPFilter "(sAMAccountName=$gmsaName`$)" -EA SilentlyContinue)) {
@@ -251,7 +270,7 @@ Get-ADServiceAccount -LDAPFilter "(sAMAccountName=gMSA-AzureLocal-*)" -SearchBas
 
 - LCM user is created in Step 1; this step adds supplemental accounts
 - Break-glass accounts should have passwords stored securely in a vault
-- gMSA requires KDS root key replication to complete first
+- gMSA requires a KDS root key and replication to complete first (10 hours in production). KDS root key guidance lives here, not in Task 01
 - Use unique cluster IDs to avoid naming conflicts
 
 ## Validation Checklist
@@ -273,7 +292,7 @@ After creating accounts, proceed to [Task 5 - Group Assignments](./task-05-group
 
 **Account Creation Fails**: Check OU permissions and naming policies.
 
-**gMSA Creation Fails**: Ensure KDS root key has replicated.
+**gMSA Creation Fails**: Ensure a KDS root key exists and has replicated to all domain controllers. With `-EffectiveImmediately` wait 10 hours in production; use the `-10` hours backdating only on a single-DC test domain.
 
 **Password Storage**: Verify vault access and security policies.
 
@@ -314,6 +333,7 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
 | 1.1 | 2026-03-03 | Azure Local Cloud | Standardized runbook format |
+| 1.2.0 | 2026-11-08 | Azure Local Cloud | KDS root key guidance moved here from Task 01 and scoped to the optional gMSA; production vs single-DC lab guidance |
 
 ---
 

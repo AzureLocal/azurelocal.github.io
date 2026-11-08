@@ -8,8 +8,8 @@ scope: Active Directory domain preparation
 purpose: Configure AD infrastructure for Azure Local
 author: Azure Local Cloud
 created: 2025-06-01
-updated: 2026-03-03
-version: 1.1
+updated: 2026-11-08
+version: 1.2
 tags: ["azure-local", "active-directory", "ou-structure", "service-accounts"]
 keywords: ["Active Directory", "OU", "service accounts", "security groups", "DNS"]
 status: Active
@@ -23,7 +23,7 @@ status: Active
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Active Directory domain preparation   
 > **PURPOSE**: Configure AD infrastructure for Azure Local   
-> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory) 
+> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610) 
 
 **Status**: Active
 
@@ -47,15 +47,22 @@ Prepare the Active Directory domain infrastructure required for Azure Local depl
 - DNS server configuration
 - Azure Local requirements documentation
 
+:::info Node domain membership
+Microsoft Learn 2610 supports domain-joining the Azure Local machines before deployment (starting with version 2604; the deployment user must then be added to the local Administrators group). If the machines are not pre-joined they are joined automatically during portal deployment. Either way, the OU prepared here is where the computer objects belong.
+:::
+
 ## Active Directory Preparation Steps
 
 ### Task 1: OU Creation & Pre-Creation Artifacts
 
-Create the foundational OU structure in Active Directory.
+Create the foundational OU structure in Active Directory and the Azure Local deployment (LCM) user.
 
 - Create MGMT OU on root domain
 - Create sub-OUs: Admins, Operations, Security Groups, Servers, Services
 - Create Clusters AzureLocal OUs
+- Create the LCM deployment user with `New-HciAdObjectsPreCreation` (username 1-20 characters, password of at least 14 characters, interactive logon and Log on as a batch job rights, OU path without `& " ' < >` and not at the top level of the domain)
+- A preflight check and the full Learn 2610 requirements are in the task
+- No KDS root key is required for this task; it is only needed for the optional gMSA in Task 4
 
 [View Step 1 Details](./task-01-ou-creation-pre-creation-artifacts)
 
@@ -81,6 +88,8 @@ Configure DNS A records for cluster node resolution.
 
 - Create forward and reverse lookup zones
 - Configure A records for cluster nodes
+- If the DNS server does not support secure dynamic updates, also create Host A records for the cluster CNO and the cluster VCO before deployment
+- Handle a disjoint namespace (append the DNS suffix on each node)
 - Set up CNAME records for management endpoints
 - Verify DNS resolution
 
@@ -91,7 +100,7 @@ Configure DNS A records for cluster node resolution.
 Create supplemental service and administrative user accounts.
 
 - Break-glass emergency admin account
-- Optional gMSA (Group Managed Service Account) scaffold
+- Optional gMSA (Group Managed Service Account) scaffold, including the KDS root key it needs (not mentioned in the Learn 2610 AD-preparation articles)
 - Configure account properties and secure password storage
 
 > **Note:** The LCM deployment account is created in [Task 01](./task-01-ou-creation-pre-creation-artifacts).
@@ -113,8 +122,9 @@ Assign users and service accounts to security groups.
 
 - [ ] Active Directory domain deployed and functional
 - [ ] OU structure created and verified
+- [ ] LCM deployment user meets the username, password and logon-right rules
 - [ ] All security groups created
-- [ ] DNS records configured and resolving
+- [ ] DNS records configured and resolving (CNO and VCO records too if secure dynamic updates are not available)
 - [ ] Service and admin accounts created
 - [ ] Group assignments completed
 - [ ] Domain controller replication verified
@@ -125,7 +135,8 @@ After completing Active Directory preparation, proceed to [Phase 09 - Enterprise
 
 ## Support Resources
 
-- [Microsoft Azure Local AD Requirements](https://docs.microsoft.com/en-us/azure/azure-local/)
+- [Prepare Active Directory for Azure Local deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610)
+- [Custom Active Directory configuration for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/plan/configure-custom-settings-active-directory?view=azloc-2610)
 - [Active Directory Best Practices](https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/manage/security-best-practices/best-practices-for-securing-active-directory)
 - Contact Azure Local Cloud Azure Local Cloud team for assistance
 
@@ -144,6 +155,7 @@ After completing Active Directory preparation, proceed to [Phase 09 - Enterprise
 |---------|------|--------|---------|
 | 1.0 | 2025-06-01 | Azure Local Cloud | Initial document |
 | 1.1 | 2026-03-03 | Azure Local Cloud | Standardized runbook format |
+| 1.2 | 2026-11-08 | Azure Local Cloud | Aligned to Microsoft Learn 2610 (LCM user rules, CNO/VCO DNS records, KDS scoped to optional gMSA, view=azloc-2610 links) |
 
 ---
 
