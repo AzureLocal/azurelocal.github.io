@@ -4,12 +4,12 @@ sidebar_label: "Appendix P: FC Fabric"
 sidebar_position: 16
 description: "Fibre Channel fabric configuration reference — Brocade and Cisco MDS zoning, alias creation, zoneset activation"
 category: "Reference"
-scope: "Fibre Channel fabric configuration for SAN disaggregated Azure Local deployments"
+scope: "Fibre Channel fabric configuration for disaggregated and hybrid (S2D plus SAN) Azure Local deployments"
 purpose: "Reference for FC fabric zoning, aliases, and port channels for SAN deployments"
 author: "Azure Local Cloud"
 created: 2026-05-02
-updated: 2026-05-02
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags:
   - azure-local
   - fibre-channel
@@ -36,17 +36,28 @@ status: "Active"
 > **DOCUMENT CATEGORY**: Reference
 > **SCOPE**: Fibre Channel fabric configuration
 > **PURPOSE**: Reference for FC fabric zoning, aliases, and port channels for SAN deployments
-> **MASTER REFERENCE**: [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609)
+> **MASTER REFERENCE**: [Microsoft Learn — Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610)
 
 **Status**: Active
 
-This appendix covers FC fabric configuration for SAN disaggregated Azure Local deployments — alias creation, zone definition, zoneset activation, and post-zoning validation. Both Brocade FOS and Cisco MDS NX-OS examples are provided.
+This appendix covers FC fabric configuration for disaggregated (SAN only) and hybrid (Storage Spaces Direct plus SAN) Azure Local deployments — alias creation, zone definition, zoneset activation, and post-zoning validation. Both Brocade FOS and Cisco MDS NX-OS examples are provided.
+
+---
+
+## When to zone
+
+Zoning timing differs by topology (Microsoft Learn, 2610):
+
+| Topology | Zone when |
+|---|---|
+| **Disaggregated (SAN only)** | **Before Azure Arc registration** (Phase 03). The machines must see the infrastructure and performance history LUNs, RAW, before you register with Arc: install the HBA driver, collect the WWPNs, zone and unmask, configure MPIO, confirm the LUNs, and don't initialize them |
+| **Hybrid (S2D plus SAN)** | **After the Azure Local deployment.** Don't zone the HBA WWNs until the hyperconverged cluster is deployed, to avoid deployment confusion for FC LUNs. Then follow [Phase 06 Task 10](../04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid.mdx) |
 
 ---
 
 ## Zoning Policy — Single-Initiator/Single-Target
 
-The Azure Local Cloud standard for FC zoning is **single-initiator/single-target**: each zone contains exactly one HBA port WWPN (initiator) and one SAN array port WWPN (target). This is the pattern recommended by Microsoft and eliminates the multi-initiator contention issues that arise when initiators share a zone.
+Microsoft's wording is **redundant single-initiator zoning** according to the fabric and array vendor design. The Azure Local Cloud standard goes one step tighter: **single-initiator/single-target**, where each zone contains exactly one HBA port WWPN (initiator) and one SAN array port WWPN (target). One-to-one zones are this site's standard, not a Microsoft requirement, and they remove the multi-initiator contention issues that arise when initiators share a zone. Follow your array vendor's host support matrix if it requires a different layout.
 
 **Zone count formula:** For an N-node cluster with 2 HBAs per node and 2 independent fabrics, expect **2N zones per fabric**.
 
@@ -181,9 +192,9 @@ If a LUN does not appear, verify: (1) the zone is active on both fabrics, (2) th
 
 ## References
 
-- [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609)
-- [Microsoft Learn — FC pattern without backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2609)
-- [Microsoft Learn — FC pattern with backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2609)
+- [Microsoft Learn — Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610)
+- [Microsoft Learn — FC pattern without backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2610)
+- [Microsoft Learn — FC pattern with backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2610)
 - [Appendix Q — FC Fabric Maintenance](./appendix-q-fc-maintenance.mdx)
 - [Appendix I — Dell Configuration](./appendix-i-dell-config.mdx)
 
@@ -200,5 +211,6 @@ If a LUN does not appear, verify: (1) the zone is active on both fabrics, (2) th
 | Phase 05 | SAN/AD ARM | [arm-template-instructions.mdx](../04-cluster-deployment/phase-05-cluster-deployment/deployment-methods/san/active-directory/arm-template-instructions.mdx) |
 | Phase 05 | SAN/LI Portal | [portal-instructions.mdx](../04-cluster-deployment/phase-05-cluster-deployment/deployment-methods/san/local-identity/portal-instructions.mdx) |
 | Phase 05 | SAN/LI ARM | [arm-template-instructions.mdx](../04-cluster-deployment/phase-05-cluster-deployment/deployment-methods/san/local-identity/arm-template-instructions.mdx) |
+| Phase 06 | Task 10 — Enable External Storage (hybrid) | [task-10-enable-external-storage-hybrid.mdx](../04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid.mdx) |
 | Phase 06 | Task 05 — Storage Configuration | [task-05-storage-configuration.mdx](../04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration.mdx) |
 | Planning | Storage Architecture Planning | [07-storage-planning.mdx](../../planning/07-storage-planning.mdx) |
