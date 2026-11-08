@@ -10,8 +10,8 @@
 <link rel="preconnect" href="https://www.googletagmanager.com">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-2D9XDHSXJW"></script>
 <script>function gtag(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],gtag("js",new Date),gtag("config","G-2D9XDHSXJW",{anonymize_ip:!0})</script><link rel="stylesheet" href="/assets/css/styles.a534308d.css">
-<script src="/assets/js/runtime~main.436b66f8.js" defer="defer"></script>
-<script src="/assets/js/main.c03bd532.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.4e253995.js" defer="defer"></script>
+<script src="/assets/js/main.c68b0e2e.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -36,6 +36,16 @@ of each Azure Local node. DNS must be set before Active Directory operations, Az
 registration, and any hostname resolution required later in the deployment.</p>
 <div class="theme-admonition theme-admonition-warning admonition_xJq3 alert alert--warning"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8.893 1.5c-.183-.31-.52-.5-.887-.5s-.703.19-.886.5L.138 13.499a.98.98 0 0 0 0 1.001c.193.31.53.501.886.501h13.964c.367 0 .704-.19.877-.5a1.03 1.03 0 0 0 .01-1.002L8.893 1.5zm.133 11.497H6.987v-2.003h2.039v2.003zm0-3.004H6.987V5.987h2.039v4.006z"></path></svg></span>Run AFTER Task 04</div><div class="admonitionContent_BuS1"><p>Task 04 (disable DHCP) must be complete. Setting DNS before DHCP is disabled has no harmful
 effect, but the standard sequence is Tasks 03 → 04 → 05.</p></div></div>
+<div class="theme-admonition theme-admonition-danger admonition_xJq3 alert alert--danger"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 12 16"><path fill-rule="evenodd" d="M5.05.31c.81 2.17.41 3.38-.52 4.31C3.55 5.67 1.98 6.45.9 7.98c-1.45 2.05-1.7 6.53 3.53 7.7-2.2-1.16-2.67-4.52-.3-6.61-.61 2.03.53 3.33 1.94 2.86 1.39-.47 2.3.53 2.27 1.67-.02.78-.31 1.44-1.13 1.81 3.42-.59 4.78-3.42 4.78-5.56 0-2.84-2.53-3.22-1.25-5.61-1.52.13-2.03 1.13-1.89 2.75.09 1.08-1.02 1.8-1.86 1.33-.67-.41-.66-1.19-.06-1.78C8.18 5.31 8.68 2.45 5.05.32L5.03.3l.02.01z"></path></svg></span>DNS decisions are permanent</div><div class="admonitionContent_BuS1"><p>Once the deployment completes, it isn&#x27;t supported to change the DNS server IPs, and the addresses can&#x27;t be updated across the Azure Local platform stack. Get them right now. Per Learn (Azure Local 2610, <em>Network considerations for cloud deployments</em>, DNS server considerations):</p><ol>
+<li class="">The DNS servers must be the <strong>same on every node</strong> of the instance.</li>
+<li class="">The DNS servers of the <strong>infrastructure IP address range</strong> (set in the deployment wizard or template) must be the same ones the nodes use. The Azure Resource Bridge control plane VM and the AKS control plane use those servers.</li>
+<li class="">At least one configured DNS server must run <strong>outside</strong> the Azure Local instance. Running <em>all</em> of them as VMs on the instance that depends on them isn&#x27;t supported, because name resolution is needed during boot, shutdown, restart and recovery.</li>
+<li class="">Every configured DNS server must resolve the on-premises domains the infrastructure needs. Public DNS servers such as 8.8.8.8 aren&#x27;t supported as the configured servers.</li>
+<li class="">For Active Directory deployments the DNS server must resolve the Active Directory domain and the public internet endpoints.</li>
+<li class="">The DNS server IPs must not fall in the Azure Resource Bridge ranges (<code>10.96.0.0/24</code> for deployments created from 2610, <code>10.96.0.0/12</code> for earlier deployments, and <code>10.244.0.0/16</code> for all). Use the wider <code>10.96.0.0/12</code> as the planning rule unless you are sure the instance is new on 2610. If AKS uses these DNS servers, also avoid its service and pod ranges.</li>
+<li class="">Learn recommends assigning only one management IP for the default gateway and for the configured DNS servers across the physical network adapters of the node, so it doesn&#x27;t change once the management intent is created. Network validation fails when it finds more than one physical adapter with a default gateway.</li>
+<li class="">In an ARM template, write multiple DNS servers as quoted strings separated by commas, for example <code>&quot;dnsServers&quot;: [&quot;10.250.16.124&quot;, &quot;10.250.17.232&quot;]</code>.</li>
+</ol></div></div>
 <p><strong>What the scripts do:</strong></p>
 <ol>
 <li class="">Hard-fail on any <code>REPLACE</code> placeholder value remaining in <code>#region CONFIGURATION</code></li>

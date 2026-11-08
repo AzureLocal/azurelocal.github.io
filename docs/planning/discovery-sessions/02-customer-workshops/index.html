@@ -10,8 +10,8 @@
 <link rel="preconnect" href="https://www.googletagmanager.com">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-2D9XDHSXJW"></script>
 <script>function gtag(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],gtag("js",new Date),gtag("config","G-2D9XDHSXJW",{anonymize_ip:!0})</script><link rel="stylesheet" href="/assets/css/styles.a534308d.css">
-<script src="/assets/js/runtime~main.436b66f8.js" defer="defer"></script>
-<script src="/assets/js/main.c03bd532.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.4e253995.js" defer="defer"></script>
+<script src="/assets/js/main.c68b0e2e.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -72,18 +72,20 @@
 <strong>Output:</strong> Documented storage topology decision and SAN configuration requirements (if applicable)</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="workshop-objectives">Workshop Objectives<a href="#workshop-objectives" class="hash-link" aria-label="Direct link to Workshop Objectives" title="Direct link to Workshop Objectives" translate="no">​</a></h3>
 <ul>
-<li class="">Determine storage topology (S2D vs SAN disaggregated)</li>
-<li class="">Document SAN array and FC fabric details if SAN is selected</li>
+<li class="">Determine storage topology (S2D, hybrid S2D plus SAN, or disaggregated SAN)</li>
+<li class="">Choose the SAN protocol (Fibre Channel or iSCSI) and document array and fabric details if SAN is selected</li>
 <li class="">Define LUN layout and capacity requirements</li>
-<li class="">Establish FC zoning policy</li>
+<li class="">Establish FC zoning policy and timing (it differs for hybrid and disaggregated)</li>
+<li class="">Confirm the billing effect of a SAN (Azure Local L2, no Azure Hybrid Benefit)</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="discussion-guide">Discussion Guide<a href="#discussion-guide" class="hash-link" aria-label="Direct link to Discussion Guide" title="Direct link to Discussion Guide" translate="no">​</a></h3>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="topic-1-storage-topology-decision-15-min">Topic 1: Storage Topology Decision (15 min)<a href="#topic-1-storage-topology-decision-15-min" class="hash-link" aria-label="Direct link to Topic 1: Storage Topology Decision (15 min)" title="Direct link to Topic 1: Storage Topology Decision (15 min)" translate="no">​</a></h4>
-<table><thead><tr><th>Question</th><th>S2D</th><th>SAN</th></tr></thead><tbody><tr><td>Existing SAN investment?</td><td>Not required</td><td>✅ Leverages existing</td></tr><tr><td>Team has FC expertise?</td><td>Not required</td><td>✅ Required</td></tr><tr><td>Workloads require specific IOPS/latency?</td><td>Software-defined, NVMe-backed</td><td>Hardware-specific guarantees</td></tr><tr><td>Shared storage between workloads?</td><td>Azure Local only</td><td>Multi-platform possible</td></tr></tbody></table>
+<table><thead><tr><th>Question</th><th>S2D</th><th>SAN (hybrid or disaggregated)</th></tr></thead><tbody><tr><td>Existing SAN investment?</td><td>Not required</td><td>✅ Leverages existing</td></tr><tr><td>Team has FC or iSCSI SAN expertise?</td><td>Not required</td><td>✅ Required</td></tr><tr><td>Workloads require specific IOPS/latency?</td><td>Software-defined, NVMe-backed</td><td>Hardware-specific guarantees</td></tr><tr><td>Shared storage between workloads?</td><td>Azure Local only</td><td>Multi-platform possible</td></tr></tbody></table>
 <p>Key questions to ask:</p>
 <ul>
 <li class="">Does the customer have an existing SAN that they want to use for Azure Local storage?</li>
-<li class="">Is there an FC fabric already in place?</li>
+<li class="">Is there an FC fabric already in place, or is the SAN iSCSI (dedicated physical ports, no vNICs)?</li>
+<li class="">Should the SAN carry all storage (disaggregated, up to 64 machines) or sit beside S2D (hybrid, attached after the cluster is deployed)?</li>
 <li class="">Is there an in-house storage admin who manages the SAN?</li>
 <li class="">What are the workload IOPS and latency requirements?</li>
 </ul>
@@ -91,9 +93,9 @@
 <ul>
 <li class="">Array vendor and model</li>
 <li class="">Available capacity and number of available LUNs</li>
-<li class="">FC port count per controller</li>
-<li class="">Supported host operating systems (confirm Windows Server 2025 / Azure Local support)</li>
-<li class="">MPIO/DSM availability for the array</li>
+<li class="">FC port count per controller (or iSCSI target portal count)</li>
+<li class="">Supported host operating systems (confirm the array model is on Microsoft&#x27;s supported-SAN list for Azure Local)</li>
+<li class="">MSDSM vendor and product IDs for the array (Azure Local uses the inbox Microsoft DSM, there is no vendor DSM package to install)</li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="topic-3-lun-layout-planning-15-min">Topic 3: LUN Layout Planning (15 min)<a href="#topic-3-lun-layout-planning-15-min" class="hash-link" aria-label="Direct link to Topic 3: LUN Layout Planning (15 min)" title="Direct link to Topic 3: LUN Layout Planning (15 min)" translate="no">​</a></h4>
 <p>If SAN is selected, document the following LUN requirements:</p>
@@ -101,15 +103,15 @@
 <div class="theme-admonition theme-admonition-warning admonition_xJq3 alert alert--warning"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8.893 1.5c-.183-.31-.52-.5-.887-.5s-.703.19-.886.5L.138 13.499a.98.98 0 0 0 0 1.001c.193.31.53.501.886.501h13.964c.367 0 .704-.19.877-.5a1.03 1.03 0 0 0 .01-1.002L8.893 1.5zm.133 11.497H6.987v-2.003h2.039v2.003zm0-3.004H6.987V5.987h2.039v4.006z"></path></svg></span>Infra LUN state</div><div class="admonitionContent_BuS1"><p>Emphasize to the SAN admin: the infrastructure and performance history LUNs must <strong>NOT</strong> be initialized before the Azure Local deployment wizard runs. The wizard claims them during cluster creation.</p></div></div>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="topic-4-fc-zoning-policy-10-min">Topic 4: FC Zoning Policy (10 min)<a href="#topic-4-fc-zoning-policy-10-min" class="hash-link" aria-label="Direct link to Topic 4: FC Zoning Policy (10 min)" title="Direct link to Topic 4: FC Zoning Policy (10 min)" translate="no">​</a></h4>
 <ul>
-<li class="">Confirm zoning policy: single-initiator/single-target is Microsoft&#x27;s recommendation</li>
+<li class="">Confirm zoning policy: Microsoft&#x27;s wording is redundant single-initiator zoning per the fabric and array vendor design; single-initiator/single-target is the Azure Local Cloud standard</li>
 <li class="">Agree on naming convention for WWPN aliases and zone names</li>
 <li class="">Identify who will configure zoning: SAN admin, FC switch admin, or deployment team</li>
-<li class="">Confirm timing: zoning is configured after HBA WWPNs are collected (Phase 03 Task 12) but before the deployment wizard runs</li>
+<li class="">Confirm timing. <strong>Disaggregated:</strong> zoning is configured after HBA WWPNs are collected (Phase 03 Task 12) and before Arc registration, because the LUNs must be visible and RAW before registration. <strong>Hybrid:</strong> do not zone FC HBAs until after the Azure Local deployment; the SAN is attached afterwards</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="workshop-output">Workshop Output<a href="#workshop-output" class="hash-link" aria-label="Direct link to Workshop Output" title="Direct link to Workshop Output" translate="no">​</a></h3>
 <p>Document the following decisions:</p>
 <ul class="contains-task-list containsTaskList_mC6p">
-<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Storage topology selected: ☐ S2D ☐ SAN</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Storage topology selected: ☐ S2D ☐ Hybrid ☐ Disaggregated SAN; protocol: ☐ FC ☐ iSCSI</li>
 <li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->If SAN: SAN array model and firmware confirmed</li>
 <li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->If SAN: LUN layout approved and documented in <code>variables.yml</code></li>
 <li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->If SAN: FC zoning policy agreed</li>

@@ -10,8 +10,8 @@
 <link rel="preconnect" href="https://www.googletagmanager.com">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-2D9XDHSXJW"></script>
 <script>function gtag(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],gtag("js",new Date),gtag("config","G-2D9XDHSXJW",{anonymize_ip:!0})</script><link rel="stylesheet" href="/assets/css/styles.a534308d.css">
-<script src="/assets/js/runtime~main.436b66f8.js" defer="defer"></script>
-<script src="/assets/js/main.c03bd532.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.4e253995.js" defer="defer"></script>
+<script src="/assets/js/main.c68b0e2e.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -84,8 +84,8 @@
 <p>Decide the identity model before the cluster is deployed. It is chosen during deployment, and the planning and design inputs differ.</p>
 <ul class="contains-task-list containsTaskList_mC6p">
 <li class="task-list-item"><input type="checkbox" disabled=""> <strong>Identity model</strong></li>
-<li class="">☐ Active Directory (domain-joined machines; Active Directory preparation and DNS are prerequisites)</li>
-<li class="">☐ Local identity with Azure Key Vault (previously called AD-less; no Active Directory dependency)</li>
+<li class="">☐ Active Directory (Active Directory preparation and DNS are prerequisites). Machines either stay in a workgroup and are joined to the domain by the deployment, or are joined to the domain before deployment (optional, supported from version 2604; the deployment user must be in the local Administrators group)</li>
+<li class="">☐ Local identity with Azure Key Vault (previously called AD-less; no Active Directory dependency; machines stay in a workgroup, static node IPs only, DHCP is not supported)</li>
 <li class="">Reason for the choice: <code>________________________________</code></li>
 <li class="task-list-item"><input type="checkbox" disabled=""> <strong>If local identity with Azure Key Vault</strong></li>
 <li class="">Key Vault in the landing zone subscription, with public network access enabled so the instance can reach it: ☐ Yes ☐ No</li>
@@ -779,10 +779,16 @@
 <p>DHCP server: <code>________________________________</code></p>
 </li>
 <li class="">
-<p>DNS servers: <code>________________________________</code></p>
+<p>DNS servers: <code>________________________________</code> (<strong>cannot be changed after deployment</strong>: the same servers on every node and on the infrastructure IP range, at least one outside the Azure Local instance, no public resolvers such as 8.8.8.8)</p>
 </li>
 <li class="">
 <p>NTP servers: <code>________________________________</code></p>
+</li>
+<li class="">
+<p>Node and cluster IP assignment: ☐ Static ☐ DHCP with reservations (the management IP pool is needed either way; local identity requires static)</p>
+</li>
+<li class="">
+<p>Internal ranges avoided for node, cluster, infrastructure pool, DNS, proxy and gateway IPs: ☐ <code>10.96.0.0/12</code> ☐ <code>10.244.0.0/16</code> (new 2610 deployments use <code>10.96.0.0/24</code> for the Arc resource bridge service range; plan around <code>10.96.0.0/12</code> to be safe)</p>
 </li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="part-3-site-specific-discovery">Part 3: Site-Specific Discovery<a href="#part-3-site-specific-discovery" class="hash-link" aria-label="Direct link to Part 3: Site-Specific Discovery" title="Direct link to Part 3: Site-Specific Discovery" translate="no">​</a></h2>
@@ -838,13 +844,25 @@
 <p><input type="checkbox" disabled=""> <strong>Network Interfaces</strong></p>
 </li>
 <li class="">
+<p>Network adapter ports per node: ☐ 2 ☐ 4 ☐ 6 ☐ 8 (at least two ports per intent)</p>
+</li>
+<li class="">
+<p>Intent pattern (hyperconverged): ☐ 2 ports, all traffic in one intent (switch for storage) ☐ 4 ports, management and compute on Port 1 and 2, storage on Port 3 and 4 ☐ 6 ports, management Port 1 and 2, compute Port 3 and 4, storage Port 5 and 6 ☐ 8 ports, adds a second compute or backup intent ☐ Custom</p>
+</li>
+<li class="">
+<p>Storage connectivity: ☐ Switched ☐ Switchless (1 to 4 nodes; 3 and 4 nodes need an ARM template with explicit storage IPs)</p>
+</li>
+<li class="">
 <p>Management NICs: <code>________________________________</code></p>
 </li>
 <li class="">
-<p>Storage NICs: <code>________________________________</code></p>
+<p>Storage NICs (RDMA-capable, RoCEv2 or iWARP; RDMA and jumbo frames apply to the storage intent; guest RDMA is not supported): <code>________________________________</code></p>
 </li>
 <li class="">
 <p>VM NICs: <code>________________________________</code></p>
+</li>
+<li class="">
+<p>If disaggregated: ☐ FC 4 ports ☐ FC 6 ports (guest backup) ☐ iSCSI 6 ports (dedicated iSCSI path A and B); cluster networks on VLANs <code>______</code>, <code>______</code> (defaults 1711 and 1712), outside Network ATC</p>
 </li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="section-12-naming-standards-workshop">Section 12: Naming Standards Workshop<a href="#section-12-naming-standards-workshop" class="hash-link" aria-label="Direct link to Section 12: Naming Standards Workshop" title="Direct link to Section 12: Naming Standards Workshop" translate="no">​</a></h3>
@@ -907,12 +925,14 @@
 <li class="task-list-item">
 <p><input type="checkbox" disabled=""> <strong>Storage Topology Decision</strong></p>
 <ul>
-<li class="">Storage topology selected: ☐ Storage Spaces Direct (S2D/hyperconverged) ☐ Disaggregated SAN</li>
+<li class="">Storage topology selected: ☐ Storage Spaces Direct (S2D/hyperconverged) ☐ Hybrid (S2D now, SAN attached after deployment) ☐ Disaggregated SAN (no S2D)</li>
+<li class="">SAN protocol (if any): ☐ Fibre Channel ☐ iSCSI ☐ Dell PowerFlex (software initiator)</li>
 <li class="">Decision rationale: <code>________________________________</code></li>
+<li class="">Billing impact reviewed (SAN means the Azure Local L2 tier and no Azure Hybrid Benefit): ☐ Yes</li>
 </ul>
 </li>
 <li class="task-list-item">
-<p><input type="checkbox" disabled=""> <strong>If SAN Disaggregated:</strong></p>
+<p><input type="checkbox" disabled=""> <strong>If SAN (hybrid or disaggregated):</strong></p>
 <ul>
 <li class="">SAN array vendor and model: <code>________________________________</code></li>
 <li class="">SAN array firmware version: <code>________________________________</code></li>
@@ -920,27 +940,28 @@
 <li class="">FC switch vendor and model (Fabric A): <code>________________________________</code></li>
 <li class="">FC switch vendor and model (Fabric B): <code>________________________________</code></li>
 <li class="">FC switch firmware version: <code>________________________________</code></li>
-<li class="">HBA vendor and model (per node): <code>________________________________</code></li>
+<li class="">HBA vendor and model (per node, Windows Server 2025 certified): <code>________________________________</code></li>
 <li class="">Number of HBA ports per node: <code>______</code></li>
 <li class="">Dual-fabric topology confirmed: ☐ Yes ☐ No</li>
+<li class="">If iSCSI: dedicated physical iSCSI ports per node (no vNICs): <code>______</code>, target portal IPs and VLANs documented: ☐ Yes ☐ Pending</li>
 </ul>
 </li>
 <li class="task-list-item">
-<p><input type="checkbox" disabled=""> <strong>LUN Layout (SAN only)</strong></p>
+<p><input type="checkbox" disabled=""> <strong>LUN Layout (disaggregated SAN only)</strong></p>
 <ul>
 <li class="">Infrastructure LUN size (≥250 GB): <code>____ GB</code></li>
 <li class="">Infrastructure LUN provisioned and RAW: ☐ Yes ☐ Pending</li>
 <li class="">Performance history LUN size (≥20 GB): <code>____ GB</code></li>
 <li class="">Performance history LUN provisioned and RAW: ☐ Yes ☐ Pending</li>
-<li class="">Workload LUN count and sizes: <code>________________________________</code></li>
+<li class="">Workload LUN count and sizes (configured after deployment): <code>________________________________</code></li>
 </ul>
 </li>
 <li class="task-list-item">
-<p><input type="checkbox" disabled=""> <strong>FC Zoning Policy</strong></p>
+<p><input type="checkbox" disabled=""> <strong>FC Zoning Policy and Timing</strong></p>
 <ul>
-<li class="">Zoning policy: ☐ Single-initiator/single-target (recommended) ☐ Other</li>
-<li class="">WWPNs collected from all nodes: ☐ Yes ☐ Pending (Task 12)</li>
-<li class="">Zones configured in both fabrics: ☐ Yes ☐ Pending</li>
+<li class="">Zoning policy: ☐ Redundant single-initiator (Microsoft wording) ☐ Single-initiator/single-target (Azure Local Cloud standard) ☐ Other</li>
+<li class="">Disaggregated: WWPNs collected from all nodes (Phase 03 Task 12) and zones configured before Arc registration: ☐ Yes ☐ Pending</li>
+<li class="">Hybrid: zoning deliberately <strong>not</strong> done until after the S2D cluster is deployed: ☐ Confirmed</li>
 </ul>
 </li>
 </ul>
