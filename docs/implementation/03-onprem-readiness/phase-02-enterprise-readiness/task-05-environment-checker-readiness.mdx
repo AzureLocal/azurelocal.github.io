@@ -1,0 +1,307 @@
+---
+title: "Task 05: Environment Checker Readiness"
+sidebar_label: "Task 05: Environment Checker"
+sidebar_position: 5
+description: "Run the standalone Azure Local Environment Checker (connectivity, hardware, software, Active Directory, network and Arc integration validators) before deployment, and uninstall it from the machines before deployment starts."
+category: "Runbook"
+scope: Standalone Environment Checker readiness assessment
+purpose: Find blocking problems in connectivity, hardware, software, Active Directory, network and Arc onboarding before the deployment wizard runs
+author: Azure Local Cloud
+created: 2026-11-08
+updated: 2026-11-08
+version: "1.0.0"
+tags:
+  - azure-local
+  - environment-checker
+  - readiness
+  - validation
+  - pre-deployment
+keywords:
+  - AzStackHci.EnvironmentChecker
+  - Invoke-AzStackHciConnectivityValidation
+  - Invoke-AzStackHciHardwareValidation
+  - Invoke-AzStackHciSoftwareValidation
+  - Invoke-AzStackHciExternalActiveDirectoryValidation
+  - Invoke-AzStackHciNetworkValidation
+  - Invoke-AzStackHciArcIntegrationValidation
+status: "Active"
+---
+
+# Task 05: Environment Checker Readiness
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Standalone Environment Checker readiness assessment
+> **PURPOSE**: Find blocking problems before the deployment wizard runs
+> **MASTER REFERENCE**: [Evaluate the deployment readiness of your environment for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/use-environment-checker?view=azloc-2610)
+
+**Status**: Active
+**Estimated Time**: 1-2 hours (more when a validator finds something to fix)
+
+---
+
+## Overview
+
+The Azure Local Environment Checker is a readiness assessment tool. It runs a series of tests on each machine in the Azure Local instance, reports a result for each test, gives remediation guidance when it has some, and saves a log file and a detailed report file. It runs in two modes:
+
+- **Integrated**: part of the deployment. By default, all validators run during deployment as pre-deployment readiness checks.
+- **Standalone**: a lightweight PowerShell tool from the PowerShell Gallery that you run at any time, outside the deployment, for example before the hardware arrives. **This task is the standalone mode.**
+
+Running it standalone first means the issues that would stop the deployment are found while you can still fix them cheaply. Critical issues are blocking: fix them before you proceed with deployment.
+
+:::info The toolkit only automates one validator
+The azurelocal-toolkit's Phase 04 pre-registration script calls `Invoke-AzStackHciConnectivityValidation` (see [Phase 04 Task 01](../../04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation.mdx)). The other five validators below are run by hand with the cmdlets shown.
+:::
+
+---
+
+## The six validators
+
+| Validator | Cmdlet | What it checks | Run it |
+|---|---|---|---|
+| **Connectivity** | `Invoke-AzStackHciConnectivityValidation` | Each machine has internet connectivity and can reach the well-known Azure endpoints over outbound HTTPS through all firewalls and proxy servers | From any client computer on the network where the instance is deployed, even before the hardware arrives. Again on each machine after OS configuration |
+| **Hardware** | `Invoke-AzStackHciHardwareValidation` | The machines meet the [system requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610) and are configured uniformly (see the table below) | Before the deployment starts |
+| **Software** | `Invoke-AzStackHciSoftwareValidation` | Consistent NTP server configuration that every node can synchronize with, the same supported OS version on all nodes, and that every SID in the local Administrators group resolves | In a PowerShell session connected to all target nodes (from any machine that can open sessions to all of them) |
+| **Active Directory** | `Invoke-AzStackHciExternalActiveDirectoryValidation` | That the Active Directory preparation was run before deployment and the organizational unit exists with the proper sub-OUs | After [Phase 01: Active Directory](../phase-01-active-directory/index.mdx) |
+| **Network** | `Invoke-AzStackHciNetworkValidation` | No active host uses an address in the reserved IP range (it pings and tries WinRM and SSH ports), plus storage connection, adapter driver readiness and other host network configuration | Only after the portal wizard has continued to its last step, just before deployment starts, and on the final hardware |
+| **Arc integration** | `Invoke-AzStackHciArcIntegrationValidation` | No Arc resource with the same name as a node in the registration resource group, no node already Arc-enabled in another subscription or resource group, a valid region, and that the resource group, Azure Local resource and role assignment count limits are not reached | Before Arc registration ([Phase 04](../../04-cluster-deployment/phase-04-arc-registration/index.mdx)) |
+
+The "Run it" column for the first four and the Arc integration validator is guidance from this runbook. The Network validator timing is a stated Learn limitation: it can only be executed after the portal wizard has continued to the last step, just before the actual deployment starts, and it must run on the final hardware.
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| A client computer on the deployment network | Runs PowerShell 5.1 or later. A client computer, a staging server or an Azure Local machine all work |
+| Permission to check Active Directory | You can verify that the Active Directory preparation has run |
+| Reviewed requirements | [System requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610) and [firewall requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610) |
+| Local administrator credentials | For the PowerShell sessions to the nodes (software and network validators) |
+
+---
+
+## Step 1: Install the Environment Checker
+
+The module is `AzStackHci.EnvironmentChecker` in the PowerShell Gallery. It works with Windows PowerShell 5.1.
+
+1. Run PowerShell as administrator.
+2. Install the latest PowerShellGet, then close the window and open a new administrator session:
+
+   ```powershell
+   Install-Module PowerShellGet -AllowClobber -Force
+   ```
+
+3. In the new session, trust the PowerShell Gallery and install the module:
+
+   ```powershell
+   Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+   Install-Module -Name AzStackHci.EnvironmentChecker
+   ```
+
+:::warning Do not leave it installed on an Azure Local machine
+You can install it on a client computer, a staging server or an Azure Local machine. If you install it on an Azure Local machine, uninstall it before you begin the deployment to avoid potential conflicts. See [Step 8](#step-8-uninstall-it-from-the-azure-local-machines).
+:::
+
+---
+
+## Step 2: Connectivity validator
+
+```powershell
+# On a workstation or staging server in the deployment network
+Invoke-AzStackHciConnectivityValidation
+
+# Remotely against one or more machines
+$session = New-PSSession -ComputerName <node-fqdn> -Credential $credential
+Invoke-AzStackHciConnectivityValidation -PsSession $session
+
+# One service only, for example Azure Arc
+Invoke-AzStackHciConnectivityValidation -Service "Arc For Servers"
+
+# Through a proxy
+Invoke-AzStackHciConnectivityValidation -Proxy http://proxy.contoso.com:8080 -ProxyCredential $proxyCredential
+```
+
+The validator checks general proxy connectivity. It does not check whether the Azure Local instance is configured to use a proxy.
+
+:::warning SSL inspection
+The validator checks for SSL inspection before it tests any endpoint. If SSL inspection is on in the Azure Local network, the test fails with a certificate error. Work with the network team to turn SSL inspection off for the instance. To confirm, run `Get-SigningRootChain -Uri <endpoint> | ft subject` (after `Import-Module AzStackHci.EnvironmentChecker`) for an endpoint such as `https://login.microsoftonline.com` and check that the chain is a Microsoft-issued one, then run the validator again.
+:::
+
+---
+
+## Step 3: Hardware validator
+
+Run it on the Azure Local machines, or remotely with `-PsSession`:
+
+```powershell
+Invoke-AzStackHciHardwareValidation
+
+$session = New-PSSession -ComputerName node1.contoso.com,node2.contoso.com -Credential $credential
+Invoke-AzStackHciHardwareValidation -PsSession $session
+```
+
+| Test source | Test | Severity |
+|---|---|---|
+| Processor | Desired properties, consistent properties, Hyper-V virtualization enabled | Warning |
+| Memory | Consistent properties, desired properties | Warning |
+| Network adapter | Consistent properties, desired properties, adapter groups consistent | Critical |
+| GPU | Video controller desired properties | Warning |
+| Storage | PhysicalDisk count | Critical |
+| Storage | PhysicalDisk desired properties, PhysicalDisk groups consistent | Warning |
+| Storage | **No storage pools exist** | Critical |
+| Firmware | BIOS desired properties | Warning |
+| Firmware | **Secure Boot enabled**, **TPM 2.0**, TPM desired certificates, TPM desired properties | Critical |
+
+A machine that still has a storage pool from earlier use fails the "No storage pools exist" test. For nodes that were used before, see [Phase 03 Task 11: Clear previous storage configuration](../../04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional.mdx).
+
+---
+
+## Step 4: Software validator
+
+The software validator checks consistency across the target nodes. You must run it in a PowerShell session connected to all target nodes.
+
+```powershell
+$session = New-PSSession -ComputerName node1.contoso.com,node2.contoso.com -Credential $credential
+Invoke-AzStackHciSoftwareValidation -PsSession $session -Exclude Test-IsNotPartofDomain
+```
+
+`-Exclude Test-IsNotPartofDomain` is the form in the Microsoft example. It leaves out the test that expects a machine to be outside a domain, because starting with version 2604 domain joining before deployment is supported. See [Phase 02: OS installation](../../04-cluster-deployment/phase-02-os-installation/index.mdx) and [Choose your route](../../04-cluster-deployment/choose-your-route.mdx) for the choice.
+
+---
+
+## Step 5: Active Directory validator
+
+Run it after the Active Directory preparation ([Phase 01](../phase-01-active-directory/index.mdx)). First make sure these are unique in Active Directory per instance: the deployment user, the organizational unit name, the deployment prefix (at most eight characters) and the deployment instance name. Physical node objects, if already created, must be in the nested computers OU.
+
+```powershell
+$params = @{
+    ADOUPath                   = 'OU=Hci001,DC=contoso,DC=local'
+    DomainFQDN                 = 'contoso.local'
+    NamingPrefix               = 'hci'
+    ActiveDirectoryServer      = 'contoso.local'
+    ActiveDirectoryCredentials = (Get-Credential -Message 'Active Directory Credentials')
+    ClusterName                = 'S-Cluster'
+    PhysicalMachineNames       = 'node01, node02, node03, node04'
+}
+Invoke-AzStackHciExternalActiveDirectoryValidation @params
+```
+
+The cmdlet checks whether the Active Directory and Group Policy object (GPO) modules are available and tries to install them if they are not. A pass means the OU exists and holds the proper sub-OUs.
+
+:::note Legacy wording in the Learn article
+The Learn Environment Checker article's Active Directory tab still describes the preparation in terms of group managed service accounts and an older preparation-tool call. The current preparation procedure is the one in [Phase 01](../phase-01-active-directory/index.mdx), which follows [Prepare Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610). Use the validator to confirm the result of that procedure.
+:::
+
+---
+
+## Step 6: Arc integration validator
+
+Run it from an Azure Local machine, signed in to Azure with the account you will use to register the machines:
+
+```powershell
+Connect-AzAccount -Tenant <tenant-id> -Subscription <subscription-id> -DeviceCode
+
+$nodes = [string[]]("host1","host2","host3","host4")
+Invoke-AzStackHciArcIntegrationValidation `
+    -SubscriptionID <subscription-id> `
+    -RegistrationResourceGroupName <resource-group> `
+    -ArcResourceGroupName <resource-group> `
+    -NodeNames $nodes
+```
+
+A failure usually means Arc resources with the same names as the nodes already exist in the resource group. Pick another resource group or remove the conflicting Arc resources before you register.
+
+---
+
+## Step 7: Network validator (after the wizard's last step)
+
+The network validator takes the **answer file**, the JSON file the Azure portal deployment wizard generates (for example `C:\MASLogs\Unattended-<timestamp>.json`), which holds node details, network settings and reserved IP ranges. You can also give the individual parameters.
+
+```powershell
+$allServers = @("<ServerIP1>", "<ServerIP2>")
+$hostCred = Get-Credential -Message 'Local administrator'
+$allServerSessions = foreach ($s in $allServers) {
+    Microsoft.PowerShell.Core\New-PSSession -ComputerName $s -Credential $hostCred -ErrorAction Stop
+}
+Invoke-AzStackHciNetworkValidation -DeployAnswerFile "<answer-file-path>" -PSSession $allServerSessions -ProxyEnabled $false
+```
+
+Limits stated by Microsoft: it can only run once the portal wizard has continued to the last step, just before the deployment starts, and you must run it on the final hardware you will deploy to. Learn's sample failure is a network adapter that has two IP addresses when it should have one.
+
+---
+
+## Reading the report
+
+Every validator prints a readiness report and saves it:
+
+| Item | Standalone mode default |
+|---|---|
+| Log file (contains PII) | `$HOME\.AzStackHci\AzStackHciEnvironmentChecker.log` |
+| Report file, JSON (contains PII) | `$HOME\.AzStackHci\AzStackHciEnvironmentReport.json` |
+
+During a deployment the same files go to `C:\CloudDeployment\Logs`. Each run overwrites the existing file, so copy them if you want to keep the result. Treat both as containing PII.
+
+Results are classified as success, critical, warning or informational. **Critical issues block deployment.** The results reflect the settings only at the time you ran the tool: a change to Active Directory or network settings later can turn a passed item into a critical one, so re-run the affected validator before deployment.
+
+---
+
+## Step 8: Uninstall it from the Azure Local machines
+
+The Environment Checker ships with Azure Local. Uninstall the standalone copy from every Azure Local machine before you begin the deployment, to avoid potential conflicts:
+
+```powershell
+Remove-Module AzStackHci.EnvironmentChecker -Force
+Get-Module AzStackHci.EnvironmentChecker -ListAvailable | Where-Object {$_.Path -like "*$($_.Version)*"} | Uninstall-Module -Force
+```
+
+---
+
+## Validation Checklist
+
+- [ ] Connectivity validator passed from the deployment network (and again from each node after OS configuration)
+- [ ] Hardware validator: no critical results (no storage pool, Secure Boot, TPM 2.0, network adapters consistent)
+- [ ] Software validator passed (NTP, one OS version, resolvable local Administrators SIDs)
+- [ ] Active Directory validator passed after the AD preparation
+- [ ] Arc integration validator passed for the registration resource group
+- [ ] Network validator passed on the final hardware (run when the wizard is at its last step)
+- [ ] Reports saved with the sign-off artifacts; the files contain PII, store accordingly
+- [ ] `AzStackHci.EnvironmentChecker` uninstalled from every Azure Local machine before deployment
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|---|---|
+| Connectivity fails with a certificate error | SSL inspection is on. Turn it off for the Azure Local network, then run again |
+| "No storage pools exist" fails | The machine has a storage pool from earlier use. Clear the previous storage configuration (Phase 03 Task 11), then run again |
+| Software validator fails on a domain-joined node | Use `-Exclude Test-IsNotPartofDomain`; domain joining before deployment is supported from 2604 |
+| Software validator reports an NTP problem on one node | Configure the same valid NTP server on all nodes ([Phase 03 Task 07](../../04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp.mdx)) |
+| Arc integration fails | Resources with the node names already exist in the resource group. Use another resource group or remove them |
+| Network validator cannot be run | The portal wizard has not reached its last step yet. Continue the wizard to the last step, then run it |
+| Module install fails | Allow `*.powershellgallery.com` outbound from the client computer |
+
+For help with validation issues during deployment or pre-registration, see [Get support for deployment issues](https://learn.microsoft.com/en-us/azure/azure-local/manage/get-support-for-deployment-issues?view=azloc-2610).
+
+---
+
+## Navigation
+
+| | | |
+|:--|:--:|--:|
+| ← [Task 04: Validation Sign-Off](./task-04-validation-signoff.mdx) | [↑ Phase 02: Enterprise Readiness](./index.mdx) | [Phase 03: Network Infrastructure →](../phase-03-network-infrastructure/index.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-08 | Azure Local Cloud | Initial document, written against Learn view azloc-2610 |
+
+---
+
+*End of Task*

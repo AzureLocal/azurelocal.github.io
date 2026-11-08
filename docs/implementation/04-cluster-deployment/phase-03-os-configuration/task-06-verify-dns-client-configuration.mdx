@@ -8,8 +8,8 @@ scope: DNS client verification
 purpose: Confirm DNS configuration matches variables.yml and that Azure endpoints resolve from each node
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-03-04
-version: "2.0.0"
+updated: 2026-11-08
+version: "2.1.0"
 tags:
   - azure-local
   - os-configuration
@@ -55,6 +55,10 @@ of every Azure Local node, and that each node can resolve the Azure endpoints re
 Arc registration and Azure Resource Manager communication.
 
 This task does **not** change any configuration — it is a read-only validation step.
+
+:::warning Verify, because DNS can't be changed after deployment
+The servers verified here become the permanent DNS servers of the instance. Before you pass this task, confirm they are the same on all nodes, that at least one runs outside the instance, that none is a public resolver such as 8.8.8.8, and that none is in the Azure Resource Bridge ranges (see the list in [Task 05](./task-05-configure-dns-servers.mdx)).
+:::
 
 **What the scripts do:**
 
@@ -597,6 +601,7 @@ Standalone script content references the toolkit repository. See the Orchestrate
 - [ ] Primary DNS server matches `variables.yml`: `dns.primary`
 - [ ] Secondary DNS server matches `variables.yml`: `dns.secondary`
 - [ ] Configuration confirmed on all nodes
+- [ ] The same DNS servers on every node, at least one outside the instance, none a public resolver, none in the Azure Resource Bridge ranges
 - [ ] `management.azure.com` resolves from all nodes
 - [ ] `login.microsoftonline.com` resolves from all nodes
 - [ ] `guestnotificationservice.azure.com` resolves from all nodes
@@ -622,7 +627,7 @@ Standalone script content references the toolkit repository. See the Orchestrate
 | `Adapter not found` error | NIC name in config doesn't match | Run `Get-NetAdapter` on the node; update `cluster.management_nic_name` in `variables.yml` |
 | DNS mismatch — wrong IPs returned | Task 05 not completed or used incorrect values | Re-run Task 05 with correct values from `variables.yml` |
 | Azure endpoints fail to resolve | DNS servers unreachable or missing forwarders | Verify DNS servers are online; check forwarder configuration on DNS server |
-| Endpoints resolve internally but not externally | DNS forwarder not configured for internet | Add internet forwarder to DNS server (e.g., `8.8.8.8`) |
+| Endpoints resolve internally but not externally | DNS forwarder not configured for internet | Add an internet forwarder on the customer DNS server. The forwarder belongs on the DNS server; do not configure a public resolver such as `8.8.8.8` as one of the DNS servers of the nodes (not supported) |
 | Orchestrated script: `cluster.management_nic_name not found` | Key missing from `variables.yml` | Add `management_nic_name` to the `cluster:` block in yml |
 | Orchestrated script: `dns.primary not found` | Key missing from `variables.yml` | Add `dns.primary` and `dns.secondary` to the `dns:` block in yml |
 | Node unreachable via PSRemoting | WinRM not configured or firewall blocking | Verify Task 01 (WinRM) completed; check firewall rules |

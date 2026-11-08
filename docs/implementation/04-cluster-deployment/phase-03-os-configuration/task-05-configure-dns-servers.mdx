@@ -8,8 +8,8 @@ scope: DNS client configuration
 purpose: Set DNS server addresses on the management NIC of all nodes using explicit values from variables.yml
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-03-05
-version: "2.0.0"
+updated: 2026-11-08
+version: "2.1.0"
 tags:
   - azure-local
   - os-configuration
@@ -56,6 +56,19 @@ registration, and any hostname resolution required later in the deployment.
 :::warning Run AFTER Task 04
 Task 04 (disable DHCP) must be complete. Setting DNS before DHCP is disabled has no harmful
 effect, but the standard sequence is Tasks 03 → 04 → 05.
+:::
+
+:::danger DNS decisions are permanent
+Once the deployment completes, it isn't supported to change the DNS server IPs, and the addresses can't be updated across the Azure Local platform stack. Get them right now. Per Learn (Azure Local 2610, *Network considerations for cloud deployments*, DNS server considerations):
+
+1. The DNS servers must be the **same on every node** of the instance.
+2. The DNS servers of the **infrastructure IP address range** (set in the deployment wizard or template) must be the same ones the nodes use. The Azure Resource Bridge control plane VM and the AKS control plane use those servers.
+3. At least one configured DNS server must run **outside** the Azure Local instance. Running *all* of them as VMs on the instance that depends on them isn't supported, because name resolution is needed during boot, shutdown, restart and recovery.
+4. Every configured DNS server must resolve the on-premises domains the infrastructure needs. Public DNS servers such as 8.8.8.8 aren't supported as the configured servers.
+5. For Active Directory deployments the DNS server must resolve the Active Directory domain and the public internet endpoints.
+6. The DNS server IPs must not fall in the Azure Resource Bridge ranges (`10.96.0.0/24` for deployments created from 2610, `10.96.0.0/12` for earlier deployments, and `10.244.0.0/16` for all). Use the wider `10.96.0.0/12` as the planning rule unless you are sure the instance is new on 2610. If AKS uses these DNS servers, also avoid its service and pod ranges.
+7. Learn recommends assigning only one management IP for the default gateway and for the configured DNS servers across the physical network adapters of the node, so it doesn't change once the management intent is created. Network validation fails when it finds more than one physical adapter with a default gateway.
+8. In an ARM template, write multiple DNS servers as quoted strings separated by commas, for example `"dnsServers": ["10.250.16.124", "10.250.17.232"]`.
 :::
 
 **What the scripts do:**

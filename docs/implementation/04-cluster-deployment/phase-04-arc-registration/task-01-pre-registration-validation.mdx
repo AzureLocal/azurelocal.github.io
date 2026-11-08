@@ -8,8 +8,8 @@ scope: "Validate identity, permissions, and connectivity before Arc registration
 purpose: "Validate identity, permissions, and connectivity before Arc registration"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -28,7 +28,7 @@ import TabItem from '@theme/TabItem';
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Phase 04](https://img.shields.io/badge/Phase-04_Arc_Registration-orange?style=flat-square)](./index.mdx)
-[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/?view=azloc-2610)
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Validate identity, permissions, and connectivity before Arc registration
@@ -39,10 +39,11 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-Before registering nodes with Azure Arc, validate two categories of prerequisites:
+Before registering nodes with Azure Arc, validate three categories of prerequisites:
 
 1. **Identity & Permissions** — verify the service principal exists, has the correct RBAC roles on the Arc resource group, and that its secret is accessible in Key Vault. If deploying interactively, verify your own account permissions.
 2. **Connectivity** — run the Environment Checker on each cluster node to confirm end-to-end reachability to all required Azure endpoints.
+3. **Arc onboarding** — run the Environment Checker Arc integration validator to confirm no existing Arc resource, subscription, region or limit problem will stop registration.
 
 :::info Two-Part Validation
 **Step 1** (Identity & Permissions) runs from the management server or any Azure-authenticated machine — it validates Azure-side prerequisites. 
@@ -60,6 +61,8 @@ Before registering nodes with Azure Arc, validate two categories of prerequisite
 | Internet connectivity | Nodes can reach PSGallery and Azure endpoints |
 | Azure modules | `Az.Accounts`, `Az.Resources`, `Az.KeyVault` installed on management machine |
 | Service principal | Created with App ID; secret stored in Key Vault |
+| Registering user permissions | Resource group owner, or both `Azure Connected Machine Onboarding` and `Azure Connected Machine Resource Administrator` on the Arc resource group (Learn: *Assign required permissions for Azure Local deployment*) |
+| Resource providers | All 13 required resource providers registered, including `Microsoft.KeyVault` and `Microsoft.Insights` (see the [prerequisites page](../../04-prerequisites-and-assumptions.mdx)) |
 
 ---
 
@@ -81,6 +84,10 @@ Before registering nodes with Azure Arc, validate two categories of prerequisite
 ## Step 1: Identity & Permission Checks
 
 Verify the service principal (or interactive user) has the required Azure permissions **before** connecting to cluster nodes. Run from the management server or any machine with Azure authentication.
+
+:::note The script accepts any one of these roles
+Learn 2610 says the person who registers the machines must be the resource group owner or have both `Azure Connected Machine Onboarding` and `Azure Connected Machine Resource Administrator` on the resource group. The check below passes when it finds any one accepted role, so confirm both roles under **Access control (IAM)** on the Arc resource group. The deployment user (not the registering user) needs a separate set of roles on the resource group: Azure Stack HCI Administrator, Reader, Key Vault Data Access Administrator, Key Vault Secrets Officer, Key Vault Contributor and Storage Account Contributor, and on the subscription both user access administrator and contributor.
+:::
 
 :::info What Gets Checked
 1. **SPN exists** in Entra ID with the configured App ID
@@ -241,6 +248,27 @@ Invoke-Command ($ServerList) {
 
 ---
 
+## Step 3: Arc Integration Validation and Cleanup
+
+Run the Environment Checker **Arc integration validator** from any Azure Local machine, signed in to the account that will register the machines. It checks that the Arc resource group has no Arc resources with the node names, that no node is already Arc-enabled in another subscription or resource group, that the Azure region is valid, and that the resource group, Azure Local resource and role assignment count limits are not reached. Full detail: [Phase 02 Task 05: Environment Checker Readiness](../../03-onprem-readiness/phase-02-enterprise-readiness/task-05-environment-checker-readiness.mdx).
+
+```powershell
+Connect-AzAccount -Tenant <tenant-id> -Subscription <subscription-id> -DeviceCode
+
+$nodes = [string[]]("node1","node2","node3","node4")
+Invoke-AzStackHciArcIntegrationValidation `
+    -SubscriptionID <subscription-id> `
+    -RegistrationResourceGroupName <arc-resource-group> `
+    -ArcResourceGroupName <arc-resource-group> `
+    -NodeNames $nodes
+```
+
+:::warning Uninstall the Environment Checker before the deployment
+The Environment Checker ships with Azure Local. A copy you installed from the PowerShell Gallery on a node for Step 2 or Step 3 must be uninstalled from every Azure Local machine before the deployment begins, to avoid potential conflicts. The cleanup is in [Task 05, Step 8](../../03-onprem-readiness/phase-02-enterprise-readiness/task-05-environment-checker-readiness.mdx#step-8-uninstall-it-from-the-azure-local-machines). Do it after Arc registration (Task 02) and before Phase 05.
+:::
+
+---
+
 ## Expected Results
 
 ### Identity & Permissions
@@ -252,6 +280,7 @@ Invoke-Command ($ServerList) {
 | Key Vault secret | Accessible and enabled (not expired) |
 | Arc Gateway | Exists in Azure, provisioning state Succeeded (skip with `-NoArcGateway`) |
 | Current user context | Authenticated to correct tenant and subscription |
+| Required roles for the registering user | Resource group owner, or both Azure Connected Machine Onboarding and Azure Connected Machine Resource Administrator on the Arc resource group |
 
 ### Connectivity
 
@@ -273,13 +302,14 @@ All Environment Checker tests should show `Succeeded`:
 | Issue | Resolution |
 |---|---|
 | SPN not found | Verify `identity.service_principal.client_id` in `variables.yml` matches Entra ID app registration |
-| No RBAC role on RG | Assign **Azure Connected Machine Onboarding** (minimum) on the Arc resource group |
+| No RBAC role on RG | Assign both **Azure Connected Machine Onboarding** and **Azure Connected Machine Resource Administrator** on the Arc resource group (Learn requires both, or resource group owner) |
 | KV secret not accessible | Check Key Vault access policies or RBAC; verify secret name matches the `keyvault://` URI in YAML |
 | Secret expired or disabled | Rotate the SPN secret in Entra ID and update Key Vault |
 | DNS resolution failures | Verify DNS servers in node network config (Phase 03 Task 05) |
 | Timeout errors | Check firewall rules for node IPs |
 | Certificate errors | Add Azure endpoints to TLS inspection bypass |
 | Module install fails | Allow `*.powershellgallery.com` outbound |
+| Arc integration validator reports existing Arc resources | Use another resource group, or remove the Arc resources that carry the node names |
 
 ---
 
