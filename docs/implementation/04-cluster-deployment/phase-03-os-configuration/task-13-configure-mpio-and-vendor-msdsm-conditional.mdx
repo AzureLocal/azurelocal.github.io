@@ -2,14 +2,14 @@
 title: "Task 13: Configure MPIO and Vendor MSDSM (Conditional)"
 sidebar_label: "Task 13: MPIO & MSDSM"
 sidebar_position: 13
-description: "Enable Windows Multipath I/O and configure vendor-specific MSDSM for Fibre Channel SAN disaggregated deployments"
+description: "Verify Windows Multipath I/O, register the SAN vendor with MSDSM and claim the array's disks, for Fibre Channel and iSCSI SAN disaggregated deployments on Azure Local 2610"
 category: "Runbook"
 scope: "MPIO and MSDSM configuration for SAN deployments"
-purpose: "Enable MPIO and configure vendor MSDSM so Windows correctly claims FC disks as multi-path volumes"
+purpose: "Verify MPIO and configure vendor MSDSM (register and claim) so Windows presents each SAN LUN as one multi-path disk"
 author: "Azure Local Cloud"
 created: 2026-05-02
-updated: 2026-05-02
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -22,7 +22,9 @@ keywords:
   - MSDSM
   - Multipath IO
   - Fibre Channel
+  - iSCSI
   - SAN
+  - mpclaim
 status: "Active"
 ---
 
@@ -37,24 +39,36 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
-[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: MPIO and MSDSM configuration
-> **PURPOSE**: Enable MPIO and configure vendor MSDSM so Windows correctly claims FC disks as multi-path volumes
-> **MASTER REFERENCE**: [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609)
+> **PURPOSE**: Verify MPIO and configure vendor MSDSM so Windows claims SAN disks as multi-path volumes
+> **MASTER REFERENCE**: [Microsoft Learn — Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610)
 
 **Status**: Active
 
-:::info Skip this task if deploying Storage Spaces Direct (S2D)
-This task applies only to **disaggregated SAN deployments**. If you are deploying with Storage Spaces Direct (hyperconverged), skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx).
+:::info Which storage designs run this task
+| Storage design | This task |
+|---|---|
+| **Disaggregated (SAN only)** | Run it now, on every node, after Task 12 and before you confirm the LUNs in Task 14. |
+| **Hybrid (Storage Spaces Direct + SAN)** | Not part of the initial deployment. SAN is attached after the initial deployment (version 2604 or later). The same Learn steps apply then; follow [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610) after the cluster is deployed. |
+| **Storage Spaces Direct only** | Skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx). |
 :::
 
 ---
 
 ## Overview
 
-Windows Multipath I/O (MPIO) aggregates multiple physical paths to a SAN LUN into a single logical disk, providing both redundancy and load distribution. MPIO must be installed as a Windows Feature, and the Microsoft Device Specific Module (MSDSM) must be configured with the hardware IDs for the specific SAN array in use. Without MSDSM, Windows presents each path as a separate disk rather than claiming them as a single multi-path volume.
+Windows Multipath I/O (MPIO) aggregates multiple physical paths to a SAN LUN into a single logical disk, providing both redundancy and load distribution. Azure Local uses the inbox Microsoft Device Specific Module (MSDSM); there is no vendor DSM package to stage. For each array, the vendor and product IDs have to be **registered** with MSDSM, and the array's disks have to be **claimed** by MPIO. Without that, Windows presents each path as a separate disk.
+
+:::info MPIO is enabled by default from Azure Local 2604
+Learn: "Azure Local 2604 and later versions enable Multipath I/O (MPIO) by default. Verify that MPIO is enabled on all nodes. If MPIO isn't enabled, which can happen in earlier versions, you need to reboot." You no longer install the feature and restart as a routine step. Verify it, and enable it only if it is off.
+:::
+
+:::warning Registering the vendor IDs is not always enough: claim the disks too
+Learn's step is registering the vendor with MSDSM (`New-MSDSMSupportedHW`). On a real Pure FlashArray lab, registering alone left **8 separate disks for 2 LUNs** (4 paths each, not merged). Claiming the array's devices with `mpclaim -n -i -d` and restarting merged them into 2 multi-path disks. Treat the claim as part of the procedure. This claim step is **lab-verified on Pure FlashArray only**; Learn documents `mpclaim` only for Hitachi VSP (`mpclaim -r -i -d "HITACHI OPEN-V"`). For other arrays, apply the same claim and confirm with `mpclaim -s -d`.
+:::
 
 ---
 
@@ -62,9 +76,10 @@ Windows Multipath I/O (MPIO) aggregates multiple physical paths to a SAN LUN int
 
 | Scenario | Run? |
 |----------|------|
-| SAN disaggregated deployment | ✅ Yes — all nodes |
-| Storage Spaces Direct (S2D) | ❌ Skip |
-| MPIO already installed from previous deployment | ✅ Yes — verify vendor hardware IDs still registered |
+| SAN disaggregated deployment (FC or iSCSI) | ✅ Yes — all nodes |
+| Hybrid (S2D + SAN) | ❌ Not at initial deployment — after deployment, per Learn |
+| Storage Spaces Direct (S2D) only | ❌ Skip |
+| Array or firmware changed since a previous deployment | ✅ Yes — verify vendor hardware IDs are still registered and claimed |
 
 ---
 
@@ -72,9 +87,9 @@ Windows Multipath I/O (MPIO) aggregates multiple physical paths to a SAN LUN int
 
 | Requirement | Details |
 |-------------|---------|
-| Task 12 complete | FC HBA drivers installed |
+| Task 12 complete | FC HBA drivers installed (or OEM iSCSI adapter drivers on 2604 to 2609; on 2610 the wizard configures iSCSI, see Task 12) |
 | SAN array vendor | Vendor and model confirmed (hardware IDs needed) |
-| FC fabric | Zoning configured (nodes can see SAN ports) — OR zoning will be completed post-Arc, before LUN access |
+| FC fabric | **Disaggregated:** zoning in place and the infrastructure and performance history LUNs unmasked to the HBAs, so the disks are visible before Arc registration. **Hybrid:** do not zone until after the deployment. |
 
 ---
 
@@ -87,7 +102,7 @@ Windows Multipath I/O (MPIO) aggregates multiple physical paths to a SAN LUN int
 
 ---
 
-## Step 1: Install MPIO Windows Feature
+## Step 1: Verify the MPIO Windows Feature
 
 <Tabs groupId="deployment-method">
 <TabItem value="direct" label="Direct (On Node)" default>
@@ -97,12 +112,16 @@ Run on each node individually via console, KVM, or RDP.
 **Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional/powershell/Enable-MPIO-Direct.ps1`
 
 ```powershell
-# Task 13 - Step 1: Install MPIO Feature (run on each node)
-Add-WindowsFeature -Name Multipath-IO -IncludeManagementTools
+# Task 13 - Step 1: Verify MPIO (run on each node)
+Get-WindowsOptionalFeature -Online -FeatureName MultipathIO |
+    Select-Object FeatureName, State, RestartNeeded
+
+# Only if State is not Enabled (possible on builds before 2604):
+# Enable-WindowsOptionalFeature -Online -FeatureName MultipathIO
 ```
 
-:::warning Restart required
-Restart each node after the feature installation completes before proceeding to Step 2.
+:::warning Restart only if required
+If you had to enable MPIO, or `RestartNeeded` is `True`, restart the node (rolling, one at a time once clustered) before proceeding to Step 2. If MPIO was already enabled, no restart is needed here.
 :::
 
 </TabItem>
@@ -113,7 +132,7 @@ Run from the management server against all nodes.
 **Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional/powershell/Enable-MPIO-Orchestrated.ps1`
 
 ```powershell
-# Task 13 - Step 1: Install MPIO Feature (orchestrated)
+# Task 13 - Step 1: Verify MPIO (orchestrated)
 # variables.yml variables:
 # cluster_nodes[].management_ip -> $ServerList
 
@@ -121,16 +140,19 @@ $ConfigPath = "$env:USERPROFILE\variables.yml"
 $ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
     ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
 
+# Report the state on every node. 2604 and later enable MPIO by default.
 Invoke-Command -ComputerName $ServerList -ScriptBlock {
-    Add-WindowsFeature -Name Multipath-IO -IncludeManagementTools
-}
+    Get-WindowsOptionalFeature -Online -FeatureName MultipathIO |
+        Select-Object @{N='Node';E={$env:COMPUTERNAME}}, FeatureName, State, RestartNeeded
+} | Sort-Object Node | Format-Table -AutoSize
 
-# Restart all nodes after feature installation
-$ServerList | ForEach-Object { Restart-Computer -ComputerName $_ -Force }
+# Only for a node where State is not Enabled: enable it, then restart that node.
+# Invoke-Command -ComputerName <node-ip> -ScriptBlock { Enable-WindowsOptionalFeature -Online -FeatureName MultipathIO -NoRestart }
+# Restart-Computer -ComputerName <node-ip> -Force
 ```
 
-:::warning Restart required
-The script restarts all nodes immediately after feature installation. Wait for all nodes to return online before proceeding to Step 2.
+:::warning Restart only if required
+Restart a node only if you enabled MPIO on it or `RestartNeeded` is `True`. Wait for the node to return online before proceeding to Step 2.
 :::
 
 </TabItem>
@@ -147,25 +169,62 @@ See toolkit repository for standalone implementation.
 </TabItem>
 </Tabs>
 
+### MPIO defaults in Azure Local 2604 and later
+
+| Setting | Default value |
+|---|---|
+| PathVerificationState | Enabled |
+| PathVerificationPeriod | 30 |
+| PDORemovePeriod | 20 |
+| RetryCount | 6 |
+| RetryInterval | 3 |
+| CustomPathRecovery | Disabled |
+| CustomPathRecoveryTime | 20 |
+| DiskTimeoutValue | 60 |
+| Load balance policy | Round Robin (RR) |
+| NewDiskPolicy | OfflineShared |
+
 ---
 
-## Step 2: Configure Vendor MSDSM Hardware IDs
+## Step 2: Register the Vendor with MSDSM, Claim the Disks and Set the Policy
 
-After all nodes have restarted, configure the Microsoft DSM with your SAN array's hardware IDs. Select the tab for your array vendor.
+Run on **each node**. Select the tab for your array vendor. Learn's vendor IDs:
+
+| Vendor | VendorId | ProductId | Learn command |
+|---|---|---|---|
+| Dell PowerStore | `DellEMC` | `PowerStore` | `New-MSDSMSupportedHW -VendorId "DellEMC" -ProductId "PowerStore"` |
+| Everpure FlashArray (formerly Pure Storage) | `PURE` | `FlashArray` | `New-MSDSMSupportedHW -VendorId "PURE" -ProductId "FlashArray"` |
+| Hitachi VSP | use `mpclaim` | `OPEN-V` | `mpclaim -r -i -d "HITACHI OPEN-V"` |
+| HPE Alletra / 3PAR | `3PARdata` | `VV` | `New-MSDSMSupportedHW -VendorId "3PARdata" -ProductId "VV"` |
+| NetApp ONTAP | `NETAPP` | `LUN C-Mode` | `New-MSDSMSupportedHW -VendorId "NETAPP" -ProductId "LUN C-Mode"` |
+| Lenovo ThinkSystem DS / DM / DG | Learn lists the series as supported but gives no IDs | Learn gives no IDs | Get the IDs from Lenovo's Windows MPIO guide and confirm them in the output of `Get-Disk` and `mpclaim -s -d` |
+
+:::note How to claim with mpclaim
+`mpclaim -n -i -d "<device string>"` adds the device to MPIO and claims the matching disks; `-n` suppresses the automatic reboot, so restart the node yourself afterwards (Learn's Hitachi form uses `-r`, which reboots). The device string is the **vendor ID padded to 8 characters** followed by the **product ID padded to 16 characters**, for example `"PURE    FlashArray      "` (`PURE` + 4 spaces, `FlashArray` + 6 spaces). Check the exact IDs with `Get-Disk | Select-Object FriendlyName, Manufacturer, Model` before you pad them.
+:::
 
 <Tabs groupId="san-vendor">
-<TabItem value="pure-storage" label="Pure Storage" default>
+<TabItem value="pure-storage" label="Everpure (Pure) FlashArray" default>
 
 ```powershell
-# Task 13 - Step 2: Configure MSDSM for Pure Storage FlashArray
-# Auto-claim FC disks via MPIO
-Enable-MSDSMAutomaticClaim -BusType "FC"
+# Task 13 - Step 2: Configure MSDSM for Everpure FlashArray (Pure Storage)
+# Remove the generic wildcard entry so MSDSM does not claim non-Pure devices (Learn)
+Remove-MSDSMSupportedHW -VendorId 'Vendor*' -ProductId 'Product*'
 
-# Register Pure Storage hardware IDs
+# Register the hardware IDs (Learn)
 New-MSDSMSupportedHW -VendorId "PURE" -ProductId "FlashArray"
 
-# Set load balancing policy (Least Queue Depth recommended for All-Flash)
-Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy LQD
+# Claim the array's devices (lab-verified on a Pure FlashArray). Vendor padded to 8, product padded to 16.
+mpclaim -n -i -d "PURE    FlashArray      "
+
+# Default load balance policy is Round Robin (Learn)
+Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy RR
+
+# Vendor MPIO timers (Learn)
+Set-MPIOSetting -NewPathRecoveryInterval 20 -CustomPathRecovery Enabled `
+    -NewPDORemovePeriod 20 -NewDiskTimeout 60 -NewPathVerificationState Enabled
+
+# Restart the node to apply the MPIO changes (one node at a time)
 ```
 
 </TabItem>
@@ -173,91 +232,136 @@ Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy LQD
 
 ```powershell
 # Task 13 - Step 2: Configure MSDSM for Dell PowerStore
-Enable-MSDSMAutomaticClaim -BusType "FC"
+# Register the hardware IDs (Learn). The vendor ID is DellEMC, not DELL.
+New-MSDSMSupportedHW -VendorId "DellEMC" -ProductId "PowerStore"
 
-# Register Dell PowerStore hardware IDs
-New-MSDSMSupportedHW -VendorId "DELL" -ProductId "PowerStore"
+# Claim the array's devices. Vendor padded to 8, product padded to 16 (not lab-verified for Dell).
+mpclaim -n -i -d "DellEMC PowerStore      "
 
-# Set load balancing policy
-Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy LQD
+# Default load balance policy is Round Robin (Learn)
+Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy RR
+
+# Vendor MPIO timers (Learn)
+Set-MPIOSetting -NewRetryCount 3 -CustomPathRecovery Enabled `
+    -NewPathRecoveryInterval 10 -NewDiskTimeout 30
+
+# Restart the node to apply the MPIO changes (one node at a time)
 ```
 
 </TabItem>
-<TabItem value="hpe-alletra" label="HPE Alletra">
+<TabItem value="hpe-alletra" label="HPE Alletra / 3PAR">
 
 ```powershell
-# Task 13 - Step 2: Configure MSDSM for HPE Alletra
-Enable-MSDSMAutomaticClaim -BusType "FC"
+# Task 13 - Step 2: Configure MSDSM for HPE Alletra MP / 3PAR
+# Register the hardware IDs (Learn)
+New-MSDSMSupportedHW -VendorId "3PARdata" -ProductId "VV"
 
-# Register HPE Alletra hardware IDs
-New-MSDSMSupportedHW -VendorId "HP" -ProductId "OPEN-V"
-New-MSDSMSupportedHW -VendorId "HP" -ProductId "Alletra"
+# Claim the array's devices. Vendor is already 8 characters, product padded to 16 (not lab-verified for HPE).
+mpclaim -n -i -d "3PARdataVV              "
 
-# Set load balancing policy
-Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy LQD
+# Default load balance policy is Round Robin (Learn)
+Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy RR
+
+# Restart the node to apply the MPIO changes (one node at a time)
 ```
+
+Learn: no MPIO tuning is required when you set the **host persona to WINDOWS** on the array. Learn lists HPE Alletra MP 10000 as the supported model.
 
 </TabItem>
 <TabItem value="hitachi-vsp" label="Hitachi VSP">
 
 ```powershell
 # Task 13 - Step 2: Configure MSDSM for Hitachi VSP
-Enable-MSDSMAutomaticClaim -BusType "FC"
+# Learn uses mpclaim for Hitachi (no New-MSDSMSupportedHW VendorId). -r REBOOTS the node.
+# Plan a rolling restart; do not run this on all nodes at once.
+mpclaim -r -i -d "HITACHI OPEN-V"
 
-# Register Hitachi VSP hardware IDs
-New-MSDSMSupportedHW -VendorId "HITACHI" -ProductId "OPEN-V"
-
-# Set load balancing policy (Round Robin typical for VSP)
+# Default load balance policy is Round Robin (Learn)
 Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy RR
 ```
+
+Learn: default MSDSM settings with the Round Robin policy work well for Hitachi VSP. Run `Set-MSDSMGlobalDefaultLoadBalancePolicy` after the node is back online if the reboot interrupts the sequence.
 
 </TabItem>
 <TabItem value="netapp-ontap" label="NetApp ONTAP">
 
 ```powershell
 # Task 13 - Step 2: Configure MSDSM for NetApp ONTAP
-Enable-MSDSMAutomaticClaim -BusType "FC"
+# ONTAP C-Mode reports "LUN C-Mode", not "LUN" (Learn). Only register "LUN" for legacy 7-Mode.
+New-MSDSMSupportedHW -VendorId "NETAPP" -ProductId "LUN C-Mode"
 
-# Register NetApp ONTAP hardware IDs
-New-MSDSMSupportedHW -VendorId "NETAPP" -ProductId "LUN"
+# Claim the array's devices. Vendor padded to 8, product padded to 16 (not lab-verified for NetApp).
+mpclaim -n -i -d "NETAPP  LUN C-Mode      "
 
-# Set load balancing policy
-Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy LQD
+# Default load balance policy is Round Robin (Learn)
+Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy RR
+
+# Restart the node to apply the MPIO changes (one node at a time)
 ```
+
+Learn: no extra MPIO tuning is required beyond the defaults.
+
+</TabItem>
+<TabItem value="lenovo" label="Lenovo ThinkSystem">
+
+Learn lists Lenovo ThinkSystem DS, DM and DG series as supported for Fibre Channel and iSCSI, but the 2610 article gives **no** MSDSM vendor and product IDs and no MPIO timers for Lenovo. Do not guess the IDs.
+
+1. Get the Windows MPIO IDs from Lenovo's configuration guide for your series.
+2. Confirm them on a node: `Get-Disk | Select-Object FriendlyName, Manufacturer, Model` and `mpclaim -s -d`.
+3. Register with `New-MSDSMSupportedHW`, claim with `mpclaim -n -i -d "<vendor padded to 8><product padded to 16>"`, set `Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy RR`, and restart the node.
 
 </TabItem>
 </Tabs>
 
 :::tip Verify hardware IDs with your SAN vendor
-The hardware IDs (VendorId / ProductId) shown above are commonly used values. Always verify the exact IDs for your specific array firmware version with your SAN vendor's Windows MPIO configuration guide.
+Always confirm the exact IDs for your array and firmware against the vendor's Windows MPIO configuration guide, and against what the node reports for the disks.
 :::
 
+### iSCSI only: automatic claim
+
+For iSCSI arrays on Azure Local **2604 to 2609**, also enable MPIO automatic claim for the iSCSI bus (Learn: "Enable MPIO for iSCSI using default policy (round robin)"):
+
+```powershell
+Enable-MSDSMAutomaticClaim -BusType iSCSI
+```
+
+If you enable auto-claim after LUNs are already visible, restart the node so MSDSM can re-enumerate the devices. On **2610**, do not enable iSCSI on the machines before deployment; the deployment wizard's **iSCSI Configuration** does this (see [Task 12](./task-12-install-fc-hba-drivers-conditional.mdx#iscsi-adapters-disaggregated-iscsi-san)). Fibre Channel LUNs are claimed through the registered hardware IDs; Learn does not use `Enable-MSDSMAutomaticClaim -BusType FC`, so this runbook no longer runs it.
+
 ---
+
+## Step 3: Restart and Verify
+
+MPIO policy changes do not take effect until the node restarts. Restart each node (one at a time when clustered), then verify.
 
 ## Verification
 
 ```powershell
-# Confirm MPIO is installed
-(Get-WindowsFeature -Name Multipath-IO).InstallState
+# Confirm MPIO is enabled
+Get-WindowsOptionalFeature -Online -FeatureName MultipathIO | Select-Object FeatureName, State
 
 # Confirm supported hardware IDs are registered
 Get-MSDSMSupportedHW | Format-Table VendorId, ProductId
 
-# Confirm auto-claim is enabled for FC
+# Confirm the load balance policy and MPIO timers
+Get-MSDSMGlobalDefaultLoadBalancePolicy
+Get-MPIOSetting
+
+# Confirm the array's disks are claimed and show their path counts
 mpclaim -s -d
 ```
 
-**Expected:** `InstallState = Installed`; your vendor's IDs appear in the supported HW list; `mpclaim` shows disk paths (will show 0 paths until LUNs are presented and zoning is complete).
+**Expected:** `State = Enabled`; your vendor's IDs appear in the supported HW list; the load balance policy is `RR`; `mpclaim -s -d` lists one MPIO disk per LUN with two or more paths. Until the LUNs are presented, `mpclaim` shows no disks, which is expected. If a node shows one disk **per path** instead of one disk per LUN, the disks are registered but not claimed; run the `mpclaim -n -i -d` claim from Step 2 and restart.
 
 ---
 
 ## Validation Checklist
 
-- [ ] MPIO Windows feature installed on all nodes
-- [ ] All nodes restarted after MPIO installation
-- [ ] Vendor hardware IDs registered via `New-MSDSMSupportedHW`
-- [ ] `Enable-MSDSMAutomaticClaim -BusType "FC"` confirmed on all nodes
-- [ ] Load balance policy set
+- [ ] MPIO verified as enabled on all nodes (restarted only where it had to be enabled)
+- [ ] Vendor hardware IDs registered (`New-MSDSMSupportedHW`, or `mpclaim` for Hitachi) on all nodes
+- [ ] Array devices claimed (`mpclaim -n -i -d`) and all nodes restarted afterwards
+- [ ] Load balance policy is Round Robin (`RR`) unless the vendor guide says otherwise
+- [ ] Vendor MPIO timers applied where Learn lists them (Dell, Everpure)
+- [ ] iSCSI on 2604 to 2609 only: `Enable-MSDSMAutomaticClaim -BusType iSCSI` confirmed
 
 ---
 
@@ -272,3 +376,4 @@ mpclaim -s -d
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610 (Learn "Connect an external storage array"): MPIO verified, not installed (enabled by default from 2604); corrected vendor IDs (DellEMC, 3PARdata/VV, NETAPP "LUN C-Mode", Hitachi via mpclaim); Pure renamed Everpure with wildcard removal; load balance policy RR instead of LQD; added the MSDSM claim step (lab-verified on Pure FlashArray) with padded vendor and product strings; per-vendor MPIO timers; Lenovo entry; dropped the FC auto-claim line; iSCSI auto-claim for 2604 to 2609 |

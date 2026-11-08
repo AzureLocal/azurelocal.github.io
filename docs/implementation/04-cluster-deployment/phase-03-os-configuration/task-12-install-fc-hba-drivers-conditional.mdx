@@ -2,25 +2,28 @@
 title: "Task 12: Install FC HBA Drivers (Conditional)"
 sidebar_label: "Task 12: FC HBA Drivers"
 sidebar_position: 12
-description: "Install Fibre Channel HBA drivers on Azure Local nodes for SAN disaggregated deployments"
+description: "Install Fibre Channel HBA drivers (or the dedicated iSCSI adapter drivers) on Azure Local nodes for SAN disaggregated deployments, and get the zoning timing right for disaggregated versus hybrid"
 category: "Runbook"
-scope: "FC HBA driver installation for SAN deployments"
-purpose: "Install and verify FC HBA drivers so nodes can present WWPNs to the FC fabric before zoning"
+scope: "FC HBA and iSCSI adapter driver installation for SAN deployments"
+purpose: "Install and verify FC HBA drivers so nodes can present WWPNs to the FC fabric, with correct zoning timing for disaggregated and hybrid designs"
 author: "Azure Local Cloud"
 created: 2026-05-02
-updated: 2026-05-02
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
   - os-configuration
   - san
   - fibre-channel
+  - iscsi
 keywords:
   - FC HBA
   - Fibre Channel
+  - iSCSI
   - HBA drivers
   - WWPN
+  - zoning
   - SAN
 status: "Active"
 ---
@@ -36,22 +39,39 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
-[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 > **DOCUMENT CATEGORY**: Runbook
-> **SCOPE**: FC HBA driver installation
-> **PURPOSE**: Install and verify FC HBA drivers so nodes present WWPNs to the FC fabric
-> **MASTER REFERENCE**: [Microsoft Learn — Prepare hardware for Azure Local SAN deployment](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2609)
+> **SCOPE**: FC HBA and iSCSI adapter driver installation
+> **PURPOSE**: Install and verify FC HBA drivers so nodes present WWPNs to the FC fabric, and time the zoning correctly for your storage design
+> **MASTER REFERENCE**: [Microsoft Learn — Install the Azure Local operating system for disaggregated deployments (Connect to SAN)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610#connect-to-san)
 
 **Status**: Active
 
-:::info Skip this task if deploying Storage Spaces Direct (S2D)
-This task applies only to **disaggregated SAN deployments**. If you are deploying with Storage Spaces Direct (hyperconverged), skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx).
+:::info Which storage designs run this task
+| Storage design | This task |
+|---|---|
+| **Disaggregated (SAN only)** | Run it now, on every node, before Arc registration. |
+| **Hybrid (Storage Spaces Direct + SAN)** | Not part of the initial deployment. SAN is attached after the initial deployment (version 2604 or later). Do the initial deployment with local storage, then follow [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610). If the FC HBAs are already installed, **do not zone** their WWNs until after the deployment (see the zoning timing below). |
+| **Storage Spaces Direct only** | Skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx). |
 :::
 
 ## Overview
 
-Azure Local disaggregated deployments require Fibre Channel Host Bus Adapters (HBAs) in each node. Before zoning can be configured in the FC fabric, the HBA drivers must be installed and WWPNs collected. This task installs vendor-provided drivers and records each node's WWPN for FC fabric zoning.
+Azure Local disaggregated deployments connect each node to a SAN with Fibre Channel Host Bus Adapters (HBAs) or with dedicated iSCSI network adapters. For Fibre Channel, the HBA drivers must be installed and the WWPNs collected so the SAN administrator can zone the fabric and unmask the LUNs. This task installs the vendor-provided drivers and records each node's WWPN.
+
+---
+
+## Zoning timing: disaggregated versus hybrid
+
+The timing is **opposite** for the two designs. Do not apply one rule to both.
+
+| Design | When to zone the FC HBA WWNs | What Microsoft Learn says |
+|---|---|---|
+| **Disaggregated (SAN only)** | **Before** Arc registration (Phase 04), so the LUNs are visible to the nodes. | "Retrieve the HBA Address (WWPN)... get the LUNs unmasked to the HBAs... Confirm you can see the LUNs before you proceed with Arc registration." "Don't initialize the drives, as the deployment expects the drive type to be RAW." |
+| **Hybrid (S2D + SAN)** | **After** the Azure Local deployment completes. | "To avoid deployment confusion for FC LUNs, don't zone in FC HBA World Wide Names (WWNs) until after the Azure Local deployment." |
+
+Learn's disaggregated page requires that the LUNs are unmasked and visible before Arc registration. It does not describe the fabric zoning step itself; on Fibre Channel the LUNs can only become visible once the zones exist, so zoning is part of getting them visible. Needed LUNs at this point: the infrastructure LUN (250 GB or larger) and the performance history LUN (20 GB or larger). Learn states that workload LUNs are configured after deployment.
 
 ---
 
@@ -59,7 +79,9 @@ Azure Local disaggregated deployments require Fibre Channel Host Bus Adapters (H
 
 | Scenario | Run? |
 |---|---|
-| SAN disaggregated deployment | ✅ Yes — all nodes |
+| SAN disaggregated deployment, Fibre Channel | ✅ Yes — all nodes, FC tab |
+| SAN disaggregated deployment, iSCSI | ✅ Yes — all nodes, iSCSI section (driver step only on 2610) |
+| Hybrid (S2D + SAN) | ❌ Not at initial deployment — attach SAN after deployment per Learn |
 | Storage Spaces Direct (S2D) deployment | ❌ Skip |
 | HBA drivers already installed from OEM image | ✅ Yes — verify and collect WWPNs |
 
@@ -69,10 +91,11 @@ Azure Local disaggregated deployments require Fibre Channel Host Bus Adapters (H
 
 | Requirement | Details |
 |---|---|
-| Tasks 01–11 complete | Nodes named, storage cleaned |
+| Tasks 01–11 complete | Nodes named, local storage cleaned (Task 11 never touches SAN LUNs) |
 | HBA hardware installed | FC HBAs seated in PCIe slots on all nodes |
-| HBA vendor driver package | Download from your HBA vendor (Emulex, QLogic, Broadcom, Marvell, etc.) |
-| FC fabric access | Fabric admin ready to configure zoning after WWPN collection |
+| HBA vendor driver package | Download from your HBA vendor (Emulex, QLogic, Broadcom, Marvell, etc.). For hybrid, Learn requires a Windows Server 2025 certified HBA and driver |
+| FC fabric access | Fabric admin ready to configure zoning after WWPN collection (disaggregated) |
+| LUNs | Infrastructure LUN (250 GB or larger) and performance history LUN (20 GB or larger) created on the array |
 
 ---
 
@@ -82,7 +105,7 @@ Azure Local disaggregated deployments require Fibre Channel Host Bus Adapters (H
 |------|------|-------------|
 | `cluster_nodes[].management_ip` | string | PSRemoting target IP (orchestrated mode) |
 | `cluster_nodes[].hostname` | string | Node display name for logging |
-| `cluster_nodes[].fc_hba[].wwpn` | string | Record here after collection — used for FC zoning |
+| `cluster_nodes[].fc_hba[].wwpn` | string | Record here after collection — used for FC zoning and LUN masking |
 
 ---
 
@@ -179,9 +202,34 @@ Invoke-Command -ComputerName $ServerList -ScriptBlock {
 | NODE02 | Port 0 | ___________________________ | A |
 | NODE02 | Port 1 | ___________________________ | B |
 
-:::note Provide WWPNs to FC Fabric Admin
-Once WWPNs are collected, provide them to the FC fabric administrator for zoning configuration. Zoning must be completed **after** Arc registration (Phase 04) — the storage array's port WWPNs are needed to complete the zone configuration.
+:::note Provide WWPNs to the FC fabric and SAN administrators (disaggregated)
+For a **disaggregated** design, give the collected WWPNs to the SAN administrator so the LUNs are unmasked to the HBAs, and to the fabric administrator for zoning. The array's target port WWPNs are needed to complete the zones. Do this **before** Arc registration (Phase 04), then confirm the LUNs in [Task 14](./task-14-verify-san-lun-presentation-conditional.mdx).
+
+For a **hybrid** design (S2D + SAN), keep the WWPNs on file but **do not zone** them until after the Azure Local deployment.
 :::
+
+---
+
+## iSCSI adapters (disaggregated, iSCSI SAN)
+
+Learn: "Azure Local only supports dedicated adapters for iSCSI." The steps depend on the version you deploy.
+
+:::warning Azure Local 2610: do not enable iSCSI on the machines before deployment
+"Starting with Azure Local version 2610, for connected and disconnected deployments, don't manually enable iSCSI on the machines before deployment. The deployment wizard now includes iSCSI configuration as part of the deployment process. For earlier versions, follow the steps in this section to enable iSCSI manually." (Learn, [Connect to SAN](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610#connect-to-san)). In the 2610 portal wizard you turn on **iSCSI Configuration**, then enter the authentication type and the iSCSI network details ([Deploy Azure Local using the Azure portal for disaggregated deployments](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2610#specify-configuration-settings)).
+:::
+
+| Version you deploy | What to do in this task |
+|---|---|
+| **2610** (connected or disconnected) | Install the OEM drivers for the dedicated iSCSI network adapters (**not** the inbox drivers). Learn says not to manually enable iSCSI on the machines before deployment because the wizard now configures it, so this runbook does not run the manual iSCSI steps (addresses, `MSiSCSI`, auto-claim, target connections) on 2610. Enter the iSCSI network details in the wizard instead; Learn does not spell out each manual step as unsupported, so confirm anything beyond the drivers with your OEM. |
+| **2604 to 2609** | Follow Learn's manual iSCSI steps on every node: install the OEM adapter drivers (not inbox), assign each adapter an IP address and disable DNS client registration, validate connectivity with `ping -S`, add static routes only if routing is required, set `MSiSCSI` to start automatically, run `Enable-MSDSMAutomaticClaim -BusType iSCSI`, add the target portal for each path, collect the IQNs (the `NodeAddress` of the iSCSI initiator ports from `Get-InitiatorPort`) for LUN masking\| Where-Object ConnectionType -eq 'iSCSI').NodeAddress`) for LUN masking, connect each target with `-IsPersistent $true -IsMultipathEnabled $true`, then confirm the LUNs with `Get-PhysicalDisk`. |
+
+Check that the iSCSI adapters are not on an inbox driver (Learn: an adapter uses an inbox driver if `DriverProvider` is `Microsoft`):
+
+```powershell
+Get-NetAdapter -Name "<AdapterName>" | Select-Object Name, DriverProvider, DriverVersion, DriverDate
+```
+
+For hybrid (S2D + SAN) with iSCSI, Learn requires dedicated physical ports for iSCSI (vNICs are not supported) and a node with identical NIC configurations; see [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610).
 
 ---
 
@@ -204,10 +252,11 @@ For initial pre-cluster deployment (Phase 03), simply reboot each node and confi
 
 ## Validation Checklist
 
-- [ ] HBA drivers installed on all nodes
+- [ ] HBA drivers installed on all nodes (FC), or OEM iSCSI adapter drivers installed and not inbox (iSCSI)
 - [ ] FC initiator ports visible (`Get-InitiatorPort` shows Fibre Channel ports)
 - [ ] WWPNs collected and recorded in `variables.yml` under `cluster_nodes[].fc_hba[].wwpn`
-- [ ] WWPN list provided to FC fabric administrator
+- [ ] Disaggregated: WWPN list provided to the SAN and FC fabric administrators now (before Arc registration)
+- [ ] Hybrid: WWNs **not** zoned yet (zone only after the Azure Local deployment)
 
 ---
 
@@ -222,3 +271,4 @@ For initial pre-cluster deployment (Phase 03), simply reboot each node and confi
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610: zoning timing split by design (disaggregated before Arc registration, hybrid after deployment); removed the claim that zoning waits for Arc registration; added iSCSI section with the 2610 wizard rule; inbox driver check; fixed Learn links and platform badge |

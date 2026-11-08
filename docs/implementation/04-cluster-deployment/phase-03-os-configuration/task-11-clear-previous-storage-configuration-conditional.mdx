@@ -8,8 +8,8 @@ scope: "Clear previous Storage Spaces Direct configuration if redeploying on exi
 purpose: "Clear previous Storage Spaces Direct configuration if redeploying on existing hardware"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -33,12 +33,12 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
-[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Clear previous Storage Spaces Direct configuration if redeploying on existing...
 > **PURPOSE**: Clear previous Storage Spaces Direct configuration if redeploying on existing hardware
-> **MASTER REFERENCE**: [Azure Local Storage Spaces Direct](https://learn.microsoft.com/en-us/azure/azure-local/concepts/storage-spaces-direct-overview)
+> **MASTER REFERENCE**: [Microsoft Learn - Install the Azure Local operating system (clean non-OS drives)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610)
 
 **Status**: Active
 
@@ -47,7 +47,16 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 If nodes have previously been used with Storage Spaces Direct, all existing storage pools, virtual disks, and disk metadata must be cleared before Azure Local deployment.
 
 :::danger Data Loss Warning
-This step **DESTROYS ALL DATA** on data disks. Ensure all data is backed up before proceeding. This is irreversible.
+This step **DESTROYS ALL DATA** on the **local** data disks. Ensure all data is backed up before proceeding. This is irreversible.
+:::
+
+:::danger Never run a local-disk wipe against SAN LUNs
+The scripts below skip every disk whose `BusType` is `Fibre Channel` or `iSCSI`, and they only reset physical disks that are not on those buses. This `BusType` filter is a safety guard added by this runbook, not a Microsoft step. SAN LUNs belong to the storage array, not to the node.
+
+- **Disaggregated (SAN-only):** the infrastructure (250 GB or larger) and performance history (20 GB or larger) LUNs must stay **RAW** and are presented before deployment. Do not clear, initialize or reset them from this task. If a LUN holds an old configuration, clean it on the array side with your storage administrator.
+- **Hybrid (S2D + SAN):** SAN LUNs are attached only after the initial deployment. If you redeploy a hybrid cluster, disconnect or unmask the SAN LUNs first so a wipe cannot reach them.
+
+Microsoft Learn tells you to clean the non-OS drives on the machines you deploy: "Clean all the non-OS drives for each machine that you intend to deploy... This step doesn't apply to a machine repair operation" ([Install the OS](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610)). For disaggregated deployments, Learn says "Don't initialize the drives, as the deployment expects the drive type to be RAW" ([Install the OS for disaggregated deployments](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610#connect-to-san)).
 :::
 
 ---
@@ -58,7 +67,7 @@ This step **DESTROYS ALL DATA** on data disks. Ensure all data is backed up befo
 |---|---|
 | New hardware, first deployment | ❌ Skip |
 | Redeployment on existing hardware | ✅ Yes |
-| Hardware with previous S2D config | ✅ Yes |
+| Hardware with previous S2D config | ✅ Yes (local disks only) |
 | Disks showing `CanPool = False` | ✅ Yes |
 | After a failed deployment | ✅ Yes |
 
@@ -98,8 +107,8 @@ Update-StorageProviderCache
 Get-StoragePool | ? IsPrimordial -eq $false | Set-StoragePool -IsReadOnly:$false -ErrorAction SilentlyContinue
 Get-StoragePool | ? IsPrimordial -eq $false | Get-VirtualDisk | Remove-VirtualDisk -Confirm:$false -ErrorAction SilentlyContinue
 Get-StoragePool | ? IsPrimordial -eq $false | Remove-StoragePool -Confirm:$false -ErrorAction SilentlyContinue
-Get-PhysicalDisk | Reset-PhysicalDisk -ErrorAction SilentlyContinue
-Get-Disk | ? Number -ne $null | ? IsBoot -ne $true | ? IsSystem -ne $true | ? PartitionStyle -ne RAW | ? BusType -ne USB | % {
+Get-PhysicalDisk | ? BusType -notin 'Fibre Channel','iSCSI' | Reset-PhysicalDisk -ErrorAction SilentlyContinue
+Get-Disk | ? Number -ne $null | ? IsBoot -ne $true | ? IsSystem -ne $true | ? PartitionStyle -ne RAW | ? BusType -notin 'USB','Fibre Channel','iSCSI' | % {
  $_ | Set-Disk -isoffline:$false
  $_ | Set-Disk -isreadonly:$false
  $_ | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
@@ -130,8 +139,8 @@ Invoke-Command ($ServerList) {
  Get-StoragePool | ? IsPrimordial -eq $false | Set-StoragePool -IsReadOnly:$false -ErrorAction SilentlyContinue
  Get-StoragePool | ? IsPrimordial -eq $false | Get-VirtualDisk | Remove-VirtualDisk -Confirm:$false -ErrorAction SilentlyContinue
  Get-StoragePool | ? IsPrimordial -eq $false | Remove-StoragePool -Confirm:$false -ErrorAction SilentlyContinue
- Get-PhysicalDisk | Reset-PhysicalDisk -ErrorAction SilentlyContinue
- Get-Disk | ? Number -ne $null | ? IsBoot -ne $true | ? IsSystem -ne $true | ? PartitionStyle -ne RAW | ? BusType -ne USB | % {
+ Get-PhysicalDisk | ? BusType -notin 'Fibre Channel','iSCSI' | Reset-PhysicalDisk -ErrorAction SilentlyContinue
+ Get-Disk | ? Number -ne $null | ? IsBoot -ne $true | ? IsSystem -ne $true | ? PartitionStyle -ne RAW | ? BusType -notin 'USB','Fibre Channel','iSCSI' | % {
  $_ | Set-Disk -isoffline:$false
  $_ | Set-Disk -isreadonly:$false
  $_ | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
@@ -164,12 +173,12 @@ Standalone script content references the toolkit repository. See the Orchestrate
 # Verify all data disks are CanPool = True
 $ServerList = @("<node1-ip>", "<node2-ip>")
 Invoke-Command ($ServerList) {
- Get-PhysicalDisk | Where-Object { $_.BusType -ne 'USB' } |
+ Get-PhysicalDisk | Where-Object { $_.BusType -notin 'USB','Fibre Channel','iSCSI' } |
  Select-Object FriendlyName, CanPool, CannotPoolReason, BusType, MediaType
 } | Format-Table -AutoSize
 ```
 
-**Expected:** All data disks show `CanPool = True`. Boot disk shows `CannotPoolReason = Insufficient Capacity` — this is expected.
+**Expected:** All local data disks show `CanPool = True`. SAN LUNs (`Fibre Channel` or `iSCSI`) are not listed and must not be touched. Boot disk shows `CannotPoolReason = Insufficient Capacity` — this is expected.
 
 ---
 
@@ -187,6 +196,7 @@ Invoke-Command ($ServerList) {
 |---|---|
 | `CanPool = False` after running | Re-run `Reset-PhysicalDisk` |
 | Storage pool still exists | Remove from cluster first, then re-run |
+| A SAN LUN is no longer RAW | Do not reuse it as the infrastructure or performance history LUN. Ask the storage administrator to recreate or wipe it on the array, then present it again (see [Task 14](./task-14-verify-san-lun-presentation-conditional.mdx)) |
 
 ---
 
@@ -204,7 +214,7 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 
 ## Navigation
 
-[← Task 10: Configure Hostname](./task-10-configure-hostname.mdx) · [↑ Phase 03](./index.mdx) · [SAN: Task 12: FC HBA Drivers →](./task-12-install-fc-hba-drivers-conditional.mdx) · [S2D: Task 15: Combined Script →](./task-15-complete-combined-script-all-steps.mdx)
+[← Task 10: Configure Hostname](./task-10-configure-hostname.mdx) · [↑ Phase 03](./index.mdx) · [Disaggregated SAN: Task 12: HBA / iSCSI adapter drivers →](./task-12-install-fc-hba-drivers-conditional.mdx) · [S2D or hybrid (S2D + SAN): Task 15: Combined Script →](./task-15-complete-combined-script-all-steps.mdx)
 
 ---
 
@@ -213,3 +223,4 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610: the wipe loop and Reset-PhysicalDisk now skip Fibre Channel and iSCSI disks so SAN LUNs are never cleared; added SAN and hybrid danger box; fixed Learn links; navigation routes hybrid users to Task 15 |

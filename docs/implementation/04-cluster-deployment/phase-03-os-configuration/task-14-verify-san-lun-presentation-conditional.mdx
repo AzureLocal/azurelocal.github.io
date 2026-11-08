@@ -2,14 +2,14 @@
 title: "Task 14: Verify SAN LUN Presentation (Conditional)"
 sidebar_label: "Task 14: Verify LUN Presentation"
 sidebar_position: 14
-description: "Verify SAN LUN presentation and confirm infrastructure LUNs are RAW before Azure Local deployment"
+description: "Verify SAN LUN presentation (Fibre Channel or iSCSI) and confirm the infrastructure and performance history LUNs are RAW before Azure Local disaggregated deployment"
 category: "Runbook"
 scope: "SAN LUN verification before cluster deployment"
 purpose: "Confirm all required LUNs are visible to all nodes and infrastructure LUNs remain RAW"
 author: "Azure Local Cloud"
 created: 2026-05-02
-updated: 2026-05-02
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -37,23 +37,27 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
-[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: SAN LUN pre-deployment verification
 > **PURPOSE**: Confirm all required LUNs are visible and infrastructure LUNs remain RAW
-> **MASTER REFERENCE**: [Microsoft Learn — Enable External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609)
+> **MASTER REFERENCE**: [Microsoft Learn — Install the Azure Local operating system for disaggregated deployments (Connect to SAN)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610#connect-to-san)
 
 **Status**: Active
 
-:::info Skip this task if deploying Storage Spaces Direct (S2D)
-This task applies only to **disaggregated SAN deployments**. If you are deploying with Storage Spaces Direct (hyperconverged), skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx).
+:::info Which storage designs run this task
+| Storage design | This task |
+|---|---|
+| **Disaggregated (SAN only)** | Run it now, on every node, before Arc registration. |
+| **Hybrid (Storage Spaces Direct + SAN)** | Not at initial deployment. SAN LUNs are attached after the deployment (2604 or later; FC WWNs are not zoned until then), and the post-deployment verification in Learn's [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610) (steps 7 to 10) applies instead. |
+| **Storage Spaces Direct only** | Skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx). |
 :::
 
 :::danger Do NOT initialize the infrastructure or performance history LUNs
-The infrastructure volume LUN and performance history LUN must remain **RAW** (no partition table, no file system) until the Azure Local deployment wizard runs. If you initialize these LUNs before deployment, the wizard will fail.
+The infrastructure volume LUN and performance history LUN must remain **RAW** (no partition table, no file system) until the Azure Local deployment wizard runs. Learn: "Don't initialize the drives, as the deployment expects the drive type to be RAW." If you initialize these LUNs before deployment, the deployment can fail.
 
-Workload LUNs are added and initialized **after** cluster deployment — see [Phase 06 Task 05](../phase-06-post-deployment/task-05-storage-configuration.mdx).
+Workload LUNs are configured **after** cluster deployment — see [Phase 06 Task 05](../phase-06-post-deployment/task-05-storage-configuration.mdx).
 :::
 
 ---
@@ -68,9 +72,10 @@ This task confirms that all required SAN LUNs are correctly presented to all clu
 
 | Scenario | Run? |
 |----------|------|
-| SAN disaggregated deployment | ✅ Yes — all nodes |
-| Storage Spaces Direct (S2D) | ❌ Skip |
-| After FC zoning changes | ✅ Yes — re-verify |
+| SAN disaggregated deployment, Fibre Channel or iSCSI | ✅ Yes — all nodes |
+| Hybrid (S2D + SAN) | ❌ Not at initial deployment — verify after deployment per Learn |
+| Storage Spaces Direct (S2D) only | ❌ Skip |
+| After FC zoning or LUN masking changes | ✅ Yes — re-verify |
 
 ---
 
@@ -78,13 +83,17 @@ This task confirms that all required SAN LUNs are correctly presented to all clu
 
 | Requirement | Details |
 |-------------|---------|
-| Tasks 12 and 13 complete | FC HBA drivers and MPIO configured |
-| FC zoning complete | FC fabric admin has configured single-initiator/single-target zones |
-| SAN LUNs provisioned | Infra LUN (≥250 GB), perf history LUN (≥20 GB), and workload LUNs created on the SAN array and mapped to all nodes |
-| FC fabric connectivity | HBA ports visible in fabric; WWPN aliases and zones active |
+| Tasks 12 and 13 complete | HBA drivers (FC) and MPIO (verified, vendor registered and claimed) configured. iSCSI on 2610: connected by the deployment wizard, see the iSCSI note below |
+| FC zoning complete (disaggregated only) | The FC fabric administrator has zoned the node HBAs to the array target ports (Learn's rack aware SAN article says "redundant single-initiator zoning according to the fabric and array vendor design"; Learn does not describe single-target zoning, so follow your fabric and array vendor design) so the LUNs are visible **before** Arc registration. For a **hybrid** design, do not zone until after the deployment. |
+| SAN LUNs provisioned | Only the two system LUNs are required before deployment: infrastructure (250 GB or larger) and performance history (20 GB or larger), created on the array and unmasked to all nodes with consistent LUN IDs |
+| FC fabric connectivity | HBA ports visible in the fabric; zones active |
 
 :::note Coordinate with your SAN administrator
-LUN presentation timing must be coordinated with the SAN array administrator. The infrastructure and performance history LUNs should be provisioned **before** this step but left uninitialized.
+LUN presentation timing must be coordinated with the SAN array administrator. The infrastructure and performance history LUNs are provisioned **before** this step but left uninitialized. Learn: "Workload LUNs are configured after deployment" ([portal deployment, advanced settings](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2610#specify-advanced-settings-and-apply-tags)); presenting them early is optional and only raises the risk that someone initializes them by accident.
+:::
+
+:::info iSCSI on Azure Local 2610
+On 2610 the deployment wizard's **iSCSI Configuration** connects the targets, so do not enable iSCSI on the machines first (see [Task 12](./task-12-install-fc-hba-drivers-conditional.mdx#iscsi-adapters-disaggregated-iscsi-san)); there is nothing to verify here yet. On 2604 to 2609, after you connect the targets manually, run the same checks below with `BusType` `iSCSI`.
 :::
 
 ---
@@ -95,7 +104,7 @@ LUN presentation timing must be coordinated with the SAN array administrator. Th
 |-----|---------|----------|----------------|
 | Infrastructure Volume | Azure Local system data | 250 GB | RAW — no partition |
 | Performance History | Cluster metrics store | 20 GB | RAW — no partition |
-| Workload CSVs | VM storage | Per capacity plan | **Not visible yet** — add post-deployment |
+| Workload CSVs | VM storage | Per capacity plan | **Configured after deployment** (Learn); optional to present earlier, but never initialize them here |
 
 ---
 
@@ -114,14 +123,14 @@ Run on each node individually via console, KVM, or RDP.
 # Rescan storage subsystem
 Update-HostStorageCache
 
-# List all FC disks (should include infrastructure and perf-history LUNs)
-Get-PhysicalDisk | Where-Object BusType -eq 'Fibre Channel' |
+# List all SAN disks (should include the infrastructure and perf-history LUNs)
+Get-PhysicalDisk | Where-Object BusType -in 'Fibre Channel','iSCSI' |
     Select-Object FriendlyName, SerialNumber, Size, CanPool, BusType, OperationalStatus |
     Format-Table -AutoSize
 
 # Verify infrastructure LUNs are RAW (no partition table)
 Get-Disk | Where-Object {
-    $_.BusType -eq 'Fibre Channel' -and $_.PartitionStyle -eq 'RAW'
+    $_.BusType -in 'Fibre Channel','iSCSI' -and $_.PartitionStyle -eq 'RAW'
 } | Select-Object Number, FriendlyName, Size, PartitionStyle |
     Format-Table -AutoSize
 
@@ -144,17 +153,17 @@ $ConfigPath = "$env:USERPROFILE\variables.yml"
 $ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
     ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
 
-Write-Host "=== FC Disk Inventory ===" -ForegroundColor Cyan
+Write-Host "=== SAN Disk Inventory ===" -ForegroundColor Cyan
 Invoke-Command -ComputerName $ServerList -ScriptBlock {
     Update-HostStorageCache
-    Get-PhysicalDisk | Where-Object BusType -eq 'Fibre Channel' |
+    Get-PhysicalDisk | Where-Object BusType -in 'Fibre Channel','iSCSI' |
         Select-Object @{N='Node';E={$env:COMPUTERNAME}}, FriendlyName, Size, CanPool, OperationalStatus
 } | Sort-Object Node | Format-Table -AutoSize
 
 Write-Host "=== RAW Disk Check (Infrastructure LUNs) ===" -ForegroundColor Cyan
 Invoke-Command -ComputerName $ServerList -ScriptBlock {
     Get-Disk | Where-Object {
-        $_.BusType -eq 'Fibre Channel' -and $_.PartitionStyle -eq 'RAW'
+        $_.BusType -in 'Fibre Channel','iSCSI' -and $_.PartitionStyle -eq 'RAW'
     } | Select-Object @{N='Node';E={$env:COMPUTERNAME}}, Number, FriendlyName, Size, PartitionStyle
 } | Sort-Object Node | Format-Table -AutoSize
 ```
@@ -179,18 +188,18 @@ See toolkit repository for standalone implementation.
 
 | Check | Expected |
 |-------|---------|
-| FC disks visible on all nodes | ✅ Same LUNs appear on every node |
+| SAN disks visible on all nodes | ✅ Same LUNs appear on every node (compare `UniqueId`, disk numbers may differ between nodes) |
 | Infrastructure LUN (≥250 GB) | `PartitionStyle = RAW` |
 | Performance history LUN (≥20 GB) | `PartitionStyle = RAW` |
 | MPIO path count | ≥2 paths per LUN (2 HBAs × 1 fabric or 2 × 2 with dual-fabric) |
 | `OperationalStatus` | `OK` for all LUNs |
 
 :::warning If LUNs are NOT visible on all nodes
-Verify FC zoning — each initiator WWPN must have a zone to each target port. Re-run zoning configuration and rescan: `Update-HostStorageCache`. Confirm `mpclaim -s -d` shows paths.
+Verify the array host entries and LUN masking (WWPNs for FC, IQNs for iSCSI), and for FC the zoning between each initiator WWPN and the array target ports. Re-run zoning configuration and rescan: `Update-HostStorageCache`. Confirm `mpclaim -s -d` shows paths.
 :::
 
 :::warning If a LUN shows multiple entries per node
-MPIO is not claiming the disk. Verify `New-MSDSMSupportedHW` hardware IDs match the array vendor, then rescan.
+MPIO is registered but not claiming the disk (lab-verified symptom on a Pure FlashArray: 8 separate disks for 2 LUNs). Verify the `New-MSDSMSupportedHW` hardware IDs match the array vendor, run the `mpclaim -n -i -d` claim from [Task 13](./task-13-configure-mpio-and-vendor-msdsm-conditional.mdx), restart the node and rescan.
 :::
 
 ---
@@ -201,7 +210,8 @@ MPIO is not claiming the disk. Verify `New-MSDSMSupportedHW` hardware IDs match 
 - [ ] Performance history LUN (≥20 GB) visible on all nodes with `PartitionStyle = RAW`
 - [ ] No LUN appears more than once per node (MPIO claiming correctly)
 - [ ] MPIO path count matches expected value (≥2 per LUN)
-- [ ] `OperationalStatus = OK` for all FC disks
+- [ ] `OperationalStatus = OK` for all SAN disks
+- [ ] No SAN disk was initialized, formatted or added to the cluster
 
 ---
 
@@ -227,3 +237,4 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610: FC zoning is a disaggregated prerequisite before Arc registration (hybrid zones only after deployment); single-initiator wording follows Learn; only the infrastructure and performance history LUNs are required before deployment; checks cover Fibre Channel and iSCSI bus types; iSCSI 2610 wizard note; fixed Learn links |

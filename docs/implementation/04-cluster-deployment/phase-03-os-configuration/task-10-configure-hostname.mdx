@@ -8,8 +8,8 @@ scope: "Set the computer hostname for each node according to naming standards"
 purpose: "Set the computer hostname for each node according to naming standards"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -31,18 +31,24 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
-[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Set the computer hostname for each node according to naming standards
 > **PURPOSE**: Set the computer hostname for each node according to naming standards
-> **MASTER REFERENCE**: [Azure Local Prepare Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory)
+> **MASTER REFERENCE**: [Microsoft Learn - Install the Azure Local operating system (SConfig, computer name)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610)
 
 **Status**: Active
 
 ## Overview
 
 Rename each node to its target hostname from `variables.yml`. Nodes must restart to apply the change.
+
+:::warning Computer name rules (Azure Local 2610)
+- **Do not use an underscore (`_`)** in the computer name. Learn: "Using an underscore (`_`) in the computer name is not supported, as it impacts storage path creation."
+- The computer name is the name shown in the Azure portal and, once joined, in Active Directory. Choose it now; it is not a cosmetic setting.
+- Use a name that is unique in the domain and matches the node name in `variables.yml` and the Active Directory preparation (Phase 01).
+:::
 
 ---
 
@@ -106,6 +112,8 @@ foreach ($line in $lines) {
 foreach ($node in $nodes) {
  Invoke-Command -ComputerName $node.ip -ArgumentList $node.hostname -ScriptBlock {
  param($name)
+
+ if ($name -match "_") { throw "Computer name $name contains an underscore, which Azure Local does not support" }
  Rename-Computer -NewName $name -Force
  }
  Restart-Computer -ComputerName $node.ip -Force
@@ -153,6 +161,7 @@ Invoke-Command -ComputerName <ip> -ScriptBlock { $env:COMPUTERNAME }
 - [ ] Each node reports the correct hostname
 - [ ] All nodes accessible after restart
 - [ ] Hostnames match `cluster_nodes[].hostname` in variables.yml
+- [ ] No hostname contains an underscore
 
 
 ---
@@ -173,6 +182,7 @@ Invoke-Command -ComputerName <ip> -ScriptBlock { $env:COMPUTERNAME }
 |---|---|
 | Node didn't come back after restart | Wait another 60s then ping the management IP |
 | Hostname not applied | Confirm `Rename-Computer` ran without error; restart if needed |
+| Hostname contains `_` | Rename the node. An underscore in the computer name impacts storage path creation (Learn). |
 
 ---
 
@@ -199,3 +209,4 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610: underscore not allowed in the computer name (impacts storage path creation); Learn master reference and platform badge updated |

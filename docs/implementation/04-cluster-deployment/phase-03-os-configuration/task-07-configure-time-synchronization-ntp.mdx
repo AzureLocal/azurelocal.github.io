@@ -8,8 +8,8 @@ scope: Time synchronization
 purpose: Configure w32tm with the NTP server from variables.yml so all cluster nodes synchronize time from the same authoritative source
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-03-04
-version: "2.0.0"
+updated: 2026-11-08
+version: "2.1.0"
 tags:
   - azure-local
   - os-configuration
@@ -87,7 +87,17 @@ immediate resync, and validates the resulting stratum.
 
 :::info variables.yml — NTP server list
 `active_directory.ntp_servers` is a YAML list. The direct script uses the primary (first) entry.
-The orchestrated script joins all entries as a space-separated `manualpeerlist`.
+The orchestrated script joins all entries as a space-separated `manualpeerlist`, with the `0x8` flag on each peer.
+:::
+
+:::info What Microsoft Learn specifies (Azure Local 2610)
+From [Install the Azure Local operating system](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610): configure a valid time server on each machine, and validate that the machine is **not using the local CMOS clock** as a time source (`w32tm /query /status`). The command Learn gives is:
+
+```cmd
+w32tm /config /manualpeerlist:"ntpserver.contoso.com,0x8" /syncfromflags:manual /update
+```
+
+The `0x8` flag tells Windows Time Service to send NTP requests as a client. Learn's command does not include `/reliable:YES`, which would mark every node as a reliable time source, so the scripts below no longer set it. Learn gives the single-peer form only; for several peers the scripts put `,0x8` on each peer in the space-separated list (standard `w32tm` syntax). "Once the machine is domain joined, it synchronizes its time from the PDC emulator." If you domain join the nodes before deployment (supported from 2604; see [Task 03: Manual OS installation](../phase-02-os-installation/manual-installation/task-03-manual-os-installation.mdx#optional-domain-join-before-deployment)), the node follows the domain hierarchy once joined; the manual peer still matters while the node is in a workgroup.
 :::
 
 ---
@@ -110,10 +120,13 @@ $NTPServer = "REPLACE_WITH_NTP_SERVER" # active_directory.ntp_servers[0]
 
 if ($NTPServer -match "^REPLACE_") { Write-Host "[ERROR] Set NTPServer before running" -ForegroundColor Red; exit 1 }
 
-w32tm /config /manualpeerlist:$NTPServer /syncfromflags:manual /reliable:YES /update
+w32tm /config /manualpeerlist:"$NTPServer,0x8" /syncfromflags:manual /update
 Restart-Service w32time -Force
 w32tm /resync /force
 w32tm /query /status
+
+# Learn: the node must not use the local CMOS clock as its source
+if ((w32tm /query /status | Out-String) -match 'Local CMOS Clock') { Write-Host "[WARN] Source is still the local CMOS clock" -ForegroundColor Yellow }
 ```
 
 </TabItem>
@@ -264,7 +277,8 @@ $nodes = Get-ClusterNodes -FilePath $configFile
 if ($ntpList.Count -eq 0) { throw "active_directory.ntp_servers not found or empty in variables.yml" }
 if ($nodes.Count -eq 0) { throw "cluster_nodes not found or empty in variables.yml" }
 
-$ntpPeerList = $ntpList -join " "
+# Each peer carries the 0x8 flag (client mode), peers are space separated
+$ntpPeerList = ($ntpList | ForEach-Object { "$_,0x8" }) -join " "
 Write-Log "NTP servers : $ntpPeerList"
 Write-Log "Nodes : $($nodes.Count) found"
 
@@ -286,7 +300,7 @@ foreach ($node in $nodes) {
  $r = Invoke-Command -ComputerName $ip -Credential $cred -ArgumentList $ntpPeerList -ScriptBlock {
  param($peerList)
 
- w32tm /config /manualpeerlist:$peerList /syncfromflags:manual /reliable:YES /update | Out-Null
+ w32tm "/config" "/manualpeerlist:$peerList" /syncfromflags:manual /update | Out-Null
  Restart-Service w32time -Force
  Start-Sleep -Seconds 3
  w32tm /resync /force | Out-Null
@@ -361,6 +375,7 @@ Standalone script content references the toolkit repository. See the Orchestrate
 - [ ] NTP server configured on all nodes (`w32tm /query /config` shows correct peer)
 - [ ] Windows Time service running (`Get-Service w32time | Select Status`)
 - [ ] Stratum below 16 on all nodes (`w32tm /query /status`)
+- [ ] Source is not `Local CMOS Clock` (Learn requirement)
 - [ ] Clock skew within 5 minutes on all nodes (Kerberos requirement)
 
 
@@ -415,3 +430,4 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
 | 2.0 | 2026-03-04 | Azure Local Cloud | Full rewrite to standards — complete frontmatter, bare-node 2-tab structure (Direct, Orchestrated), Standalone tab removed, YAML key corrected to `active_directory.ntp_servers` list, full embedded scripts with `Assert-ConfigValues` hard-fail, `Get-YamlList` and `Get-ClusterNodes` helpers |
+| 2.1 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610 (Learn "Install the OS"): `w32tm` uses `,0x8` on each peer, `/reliable:YES` removed, CMOS clock check added, domain-joined PDC emulator note |

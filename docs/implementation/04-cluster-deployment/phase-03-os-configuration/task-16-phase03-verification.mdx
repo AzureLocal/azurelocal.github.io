@@ -8,8 +8,8 @@ scope: "Read-only verification of all Phase 03 OS Configuration tasks (01–15) 
 purpose: "Read-only verification of all Phase 03 OS Configuration tasks (01–15) across all cluster nodes"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-05-02
-version: "1.1.0"
+updated: 2026-11-08
+version: "1.2.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -30,12 +30,12 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Phase 03](https://img.shields.io/badge/Phase-03_OS_Configuration-orange?style=flat-square)](./index.mdx)
-[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Read-only verification of all Phase 03 OS Configuration tasks (01–11) across ...
 > **PURPOSE**: Read-only verification of all Phase 03 OS Configuration tasks (01–11) across all cluster nodes
-> **MASTER REFERENCE**: [Azure Local Pre-deployment Checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
+> **MASTER REFERENCE**: [Azure Local Pre-deployment Checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610)
 
 **Status**: Active
 
@@ -62,10 +62,11 @@ This script makes **no changes** to any node. It only reads and reports state.
 | **08** | ICMP | ICMPv4 Echo Request firewall rule enabled |
 | **09** | Unused adapters | No disconnected adapters still enabled |
 | **10** | Hostname | `COMPUTERNAME` matches `variables.yml` hostname |
-| **11** | Storage | No non-primordial pools, no virtual disks, all non-boot disks online |
-| **12** | FC HBA Drivers (SAN only) | FC initiator ports visible via `Get-InitiatorPort` |
-| **13** | MPIO/MSDSM (SAN only) | MPIO feature installed; vendor hardware IDs registered |
-| **14** | LUN Presentation (SAN only) | Infrastructure and perf-history LUNs RAW, all nodes, correct path count |
+| **11** | Storage | No non-primordial pools, no virtual disks, all non-boot **local** disks online (SAN LUNs on Fibre Channel or iSCSI are excluded and must stay RAW) |
+| **Drivers** | NIC drivers (all) | No physical adapter reports `DriverProvider = Microsoft`: Learn says inbox drivers are not supported for Azure Local |
+| **12** | FC HBA Drivers (disaggregated SAN only) | FC initiator ports visible via `Get-InitiatorPort`; iSCSI adapters not on inbox drivers |
+| **13** | MPIO/MSDSM (disaggregated SAN only) | MPIO feature enabled; vendor hardware IDs registered and the array disks claimed (one MPIO disk per LUN, not one disk per path) |
+| **14** | LUN Presentation (disaggregated SAN only) | Infrastructure and perf-history LUNs RAW, all nodes, correct path count |
 | **15** | Combined Script | Nodes restarted, all baseline config applied |
 
 ---
@@ -172,9 +173,20 @@ $results['Task10_Hostname'] = if ($env:COMPUTERNAME -eq $ExpectedHostname.ToUppe
 # Task 11 - Storage
 $pools = (Get-StoragePool | Where-Object IsPrimordial -eq $false | Measure-Object).Count
 $vDisks = (Get-VirtualDisk -ErrorAction SilentlyContinue | Measure-Object).Count
-$nonBoot = @(Get-Disk | Where-Object { $_.IsBoot -ne $true -and $_.Number -ne $null })
+$nonBoot = @(Get-Disk | Where-Object { $_.IsBoot -ne $true -and $_.Number -ne $null -and $_.BusType -notin 'Fibre Channel','iSCSI' })
 $bad = ($nonBoot | Where-Object OperationalStatus -ne 'Online' | Measure-Object).Count
 $results['Task11_Storage'] = if ($pools -eq 0 -and $vDisks -eq 0 -and $bad -eq 0) { "PASS ($($nonBoot.Count) disk(s) clean)" } else { "WARN: Pools=$pools VDisks=$vDisks BadDisks=$bad" }
+
+# Drivers - inbox drivers are not supported (Learn: an adapter uses an inbox driver if DriverProvider is Microsoft)
+$inbox = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.DriverProvider -eq 'Microsoft' })
+$results['Drivers_NoInbox'] = if ($inbox.Count -eq 0) { "PASS" } else { "WARN: inbox driver on $(($inbox.Name) -join ', ') - confirm with your OEM" }
+
+# Tasks 12-14 - disaggregated SAN only (skip for S2D or hybrid at initial deployment)
+$sanDisks = @(Get-Disk | Where-Object { $_.BusType -in 'Fibre Channel','iSCSI' })
+if ($sanDisks.Count -gt 0) {
+    $notRaw = @($sanDisks | Where-Object PartitionStyle -ne 'RAW')
+    $results['Task14_SanLunsRaw'] = if ($notRaw.Count -eq 0) { "PASS ($($sanDisks.Count) LUN(s) visible, all RAW)" } else { "FAIL: $($notRaw.Count) SAN disk(s) are not RAW" }
+}
 
 # Output results
 $results.GetEnumerator() | ForEach-Object {
@@ -296,3 +308,4 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.2.0 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610: storage check excludes SAN LUNs (Fibre Channel, iSCSI); inbox NIC driver check added (Learn: DriverProvider Microsoft is unsupported); MPIO check expects claimed disks; Learn links updated |

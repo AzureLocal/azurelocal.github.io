@@ -8,16 +8,16 @@ description: "Configure every node's operating system for Azure Local deployment
 # Phase 03: OS Configuration
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
-[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure-stack/hci/)
+[![Platform](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Post-installation OS configuration   
 > **PURPOSE**: Prepare nodes for Azure Arc registration   
-> **MASTER REFERENCE**: [Microsoft Learn - Prepare Active Directory](https://learn.microsoft.com/en-us/azure-stack/hci/deploy/deployment-prep-active-directory)
+> **MASTER REFERENCE**: [Microsoft Learn - Install the Azure Local operating system](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610)
 
 **Status**: Active 
 **Estimated Time**: 45-60 minutes (all nodes) 
-**Last Updated**: 2026-11-07
+**Last Updated**: 2026-11-08
 
 ---
 
@@ -59,10 +59,10 @@ This stage configures the Azure Stack HCI operating system on all cluster nodes 
 8. Enable ICMP firewall rules for network diagnostics
 9. Disable unused network adapters
 10. Set node hostnames
-11. Clear previous storage configuration (conditional — S2D redeployments only)
-12. Install FC HBA drivers (conditional — SAN deployments only)
-13. Configure MPIO and vendor MSDSM (conditional — SAN deployments only)
-14. Verify SAN LUN presentation (conditional — SAN deployments only)
+11. Clear previous storage configuration (conditional — redeployments on used hardware; local disks only, never SAN LUNs)
+12. Install FC HBA drivers or OEM iSCSI adapter drivers (conditional — disaggregated SAN deployments)
+13. Verify MPIO, register and claim the vendor MSDSM (conditional — disaggregated SAN deployments)
+14. Verify SAN LUN presentation (conditional — disaggregated SAN deployments)
 15. Optional: Run complete combined script (Tasks 02–10)
 16. Phase 03 Verification
 
@@ -94,8 +94,8 @@ flowchart TD
     J --> K[Hostname]
     K --> L[Storage Cleanup T11]
     L --> M{Storage Type?}
-    M -->|S2D| N[Combined Script T15]
-    M -->|SAN| O[FC HBA Drivers T12]
+    M -->|S2D or hybrid S2D + SAN| N[Combined Script T15]
+    M -->|Disaggregated SAN| O[FC HBA or iSCSI adapter drivers T12]
     O --> P[MPIO & MSDSM T13]
     P --> Q[Verify LUN Presentation T14]
     Q --> N
@@ -119,10 +119,10 @@ flowchart TD
 | [Task 08](./task-08-enable-icmp-ping.mdx) | Enable ICMP (Ping) | 5 min | All |
 | [Task 09](./task-09-disable-unused-network-adapters.mdx) | Disable Unused Network Adapters | 5 min | All |
 | [Task 10](./task-10-configure-hostname.mdx) | Configure Hostname | 5 min | All |
-| [Task 11](./task-11-clear-previous-storage-configuration-conditional.mdx) | Clear Previous Storage Configuration | 5 min | S2D redeployment |
-| [Task 12](./task-12-install-fc-hba-drivers-conditional.mdx) | Install FC HBA Drivers | 15 min | SAN only |
-| [Task 13](./task-13-configure-mpio-and-vendor-msdsm-conditional.mdx) | Configure MPIO & Vendor MSDSM | 15 min | SAN only |
-| [Task 14](./task-14-verify-san-lun-presentation-conditional.mdx) | Verify SAN LUN Presentation | 10 min | SAN only |
+| [Task 11](./task-11-clear-previous-storage-configuration-conditional.mdx) | Clear Previous Storage Configuration (local disks only) | 5 min | Redeployment on used hardware |
+| [Task 12](./task-12-install-fc-hba-drivers-conditional.mdx) | Install FC HBA Drivers (and iSCSI adapter drivers) | 15 min | Disaggregated SAN only |
+| [Task 13](./task-13-configure-mpio-and-vendor-msdsm-conditional.mdx) | Verify MPIO, Register and Claim Vendor MSDSM | 15 min | Disaggregated SAN only |
+| [Task 14](./task-14-verify-san-lun-presentation-conditional.mdx) | Verify SAN LUN Presentation | 10 min | Disaggregated SAN only |
 | [Task 15](./task-15-complete-combined-script-all-steps.mdx) | Complete Combined Script | N/A | Optional |
 | [Task 16](./task-16-phase03-verification.mdx) | Phase 03 Verification | 10 min | All |
 
@@ -177,7 +177,9 @@ The following variables are used during OS configuration:
 
 **Automated, Tasks 02–10 only**: [Task 15: Combined Script](./task-15-complete-combined-script-all-steps.mdx).
 
-**SAN deployments**: Run Tasks 12–14 after Task 11 before running the combined script.
+**Disaggregated SAN deployments**: Run Tasks 12–14 after Task 11 before running the combined script. Zone the FC fabric and unmask the infrastructure and performance history LUNs now, before Arc registration, and leave them RAW. On iSCSI with 2610, do not enable iSCSI on the machines first; the deployment wizard configures it.
+
+**Hybrid (Storage Spaces Direct + SAN)**: Skip Tasks 12–14 for the initial deployment. Learn attaches the SAN after the initial deployment (2604 or later) and says: "don't zone in FC HBA World Wide Names (WWNs) until after the Azure Local deployment." Follow [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610) once the cluster is deployed.
 
 ---
 
@@ -191,9 +193,9 @@ The following variables are used during OS configuration:
 | DNS resolution works | ✅ |
 | Time synchronized | ✅ |
 | Hostname correct | ✅ |
-| FC HBA ports visible (SAN only) | ⚙️ |
-| MPIO configured (SAN only) | ⚙️ |
-| Infrastructure LUNs RAW (SAN only) | ⚙️ |
+| FC HBA ports visible (disaggregated SAN only) | ⚙️ |
+| MPIO verified, vendor registered and claimed (disaggregated SAN only) | ⚙️ |
+| Infrastructure and performance history LUNs RAW (disaggregated SAN only) | ⚙️ |
 
 ---
 
@@ -210,5 +212,7 @@ After completing OS configuration:
 ---
 
 **References**:
-- [Microsoft Learn - Deploy Azure Stack HCI OS](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os)
-- [Microsoft Learn - Prepare for Deployment](https://learn.microsoft.com/en-us/azure-stack/hci/deploy/deployment-tool-prerequisites)
+- [Microsoft Learn - Install the Azure Local operating system](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610)
+- [Microsoft Learn - Install the OS for disaggregated deployments](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610)
+- [Microsoft Learn - Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610)
+- [Microsoft Learn - Azure Local deployment prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610)
