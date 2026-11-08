@@ -8,8 +8,8 @@ scope: "Pre-deployment requirements"
 purpose: "Validate all prerequisites before implementation"
 author: "Azure Local Cloud"
 created: 2026-01-15
-updated: 2026-03-02
-version: "2.0.0"
+updated: 2026-11-08
+version: "2.1.0"
 tags:
  - azure-local
  - prerequisites
@@ -24,12 +24,12 @@ status: "approved"
 # Prerequisites and Assumptions
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
-[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/?view=azloc-2610)
 
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Pre-deployment requirements   
 > **PURPOSE**: Validate all prerequisites before implementation   
-> **MASTER REFERENCE**: [Microsoft Learn - Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
+> **MASTER REFERENCE**: [Microsoft Learn - Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610)
 
 **Status**: Active
 
@@ -80,14 +80,18 @@ The provisioning runbook assumes physical infrastructure is complete and validat
 
 ### Server Requirements
 
-**Azure Local supports 1-16 physical servers per cluster.**
+**Hyperconverged (Storage Spaces Direct) deployments support 1 to 16 machines per instance. Disaggregated deployments (external SAN, no Storage Spaces Direct) support up to 64 machines.** A hybrid instance is a hyperconverged instance with an external SAN attached after deployment.
 
 | Component | Minimum | Recommended | Notes |
 |-----------|---------|-------------|-------|
 | **CPU** | Intel Xeon Gold/Platinum or AMD EPYC 7000 series | Latest generation enterprise CPUs | Must support virtualization |
 | **RAM** | 256GB per server | 512GB+ per server | ECC memory required |
 | **Storage** | 1TB SSD/NVMe (OS boot) + 2TB+ across 2+ data drives | All-NVMe configuration | Controllers must be HBA/passthrough mode — RAID not supported |
-| **Network** | 2x 10GbE NICs minimum | 2x 25GbE or higher | RDMA-capable for performance |
+| **Network** | 2x 10GbE NICs minimum | 2x 25GbE or higher | RDMA-capable adapters for the storage intent (see [Section 5](#5-network-prerequisites)) |
+
+:::note Design standard versus Microsoft minimum
+The Minimum column is this runbook's production design standard. Microsoft's published minimums in [System requirements for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610) are lower: ECC memory of at least 32 GB, a boot drive of at least 200 GB (400 GB or more for machines with more than 768 GB of memory), at least two data drives of at least 500 GB each, TPM 2.0 and Secure Boot turned on, and Intel VT or AMD-V turned on. Hardware must be in the [Azure Local catalog](https://aka.ms/azurelocalcatalog) for Microsoft Support. Storage controllers must pass drives through (HBA pass-through mode): RAID controllers and shared SAS enclosures are not supported for Storage Spaces Direct. External Fibre Channel or iSCSI SAN storage is supported only as the SAN configurations described in [Storage Planning](../planning/07-storage-planning.mdx).
+:::
 
 ### Physical Infrastructure
 
@@ -109,9 +113,10 @@ The provisioning runbook assumes physical infrastructure is complete and validat
 
 ### Operating System
 
-- This runbook targets the Azure Local **12.x release train (24H2, OS build 26100)**. The latest release is **12.2609**; see [Releases and Support Lifecycle](../planning/08-release-and-support-lifecycle.mdx). Azure Stack HCI 23H2 (OS build 25398) is out of support
+- This runbook targets the Azure Local **12.x release train (OS build 26100)**. The latest release is **12.2610** (solution version 12.2610.1004.50, October 2026). In the 2610 release all new and existing deployments run OS version **26100.33650**, so network adapter and other drivers must be compatible with that OS version or with Windows Server 2025. See [Releases and Support Lifecycle](../planning/08-release-and-support-lifecycle.mdx). Azure Stack HCI 23H2 (OS build 25398) is out of support
 - **Core installation** (no Desktop Experience available; management via Windows Admin Center or remote tools)
-- **Domain-joined** or local identity configuration (domain recommended for production)
+- **Identity**: Active Directory (the default; domain recommended for production) or local identity with Azure Key Vault. With Active Directory, the machines can either stay in a workgroup until the deployment joins them to the domain, or be joined to the domain before deployment (optional, supported starting with version 2604; add the deployment user to the local Administrators group). With local identity the machines stay in a workgroup
+- **Inbox network drivers are not supported**: an adapter whose `DriverProvider` is Microsoft uses the inbox driver. Install the OEM driver first
 
 ### Management Tools
 
@@ -153,31 +158,31 @@ If you are not using Dell hardware, or do not require hardware health telemetry 
 This section summarizes the required permissions. Step-by-step role assignment procedures are covered in [Part 2: Azure Foundation — Phase 03: RBAC Permissions](./02-azure-foundation/phase-03-rbac-permissions/index.mdx).
 :::
 
-The deployment user (or service principal) requires the following roles, per [Microsoft Learn — Assign required permissions for Azure Local deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions):
+The deployment user (or the identity a pipeline signs in with) requires the following roles, per [Microsoft Learn — Assign required permissions for Azure Local deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610) and the [deployment checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610):
 
-**Subscription-level roles:**
-
-| Role | Purpose | Reference |
-|------|---------|-----------|
-| `Contributor` | Create and manage Azure resources, register resource providers | [Deployment checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites) |
-| `User Access Administrator` | Assign RBAC to identities, Arc-enable machines | [Deployment checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites) |
-| `Azure Stack HCI Administrator` | Azure Local cluster management | [Assign permissions](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions) |
-| `Reader` | View resources in the Azure portal | [Assign permissions](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions) |
-
-**Resource group-level roles (Azure Local cluster resource group):**
+**Subscription-level roles** (Learn: the deploying user must be a user access administrator and a contributor on the subscription):
 
 | Role | Purpose | Reference |
 |------|---------|-----------|
+| `Contributor` | Create and manage Azure resources, register resource providers | [Deployment checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610) |
+| `User Access Administrator` | Manage access to Azure resources, specifically to Arc-enable each machine | [Deployment checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610) |
+
+**Resource group-level roles (the resource group the machines are registered in):**
+
+| Role | Purpose | Reference |
+|------|---------|-----------|
+| `Azure Stack HCI Administrator` | Azure Local instance management; assigned to the user who deploys | [Assign permissions](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610) |
+| `Reader` | View resources in the Azure portal; assigned to the user who deploys | [Assign permissions](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610) |
 | `Key Vault Data Access Administrator` | Manage data plane permissions to deployment Key Vault | [Assign permissions](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions) |
 | `Key Vault Secrets Officer` | Read and write secrets in deployment Key Vault | [Assign permissions](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions) |
 | `Key Vault Contributor` | Create and manage Key Vault resources for deployment | [Assign permissions](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions) |
 | `Storage Account Contributor` | Create storage accounts for deployment | [Assign permissions](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions) |
-| `Azure Connected Machine Onboarding` | Register machines with Azure Arc | [Arc prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions#azure-prerequisites) |
-| `Azure Connected Machine Resource Administrator` | Manage Arc-enabled machine resources | [Arc prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions#azure-prerequisites) |
+| `Azure Connected Machine Onboarding` | Register machines with Azure Arc | [Arc prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610#azure-prerequisites) |
+| `Azure Connected Machine Resource Administrator` | Manage Arc-enabled machine resources | [Arc prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610#azure-prerequisites) |
 
 ### Required Resource Providers
 
-Register these **12 resource providers** before deployment. Registration requires **Owner or Contributor** on the subscription and is performed in [Part 2: Azure Foundation — Phase 02: Resource Providers](./02-azure-foundation/phase-02-resource-providers/index.mdx).
+Register these **13 resource providers** before deployment. Registration requires **Owner or Contributor** on the subscription and is performed in [Part 2: Azure Foundation — Phase 02: Resource Providers](./02-azure-foundation/phase-02-resource-providers/index.mdx).
 
 | # | Provider Namespace | Purpose |
 |---|-------------------|---------|
@@ -193,6 +198,9 @@ Register these **12 resource providers** before deployment. Registration require
 | 10 | `Microsoft.Attestation` | Security attestation |
 | 11 | `Microsoft.Storage` | Storage accounts for deployment |
 | 12 | `Microsoft.Insights` | Monitoring and logging (required for Key Vault audit logging validation) |
+| 13 | `Microsoft.KeyVault` | Key Vault for the deployment secrets, local administrator credentials and BitLocker recovery keys |
+
+Source: the register-resource-providers step of [Assign required permissions for Azure Local deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610). Simplified machine provisioning (preview) registers a different set: the shared providers plus `Microsoft.DeviceOnboarding`, `Microsoft.Edge`, `Microsoft.ManagedIdentity` and `Microsoft.PolicyInsights` (see [Simplified provisioning](./04-cluster-deployment/phase-02-os-installation/simplified-provisioning/index.mdx#prerequisites)).
 
 :::warning Microsoft.Insights Required
 If `Microsoft.Insights` is not registered, the diagnostic account and Key Vault audit logging fails during deployment validation.
@@ -204,6 +212,7 @@ If `Microsoft.Insights` is not registered, the diagnostic account and Key Vault 
 - **Outbound internet connectivity** to required Azure Arc endpoints (see [Section 5: Network Prerequisites](#5-network-prerequisites))
 - **Arc Gateway** configured if deploying through a proxy environment (optional)
 - RBAC roles for Arc registration (`Azure Connected Machine Onboarding` + `Azure Connected Machine Resource Administrator`) assigned per the permissions table above
+- Since software version 12.2512 a new deployment no longer creates a Microsoft Entra application or service principal for the instance; the instance uses a system-assigned managed identity. A Key Vault that uses Private Endpoints is not supported as the deployment Key Vault, and the Key Vault must allow public network access
 
 ---
 
@@ -215,15 +224,16 @@ This section covers **prerequisites only**. Full network design and switch confi
 
 ### IP and Subnet Planning
 
-The following must be defined before deployment begins (from the [Microsoft Learn deployment checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)):
+The following must be defined before deployment begins (from the [Microsoft Learn deployment checklist](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610) and [Network considerations for cloud deployments](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610)):
 
 | Requirement | Details |
 |-------------|---------|
 | **Management network subnet** | Minimum **6 contiguous IPs** for infrastructure services (first IP assigned to failover clustering) |
-| **Storage VLAN IDs** | Two unique VLAN IDs for storage networks (Network ATC defaults: **711** and **712**) |
-| **DNS server** | Must resolve the Active Directory domain. **Cannot** use IPs from reserved Kubernetes subnets `10.96.0.0/12` or `10.244.0.0/16` |
-| **NTP source** | Time synchronization for all nodes (domain controllers or dedicated NTP appliance) |
-| **Static IP configuration** | All cluster nodes use static management IPs — DHCP is not used for node deployment |
+| **Storage VLAN IDs** | Two unique VLAN IDs for storage networks (Network ATC defaults: **711** and **712**; a third storage network, when present, uses 713). Custom storage IPs and VLANs are possible only with an ARM template deployment |
+| **DNS server** | Must resolve the Active Directory domain and public endpoints. **Cannot be changed after deployment.** The same servers on every node and on the infrastructure IP range; at least one outside the instance; no public resolvers such as 8.8.8.8. See [DNS decisions](#dns-decisions-are-permanent) |
+| **Reserved Kubernetes ranges** | No node IP, cluster IP, infrastructure IP pool, DNS server, proxy, gateway or VM logical network may fall in the Azure Resource Bridge ranges. Plan around `10.96.0.0/12` and `10.244.0.0/16`. New deployments created on 2610 or later (Arc resource bridge 1.8.0) use a smaller service range, `10.96.0.0/24`, but deployments created before 2610 (including after an update) keep `10.96.0.0/12`, and AKS on Azure Local keeps `10.96.0.0/12` and its pod range `10.244.0.0/16`. The wider range is the safe planning rule |
+| **NTP source** | Time synchronization for all nodes (domain controllers or dedicated NTP appliance). The node must not use the local CMOS clock as its time source; once domain joined, a node synchronizes from the PDC emulator |
+| **Node IP assignment** | Static or DHCP (with reservations) is supported for node and cluster IPs, and the management IP pool is needed either way. **This runbook's design standard is static management IPs.** Local identity deployments require static IPs and do not support DHCP. Use only one default gateway across the node's physical adapters; the portal fails network validation when more than one adapter has a default gateway |
 
 ### Outbound Internet Connectivity
 
@@ -248,7 +258,7 @@ Microsoft publishes region-specific consolidated endpoint lists that include Azu
 | West Europe | [westeurope-hci-endpoints.md](https://github.com/Azure/AzureStack-Tools/blob/master/HCI/WestEuropeendpoints/westeurope-hci-endpoints.md) |
 | Canada Central | [canadacentral-hci-endpoints.md](https://github.com/Azure/AzureStack-Tools/blob/master/HCI/CanadaCentralEndpoints/canadacentral-hci-endpoints.md) |
 | South Central US | [southcentralus-hci-endpoints.md](https://github.com/Azure/AzureStack-Tools/blob/master/HCI/SouthCentralUSEndpoints/southcentralus-hci-endpoints.md) |
-| Other regions | See [Firewall requirements for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements) |
+| Other regions | See [Firewall requirements for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610) |
 
 **OEM-specific endpoints** (required in addition to the above):
 
@@ -258,27 +268,54 @@ Microsoft publishes region-specific consolidated endpoint lists that include Azu
 | HPE | [HPE Azure Local endpoints](https://github.com/Azure/AzureStack-Tools/blob/master/HCI/OEMEndpoints/HPE/HPEAzureLocalEndpoints.md) |
 | Lenovo | [Lenovo Azure Local endpoints](https://github.com/Azure/AzureStack-Tools/blob/master/HCI/OEMEndpoints/Lenovo/LenovoAzureLocalEndpoints.md) |
 
-**Additional service endpoints** may be required depending on enabled features (Azure Monitor Agent, Azure Site Recovery, Microsoft Defender, etc.). See [Firewall requirements for additional Azure services](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements#firewall-requirements-for-additional-azure-services).
+**Additional service endpoints** may be required depending on enabled features (Azure Monitor Agent, Azure Site Recovery, Microsoft Defender, etc.). See [Firewall requirements for additional Azure services](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610#firewall-requirements-for-additional-azure-services).
+
+### DNS decisions are permanent
+
+DNS cannot be changed after the deployment completes, so settle these before the OS is configured (from [Network considerations for cloud deployments](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#dns-server-considerations)):
+
+1. The same DNS servers on every node, and the same servers as the infrastructure IP address range (the Azure Resource Bridge and AKS control planes use them).
+2. At least one configured DNS server runs outside the Azure Local instance. Running all of them as VMs on the instance is not supported.
+3. Every configured server resolves the on-premises domains the infrastructure needs; public DNS servers such as 8.8.8.8 are not supported.
+4. DNS server IPs do not overlap the Azure Resource Bridge ranges (see the table above).
+5. When an ARM template lists several servers, each is a quoted string separated by commas.
 
 ### Network Architecture
 
-Azure Local uses [Network ATC](https://learn.microsoft.com/en-us/azure-stack/hci/concepts/network-atc-overview) intents to define traffic types. The following network segments are required:
+Azure Local uses [Network ATC](https://learn.microsoft.com/en-us/azure/azure-local/concepts/network-atc-overview?view=azloc-2610) intents to define traffic types. Traffic types are management (to and from outside the system), compute (VM traffic) and storage (SMB, which includes Storage Spaces Direct and SMB-based live migration; layer 2, not routable). The following network segments are required:
 
 | Network | Purpose | VLAN | RDMA |
 |---------|---------|------|------|
-| **Management** | Cluster management, Arc connectivity, DNS, AD | Customer-assigned | No |
-| **Storage 1** | Storage Spaces Direct replication (East-West) | 711 (default) | Yes |
-| **Storage 2** | Storage Spaces Direct replication (East-West) | 712 (default) | Yes |
-| **Compute/VM** | Tenant VM traffic, live migration | Customer-assigned | Optional (guest RDMA) |
+| **Management** | Cluster management, Arc connectivity, DNS, AD | Customer-assigned | No. RDMA is for host storage traffic |
+| **Storage 1** | Storage Spaces Direct replication (East-West) | 711 (default) | Yes (storage intent) |
+| **Storage 2** | Storage Spaces Direct replication (East-West) | 712 (default) | Yes (storage intent) |
+| **Compute/VM** | Tenant VM traffic | Customer-assigned | No. Guest RDMA is not supported on Azure Local |
 
-**Physical switch requirements** (per [Microsoft Learn — Physical network requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/physical-network-requirements)):
+RDMA, a jumbo MTU, and DCB priorities belong to the **storage** intent. Learn lists the following as overridable Network ATC settings: storage VLANs, jumbo packets (portal options 1514, 4088 or 9014), Network Direct (set `false` to disable RDMA), Network Direct technology (`RoCEv2` or `iWarp`) and DCB traffic priorities, and recommends the defaults. Learn does not publish the management and compute defaults. The toolkit's ARM parameter generation states them explicitly: storage intent RDMA on with jumbo frames, management and compute intents RDMA off with the 1514 default. Treat that as the runbook's policy, and confirm it on a 2610 instance after deployment (`Get-NetAdapterRdma`, `Get-NetAdapterAdvancedProperty -RegistryKeyword *JumboPacket`, `Get-NetIntent`). This is lab-verified only until Learn states it.
 
-- IEEE 802.1Q (VLANs) — required for all traffic types
-- IEEE 802.1Qbb (Priority Flow Control) — required for storage traffic
-- IEEE 802.1Qaz (Enhanced Transmission Selection) — required for storage traffic
-- IEEE 802.1AB (LLDP) — required for network discovery
-- MTU 9174 for storage traffic (jumbo frames)
-- Switchless (direct connect) supported for storage traffic in clusters up to 3 nodes
+**Supported intent patterns (hyperconverged)** follow the number of network adapter ports per node (2, 4, 6 or 8), using at least two ports per intent for redundancy:
+
+| Ports | Intents | Notes |
+|-------|---------|-------|
+| 2 | One intent for all traffic | Needs a network switch for storage; 10 Gb minimum, 25 GbE or higher recommended |
+| 4 | Management and compute on Port 1 and Port 2 (SET); storage on Port 3 and Port 4 | The storage intent is not a SET team; it uses SMB Multichannel. Works switched or switchless |
+| 6 | Management on Port 1 and Port 2 (SET); compute on Port 3 and Port 4 (SET); storage on Port 5 and Port 6 | Management and compute separated |
+| 8 | As 6 ports, plus a second compute or backup intent on the remaining ports | Custom configuration, up to three intents, one of which includes management |
+
+"Group compute and storage, separate management" is also available with a switch. Switchless storage needs at least two intents (management and compute, plus storage); the portal removes the all-traffic and compute-plus-storage options for switchless. On hyperconverged clusters the storage intent shares the same ToR switch pair as management and compute; a separate storage-only switch pair is not supported and can cause split-brain.
+
+**Hybrid (Storage Spaces Direct plus SAN)**: the Storage Spaces Direct network stays as above. SAN connectivity uses separate fabrics and adapters (FC HBAs, or dedicated physical NICs for iSCSI) that Network ATC does not manage; plan those ports up front even though the SAN is attached after deployment.
+
+**Disaggregated (SAN only, up to 64 machines)**: no Storage Spaces Direct and no RDMA storage intent. Two ports carry the management and compute intent (SET, Network ATC); a separate pair of standalone ports carries the cluster networks (default VLANs 1711 and 1712) and is not managed by Network ATC. Fibre Channel uses a 4-port layout (or 6 with a guest backup intent); iSCSI uses the 6-port dedicated-path pattern with two more standalone ports for iSCSI paths A and B. PFC, host ETS and lossless Ethernet are not required because all of this traffic runs over TCP. See [Storage Planning](../planning/07-storage-planning.mdx).
+
+**Physical switch requirements** (per [Microsoft Learn — Physical network requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/physical-network-requirements?view=azloc-2610) and the network considerations article):
+
+- IEEE 802.1Q (VLANs): required for all traffic types
+- IEEE 802.1Qbb (Priority Flow Control) and 802.1Qaz (Enhanced Transmission Selection): required for the storage traffic of switched hyperconverged deployments (RDMA). Disaggregated deployments do not require them
+- IEEE 802.1AB (LLDP): required, with the Learn custom TLVs
+- Jumbo frames: Learn recommends an MTU of **9216** bytes for RDMA storage traffic, configured the same on the physical switches (host portal options 1514, 4088 or 9014; Learn gives 9000 on the host with 9216 on the switch as a common pairing for disaggregated deployments). The range 1514 to 9174 in the physical network article is the SDN encapsulation requirement, not the storage MTU. For external SAN (iSCSI) networks use the MTU your storage vendor specifies, end to end
+- ECN for RoCEv2 deployments, and MLAG for redundant ToR pairs
+- Switchless (direct connect) storage: 1 to 4 nodes, a hard upper limit, with no scale-out. The portal supports switchless for 1 or 2 nodes; 3 and 4 node switchless clusters deploy only with an ARM template and need Storage Auto IP turned off with every storage IP defined explicitly
 
 ### Arc Gateway (Optional)
 
@@ -293,8 +330,8 @@ If cluster nodes cannot reach Azure endpoints directly, deploy an [Arc Gateway](
 | Requirement | Details | Verified By |
 |-------------|---------|-------------|
 | **Microsoft Entra ID tenant** | Active tenant with the Azure Local subscription associated | Planning & Discovery |
-| **Active Directory domain** | Functional AD DS domain with DNS resolution; used for cluster node identity | [Part 3: On-Prem Readiness — Phase 01: Active Directory](./03-onprem-readiness/phase-01-active-directory/index.mdx) |
-| **LCM deployment user account** | Dedicated AD account with appropriate permissions; password must be 14+ characters with complexity requirements | [Part 3: On-Prem Readiness — Phase 01: Task 04](./03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts.mdx) |
+| **Identity provider** | Active Directory: functional AD DS domain with DNS resolution, prepared with the Azure Local OU (used for cluster node identity). Or local identity with Azure Key Vault: no AD, a DNS zone, static node IPs and a Key Vault per cluster. Decide which before discovery ends | [Part 3: On-Prem Readiness — Phase 01: Active Directory](./03-onprem-readiness/phase-01-active-directory/index.mdx) |
+| **LCM deployment user account** (Active Directory only) | Dedicated AD account with appropriate permissions; password must be 14+ characters with complexity requirements | [Part 3: On-Prem Readiness — Phase 01: Task 04](./03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts.mdx) |
 | **Local administrator credentials** | Identical username/password across all cluster nodes; 14+ character complexity requirement | OS installation (Part 4, Phase 02) |
 
 ### Assumptions (Customer-Managed, Not Deployed by This Runbook)
@@ -335,7 +372,7 @@ Use this checklist to verify all prerequisites before proceeding to implementati
 - [ ] All servers racked, powered, and cabled
 - [ ] iDRAC/BMC accessible for all servers
 - [ ] Network connectivity verified (management interfaces)
-- [ ] Hardware specifications meet [Azure Local system requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2)
+- [ ] Hardware specifications meet [Azure Local system requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610)
 - [ ] Firmware/BIOS versions current per OEM solution builder extension
 - [ ] Storage controllers in HBA/passthrough mode (RAID not supported)
 - [ ] Minimum 2 data drives per node for Storage Spaces Direct
@@ -349,8 +386,8 @@ Use this checklist to verify all prerequisites before proceeding to implementati
 
 ### ☐ Azure Validation
 - [ ] Subscription active with sufficient quota
-- [ ] 10 required RBAC roles assigned to deployment account (see [Section 4](#4-azure-prerequisites))
-- [ ] All 12 required resource providers registered (see [Section 4](#4-azure-prerequisites))
+- [ ] 10 required RBAC roles assigned to deployment account: 2 on the subscription and 8 on the resource group (see [Section 4](#4-azure-prerequisites))
+- [ ] All 13 required resource providers registered, including `Microsoft.KeyVault` (see [Section 4](#4-azure-prerequisites))
 - [ ] Azure Arc prerequisites met (TLS 1.2, Windows firewall disabled/configured, proxy configured if applicable)
 
 ### ☐ Network Validation
@@ -360,7 +397,8 @@ Use this checklist to verify all prerequisites before proceeding to implementati
 - [ ] Firewall/proxy rules allow required Azure endpoints (see [Section 5](#5-network-prerequisites))
 - [ ] HTTPS inspection disabled along the entire networking path
 - [ ] Static IPs allocated: management, storage VLANs, and 6+ contiguous management IPs for Azure services
-- [ ] Physical switches configured (VLANs, MTU 9174 for storage, IEEE 802.1Q/Qbb/Qaz)
+- [ ] Physical switches configured (VLANs, jumbo MTU 9216 on the storage ports or the storage vendor's MTU for SAN, IEEE 802.1Q/Qbb/Qaz for RDMA storage)
+- [ ] DNS servers final: same on all nodes, at least one outside the instance, none public, none in the Azure Resource Bridge ranges
 
 ### ☐ Security & Identity Validation
 - [ ] Microsoft Entra ID tenant active and associated with the Azure subscription
@@ -373,21 +411,23 @@ Use this checklist to verify all prerequisites before proceeding to implementati
 
 ## Supported Builds
 
-- This runbook targets the Azure Local **12.x release train (24H2, OS build 26100)**. The latest release is **12.2609**; see [Releases and Support Lifecycle](../planning/08-release-and-support-lifecycle.mdx). Azure Stack HCI 23H2 (OS build 25398) is out of support
-- Always verify latest guidance in [Microsoft Azure Local documentation](https://learn.microsoft.com/en-us/azure/azure-local/)
-- Check [Azure Local release notes](https://learn.microsoft.com/en-us/azure/azure-local/whats-new) for latest features and fixes
+- This runbook targets the Azure Local **12.x release train (OS build 26100)**. The latest release is **12.2610** (12.2610.1004.50, OS build 26100.33650); see [Releases and Support Lifecycle](../planning/08-release-and-support-lifecycle.mdx). Azure Stack HCI 23H2 (OS build 25398) is out of support
+- Always verify latest guidance in [Microsoft Azure Local documentation](https://learn.microsoft.com/en-us/azure/azure-local/?view=azloc-2610)
+- Check [Azure Local release notes](https://learn.microsoft.com/en-us/azure/azure-local/whats-new?view=azloc-2610) for latest features and fixes
 
 ---
 
 ## References
 
 ### Microsoft Documentation
-- [Azure Local Overview](https://learn.microsoft.com/en-us/azure/azure-local/)
-- [Azure Local Network Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/physical-network-requirements)
-- [Azure Local System Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2)
+- [Azure Local Overview](https://learn.microsoft.com/en-us/azure/azure-local/?view=azloc-2610)
+- [Azure Local Network Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/physical-network-requirements?view=azloc-2610)
+- [Azure Local Host Network Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610)
+- [Network considerations for cloud deployments](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610)
+- [Azure Local System Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610)
 - [Azure Arc Gateway](https://learn.microsoft.com/en-us/azure/azure-arc/servers/arc-gateway)
-- [Azure Local Firewall Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements)
-- [Azure Local Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
+- [Azure Local Firewall Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610)
+- [Azure Local Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610)
 
 ### Planning Documents
 - [Discovery Checklist](../planning/02-discovery-checklist.mdx)
@@ -430,8 +470,8 @@ Once all prerequisites are validated:
 
 **Version Control**
 - Created: 2026-01-15 by Azure Local Cloud
-- Last Updated: 2026-03-02 by Azure Local Cloud
-- Version: 2.0.0
+- Last Updated: 2026-11-08 by Azure Local Cloud
+- Version: 2.1.0
 - Tags: azure-local, prerequisites, requirements
 - Keywords: prerequisites, assumptions, requirements
 - Author: Azure Local Cloud

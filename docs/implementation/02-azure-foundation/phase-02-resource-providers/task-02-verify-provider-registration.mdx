@@ -2,7 +2,7 @@
 title: "Task 02: Verify Provider Registration"
 sidebar_label: "Task 02: Verify Providers"
 sidebar_position: 2
-description: "Verify all 12 required Azure resource providers are registered before proceeding to RBAC configuration."
+description: "Verify all 13 required Azure resource providers are registered before proceeding to RBAC configuration."
 category: "Runbook"
 scope: "Azure resource provider registration verification"
 purpose: "Confirm all required resource providers are fully registered"
@@ -96,6 +96,7 @@ Some providers may still be in "Registering" state after Task 01. Wait 2–5 min
  | Microsoft.Attestation | ☐ Registered |
  | Microsoft.Storage | ☐ Registered |
  | Microsoft.Insights | ☐ Registered |
+ | Microsoft.KeyVault | ☐ Registered |
 
 3. **Document results**:
  - Screenshot the Resource providers page with all providers visible
@@ -148,7 +149,8 @@ $providers = @(
  'Microsoft.HybridContainerService',
  'Microsoft.Attestation',
  'Microsoft.Storage',
- 'Microsoft.Insights'
+ 'Microsoft.Insights',
+ 'Microsoft.KeyVault'
 )
 
 # Check registration status
@@ -171,7 +173,7 @@ if ($notRegistered) {
  $notRegistered | ForEach-Object { Write-Warning " - $($_.Provider): $($_.RegistrationState)" }
  exit 1
 } else {
- Write-Host "`nPASSED: All 12 providers registered successfully" -ForegroundColor Green
+ Write-Host "`nPASSED: All 13 providers registered successfully" -ForegroundColor Green
  exit 0
 }
 ```
@@ -180,7 +182,7 @@ if ($notRegistered) {
 
 **Success criteria**:
 - Script exits with code `0`
-- All 12 providers show `IsRegistered = True`
+- All 13 providers show `IsRegistered = True`
 
 </TabItem>
 <TabItem value="standalone" label="Standalone Script">
@@ -221,7 +223,8 @@ $providers = @(
  'Microsoft.HybridContainerService',
  'Microsoft.Attestation',
  'Microsoft.Storage',
- 'Microsoft.Insights'
+ 'Microsoft.Insights',
+ 'Microsoft.KeyVault'
 )
 
 # Check registration status
@@ -243,7 +246,7 @@ if ($notRegistered) {
  Write-Warning "FAILED: $($notRegistered.Count) provider(s) not registered:"
  $notRegistered | ForEach-Object { Write-Warning " - $($_.Provider): $($_.RegistrationState)" }
 } else {
- Write-Host "`nPASSED: All 12 providers registered successfully" -ForegroundColor Green
+ Write-Host "`nPASSED: All 13 providers registered successfully" -ForegroundColor Green
 }
 ```
 
@@ -260,7 +263,7 @@ This script is completely self-contained. Edit the `$SubscriptionId` in the `#re
 
 Complete this checklist before proceeding to Phase 03:
 
-- [ ] All 12 resource providers show "Registered" status
+- [ ] All 13 resource providers show "Registered" status
 - [ ] Verification script passes with exit code 0
 - [ ] Screenshot / documentation captured for handover
 - [ ] Ready to proceed to Phase 03: RBAC & Permissions
