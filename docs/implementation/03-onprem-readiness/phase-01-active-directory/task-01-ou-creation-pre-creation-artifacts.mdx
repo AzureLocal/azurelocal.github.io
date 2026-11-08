@@ -8,8 +8,8 @@ scope: Active Directory preparation
 purpose: Create Azure Local OU and LCM user account
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-03-03
-version: "1.1.0"
+updated: 2026-11-08
+version: "1.2.0"
 tags:
   - azure-local
   - active-directory
@@ -18,7 +18,7 @@ tags:
 keywords:
   - OU creation
   - LCM user
-  - KDS root key
+  - deployment user requirements
   - AsHciADArtifactsPreCreationTool
 status: "Active"
 ---
@@ -34,11 +34,11 @@ import TabItem from '@theme/TabItem';
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Active Directory preparation   
 > **PURPOSE**: Create Azure Local OU and LCM user account   
-> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory) 
+> **MASTER REFERENCE**: [Microsoft Learn - AD Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610) 
 
 **Status**: Active 
 **Estimated Time**: 15 minutes 
-**Last Updated**: 2026-01-31
+**Last Updated**: 2026-11-08
 
 ---
 
@@ -53,7 +53,84 @@ Create the Azure Local OU container and LCM (Lifecycle Manager) user account usi
 | Requirement | Description |
 |-------------|-------------|
 | Permissions | Create OU and user account in AD |
-| Module | `AsHciADArtifactsPreCreationTool` v2402+ |
+| Module | `AsHciADArtifactsPreCreationTool` (Learn 2610 installs version 2402, `10.2402`; uninstall any previous version first) |
+| Firewall | If a firewall sits between Azure Local and Active Directory, allow Active Directory Web Services (ADWS) and the Active Directory Gateway Management Service. See [firewall requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610) |
+
+:::note No KDS root key needed for this task
+The Microsoft Learn 2610 Active Directory preparation article (`New-HciAdObjectsPreCreation`) and the custom Active Directory article do not mention a KDS root key or a gMSA. This task therefore no longer creates one. In this runbook set a KDS root key is only needed for the optional gMSA scaffold in [Task 04](./task-04-service-admin-accounts.mdx).
+:::
+
+## Requirements and constraints (Microsoft Learn 2610)
+
+Review these before you choose names. They come from the Learn articles [Prepare Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610), [Custom Active Directory configuration](https://learn.microsoft.com/en-us/azure/azure-local/plan/configure-custom-settings-active-directory?view=azloc-2610) and [Deploy via the Azure portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610).
+
+**Active Directory requirements**
+
+- A dedicated OU for the Azure Local objects (the computer objects and the cluster CNO), with Group Policy inheritance blocked so existing GPOs do not conflict with the Azure Local security defaults.
+- A deployment (LCM) user with the necessary permissions over that OU. The user can reside anywhere in the directory.
+- The prep script is optional. You can meet the requirements with your own process (see the delegated rights table below).
+
+**Deployment (LCM) user**
+
+| Requirement | Learn 2610 statement |
+|-------------|----------------------|
+| Username | 1-20 characters; only letters, numbers, hyphens and underscores; cannot start with a hyphen or a number |
+| Username form | Provide only the username. Do not include the domain, for example `contoso\username` |
+| Reserved or duplicate names | Cannot be `admin`; cannot be exactly the same as the local admin user; must be unique for each Azure Local instance |
+| Password | At least 14 characters with a lowercase character, an uppercase character, a numeral and a special character |
+| Logon rights | Allowed to log on interactively, and has the **Log on as a batch job** right. Make sure the default domain policy does not deny it, or grant it explicitly to the account |
+| Scope | Learn recommends a dedicated LCM account with a unique password per instance to limit the impact of a compromised account |
+
+**OU path and lifecycle**
+
+- The `-AsHciOUName` value is a distinguished name and cannot contain any of these characters anywhere in the path: `&`, `"`, `'`, `<`, `>`.
+- The portal deployment wizard states that the OU cannot be at the top level of the domain, for example `OU=Local001,DC=contoso,DC=com`.
+- After deployment, moving the computer objects to a different OU is not supported.
+- If you repair a single machine, do not delete the existing OU. If the machine volumes are encrypted, deleting the OU removes the BitLocker recovery keys.
+- Blocking inheritance at the OU does not block GPOs that have the **Enforced** option. Block them by another method, for example a WMI filter that excludes the Azure Local machine computer accounts.
+- At scale, create one OU per instance under a single parent OU, enable **Block Inheritance** on both the parent and the sub-OU, and link any GPO that must reach every instance to the parent OU with **Enforced**.
+
+**Delegated rights (if you do not use `New-HciAdObjectsPreCreation`)**
+
+| Principal | Scope | Permissions |
+|-----------|-------|-------------|
+| Deployment user | OU and all descendant objects | List contents, read all properties, read permissions, create computer objects, delete computer objects |
+| Deployment user | OU, applied only to descendant `msFVE-Recoveryinformation` objects | Full control (list contents, read and write all properties, delete, read and modify permissions, modify owner, all validated writes) |
+| Cluster CNO | OU and all descendant objects | Read all properties, create computer objects |
+
+The `msFVE-RecoveryInformation` permission must be set with PowerShell; the Active Directory delegation wizard cannot set it. The full manual script is in the [Learn article](https://learn.microsoft.com/en-us/azure/azure-local/plan/configure-custom-settings-active-directory?view=azloc-2610#assign-permissions-using-powershell).
+
+:::info Domain-joining nodes before deployment (2604 and later)
+Microsoft Learn 2610 states that, starting with version 2604, domain joining before deployment is supported. If you choose to domain join, you must add the deployment user to the local Administrators group. If you do not, the machines are joined to a domain automatically during the Azure portal deployment. If you pre-join, add the computer to the correct OU (the one created by this task), because moving computer objects to a different OU after deployment is not supported. See the phase 02 OS installation runbooks.
+:::
+
+## Preflight check
+
+Run this read-only check before `New-HciAdObjectsPreCreation`. It validates the names against the rules above and warns if the OU already exists.
+
+```powershell
+#Requires -Version 7.0
+param(
+    [Parameter(Mandatory)][string]$LcmUserName,
+    [Parameter(Mandatory)][string]$OuDistinguishedName
+)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$problems = @()
+if ($LcmUserName -notmatch '^[A-Za-z_][A-Za-z0-9_-]{0,19}$') { $problems += 'LCM username must be 1-20 characters (letters, numbers, hyphen, underscore) and must not start with a hyphen or a number.' }
+if ($LcmUserName -ieq 'admin')               { $problems += 'LCM username cannot be admin.' }
+if ($OuDistinguishedName -match '[&"''<>]')  { $problems += 'OU path cannot contain & " '' < >.' }
+if ($OuDistinguishedName -notmatch '^OU=.+,DC=.+') { $problems += 'OU path must be a distinguished name that starts with OU= (not the domain root).' }
+if ((Get-Module -ListAvailable -Name ActiveDirectory) -and
+    (Get-ADOrganizationalUnit -Filter "distinguishedName -eq '$OuDistinguishedName'" -ErrorAction SilentlyContinue)) {
+    Write-Warning 'OU already exists. Do not delete it when repairing a node (BitLocker recovery keys).'
+}
+if ($problems) { $problems | ForEach-Object { Write-Error $_ -ErrorAction Continue }; exit 1 }
+Write-Output 'Preflight passed.'
+```
+
+The regex also rejects a username that starts with a number; it does not check password complexity or the unique-per-instance rule, which you must confirm against your instance inventory.
 
 
 :::info
@@ -95,12 +172,9 @@ $password = ConvertTo-SecureString $lcm_password -AsPlainText -Force
 $user = $lcm_user
 $credential = New-Object System.Management.Automation.PSCredential ($user, $password)
 
+# Learn 2610: uninstall any previous version of the module before installing the new one.
 if (-not (Get-Module -ListAvailable -Name AsHciADArtifactsPreCreationTool)) {
  Install-Module AsHciADArtifactsPreCreationTool -Repository PSGallery -Force
-}
-
-if (-not (Get-KdsRootKey -ErrorAction SilentlyContinue)) {
- Add-KdsRootKey -EffectiveTime (Get-Date).AddHours(-10)
 }
 
 New-HciAdObjectsPreCreation -AzureStackLCMUserCredential $credential -AsHciOUName $OuPath -Verbose
@@ -165,11 +239,6 @@ $remoteScript = @"
 
 if (-not (Get-Module -ListAvailable -Name AsHciADArtifactsPreCreationTool)) {
  Install-Module AsHciADArtifactsPreCreationTool -Repository PSGallery -Force
-}
-
-if (-not (Get-KdsRootKey -ErrorAction SilentlyContinue)) {
- Add-KdsRootKey -EffectiveTime (Get-Date).AddHours(-10)
- Write-Output 'KDS Root Key created.'
 }
 
 `$password = ConvertTo-SecureString '$lcmPassword' -AsPlainText -Force
@@ -237,9 +306,6 @@ Get-ADOrganizationalUnit -LDAPFilter "(name=AzureLocal-Cluster01)" | Select-Obje
 
 # Verify LCM user was created in OU
 Get-ADUser -Identity "AzureLocalDeployUser" | Select-Object Name, DistinguishedName, Enabled
-
-# Verify KDS Root Key exists
-Get-KdsRootKey | Select-Object KeyId, EffectiveTime
 ```
 
 </TabItem>
@@ -317,14 +383,6 @@ Write-Output " Cluster OU: $clusterOUPath"
 Write-Output " LCM Account: $lcmSamAccount"
 Write-Output ""
 
-# CHECK: KDS Root Key
-Write-Output "Checking KDS Root Key..."
-try {
- `$kds = Get-KdsRootKey -ErrorAction SilentlyContinue
- if (`$kds) { Write-Check 'KDS Root Key' 'PASS' "Key ID: `$(`$kds[0].KeyId.ToString().Substring(0,8))..." }
- else { Write-Check 'KDS Root Key' 'FAIL' 'Not found' }
-} catch { Write-Check 'KDS Root Key' 'WARN' "Cannot check: `$_" }
-
 # CHECK: OU Structure
 Write-Output ""
 Write-Output "Checking OU structure..."
@@ -391,9 +449,11 @@ if ($stderr.Message) { Write-Host "--- Errors ---" -ForegroundColor Red; Write-H
 
 ## Validation Checklist
 
-- [ ] AsHciADArtifactsPreCreationTool module installed (v2402+)
-- [ ] KDS Root Key exists
-- [ ] OU created with Block Inheritance enabled
+- [ ] AsHciADArtifactsPreCreationTool module installed (version 2402 or later, previous versions uninstalled first)
+- [ ] LCM username and password meet the rules in Requirements and constraints
+- [ ] LCM user can log on interactively and has the Log on as a batch job right
+- [ ] OU path has no `&`, `"`, `'`, `<` or `>` characters and is not the domain root
+- [ ] OU created with Block Inheritance enabled (enforced GPOs handled with a WMI filter if present)
 - [ ] LCM user created in OU
 - [ ] Credentials stored securely
 
@@ -404,7 +464,8 @@ if ($stderr.Message) { Write-Host "--- Errors ---" -ForegroundColor Red; Write-H
 | Issue | Cause | Resolution |
 |-------|-------|------------|
 | `New-ADOrganizationalUnit` fails with access denied | Insufficient permissions to create OUs | Run as Domain Admin or delegate OU creation rights on the parent container |
-| KDS Root Key not effective immediately | Key needs 10-hour replication delay | Use `-EffectiveImmediately` in lab or wait 10 hours in production |
+| Deployment later fails to log on as the LCM user | Default domain policy denies **Log on as a batch job** or interactive logon | Grant the right explicitly to the LCM account or remove the deny |
+| OU creation rejects the path | Path contains `&`, `"`, `'`, `<` or `>`, or is the domain root | Use a distinguished name such as `OU=Local001,DC=contoso,DC=com` |
 | AsHciADArtifactsPreCreationTool module not found | Module not installed or wrong PS version | Install via `Install-Module AsHciADArtifactsPreCreationTool` on PowerShell 5.1+ |
 | LCM user creation fails with duplicate | Account already exists from prior attempt | Verify existing account properties match requirements or remove and recreate |
 
@@ -442,6 +503,7 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
 | 1.1 | 2026-03-03 | Azure Local Cloud | Standardized runbook format |
+| 1.2.0 | 2026-11-08 | Azure Local Cloud | Aligned to Microsoft Learn 2610: removed KDS root key from AD prep, added requirements and constraints, delegated-rights table and preflight check |
 
 ---
 

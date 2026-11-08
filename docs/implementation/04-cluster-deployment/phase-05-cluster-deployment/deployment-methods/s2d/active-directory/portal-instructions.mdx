@@ -8,8 +8,8 @@ scope: "Portal-based cluster deployment with Active Directory authentication"
 purpose: "Deploy Azure Local cluster using domain accounts and AD-managed identity"
 author: "Azure Local Cloud Azure Local Cloud"
 created: 2026-01-30
-updated: 2026-03-09
-version: "1.1.0"
+updated: 2026-11-08
+version: "1.2.0"
 tags:
  - azure-local
  - active-directory
@@ -43,7 +43,7 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-Active Directory deployment is the **Azure Local Cloud standard** for Azure Local clusters. Authentication is managed through domain accounts, with the Life Cycle Manager (LCM) service account pre-created in AD. Nodes must be in **workgroup state** when the portal wizard runs — the wizard handles domain join automatically during deployment.
+Active Directory deployment is the **Azure Local Cloud standard** for Azure Local clusters. Authentication is managed through domain accounts, with the Life Cycle Manager (LCM) service account pre-created in AD. Nodes are either left in a **workgroup** (the default: the wizard joins them to the domain automatically during deployment) or, starting with Azure Local 2604, **domain joined before deployment** as an optional path (see [Optional: domain join before deployment](../../../../phase-02-os-installation/manual-installation/task-03-manual-os-installation.mdx#optional-domain-join-before-deployment)).
 
 :::info Azure Local Cloud Standard Deployment
 Active Directory authentication is the recommended and fully supported Azure Local Cloud deployment method for Azure Local. All AD object prerequisites were completed in Phase 02 (Active Directory Configuration). If that work is not done, stop and complete Phase 02 first.
@@ -68,21 +68,30 @@ All items below must be complete before starting the portal wizard. These were c
 
 | Requirement | Description | Validation |
 |-------------|-------------|------------|
-| **Workgroup state** | Nodes are NOT domain-joined | `(Get-WmiObject Win32_ComputerSystem).PartOfDomain` = False |
+| **Domain membership** | Default: nodes are in a workgroup and the wizard joins them to the domain during deployment. Optional (2604 or later): nodes already domain joined, with the deployment user in the local Administrators group on each node | `(Get-CimInstance Win32_ComputerSystem).PartOfDomain` is `False` (default) or `True` (optional pre-join); then `Get-LocalGroupMember -Group Administrators` shows the deployment user if pre-joined |
 | Arc registered | All nodes visible in Azure Arc > Servers | Portal: Arc > Servers |
 | DNS resolves domain | All nodes can resolve the AD domain FQDN | `Resolve-DnsName corp.azurelocal.cloud` |
 | DC accessible | Domain controller reachable on port 389 from node management IPs | `Test-NetConnection <DC_IP> -Port 389` |
 | WinRM enabled | Remote management enabled on all nodes | `Test-WSMan <NODE_IP>` |
 
-:::warning Nodes must be in workgroup state
-Azure Local requires all nodes to be in **WORKGROUP** (not domain-joined) before the portal deployment wizard runs. The wizard performs the domain join as part of deployment. If any node is already domain-joined, remove it from the domain before proceeding.
+:::info Workgroup (default) or domain joined (optional, 2604 or later)
+Microsoft Learn 2610 states: "Starting with version 2604, domain joining before deployment is supported. If you choose to domain join, you must add the deployment user to the local Administrators group. If you don't domain join beforehand, the machines are automatically joined to a domain during the Deployment via Azure portal."
+
+- **Default path:** leave the nodes in a workgroup. The wizard performs the domain join.
+- **Pre-join path:** follow [Optional: domain join before deployment](../../../../phase-02-os-installation/manual-installation/task-03-manual-os-installation.mdx#optional-domain-join-before-deployment) on every node. Mixing is not documented by Learn: use the same path on all nodes.
+- The Environment Checker software validator is run with `-Exclude Test-IsNotPartofDomain` so a pre-joined node does not fail that check.
+:::
+
+:::note Authentication and Key Vault changes (software 12.2512 and later)
+Per Microsoft Learn 2610, starting with software version 12.2512 new deployments no longer create a Microsoft Entra ID application (service principal) for the cluster. The cluster uses a system-assigned managed identity to authenticate with Azure. For earlier deployments the Entra application is no longer used and can be deleted after you confirm event ID 609 in the `Microsoft-AzureStack-HCI/Admin` log on the machines (registration context v4). Azure Local does not support deploying with an existing Azure Key Vault that has Private Endpoints enabled.
 :::
 
 ### Azure Prerequisites
 
 | Requirement | Description | Validation |
 |-------------|-------------|------------|
-| Subscription | Active subscription with Contributor + User Access Administrator | `Get-AzSubscription` |
+| Subscription | Active subscription; the deploying user is a User Access Administrator and a Contributor on the subscription | `Get-AzSubscription` |
+| Resource group roles | On the Arc resource group the deploying user has Azure Stack HCI Administrator, Reader, Key Vault Data Access Administrator, Key Vault Secrets Officer, Key Vault Contributor and Storage Account Contributor, plus Azure Connected Machine Onboarding and Azure Connected Machine Resource Administrator | Resource group > Access control (IAM) |
 | Resource group | Dedicated RG for the cluster | Created in Azure Portal |
 | Arc registration | All nodes Arc-registered (Phase 04) | Azure Portal > Arc > Servers |
 
@@ -122,7 +131,7 @@ Azure Local requires all nodes to be in **WORKGROUP** (not domain-joined) before
 
 | Field | Value | Source |
 |-------|-------|--------|
-| **Subscription** | Select subscription | Must have Contributor + UAA |
+| **Subscription** | Select subscription | User Access Administrator and Contributor on the subscription |
 | **Resource group** | Select or create | Dedicated RG for cluster |
 | **Cluster name** | `<CLUSTER_NAME>` | `compute.arm_deployment.cluster_name` |
 | **Region** | `<AZURE_REGION>` | `azure_platform.azure_tenants[*].aztenant_location` |
@@ -162,7 +171,7 @@ The domain credential fields appear in the **Basics tab** after selecting Active
 :::warning LCM account password requirements
 The deployment account password must be **at least 14 characters**. This is a Microsoft hard requirement for the LCM service account. A password shorter than 14 characters will fail portal validation with no clear error message.
 
-**Source**: [MS Learn — AD Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
+**Source**: [MS Learn — AD Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610)
 :::
 
 :::info Computer OU distinguished name
@@ -212,6 +221,20 @@ For adapter assignments for each intent, refer to `compute.arm_deployment.networ
 A minimum of **6 consecutive IPs** are required for cluster infrastructure (cluster IP, Arc Resource Bridge IP, etc.). Individual node management IPs are separate — do not include them in this pool.
 :::
 
+**Customize network settings (adapter property overrides):**
+
+For each network intent you can select **Customize network settings**. Microsoft Learn 2610 lists these portal options:
+
+| Setting | Options |
+|---------|---------|
+| Storage traffic priority | Priority Flow Control priority where Data Center Bridging (DCB) is used |
+| System traffic priority | 5, 6 or 7 |
+| Storage traffic bandwidth reservation | Percentage allocated to storage traffic |
+| Jumbo frame size (bytes) | 1514, 4088 or 9014 |
+| RDMA protocol | iWARP, RoCE, RoCEv2, or disabled |
+
+Learn does not state per-intent defaults for these values (for example RDMA off and jumbo 1514 on management and compute, RDMA and jumbo only on storage). Treat any such default as **lab-verified only** and confirm it on a 2610 deployment with `Get-NetIntent`, `Get-NetAdapterAdvancedProperty -RegistryKeyword *JumboPacket` and `Get-NetAdapterRdma`. Change adapter properties only on OEM guidance. Guest RDMA is not supported on Azure Local. These settings do not apply to low capacity class devices. Portal deployment does not let you specify your own storage intent IPs; use ARM template deployment for custom storage IPs.
+
 :::info DNS must resolve the AD domain FQDN
 For AD deployments, the DNS servers entered here must be able to resolve `identity.ad.domain_fqdn`. Nodes query these DNS servers during the domain join step of deployment. If DNS cannot resolve the domain, deployment will fail at domain join.
 :::
@@ -225,8 +248,8 @@ For AD deployments, the DNS servers entered here must be able to resolve `identi
 | **Custom location name** | `<CLUSTER_NAME>-location` | For Arc VM management |
 | **Cloud witness storage** | Create or select storage account | For cluster quorum |
 
-:::info No Key Vault selection for AD deployments
-Active Directory deployments do **not** include a Key Vault selector in the Management tab. AD manages LCM credentials through domain accounts, so there is no Azure Key Vault dependency in the portal wizard. The Key Vault selection seen in Local Identity deployments does not appear here.
+:::info Key Vault
+Per Microsoft Learn 2610, the portal Basics tab asks you to select an existing Key Vault or create a new one to store the system's secrets (such as cryptographic keys and local administrator credentials). A Key Vault is therefore part of AD deployments too. The wizard layout can differ between portal builds (lab-verified only), so confirm where your build shows the selector. Do not select an existing Key Vault that has Private Endpoints enabled: that is not supported.
 :::
 
 ---
@@ -460,8 +483,8 @@ Get-ChildItem "C:\CloudDeployment\Logs" -Recurse |
 ---
 
 **References**:
-- [Microsoft Learn — Deploy Azure Local via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
-- [Microsoft Learn — AD Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
+- [Microsoft Learn — Deploy Azure Local via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610)
+- [Microsoft Learn — AD Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610)
 - [Microsoft Learn — Deployment Troubleshooting](https://learn.microsoft.com/en-us/azure/azure-local/manage/troubleshoot-deployment)
 
 ---

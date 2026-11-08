@@ -38,7 +38,11 @@ import TabItem from '@theme/TabItem';
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../../index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
-[![GA](https://img.shields.io/badge/Status-GA-green?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault?view=azloc-2609)
+[![Local identity](https://img.shields.io/badge/Identity-Local_identity_with_Key_Vault-blue?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault?view=azloc-2610)
+
+:::info Support status wording
+Microsoft Learn 2610 documents local identity with Azure Key Vault (previously known as AD-less deployment) without a GA or preview label on the portal and overview articles. Learn marks only **Deploy with Internal DNS** as preview, and the ARM quickstart template for local identity is named `create-adless-cluster-external-dns-public-preview`. Do not describe local identity as GA in customer material until the support status is confirmed in the 2610 portal (lab-verified only).
+:::
 
 **Status**: Active 
 **Estimated Time**: 2-3 hours 
@@ -61,7 +65,7 @@ Local Identity deployment enables Azure Local clusters without Active Directory 
 :::warning Windows Admin Center Not Supported
 Windows Admin Center (WAC) is **not supported** with Local Identity deployments. Use PowerShell or the Azure portal for administrative tasks.
 
-**Source**: [MS Learn — Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault?view=azloc-2609)
+**Source**: [MS Learn — Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault?view=azloc-2610)
 :::
 
 ---
@@ -74,7 +78,8 @@ Windows Admin Center (WAC) is **not supported** with Local Identity deployments.
 |-------------|-------------|------------|
 | Azure Subscription | Active subscription | `Get-AzSubscription` |
 | Resource Group | Dedicated resource group | Created in Azure Portal |
-| RBAC Permissions | Contributor + User Access Administrator | Verify in IAM |
+| RBAC Permissions (subscription) | User Access Administrator and Contributor | Verify in IAM |
+| RBAC Permissions (Arc resource group) | Azure Stack HCI Administrator, Reader, Key Vault Data Access Administrator, Key Vault Secrets Officer, Key Vault Contributor, Storage Account Contributor, Azure Connected Machine Onboarding, Azure Connected Machine Resource Administrator | Verify in IAM |
 | Azure Arc | All nodes registered (Stage 13) | Verify in Arc > Servers |
 | Key Vault | For credential storage | Created or existing |
 
@@ -86,6 +91,10 @@ Windows Admin Center (WAC) is **not supported** with Local Identity deployments.
 | Windows Server | Azure Stack HCI OS installed | `winver` |
 | Network | All nodes can communicate | `Test-NetConnection` |
 | WinRM | Remote management enabled | `Test-WSMan` |
+| Workgroup | Nodes are **not** domain joined (local identity skips the AD prerequisites and Learn verifies `WORKGROUP` after deployment; domain join before deployment is described for Active Directory deployments) | `(Get-CimInstance Win32_ComputerSystem).PartOfDomain` returns `False` |
+| Static IP | Nodes use static IP addresses; DHCP is not supported for local identity nodes (set with SConfig) | `Get-NetIPConfiguration` |
+| SSH | SSH enabled on each node for remote access from the Azure portal | `Get-Service sshd` |
+| DNS | A DNS server with a properly configured zone and Host A records for each node and for the system itself (first IP of the system IP range) | `Resolve-DnsName <node FQDN>` |
 
 :::warning Critical Requirement
 The local administrator password **MUST be identical** across all cluster nodes. Different passwords will cause deployment failure.
@@ -130,7 +139,7 @@ Microsoft requires a **non-built-in** local administrator account with identical
 :::danger Do NOT use the built-in Administrator account
 Microsoft explicitly states: do not use the built-in `Administrator` account for Local Identity deployments. Create a separate, non-default local account. The account name is configured at `identity.accounts.account_local_admin_username` in `variables.yml`.
 
-**Source**: [MS Learn — Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
+**Source**: [MS Learn — Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault?view=azloc-2610)
 :::
 
 <Tabs groupId="deployment-method">
@@ -485,6 +494,10 @@ The password must be **identical** across all cluster nodes and **at least 14 ch
 | **Cluster name** | `<CLUSTER_NAME>` | From `variables.yml: compute.arm_deployment.cluster_name` |
 | **Region** | `<AZURE_REGION>` | From `variables.yml: azure_platform.azure_tenants.aztenant_location` |
 
+:::note Authentication and Key Vault changes (software 12.2512 and later)
+Per Microsoft Learn 2610, starting with software version 12.2512 new deployments no longer create a Microsoft Entra ID application (service principal). The cluster uses a system-assigned managed identity to authenticate with Azure, so do not plan to create or rotate an SPN for the cluster. For deployments created on earlier versions, the Entra application is no longer used and can be deleted after you confirm event ID 609 in the `Microsoft-AzureStack-HCI/Admin` event log (registration context v4). Also, Azure Local does not support deploying with an existing Azure Key Vault that has Private Endpoints enabled.
+:::
+
 **Add Arc-registered machines:**
 1. Click **Add machines**
 2. Select all Arc-registered nodes from Stage 13
@@ -513,8 +526,8 @@ The following credential fields are part of the **Basics tab** — there is no s
 | **Authentication type** | **Local identity** | Uses local Windows accounts |
 | **Local admin username** | `<LOCAL_ADMIN_USERNAME>` | Account created in pre-deployment step — from `identity.accounts.account_local_admin_username` |
 | **Local admin password** | [Enter password] | **Must match all nodes exactly** |
-| **Deployment username** | `<LOCAL_ADMIN_USERNAME>` | Same account used for LCM deployment |
-| **Deployment password** | [Enter password] | Stored in Key Vault |
+| **Deployment username** | `<LOCAL_ADMIN_USERNAME>` | Only if your portal build shows this field: the same custom local administrator account. Learn 2610 does not describe a separate deployment account for local identity (lab-verified only) |
+| **Deployment password** | [Enter password] | Only if shown; stored in Key Vault |
 
 :::danger Do NOT use the built-in Administrator account
 Microsoft explicitly prohibits using the built-in `Administrator` account for Local Identity deployments. Enter the custom non-built-in account created in the pre-deployment step above. Using `Administrator` will either fail validation or break the deployment.
@@ -569,6 +582,24 @@ This field only appears for Local Identity deployments. Enter the DNS zone where
 :::warning IP Pool Requirement
 Minimum **6 consecutive IPs** required for cluster + Arc Resource Bridge. Do NOT include node management IPs in this pool.
 :::
+
+:::note Internal DNS (preview)
+Learn 2610 also describes **Deploy with Internal DNS (preview)** for environments without a DNS server: on the Networking tab you enter a Zone name, answer **No** to "Do you have an existing DNS Service?", and enter a **Zone Forwarder** IP address. The Internal DNS service supports cluster operations and infrastructure name resolution only. Do not use it as the primary DNS for VMs, Arc-enabled VMs, Kubernetes workloads or applications. This runbook uses an existing DNS server with a configured zone.
+:::
+
+**Customize network settings (adapter property overrides):**
+
+For each network intent you can select **Customize network settings**. Microsoft Learn 2610 lists these portal options:
+
+| Setting | Options |
+|---------|---------|
+| Storage traffic priority | Priority Flow Control priority where Data Center Bridging (DCB) is used |
+| System traffic priority | 5, 6 or 7 |
+| Storage traffic bandwidth reservation | Percentage allocated to storage traffic |
+| Jumbo frame size (bytes) | 1514, 4088 or 9014 |
+| RDMA protocol | iWARP, RoCE, RoCEv2, or disabled |
+
+Learn does not state per-intent defaults for these values (for example RDMA off and jumbo 1514 on management and compute, RDMA and jumbo only on storage). Treat any such default as **lab-verified only** and confirm it on a 2610 deployment with `Get-NetIntent`, `Get-NetAdapterAdvancedProperty -RegistryKeyword *JumboPacket` and `Get-NetAdapterRdma`. Change adapter properties only on OEM guidance. Guest RDMA is not supported on Azure Local. These settings do not apply to low capacity class devices.
 
 ---
 

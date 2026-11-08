@@ -16,7 +16,7 @@ import TabItem from '@theme/TabItem';
 > **DOCUMENT CATEGORY**: Runbook  
 > **SCOPE**: ARM template-based cluster deployment with Active Directory  
 > **PURPOSE**: Automated and repeatable deployment via infrastructure-as-code  
-> **MASTER REFERENCE**: [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template)
+> **MASTER REFERENCE**: [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610)
 
 **Status**: Active
 
@@ -27,9 +27,11 @@ This guide walks through deploying an Azure Local cluster with **Active Director
 AD authentication requires:
 - A pre-existing Active Directory domain accessible from the cluster nodes
 - An organizational unit (OU) for Azure Local computer objects
-- A deployment service account with OU `GenericAll` permissions
+- A deployment service account with the delegated OU permissions that Microsoft Learn lists (list contents, read all properties, read permissions, create and delete computer objects; see [AD-Specific Parameters](#active-directory-authentication))
 
-The Microsoft official ARM template (`azuredeploy.json`, apiVersion `2025-09-15-preview`) accepts **54 parameters**. Azure Local Cloud provides parameter template files and a generation script that populates all 54 from `variables.yml`. See the [Reference](#reference) section at the bottom for the full parameter catalog.
+Per Microsoft Learn 2610, for Azure Local 2503 and later you select the quickstart template `azurestackhci/create-cluster`. The ARM template reference below follows the parameter table that Learn publishes for that template. Learn does not state an API version or a total parameter count, so this runbook does not quote either: treat the exact `apiVersion` and parameter count as **lab-verified only** and diff your parameter file against the current `azuredeploy.parameters.json` in the quickstart template before each deployment. Azure Local Cloud provides parameter template files and a generation script that populate the parameter file from `variables.yml`. See the [Reference](#reference) section at the bottom for the parameter reference.
+
+Learn also states that all parameters in the JSON file must be filled out, including array placeholders such as `[""]`, or validation fails. ARM template deployment is intended for deployments at scale: Learn recommends deploying one system through the Azure portal first.
 
 ---
 
@@ -40,14 +42,15 @@ The Microsoft official ARM template (`azuredeploy.json`, apiVersion `2025-09-15-
 | Requirement | Description | Validation |
 |-------------|-------------|------------|
 | Azure CLI or PowerShell | Az module installed | `Get-Module -Name Az` |
-| Subscription access | Contributor + User Access Administrator | Verify in IAM |
+| Subscription access | User Access Administrator and Contributor on the subscription | Verify in IAM |
+| Resource group roles | On the Arc resource group: Azure Stack HCI Administrator, Reader, Key Vault Data Access Administrator, Key Vault Secrets Officer, Key Vault Contributor, Storage Account Contributor, plus Azure Connected Machine Onboarding and Azure Connected Machine Resource Administrator | Verify in IAM |
 | Resource group | Created for cluster deployment | `Get-AzResourceGroup` |
 | Platform Key Vault | Stores deployment credentials (local admin, LCM passwords) | Secrets populated in prior phases |
 | Arc-registered nodes | All nodes registered in Azure Arc | Verify in Azure Portal |
 | Identical local credentials | Same admin password on all nodes | Verify login via WinRM |
 | Active Directory | Domain reachable from all nodes | `Test-ComputerSecureChannel` |
 | OU for Azure Local | Dedicated OU in AD | `Get-ADOrganizationalUnit` |
-| LCM service account | Domain account with OU `GenericAll` | Verify delegation |
+| LCM service account | Domain account (deployment user) with the delegated OU rights from Learn: list contents, read all properties, read permissions, create and delete computer objects (`New-HciAdObjectsPreCreation` assigns these) | Verify delegation |
 
 ### What You Need Ready
 
@@ -58,7 +61,8 @@ Before starting the deployment procedure, confirm each item:
 3. **`powershell-yaml` module installed** — required by the generation script: `Install-Module powershell-yaml -Scope CurrentUser`
 4. **Arc nodes registered** — Phase 04 complete; `arc_node_resource_ids` populated in `variables.yml`
 5. **Platform Key Vault secrets stored** — `local-admin-password` and `lcm-deployment-password` secrets exist in the platform Key Vault (from prior phases)
-6. **AD infrastructure ready** — domain reachable, OU created, LCM service account has `GenericAll` delegation on the OU
+6. **AD infrastructure ready** — domain reachable, OU created, LCM service account has the delegated OU permissions (created by `New-HciAdObjectsPreCreation`)
+7. **Domain membership decided** — the nodes are either in a workgroup (default; the deployment joins them to the domain) or, with Azure Local 2604 or later, already domain joined with the deployment user in the local Administrators group. See [Optional: domain join before deployment](../../../../phase-02-os-installation/manual-installation/task-03-manual-os-installation.mdx#optional-domain-join-before-deployment)
 
 :::info Where to Run From
 All commands in this runbook run from the **azl-toolkit repo root** on a management/jump box authenticated to Azure. The toolkit scripts expect `variables.yml` at `config/variables.yml` relative to the repo root.
@@ -68,7 +72,9 @@ All commands in this runbook run from the **azl-toolkit repo root** on a managem
 Two Key Vaults are involved in Azure Local deployment:
 
 - **Platform Key Vault** — Already exists from prior phases. Stores deployment credentials (local admin password, LCM domain service account password). Referenced in the parameter file via Key Vault references. **No action needed here.**
-- **Cluster Key Vault** — Created automatically by the ARM template when `createNewKeyVault` is `true`. The name (`keyVaultName`) and other settings are already defined in `variables.yml`.
+- **Cluster Key Vault** — Created by the ARM template deployment (`keyVaultName`, `softDeleteRetentionDays`, `diagnosticStorageAccountName`, `logsRetentionInDays` are defined in `variables.yml`). Azure Local does not support deploying with an existing Key Vault that has Private Endpoints enabled.
+
+Per Microsoft Learn, starting with software version 12.2512 new deployments do not create a Microsoft Entra ID application (service principal) for the cluster; the cluster uses a system-assigned managed identity. Do not create an ARB service principal or client secret for this template (the `arbDeploymentAppID` family of parameters applies only to Azure Local 2411.3 and earlier).
 :::
 
 ---
@@ -130,18 +136,23 @@ iic-01-n02 True
 Get-ADOrganizationalUnit -Identity $ouPath | Format-List Name, DistinguishedName
 ```
 
-```powershell title="Step 4 — Verify LCM account has GenericAll on OU"
+```powershell title="Step 4 — Verify the LCM account has the delegated rights on the OU"
+# Microsoft Learn (custom AD configuration): deployment user over the OU and descendants =
+# list contents, read all properties, read permissions, create computer objects, delete computer objects.
+# Full control applies only to descendant msFVE-RecoveryInformation objects.
 $acl = Get-Acl "AD:\$ouPath"
-$delegation = $acl.Access | Where-Object {
- $_.IdentityReference -like "*$lcmUser*" -and
- $_.ActiveDirectoryRights -match "GenericAll"
-}
+$aces = @($acl.Access | Where-Object { $_.IdentityReference -like "*$lcmUser*" })
+$rights = ($aces.ActiveDirectoryRights | ForEach-Object { $_.ToString() }) -join ', '
 
-if ($delegation) {
- Write-Host "PASS: $lcmUser has GenericAll on $ouPath" -ForegroundColor Green
- $delegation | Format-Table IdentityReference, ActiveDirectoryRights
+$required = 'ListChildren', 'ReadProperty', 'ReadControl', 'CreateChild', 'DeleteChild'
+$missing = $required | Where-Object { $rights -notmatch $_ }
+
+if ($aces.Count -gt 0 -and -not $missing) {
+ Write-Host "PASS: $lcmUser has the delegated rights on $ouPath" -ForegroundColor Green
+ $aces | Format-Table IdentityReference, ActiveDirectoryRights, InheritanceType
 } else {
- Write-Host "FAIL: $lcmUser does NOT have GenericAll on $ouPath" -ForegroundColor Red
+ Write-Host "FAIL: $lcmUser is missing: $($missing -join ', ') on $ouPath" -ForegroundColor Red
+ Write-Host "Re-run New-HciAdObjectsPreCreation or follow the Microsoft Learn custom Active Directory configuration article." -ForegroundColor Yellow
 }
 ```
 
@@ -200,13 +211,14 @@ The `hciResourceProviderObjectID` parameter requires the tenant-specific Object 
 **When to use**: Quick one-time lookup.
 
 ```powershell title="PowerShell — look up the Object ID"
-$hciRP = Get-AzADServicePrincipal -DisplayName "Microsoft.AzureStackHCI Resource Provider"
-$hciRP.Id
+(Get-AzADServicePrincipal -ApplicationId "1412d89f-b8a8-4111-b4fd-e82905cbd85d").Id
 ```
 
 ```bash title="Azure CLI alternative"
-az ad sp list --display-name "Microsoft.AzureStackHCI Resource Provider" --query "[0].id" -o tsv
+az ad sp list --filter "appId eq '1412d89f-b8a8-4111-b4fd-e82905cbd85d'" --query "[0].id" -o tsv
 ```
+
+The application ID `1412d89f-b8a8-4111-b4fd-e82905cbd85d` is the Azure Local resource provider application ID published on Microsoft Learn; looking it up by application ID is the documented method.
 
 **Expected output**: A single GUID, e.g. `ab12cd34-ef56-7890-ab12-cd34ef567890`
 
@@ -255,7 +267,7 @@ Copy the output GUID into your parameter file manually.
 
 ### Task 3: Generate Parameter File
 
-Create the deployment-ready JSON parameter file that maps all 54 ARM template parameters. This step produces the file used by Tasks 4 and 5.
+Create the deployment-ready JSON parameter file for the `create-cluster` template. This step produces the file used by Tasks 4 and 5.
 
 <Tabs groupId="deployment-method">
 <TabItem value="manual" label="Manual Commands" default>
@@ -305,7 +317,7 @@ Validated IIC examples exist for each networking pattern in `configs/azure/arm-t
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-**When to use**: You have a populated `variables.yml` and want all 54 parameters mapped automatically. **This is the recommended path.**
+**When to use**: You have a populated `variables.yml` and want the parameters mapped automatically. **This is the recommended path.**
 
 ```powershell title="Generate the parameter file from variables.yml"
 .\configs\Generate-AzureLocal-Parameters.ps1 `
@@ -315,7 +327,7 @@ Validated IIC examples exist for each networking pattern in `configs/azure/arm-t
 ```
 
 **What the script does:**
-1. Reads `variables.yml` and maps all 54 parameters from the YAML config sections
+1. Reads `variables.yml` and maps the parameters from the YAML config sections
 2. Auto-derives `networkingPattern` (hyperConverged / convergedManagementCompute / custom) from the intent definitions
 3. Auto-derives `networkingType` (switched / switchless / single) from node count and config
 4. Builds the complex arrays (`intentList`, `storageNetworkList`, `physicalNodesSettings`) dynamically
@@ -676,7 +688,7 @@ scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/
 | Issue | Cause | Resolution |
 |-------|-------|------------|
 | Key Vault access denied | Missing RBAC on platform KV | Grant `Key Vault Secrets User` to deployment identity on the **platform** Key Vault |
-| Domain join fails | LCM account lacks OU permissions | Verify `GenericAll` delegation on the OU |
+| Domain join fails | LCM account lacks OU permissions | Verify the delegated rights on the OU (create/delete computer objects, list, read) and that the deployment user is in the local Administrators group if the nodes were pre-joined |
 | Credential mismatch | Different local passwords across nodes | Reset to identical password on all nodes |
 | `adouPath` format error | Incorrect DN syntax | Must be full DN: `OU=...,DC=...,DC=...` |
 | Validation fails on `hciResourceProviderObjectID` | Wrong Object ID | Re-run `Get-AzADServicePrincipal` (Task 2) |
@@ -722,9 +734,9 @@ Invoke-Command -ComputerName $nodeIP -Credential $cred -ScriptBlock {
 The sections below provide detailed reference material for the ARM template parameters, networking patterns, and examples. Expand each section as needed.
 
 <details>
-<summary><strong>ARM Template Parameters — Complete Reference (54 parameters)</strong></summary>
+<summary><strong>ARM Template Parameters — Reference (create-cluster template)</strong></summary>
 
-The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameters** organized into 10 functional groups. **Required** parameters (no `defaultValue` in the template) are marked with ⚠️.
+This reference follows the parameter table that Microsoft Learn (2610) publishes for the `create-cluster` template, grouped for readability. Learn does not publish a total parameter count or API version, so none is quoted here (lab-verified only). **Required** parameters (no `defaultValue` in the template) are marked with ⚠️ and reflect Azure Local Cloud lab experience, not a Learn statement. `createNewKeyVault` is not listed in the Learn table; confirm it in the template before relying on it.
 
 #### Key Vault & Diagnostics
 
@@ -775,7 +787,8 @@ The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameter
 - **`domainFqdn`** must be the FQDN (not NetBIOS)
 - **`adouPath`** must be the full distinguished name
 - **`AzureStackLCMAdminUsername`** must be the **sAMAccountName only** (e.g., `svc-azlocal-lcm`) — do **NOT** pass the full UPN with `@domain`. The domain is already provided via `domainFqdn`. Azure Local's `Initialize-CloudDeployment.ps1` rejects usernames containing `@` or `\`.
-- The LCM service account needs `GenericAll` on the specified OU
+- The LCM service account (deployment user) needs these rights over the OU and all descendant objects, per Microsoft Learn: list contents, read all properties, read permissions, create computer objects, delete computer objects. Full control is needed only on descendant `msFVE-RecoveryInformation` objects (set with PowerShell, not the delegation wizard). The cluster CNO needs read all properties and create computer objects. `New-HciAdObjectsPreCreation` assigns these; do not grant `GenericAll`.
+- The OU cannot be at the top level of the domain, for example `OU=Local001,DC=contoso,DC=com`
 :::
 
 #### Arc Integration
@@ -809,7 +822,7 @@ The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameter
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `configurationMode` | string | `Express` | `Express` (auto) or `InfraOnly` |
+| `configurationMode` | string | `Express` | `Express` (one thinly provisioned volume and storage path per machine, plus the infrastructure volume), `InfraOnly` (infrastructure volume only; create workload volumes and storage paths later) or `KeepStorage` (preserve existing data drives that contain a Storage Spaces pool and volumes) |
 
 #### Networking
 
@@ -829,15 +842,19 @@ The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameter
 | `enableStorageAutoIp` | bool | Auto-IP for storage | `true` |
 | `physicalNodesSettings` | array | Node name + IP list | *(see examples)* |
 
-#### SBE (Solution Builder Extension)
+#### SBE (Solution Builder Extension) — opt-in only
 
-| Parameter | Type | Description | Example |
-|-----------|------|-------------|---------|
-| `sbeVersion` | string | SBE package version | `4.1.2411.1` |
-| `sbeFamily` | string | SBE family/category | `AzureLocal` |
-| `sbePublisher` | string | SBE vendor | `Dell` |
-| `sbeManifestSource` | string | Manifest URL | `""` |
-| `sbeManifestCreationDate` | string | Manifest date | `""` |
+:::warning SBE is opt-in only, never by default
+Per Microsoft Learn, a Solution Builder Extension applies only if your hardware partner provides one (the SBE content is copied to `C:\SBE` on each machine). Azure Local Cloud decision D46: SBE is **opt-in only**. Leave all `sbe*` and `partner*` parameters empty (`""` or `[]`) unless an SBE has been explicitly chosen for this deployment. Take the real version, family, publisher and manifest values from the hardware partner's SBE release, not from this page.
+:::
+
+| Parameter | Type | Description | Default in this runbook |
+|-----------|------|-------------|-------------------------|
+| `sbeVersion` | string | Version of the SBE used during deployment | `""` (omitted) |
+| `sbeFamily` | string | Family or category of the SBE package | `""` (omitted) |
+| `sbePublisher` | string | Publisher or vendor of the SBE | `""` (omitted) |
+| `sbeManifestSource` | string | Source location of the SBE manifest | `""` |
+| `sbeManifestCreationDate` | string | Creation date of the SBE manifest | `""` |
 | `partnerProperties` | array | Partner key-value pairs | `[]` |
 | `partnerCredentiallist` | array | Partner credentials | `[]` |
 
@@ -849,10 +866,38 @@ The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameter
 
 </details>
 
+### Network intent adapter property overrides
+
+The `intentList` entries accept optional override blocks. Microsoft's `Microsoft.AzureStackHCI/clusters/deploymentSettings` reference describes the adapter overrides `jumboPacket`, `networkDirect` and `networkDirectTechnology` (expected technologies `iWARP`, `RoCEv2`, `RoCE`) and states for each: "This parameter should only be modified based on your OEM guidance. Do not modify this parameter without OEM validation." Leave the override flags `false` unless the hardware vendor tells you otherwise.
+
+```json title="intentList entry shape (illustrative values; confirm against the template and OEM guidance)"
+{
+  "name": "Storage",
+  "trafficType": ["Storage"],
+  "adapter": ["SMB1", "SMB2"],
+  "overrideVirtualSwitchConfiguration": false,
+  "virtualSwitchConfigurationOverrides": {},
+  "overrideQosPolicy": false,
+  "qosPolicyOverrides": {},
+  "overrideAdapterProperty": true,
+  "adapterPropertyOverrides": {
+    "jumboPacket": "9014",
+    "networkDirect": "Enabled",
+    "networkDirectTechnology": "RoCEv2"
+  }
+}
+```
+
+The portal equivalents (**Customize network settings**) are storage traffic priority, system traffic priority (5, 6 or 7), storage bandwidth reservation, jumbo frame size (1514, 4088 or 9014) and the RDMA protocol (iWARP, RoCE, RoCEv2 or disabled). Microsoft Learn does not publish per-intent defaults. The Azure Local Cloud design intent of "storage intent: RDMA on and jumbo frames; management and compute intents: RDMA off, jumbo at the default" is **owner policy, lab-verified only**: confirm it after deployment with `Get-NetIntent`, `Get-NetAdapterAdvancedProperty -RegistryKeyword *JumboPacket` and `Get-NetAdapterRdma`. Guest RDMA is not supported on Azure Local.
+
 <details>
 <summary><strong>Networking Pattern & Type Reference</strong></summary>
 
 #### networkingPattern Values
+
+:::note Only `hyperConverged` is shown by Microsoft Learn
+Learn gives `hyperConverged` as the example value for `networkingPattern`. The other values below are the pattern names used by the Azure Local Cloud parameter templates; they are **not documented by Microsoft Learn 2610** and are lab-verified only. Check the allowed values in the template before use.
+:::
 
 | Pattern | Intents | Description | Use Case |
 |---------|---------|-------------|----------|
@@ -963,7 +1008,8 @@ See: `examples/three-intent-separated/azuredeploy.parameters.ad.json`
 ---
 
 **References**:
-- [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template)
+- [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610)
+- [Microsoft Learn - Custom Active Directory configuration](https://learn.microsoft.com/en-us/azure/azure-local/plan/configure-custom-settings-active-directory?view=azloc-2610)
 - [Microsoft Learn - ARM Template Reference](https://learn.microsoft.com/en-us/azure/templates/microsoft.azurestackhci/clusters)
 - [Azure Quickstart Template Source](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci/create-cluster)
 - [ARM Template Key Vault Reference](https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/key-vault-parameter)

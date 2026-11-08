@@ -16,7 +16,7 @@ import TabItem from '@theme/TabItem';
 > **DOCUMENT CATEGORY**: Runbook  
 > **SCOPE**: ARM template-based deployment with local identity  
 > **PURPOSE**: Automated deployment without AD dependency using Azure Key Vault  
-> **MASTER REFERENCE**: [Microsoft Learn - Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
+> **MASTER REFERENCE**: [Microsoft Learn - Local Identity with Key Vault ARM template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault-template?view=azloc-2610)
 
 :::info Script Options in This Document
 This runbook uses **Option 2 — Azure PowerShell** (config-driven, reads `variables.yml`) as the primary automated path alongside **Option 1 — Manual** steps.
@@ -37,11 +37,21 @@ Local identity authentication uses Azure Key Vault for credential management ins
 - Simplified deployments requiring AD independence
 - Multi-site deployments with consistent IaC workflows
 
-:::tip Local Identity Difference
-Unlike Active Directory deployment, local identity leaves `domainFqdn` and `adouPath` as empty strings (`""`). All authentication uses local accounts with credentials stored in Key Vault. The `AzureStackLCMAdminUsername` is a **local account** (e.g., `svc-azlocal-lcm`), not a domain UPN.
+:::warning Local identity uses a different template than Active Directory
+Per Microsoft Learn (2610), local identity with Azure Key Vault is deployed with the quickstart template `azurestackhci/create-adless-cluster-external-dns-public-preview`, **not** `create-cluster`. Its parameter set differs from the Active Directory template:
+
+- `identityProvider` is set to `LocalIdentity`.
+- `dnsServerConfig` is set to `UseDnsServer` for the external DNS template, and `dnsZones` carries the DNS zone configuration (see the [dnsZones example](#dnszones-example)).
+- The Learn parameter reference for this template has **no** `domainFqdn`, `adouPath`, `AzureStackLCMAdminUsername` or `AzureStackLCMAdminPassword` parameters. Do not pass them.
+
+Authentication uses the local administrator account (not the built-in `Administrator`), with secrets stored in Azure Key Vault.
 :::
 
-The Microsoft official ARM template (`azuredeploy.json`, apiVersion `2025-09-15-preview`) accepts **54 parameters**. Azure Local Cloud provides parameter template files and a generation script that populates all 54 from `variables.yml`. See the [Reference](#reference) section at the bottom for the full parameter catalog.
+:::info Template name, API version and parameter count
+The template folder name ends in `public-preview` on Microsoft Learn 2610, and Learn does not state an API version or a total parameter count for it. This runbook therefore does not quote either. Treat the exact `apiVersion` and parameter count as **lab-verified only**: diff your parameter file against the current `azuredeploy.parameters.json` in the quickstart template before each deployment. Learn also notes that every parameter must be filled in, including array placeholders such as `[""]`, or validation fails.
+:::
+
+The Azure Local Cloud toolkit provides parameter template files and a generation script that populate the parameter file from `variables.yml`. Confirm that the generator's `-AuthType LocalIdentity` output matches the parameter set above (it must emit `identityProvider`, `dnsServerConfig` and `dnsZones`, and must not emit the Active Directory or LCM parameters) before you use it. See the [Reference](#reference) section for the parameter reference.
 
 ---
 
@@ -52,9 +62,10 @@ The Microsoft official ARM template (`azuredeploy.json`, apiVersion `2025-09-15-
 | Requirement | Description | Validation |
 |-------------|-------------|------------|
 | Azure CLI or PowerShell | Az module installed | `Get-Module -Name Az` |
-| Subscription access | Contributor + User Access Administrator | Verify in IAM |
+| Subscription access | User Access Administrator and Contributor on the subscription (Learn deployment checklist) | Verify in IAM |
+| Resource group roles | On the Arc resource group: Azure Stack HCI Administrator, Reader, Key Vault Data Access Administrator, Key Vault Secrets Officer, Key Vault Contributor, Storage Account Contributor, plus Azure Connected Machine Onboarding and Azure Connected Machine Resource Administrator | Verify in IAM |
 | Resource group | Created for cluster deployment | `Get-AzResourceGroup` |
-| Platform Key Vault | Stores deployment credentials (local admin, LCM passwords) | Secrets populated in prior phases |
+| Platform Key Vault | Stores the local administrator password used for Key Vault references | Secret populated in prior phases |
 | Arc-registered nodes | All nodes registered in Azure Arc | Verify in Azure Portal |
 | Identical local credentials | Same admin password on all nodes | Verify login via WinRM |
 
@@ -66,7 +77,8 @@ Before starting the deployment procedure, confirm each item:
 2. **Authenticated to Azure** — run `Connect-AzAccount` (PowerShell) or `az login` (CLI) on the machine where you will execute commands
 3. **`powershell-yaml` module installed** — required by the generation script: `Install-Module powershell-yaml -Scope CurrentUser`
 4. **Arc nodes registered** — Phase 04 complete; `arc_node_resource_ids` populated in `variables.yml`
-5. **Platform Key Vault secrets stored** — `local-admin-password` and `lcm-deployment-password` secrets exist in the platform Key Vault (from prior phases)
+5. **Platform Key Vault secret stored** — the `local-admin-password` secret exists in the platform Key Vault (from prior phases). Local identity has no LCM deployment account, so no `lcm-deployment-password` secret is needed for this template
+6. **Nodes in a workgroup** — local identity deployments do not use Active Directory: Learn tells you to skip the AD prerequisites and verifies after deployment that the nodes report `WORKGROUP`. Do not domain join the nodes (the domain-join-before-deployment option in Learn is described for Active Directory deployments). Each node has the same custom local administrator account (not the built-in `Administrator`), static IP addressing (DHCP is not supported for local identity nodes) and SSH enabled, per Microsoft Learn
 
 :::info Where to Run From
 All commands in this runbook run from the **azl-toolkit repo root** on a management/jump box authenticated to Azure. The toolkit scripts expect `variables.yml` at `config/variables.yml` relative to the repo root.
@@ -75,7 +87,7 @@ All commands in this runbook run from the **azl-toolkit repo root** on a managem
 :::info Key Vault Architecture
 Two Key Vaults are involved in Azure Local deployment:
 
-- **Platform Key Vault** — Already exists from prior phases. Stores deployment credentials (local admin password, LCM password). Referenced in the parameter file via Key Vault references. **No action needed here.**
+- **Platform Key Vault** — Already exists from prior phases. Stores the local administrator password. Referenced in the parameter file via a Key Vault reference. **No action needed here.**
 - **Cluster Key Vault** — Created automatically by the ARM template when `createNewKeyVault` is `true`. The name (`keyVaultName`) and other settings are already defined in `variables.yml`.
 :::
 
@@ -108,13 +120,14 @@ The `hciResourceProviderObjectID` parameter requires the tenant-specific Object 
 **When to use**: Quick one-time lookup without running a script.
 
 ```powershell title="Look up the Object ID via Azure PowerShell"
-$hciRP = Get-AzADServicePrincipal -DisplayName "Microsoft.AzureStackHCI Resource Provider"
-$hciRP.Id
+(Get-AzADServicePrincipal -ApplicationId "1412d89f-b8a8-4111-b4fd-e82905cbd85d").Id
 ```
 
 ```bash title="Azure CLI alternative"
-az ad sp list --display-name "Microsoft.AzureStackHCI Resource Provider" --query "[0].id" -o tsv
+az ad sp list --filter "appId eq '1412d89f-b8a8-4111-b4fd-e82905cbd85d'" --query "[0].id" -o tsv
 ```
+
+The application ID `1412d89f-b8a8-4111-b4fd-e82905cbd85d` is the Azure Local resource provider application ID published on Microsoft Learn. Looking it up by application ID is the documented method.
 
 **Expected output**: A single GUID, e.g. `ab12cd34-ef56-7890-ab12-cd34ef567890`
 
@@ -273,7 +286,7 @@ Write-Log "Azure context: $($ctx.Account.Id) / Tenant: $($ctx.Tenant.Id)"
 
 # --- Lookup HCI Resource Provider SP ---
 Write-Log "Looking up Microsoft.AzureStackHCI Resource Provider service principal..."
-$hciRP = Get-AzADServicePrincipal -DisplayName "Microsoft.AzureStackHCI Resource Provider" -ErrorAction Stop
+$hciRP = Get-AzADServicePrincipal -ApplicationId "1412d89f-b8a8-4111-b4fd-e82905cbd85d" -ErrorAction Stop
 
 if (-not $hciRP) {
  Write-Log "Microsoft.AzureStackHCI Resource Provider not found in this tenant." "ERROR"
@@ -325,7 +338,7 @@ Write-Log "Log: $($script:LogFile)"
 
 ### Task 2: Generate Parameter File
 
-Create the deployment-ready JSON parameter file that maps all 54 ARM template parameters. This step produces the file used by Tasks 3 and 4.
+Create the deployment-ready JSON parameter file for the `create-adless-cluster-external-dns-public-preview` template. This step produces the file used by Tasks 3 and 4. Start from the example [azuredeploy.parameters.json](https://github.com/Azure/azure-quickstart-templates/blob/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.parameters.json) that Microsoft Learn links for this template.
 
 <Tabs groupId="deployment-method">
 <TabItem value="manual" label="Manual" default>
@@ -346,13 +359,19 @@ Create the deployment-ready JSON parameter file that maps all 54 ARM template pa
 | `{{DIAGNOSTIC_STORAGE}}` | `cluster_arm_deployment.arm_diagnostic_storage_account_name` | KV diagnostics storage |
 | `{{WITNESS_STORAGE}}` | `cluster_arm_deployment.cloud_witness_storage_account` | Cloud witness storage |
 | `{{LOCAL_ADMIN_USER}}` | `accounts.local_admin.username` | Local admin on all nodes |
-| `{{LCM_ADMIN_USER}}` | `accounts.lcm_admin.username` | LCM admin (**local account** for LCI) |
 | `{{HCI_RP_OBJECT_ID}}` | `cluster_arm_deployment.resource_provider_object_id` | From Task 1 |
 | `{{NAMING_PREFIX}}` | `cluster_arm_deployment.naming_prefix` | Resource prefix |
 
-For Local Identity, `domainFqdn` and `adouPath` are **empty strings** — no replacement needed for those.
+For Local Identity, **omit** `domainFqdn`, `adouPath`, `AzureStackLCMAdminUsername` and `AzureStackLCMAdminPassword`: they are not parameters of the local identity template. Instead set:
 
-For `localAdminPassword` and `AzureStackLCMAdminPassword`, use Key Vault references (not plain text):
+| Parameter | Value |
+|-----------|-------|
+| `identityProvider` | `LocalIdentity` |
+| `dnsServerConfig` | `UseDnsServer` (for the external DNS template) |
+| `dnsZones` | One entry per zone, for example `dnsZoneName` and `dnsForwarder` (see the [dnsZones example](#dnszones-example)) |
+| `dnsServers` | The DNS server IPs that host the zone |
+
+For `localAdminPassword`, use a Key Vault reference (not plain text):
 
 ```json title="Key Vault reference format (points to platform Key Vault)"
 "localAdminPassword": {
@@ -387,12 +406,12 @@ When using `Deploy-AzureLocalCluster.ps1` (Tasks 3 and 4), the script calls `Gen
 ```
 
 **What the script does:**
-1. Reads `variables.yml` and maps all 54 parameters from the YAML config sections
+1. Reads `variables.yml` and maps the parameters from the YAML config sections
 2. Auto-derives `networkingPattern` (hyperConverged / convergedManagementCompute / custom) from the intent definitions
 3. Auto-derives `networkingType` (switched / switchless / single) from node count and config
 4. Builds the complex arrays (`intentList`, `storageNetworkList`, `physicalNodesSettings`) dynamically
-5. Uses Key Vault references for `localAdminPassword` and `AzureStackLCMAdminPassword`
-6. For `-AuthType LocalIdentity`: sets `domainFqdn` and `adouPath` to empty strings automatically
+5. Uses a Key Vault reference for `localAdminPassword`
+6. For `-AuthType LocalIdentity`: must set `identityProvider`, `dnsServerConfig` and `dnsZones` and omit the Active Directory and LCM parameters (verify the generated file against the list above; older generator versions emitted empty `domainFqdn`/`adouPath` strings)
 7. Writes the output JSON and prints a summary
 
 **Verify the generated file** — spot-check these critical values:
@@ -400,8 +419,11 @@ When using `Deploy-AzureLocalCluster.ps1` (Tasks 3 and 4), the script calls `Gen
 ```powershell title="Quick validation of generated parameters"
 $params = (Get-Content "azuredeploy.parameters.local-identity.generated.json" | ConvertFrom-Json).parameters
 Write-Host "Cluster: $($params.clusterName.value)"
-Write-Host "domainFqdn: '$($params.domainFqdn.value)'" # Should be empty
-Write-Host "adouPath: '$($params.adouPath.value)'" # Should be empty
+Write-Host "identityProvider: '$($params.identityProvider.value)'" # Should be LocalIdentity
+Write-Host "dnsServerConfig: '$($params.dnsServerConfig.value)'" # Should be UseDnsServer
+Write-Host "dnsZones: $($params.dnsZones.value | ConvertTo-Json -Compress)"
+Write-Host "domainFqdn present: $($null -ne $params.PSObject.Properties['domainFqdn'])" # Should be False
+Write-Host "adouPath present: $($null -ne $params.PSObject.Properties['adouPath'])" # Should be False
 Write-Host "Nodes: $($params.physicalNodesSettings.value.Count)"
 Write-Host "Pattern: $($params.networkingPattern.value)"
 Write-Host "Mode: $($params.deploymentMode.value)"
@@ -426,7 +448,7 @@ Run the ARM template in **Validate** mode first. Validation executes the full de
 $subscriptionId = "<SUB_ID>" # azure_platform.azure_tenants[0].aztenant_subscription_id
 $resourceGroup = "<RESOURCE_GROUP>" # compute.azure_local.resource_group
 $parametersFile = ".\azuredeploy.parameters.local-identity.json" # File from Task 2
-$templateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json"
+$templateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.json"
 
 # Set subscription context
 Set-AzContext -SubscriptionId $subscriptionId
@@ -500,7 +522,7 @@ Single command: reads `variables.yml`, generates the parameter file, patches `de
  compute.azure_local.resource_group - Resource group
  cluster_arm_deployment.arm_mode - Validate or Deploy
 
- The generation script (Generate-AzureLocal-Parameters.ps1) reads all 54 ARM
+ The generation script (Generate-AzureLocal-Parameters.ps1) reads the ARM
  parameter values from the config. This script orchestrates generation + deployment.
 
  Requires:
@@ -513,7 +535,8 @@ Single command: reads `variables.yml`, generates the parameter file, patches `de
 
 .PARAMETER AuthType
  Authentication type: AD or LocalIdentity. Determines which parameters template
- is used and whether domainFqdn/adouPath are populated.
+ is used. LocalIdentity uses identityProvider/dnsServerConfig/dnsZones and does
+ not populate domainFqdn/adouPath or the LCM admin parameters.
 
 .PARAMETER DeploymentMode
  Validate or Deploy. Overrides cluster_arm_deployment.arm_mode in variables.yml.
@@ -570,7 +593,7 @@ param(
  [string]$ParametersFile = "",
 
  [Parameter(Mandatory = $false)]
- [string]$TemplateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json",
+ [string]$TemplateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.json",
 
  [Parameter(Mandatory = $false)]
  [string]$LogPath = ""
@@ -838,7 +861,7 @@ Write-Host "Updated deploymentMode to Deploy" -ForegroundColor Green
 ```
 
 ```powershell title="Step 2 — Run deployment"
-$templateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json"
+$templateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.json"
 $resourceGroup = "<RESOURCE_GROUP>" # compute.azure_local.resource_group
 $deploymentName = "azl-deploy-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
@@ -890,7 +913,7 @@ Same script as Task 3, invoked with `-DeploymentMode Deploy`. The script reads `
  compute.azure_local.resource_group - Resource group
  cluster_arm_deployment.arm_mode - Validate or Deploy
 
- The generation script (Generate-AzureLocal-Parameters.ps1) reads all 54 ARM
+ The generation script (Generate-AzureLocal-Parameters.ps1) reads the ARM
  parameter values from the config. This script orchestrates generation + deployment.
 
  Requires:
@@ -903,7 +926,8 @@ Same script as Task 3, invoked with `-DeploymentMode Deploy`. The script reads `
 
 .PARAMETER AuthType
  Authentication type: AD or LocalIdentity. Determines which parameters template
- is used and whether domainFqdn/adouPath are populated.
+ is used. LocalIdentity uses identityProvider/dnsServerConfig/dnsZones and does
+ not populate domainFqdn/adouPath or the LCM admin parameters.
 
 .PARAMETER DeploymentMode
  Validate or Deploy. Overrides cluster_arm_deployment.arm_mode in variables.yml.
@@ -960,7 +984,7 @@ param(
  [string]$ParametersFile = "",
 
  [Parameter(Mandatory = $false)]
- [string]$TemplateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json",
+ [string]$TemplateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.json",
 
  [Parameter(Mandatory = $false)]
  [string]$LogPath = ""
@@ -1687,7 +1711,8 @@ if ($failCount -gt 0) {
 | Arc extension failed | Node not reachable from Azure | Verify WinRM/HTTPS and Arc agent status |
 | `deploymentMode` stuck on `Validate` | Forgot to switch mode | Re-run the script with `-DeploymentMode Deploy` or edit the JSON |
 | Parameter file has `{{` placeholders | Incomplete placeholder replacement | Search file for `{{` and replace all remaining |
-| `domainFqdn` not empty | Wrong auth type | Ensure `domainFqdn` and `adouPath` are `""` for Local Identity |
+| `domainFqdn`, `adouPath` or LCM parameters in the parameter file | Active Directory parameter file or wrong template used | Use the `create-adless-cluster-external-dns-public-preview` template and remove those parameters; set `identityProvider` to `LocalIdentity` |
+| `dnsZones` or `dnsServerConfig` validation error | Missing or placeholder values | Provide `dnsServerConfig = UseDnsServer` and a real `dnsZones` array (`dnsZoneName`, `dnsForwarder`) |
 
 ### Deployment Logs
 
@@ -1725,9 +1750,9 @@ Invoke-Command -ComputerName $nodeIP -Credential $cred -ScriptBlock {
 The sections below provide detailed reference material for the ARM template parameters, networking patterns, and examples. Expand each section as needed.
 
 <details>
-<summary><strong>ARM Template Parameters — Complete Reference (54 parameters)</strong></summary>
+<summary><strong>ARM Template Parameters — Reference (local identity template)</strong></summary>
 
-The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameters** organized into 10 functional groups. **Required** parameters (no `defaultValue` in the template) are marked with ⚠️.
+This reference follows the parameter table that Microsoft Learn (2610) publishes for the `create-adless-cluster-external-dns-public-preview` template, grouped for readability. Learn does not publish a total parameter count or API version for this template, so none is quoted here (lab-verified only). **Required** parameters (no `defaultValue` in the template) are marked with ⚠️ and reflect Azure Local Cloud lab experience, not a Learn statement. `createNewKeyVault` is not listed in the Learn table for this template; confirm it in the template before relying on it.
 
 #### Key Vault & Diagnostics
 
@@ -1762,21 +1787,20 @@ The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameter
 |-----------|------|----------|-------------|---------|
 | `localAdminUserName` | string | ⚠️ | Local admin on all nodes | `osfadmin` |
 | `localAdminPassword` | securestring | ⚠️ | Key Vault reference for password | *(KV ref)* |
-| `AzureStackLCMAdminUsername` | string | ⚠️ | LCM admin — **local account** for LCI | `svc-azlocal-lcm` |
-| `AzureStackLCMAdminPassword` | securestring | ⚠️ | Key Vault reference for LCM pwd | *(KV ref)* |
 | `hciResourceProviderObjectID` | string | ⚠️ | `Microsoft.AzureStackHCI` RP Object ID | `abcdef01-...` |
 
-#### Authentication (Local Identity)
+#### Identity and DNS (Local Identity)
 
 | Parameter | Type | Required | Description | LCI Value |
 |-----------|------|----------|-------------|-----------|
-| `domainFqdn` | string | | AD domain FQDN | `""` *(empty)* |
-| `adouPath` | string | | OU distinguished name | `""` *(empty)* |
+| `identityProvider` | string | ⚠️ | Identity provider for the deployment | `LocalIdentity` |
+| `dnsServerConfig` | string | ⚠️ | `UseDnsServer` or `UseForwarder`; for the external DNS template specify `UseDnsServer` | `UseDnsServer` |
+| `dnsZones` | array | ⚠️ | DNS zone configuration for the external DNS template | see the [dnsZones example](#dnszones-example) |
 | `namingPrefix` | string | | Resource naming prefix | `iic-01` |
 
 :::info Local Identity Parameters
-- **`domainFqdn`** and **`adouPath`** must be empty strings (`""`) — the generation script handles this automatically for `-AuthType LocalIdentity`
-- **`AzureStackLCMAdminUsername`** is a **local account** (e.g., `svc-azlocal-lcm`), not a domain UPN
+- The Learn parameter table for this template has **no** `domainFqdn`, `adouPath`, `AzureStackLCMAdminUsername` or `AzureStackLCMAdminPassword`. Do not pass them.
+- The local administrator account used on the nodes must not be the built-in `Administrator`.
 :::
 
 #### Arc Integration
@@ -1810,7 +1834,7 @@ The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameter
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `configurationMode` | string | `Express` | `Express` (auto) or `InfraOnly` |
+| `configurationMode` | string | `Express` | `Express` (one thinly provisioned volume and storage path per machine, plus the infrastructure volume), `InfraOnly` (infrastructure volume only; create workload volumes and storage paths later) or `KeepStorage` (preserve existing data drives that contain a Storage Spaces pool and volumes) |
 
 #### Networking
 
@@ -1830,16 +1854,20 @@ The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameter
 | `enableStorageAutoIp` | bool | Auto-IP for storage | `true` |
 | `physicalNodesSettings` | array | Node name + IP list | *(see examples)* |
 
-#### SBE (Solution Builder Extension)
+#### SBE (Solution Builder Extension) — opt-in only
 
-| Parameter | Type | Description | Example |
-|-----------|------|-------------|---------|
-| `sbeVersion` | string | SBE package version | `4.1.2411.1` |
-| `sbeFamily` | string | SBE family/category | `AzureLocal` |
-| `sbePublisher` | string | SBE vendor | `Dell` |
-| `sbeManifestSource` | string | Manifest URL | `""` |
-| `sbeManifestCreationDate` | string | Manifest date | `""` |
-| `partnerProperties` | array | Partner key-value pairs | `[]` |
+:::warning SBE is opt-in only, never by default
+Per Microsoft Learn, a Solution Builder Extension applies only if your hardware partner provides one (the SBE content is copied to `C:\SBE` on each machine). Azure Local Cloud decision D46: SBE is **opt-in only**. Leave all `sbe*` and `partner*` parameters empty (`""` or `[]`) unless an SBE has been explicitly chosen for this deployment. Take the real version, family, publisher and manifest values from the hardware partner's SBE release, not from this page.
+:::
+
+| Parameter | Type | Description | Default in this runbook |
+|-----------|------|-------------|-------------------------|
+| `sbeVersion` | string | Version of the SBE used during deployment | `""` (omitted) |
+| `sbeFamily` | string | Family or category of the SBE package | `""` (omitted) |
+| `sbePublisher` | string | Publisher or vendor of the SBE | `""` (omitted) |
+| `sbeManifestSource` | string | Source location of the SBE manifest | `""` |
+| `sbeManifestCreationDate` | string | Creation date of the SBE manifest | `""` |
+| `partnerProperties` | array | Partner-specific properties | `[]` |
 | `partnerCredentiallist` | array | Partner credentials | `[]` |
 
 #### Other
@@ -1850,10 +1878,38 @@ The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameter
 
 </details>
 
+### Network intent adapter property overrides
+
+The `intentList` entries accept optional override blocks. Microsoft's `Microsoft.AzureStackHCI/clusters/deploymentSettings` reference describes the adapter overrides `jumboPacket`, `networkDirect` and `networkDirectTechnology` (expected technologies `iWARP`, `RoCEv2`, `RoCE`) and states for each: "This parameter should only be modified based on your OEM guidance. Do not modify this parameter without OEM validation." Leave the override flags `false` unless the hardware vendor tells you otherwise.
+
+```json title="intentList entry shape (illustrative values; confirm against the template and OEM guidance)"
+{
+  "name": "Storage",
+  "trafficType": ["Storage"],
+  "adapter": ["SMB1", "SMB2"],
+  "overrideVirtualSwitchConfiguration": false,
+  "virtualSwitchConfigurationOverrides": {},
+  "overrideQosPolicy": false,
+  "qosPolicyOverrides": {},
+  "overrideAdapterProperty": true,
+  "adapterPropertyOverrides": {
+    "jumboPacket": "9014",
+    "networkDirect": "Enabled",
+    "networkDirectTechnology": "RoCEv2"
+  }
+}
+```
+
+The portal equivalents (**Customize network settings**) are storage traffic priority, system traffic priority (5, 6 or 7), storage bandwidth reservation, jumbo frame size (1514, 4088 or 9014) and the RDMA protocol (iWARP, RoCE, RoCEv2 or disabled). Microsoft Learn does not publish per-intent defaults. The Azure Local Cloud design intent of "storage intent: RDMA on and jumbo frames; management and compute intents: RDMA off, jumbo at the default" is **owner policy, lab-verified only**: confirm it after deployment with `Get-NetIntent`, `Get-NetAdapterAdvancedProperty -RegistryKeyword *JumboPacket` and `Get-NetAdapterRdma`. Guest RDMA is not supported on Azure Local.
+
 <details>
 <summary><strong>Networking Pattern & Type Reference</strong></summary>
 
 #### networkingPattern Values
+
+:::note Only `hyperConverged` is shown by Microsoft Learn
+Learn gives `hyperConverged` as the example value for `networkingPattern`. The other values below are the pattern names used by the Azure Local Cloud parameter templates; they are **not documented by Microsoft Learn 2610** and are lab-verified only. Check the allowed values in the template before use.
+:::
 
 | Pattern | Intents | Description | Use Case |
 |---------|---------|-------------|----------|
@@ -1872,10 +1928,25 @@ The Microsoft official ARM template (`azuredeploy.json`) contains **54 parameter
 
 </details>
 
+### dnsZones example
+
+Per Microsoft Learn 2610, for deployments that use the external DNS template:
+
+```json title="dnsZones (external DNS)"
+"dnsZones": {
+  "value": [
+    {
+      "dnsZoneName": "redmond.contoso.com",
+      "dnsForwarder": []
+    }
+  ]
+}
+```
+
 <details>
 <summary><strong>Key Vault Reference Syntax</strong></summary>
 
-Sensitive parameters (`localAdminPassword`, `AzureStackLCMAdminPassword`) use Key Vault references that point to the **platform Key Vault** — the vault provisioned in prior phases where deployment credentials are already stored:
+The sensitive parameter `localAdminPassword` uses a Key Vault reference that point to the **platform Key Vault** — the vault provisioned in prior phases where deployment credentials are already stored:
 
 ```json title="Key Vault reference pointing to platform Key Vault"
 "localAdminPassword": {
@@ -1964,8 +2035,9 @@ See: `examples/three-intent-separated/azuredeploy.parameters.local-identity.json
 ---
 
 **References**:
-- [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template)
-- [Microsoft Learn - Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
-- [Azure Quickstart Template Source](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci/create-cluster)
+- [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610)
+- [Microsoft Learn - Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault?view=azloc-2610)
+- [Microsoft Learn - Local Identity ARM template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault-template?view=azloc-2610)
+- [Azure Quickstart Template Source](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview)
 - [ARM Template Key Vault Reference](https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/key-vault-parameter)
 

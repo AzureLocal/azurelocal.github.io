@@ -8,10 +8,10 @@ scope: Azure Local SAN-based deployment
 purpose: Deploy Azure Local clusters using external SAN storage instead of Storage Spaces Direct
 author: Azure Local Cloud
 created: 2026-05-01
-updated: 2026-05-01
-version: "1.0.0"
-tags: ["azure-local", "san", "disaggregated", "fiber-channel", "external-storage"]
-keywords: ["SAN deployment", "disaggregated", "Storage Area Network", "Fiber Channel", "external storage", "FC", "MPIO", "HBA"]
+updated: 2026-11-08
+version: "1.1.0"
+tags: ["azure-local", "san", "disaggregated", "fibre-channel", "iscsi", "external-storage"]
+keywords: ["SAN deployment", "disaggregated", "Storage Area Network", "Fibre Channel", "iSCSI", "external storage", "FC", "MPIO", "HBA"]
 status: Active
 ---
 
@@ -22,31 +22,41 @@ import TabItem from '@theme/TabItem';
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
-[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2609)
+[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2610)
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: SAN-based Azure Local cluster deployment
 > **PURPOSE**: Deploy Azure Local using external SAN storage (disaggregated architecture)
-> **MASTER REFERENCE**: [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2609)
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2610)
 
 **Status**: Active
+**Verified against**: Microsoft Learn `view=azloc-2610`
 
 ---
 
 ## Overview
 
-Starting with Azure Local 2604, you can deploy Azure Local using **Storage Area Network (SAN)** storage — a disaggregated architecture where compute and storage are independent. This is an alternative to the traditional hyperconverged model using [Storage Spaces Direct (S2D)](../index.mdx).
+Azure Local supports a **disaggregated** deployment model in which compute and storage are independent and the storage is an external **Storage Area Network (SAN)**. Microsoft Learn describes disaggregated deployments as generally available, from a single machine up to 64 machines. This is an alternative to the traditional hyperconverged model using [Storage Spaces Direct (S2D)](../index.mdx).
 
 Disaggregated deployments:
 - Support **single machine to 64-machine** clusters
 - Enable **independent scaling** of compute and storage
-- Use existing SAN infrastructure (Fibre Channel, or iSCSI from release 2607)
+- Use existing SAN infrastructure (Fibre Channel or iSCSI)
 - Share a unified management control plane via Azure Arc
+
+:::note Version 2604 applies to hybrid, not to disaggregated
+Version 2604 is the **minimum version for hybrid** deployments (Storage Spaces Direct plus an external SAN attached after deployment). Learn does not tie disaggregated (SAN-only) deployment to a 2604 minimum. This site targets Azure Local 2610 (solution 12.2610.1004.50).
+:::
 
 ---
 
-:::info iSCSI support
-iSCSI-connected SAN storage was added in preview with release 2605 and became generally available in release 2607, for both hyperconverged (SAN alongside Storage Spaces Direct) and disaggregated deployments. Machine validation fails for disaggregated deployments that use SANs from unsupported vendors. The runbook tasks on this site cover Fibre Channel. For iSCSI, follow [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609).
+:::info Fibre Channel and iSCSI
+Learn 2610 documents both Fibre Channel (FC) and iSCSI for SAN storage, for disaggregated (SAN-only) and hybrid (S2D plus SAN) deployments. The runbook tasks on this site (Phase 03 Tasks 12 to 14) are written for Fibre Channel. For iSCSI:
+
+- **Azure Local 2610 and later (connected and disconnected deployments):** do **not** enable iSCSI manually on the machines before deployment. The deployment wizard now includes an **iSCSI Configuration** step (Enable, then authentication type and iSCSI network details). Source: [Install the OS for disaggregated deployments](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610) and [Deploy via portal (disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2610).
+- **Earlier versions:** follow the iSCSI tab in the OS install article to configure iSCSI manually.
+- Azure Local supports **dedicated adapters only** for iSCSI. Do not use inbox drivers for the iSCSI adapters.
+- Machine validation fails for disaggregated deployments that use SANs from unsupported vendors. See [Supported SAN solutions](https://learn.microsoft.com/en-us/azure/azure-local/concepts/san-requirements?view=azloc-2610).
 :::
 
 ## S2D vs SAN Comparison
@@ -56,24 +66,52 @@ iSCSI-connected SAN storage was added in preview with release 2605 and became ge
 | **Architecture** | Hyperconverged — storage is local to compute nodes | Disaggregated — external SAN provides storage |
 | **Scaling** | Compute and storage scale together | Compute and storage scale independently |
 | **Max Nodes** | 16 nodes | 64 nodes |
-| **Storage** | Local NVMe/SSD/HDD in each node | External SAN arrays via Fiber Channel |
-| **Network** | RDMA for storage traffic between nodes | FC fabric for storage traffic to SAN |
-| **Hardware** | Standard servers with local drives | Servers with FC HBAs + FC switches + SAN |
-| **Rack Aware** | ✅ Supported ([Rack aware clustering](../../../../../planning/09-rack-aware-clustering.mdx)) | ❌ Not supported with external SAN storage |
+| **Storage** | Local NVMe/SSD/HDD in each node | External SAN arrays via Fibre Channel or iSCSI |
+| **Network** | RDMA for storage traffic between nodes | FC fabric (or dedicated iSCSI adapters) for storage traffic to the SAN |
+| **Hardware** | Standard servers with local drives | Servers with FC HBAs (or dedicated iSCSI NICs) plus SAN array and fabric |
+| **Rack Aware** | ✅ Supported ([Rack aware clustering](../../../../../planning/09-rack-aware-clustering.mdx)) | The **Rack aware** option is not selectable in the standard disaggregated wizard. Learn publishes a separate preview procedure (see the note below). Rack aware is not supported with external SAN for hyperconverged (hybrid) deployments. |
 | **Use Case** | General purpose, smaller clusters | Large clusters, existing SAN infrastructure |
+
+:::note Rack aware with SAN (preview)
+In the Azure portal wizard, **Rack aware** cannot be selected for disaggregated deployments. Learn 2610 also publishes [Deploy a disaggregated rack aware Azure Local cluster with SAN storage (preview)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-rack-aware-cluster-storage-area-network?view=azloc-2610). That preview procedure deploys with the **Standard** cluster option and the **Storage Area Network (SAN)** option, a disk witness, and synchronous array replication, then configures local availability zones after deployment. It is out of scope for this runbook.
+:::
 
 ---
 
-## Supported Fiber Channel Patterns
+## Supported Disaggregated Network Patterns
 
-Azure Local supports four disaggregated networking patterns:
+Learn 2610 publishes three disaggregated network reference patterns:
 
 | Pattern | Description | Reference |
 |---------|-------------|-----------|
-| **FC without backup** | Fiber Channel SAN, no backup network | [FC No Backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2609) |
-| **FC with backup** | Fiber Channel SAN with backup network | [FC With Backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2609) |
-| **FCoE without backup** | Fiber Channel over Ethernet, no backup | [Network Patterns Overview](https://learn.microsoft.com/en-us/azure/azure-local/plan/choose-network-pattern-disaggregated?view=azloc-2609) |
-| **FCoE with backup** | Fiber Channel over Ethernet with backup | [Network Patterns Overview](https://learn.microsoft.com/en-us/azure/azure-local/plan/choose-network-pattern-disaggregated?view=azloc-2609) |
+| **FC without backup** | Fibre Channel SAN, no dedicated in-guest backup network | [FC No Backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-no-backup-disaggregated-pattern?view=azloc-2610) |
+| **FC with backup** | Fibre Channel SAN with a dedicated in-guest backup network | [FC With Backup](https://learn.microsoft.com/en-us/azure/azure-local/plan/fiber-channel-with-backup-disaggregated-pattern?view=azloc-2610) |
+| **iSCSI 6-NIC dedicated-path** | iSCSI SAN on two dedicated standalone adapters (path A and path B); optional in-guest backup network added after deployment | [iSCSI 6-NIC](https://learn.microsoft.com/en-us/azure/azure-local/plan/iscsi-6-network-adapters-disaggregated-pattern?view=azloc-2610) |
+
+:::warning No FCoE pattern
+Learn 2610 does not list a Fibre Channel over Ethernet (FCoE) pattern for disaggregated deployments. Earlier versions of this page listed "FCoE with/without backup"; those rows were removed.
+:::
+
+See the [network pattern chooser](https://learn.microsoft.com/en-us/azure/azure-local/plan/choose-network-pattern-disaggregated?view=azloc-2610).
+
+### Disaggregated host networking
+
+Source: [Host network requirements for disaggregated deployments](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements-disaggregated?view=azloc-2610) and the pattern articles above.
+
+- **Network ATC manages only the management and compute intent** (Switch Embedded Teaming, SET). There is no storage intent. Do not deploy SET manually with `New-VMSwitch`; use Network ATC.
+- **Cluster networks** carry CSV metadata and redirection, SMB live migration and the cluster heartbeat. In the wizard you specify the cluster network name, adapter, VLAN ID and subnet for each one, with a separate subnet and VLAN per adapter. This traffic is layer 2 and not routable. (Learn states explicitly only that the iSCSI storage ports are standalone and not managed by Network ATC; it describes the Network ATC intent as management and compute.) The pattern articles use VLANs **1711** and **1712** for cluster networks 1 and 2 as an **example** configuration.
+- **iSCSI paths** (iSCSI pattern) use two more dedicated standalone adapters (example VLANs **300** and **400** for path A and path B). Assign IP addresses with no default gateway, and add a persistent static route for each iSCSI target (a /32 route per target IP, or one route per target subnet).
+- Plan for at least **four** network adapters qualified for management, compute and cluster traffic (six for the 6-NIC iSCSI pattern). Inbox drivers are not supported (a `DriverProvider` of Microsoft means an inbox driver).
+- **RDMA:** guest RDMA is not supported on Azure Local. For disaggregated clusters the portal states "The RDMA protocol is disabled for cluster networks."
+- **Jumbo frames:** the portal offers 1514, 4088 or 9014 bytes. For iSCSI the pattern article recommends MTU 9000 on the host and 9216 on the switch, applied consistently end to end.
+
+| Priority (802.1p) | Traffic (FC pattern) | PFC | ETS 25 GbE | ETS 10 GbE |
+|---|---|---|---|---|
+| 0 | Default | No | 79% | 78% |
+| 3 | CSV / live migration | No | 20% | 20% |
+| 7 | Cluster heartbeat | No | 1% | 2% |
+
+PFC is disabled on all priorities in the FC pattern (no lossless Ethernet required). The iSCSI 6-NIC pattern uses **no ETS reservations**; it relies on dedicated adapters in access mode (untagged) on the right VLAN and follows the storage vendor's guidance for any DCB requirements.
 
 ---
 
@@ -84,43 +122,65 @@ Azure Local supports four disaggregated networking patterns:
 | Requirement | Details |
 |-------------|---------|
 | Validated hardware | From the [Azure Local Catalog](https://aka.ms/AzureStackHCICatalog) — disaggregated-validated SKUs |
-| FC HBAs | Minimum 2 per node (dual-path for redundancy) |
+| FC HBAs | Minimum 2 per node (dual-path for redundancy); Windows Server 2025 certified HBA and driver |
 | FC switches | Two independent fabrics for redundancy |
-| SAN array | External storage with FC connectivity |
-| LUN minimums | **250 GB** for infrastructure volume, **20 GB** for cluster performance history |
+| SAN array | External storage with FC (or iSCSI) connectivity, from a [supported vendor](https://learn.microsoft.com/en-us/azure/azure-local/concepts/san-requirements?view=azloc-2610) |
+| LUN minimums | **250 GB** for the infrastructure volume, **20 GB** for cluster performance history |
 
-### SAN Configuration (Before Cluster Deployment)
+:::info Only two LUNs are required before deployment
+The deployment wizard asks for two LUNs: the infrastructure LUN and the performance history LUN. Learn states "Workload LUNs are configured after deployment." Presenting workload LUNs early is optional and raises the risk of someone initializing them by mistake.
+:::
 
-The following must be completed **after Arc registration** but **before starting the cluster deployment wizard**:
+### SAN Configuration (Before Cluster Deployment, Fibre Channel)
 
-1. **Install FC HBA drivers** on each node:
+Complete these steps on **every node** and **before Arc registration** (Phase 04). Source: [Install the OS for disaggregated deployments, Connect to SAN](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610#connect-to-san).
+
+1. **Install FC HBA drivers** for your HBA vendor and model (follow your hardware partner's documentation):
    ```powershell
    PNPUTIL /add-driver <path-to-driver>\*.inf /install
    ```
 
-2. **Verify HBA ports** are visible:
+2. **Retrieve the HBA addresses (WWPNs)**:
    ```powershell
-   Get-InitiatorPort
+   Get-InitiatorPort | Where-Object ConnectionType -eq 'Fibre Channel' |
+       Select-Object NodeAddress, PortAddress, ConnectionType
    ```
 
-3. **Enable MPIO** (Multipath I/O):
-   ```powershell
-   Add-WindowsFeature Multipath-IO
-   # Reboot required
-   Enable-MSDSMAutomaticClaim -BusType "FC"
-   ```
+3. **Zone the fabric and unmask the LUNs.** Share the WWPNs with your SAN administrator so that the infrastructure and performance history LUNs are unmasked to the HBAs. Create redundant single-initiator zoning on both fabrics.
 
-4. **Verify SAN disks** are visible and in RAW state:
+4. **Verify MPIO and configure the vendor.** Azure Local 2604 and later enable Multipath I/O (MPIO) by default; verify instead of installing it:
    ```powershell
-   Get-PhysicalDisk | Where-Object { $_.BusType -eq 'FibreChannel' }
+   Get-WindowsOptionalFeature -Online -FeatureName MultipathIO |
+       Select-Object FeatureName, State, RestartNeeded
+   ```
+   Enable the feature (and reboot) only if it is disabled or `RestartNeeded` is `True`. Then register your array with the Microsoft DSM (MSDSM) using the vendor and product IDs in [Task 13](../../../phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional.mdx) and [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610), and apply the vendor MPIO timers.
+
+   :::warning Register and claim (lab-verified)
+   On a real Pure FlashArray lab, registering the hardware ID with `New-MSDSMSupportedHW` alone left **8 separate disks for 2 LUNs** (one per path) because MSDSM had not claimed the devices. The vendor must be both **registered** with MSDSM and **claimed**. The claim command below is the lab-verified method; Learn 2610 documents `mpclaim -r -i -d` only for Hitachi and does not describe this padded form. Vendor is padded to 8 characters and product to 16 characters, then restart the node:
+
+   ```powershell
+   # Example for Pure FlashArray (adjust vendor and product to your array)
+   $hwId = 'PURE'.PadRight(8) + 'FlashArray'.PadRight(16)
+   mpclaim.exe -n -i -d $hwId
+   Restart-Computer
+   ```
+   Verify with `mpclaim -s -d` that each LUN appears once with multiple paths.
+   :::
+
+5. **Confirm the LUNs are visible and RAW** before you proceed with Arc registration:
+   ```powershell
+   Get-PhysicalDisk
+   Get-Disk | Where-Object { $_.BusType -eq 'Fibre Channel' } |
+       Select-Object Number, FriendlyName, Size, PartitionStyle, BusType
    ```
 
 :::warning Do Not Initialize Disks
-SAN disks must remain in **RAW** state. Do **not** initialize, partition, or format them before cluster deployment. The deployment process handles disk initialization.
+SAN disks must remain in **RAW** state. Do **not** initialize, partition, or format them before cluster deployment. Learn: "Don't initialize the drives, as the deployment expects the drive type to be RAW."
 :::
 
-:::warning HBA Zoning After Arc Registration
-Configure FC zoning (WWPN-based) **after** Azure Arc registration is complete. Zoning before registration can cause deployment confusion as LUN visibility may interfere with the Arc registration process.
+:::warning FC zoning timing depends on the topology
+- **Disaggregated (SAN-only):** zone and unmask the infrastructure and performance history LUNs **before Arc registration**. Learn tells you to share the WWPNs, get the LUNs unmasked to the HBAs, and "Confirm you can see the LUNs before you proceed with Arc Registration."
+- **Hybrid (Storage Spaces Direct plus SAN):** the opposite applies. Learn: "To avoid deployment confusion for FC LUNs, don't zone in FC HBA World Wide Names (WWNs) until after the Azure Local deployment." Hybrid storage is attached after initial deployment and requires version 2604 or later. See [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610).
 :::
 
 ---
@@ -132,20 +192,25 @@ Configure FC zoning (WWPN-based) **after** Azure Arc registration is complete. Z
 | **Active Directory** | Portal | [AD — Portal (SAN)](./active-directory/portal-instructions.mdx) |
 | **Active Directory** | ARM Template | [AD — ARM Template (SAN)](./active-directory/arm-template-instructions.mdx) |
 | **Local Identity** | Portal | [Local Identity — Portal (SAN)](./local-identity/portal-instructions.mdx) |
-| **Local Identity** | ARM Template | [Local Identity — ARM Template (SAN)](./local-identity/arm-template-instructions.mdx) |
+| **Local Identity** | ARM Template | [Local Identity — ARM Template (SAN)](./local-identity/arm-template-instructions.mdx) (not documented by Microsoft for SAN; see the page) |
+
+Nodes can stay in a workgroup (the Active Directory default, where the wizard joins them to the domain) or be domain-joined before deployment (supported from 2604, see [Optional: domain join before deployment](../../../phase-02-os-installation/manual-installation/task-03-manual-os-installation.mdx#optional-domain-join-before-deployment)). Local Identity requires workgroup nodes.
 
 ---
 
 ## Post-Deployment: Connect External Storage
 
-After cluster deployment completes, you must connect the SAN storage to the cluster. See [Microsoft Learn — Connecting an External Storage Array](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609) for the full procedure, which includes:
+After cluster deployment completes, workload LUNs are configured. Learn's host-side procedure is [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610) (its detailed steps are written in the hybrid section; the disaggregated rack aware preview article follows the same pattern). In summary:
 
-1. Verify SAN disks are visible on all nodes (`Get-Disk`)
-2. Initialize disks as GPT
-3. Create partitions and format as NTFS
-4. Validate cluster storage configuration (`Test-Cluster`)
-5. Add SAN volumes as Cluster Shared Volumes
-6. Create Storage Paths in the Azure portal
+1. Rescan (`Update-HostStorageCache`) and verify every node sees the same LUNs by comparing **`UniqueId`**. Disk numbers can differ between nodes.
+2. On **one** node only, bring the disks online (SAN LUNs are Offline by default, `OfflineShared` policy), initialize as GPT, and format as NTFS with a **64K allocation unit**.
+3. Add the disks to the cluster (`Get-ClusterAvailableDisk | Add-ClusterDisk`) and convert them with `Add-ClusterSharedVolume`.
+4. Validate storage with `Test-Cluster -Include Storage` (all nodes must see the same disks and the array must support SCSI-3 Persistent Reservations).
+5. In the Azure portal, add a **Storage path** only for the SAN CSVs you create (not for the infrastructure volume).
+
+:::danger Do not delete the infrastructure volumes
+The infrastructure volumes created during deployment must never be deleted.
+:::
 
 ---
 
@@ -159,14 +224,17 @@ After cluster deployment completes, you must connect the SAN storage to the clus
 
 ## References
 
-- [Microsoft Learn — Disaggregated Overview](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2609)
-- [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2609)
-- [Microsoft Learn — Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609)
-- [Microsoft Learn — Network Patterns (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/plan/choose-network-pattern-disaggregated?view=azloc-2609)
-- [Microsoft Learn — Host Network Requirements (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements-disaggregated?view=azloc-2609)
+- [Microsoft Learn — Disaggregated Overview](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2610)
+- [Microsoft Learn — Install the OS for Disaggregated Deployments](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610)
+- [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2610)
+- [Microsoft Learn — Deploy via ARM Template (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated?view=azloc-2610)
+- [Microsoft Learn — Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610)
+- [Microsoft Learn — Network Patterns (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/plan/choose-network-pattern-disaggregated?view=azloc-2610)
+- [Microsoft Learn — Host Network Requirements (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements-disaggregated?view=azloc-2610)
 
 ---
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-11-08 | Azure Local Cloud | Updated to Azure Local 2610: corrected FC zoning timing (disaggregated vs hybrid), MPIO on by default with register-and-claim, removed FCoE patterns, added iSCSI 2610 wizard rule and disaggregated host networking, fixed the Fibre Channel BusType filter |
 | 1.0 | 2026-05-01 | Azure Local Cloud | Initial release — SAN (Disaggregated) deployment |

@@ -8,8 +8,8 @@ scope: OS installation verification
 purpose: Validate correct OS version, build number, boot drive, and console access on all nodes to confirm Phase 02 is complete
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-03-04
-version: "1.1.0"
+updated: 2026-11-08
+version: "1.2.0"
 tags:
   - azure-local
   - os-installation
@@ -46,7 +46,11 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-Verify that Azure Stack HCI OS was installed correctly on every cluster node before moving to Phase 03: OS Configuration. Checks cover OS version, build number, boot drive assignment, and SConfig accessibility.
+Verify that Azure Stack HCI OS was installed correctly on every cluster node before moving to Phase 03: OS Configuration. Checks cover OS version, build number, boot drive assignment, network driver provider, and SConfig accessibility.
+
+:::info Expected OS build for Azure Local 2610
+Microsoft Learn 2610 lists solution version 12.2610.1004.50 with OS build **26100.33650**, and states that all new and existing deployments run that OS version (download it from the Azure portal). Drivers must be compatible with OS 26100.33650 (Windows Server 2025). `Get-ComputerInfo` returns only the major build (`26100`), so the checks below also read the update build revision (UBR) to get the full `26100.xxxxx` build. Media from an earlier release (for example 2604 to 2609) shows a lower revision and should be replaced with 2610 media. Integrated System or Premier solution hardware ships with the OS preinstalled: work with the OEM for a compatible OS image and driver.
+:::
 
 :::info Prerequisites Recap
 - **Task 01**: BOSS virtual disk deleted and recreated ✓
@@ -109,14 +113,18 @@ Connect to each node via iDRAC Virtual Console and run the following commands di
 
 ```powershell
 Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber
+(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR
 ```
 
-**Expected Output:**
+**Expected Output** (Azure Local 2610):
 ```
 WindowsProductName : Azure Stack HCI
 WindowsVersion : 24H2
 OsBuildNumber : 26100
+33650
 ```
+
+The full build is `26100.<UBR>`; for 2610 media it is `26100.33650`. A lower revision means older media.
 
 ### Step 3 — Verify Boot Drive (BOSS Card)
 
@@ -135,6 +143,14 @@ Get-NetAdapter | Format-Table Name, InterfaceDescription, Status
 ```
 
 All physical NICs should be listed. IP addresses are not expected at this stage — networking is configured in Phase 03.
+
+Also check which driver each adapter uses. Inbox drivers are not supported for Azure Local (Microsoft Learn): an adapter is using an inbox driver if `DriverProvider` is `Microsoft`.
+
+```powershell
+Get-NetAdapter -Physical | Select-Object Name, InterfaceDescription, DriverProvider, DriverVersion, DriverDate
+```
+
+**Expected:** `DriverProvider` is the NIC vendor or OEM (for example Intel, Mellanox/NVIDIA, Broadcom), not `Microsoft`. If it is `Microsoft`, install the latest OEM driver following the OEM's instructions before continuing.
 
 ### Step 5 — Verify SConfig
 
@@ -201,13 +217,13 @@ foreach ($nodeKey in $config.nodes.Keys) {
  [PSCustomObject]@{
  Hostname = $env:COMPUTERNAME
  OS = $ci.WindowsProductName
- Build = $ci.OsBuildNumber
+ Build = "$($ci.OsBuildNumber).$((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR)"
  BootDriveGB = [math]::Round($cDrive.Size / 1GB, 0)
  AdaptersUp = $netAdapters
  }
  }
 
- $pass = ($info.OS -match "Azure Stack HCI") -and ($info.Build -ge 26100) -and ($info.BootDriveGB -le 300)
+ $pass = ($info.OS -match "Azure Stack HCI") -and ([version]$info.Build -ge [version]'26100.33650') -and ($info.BootDriveGB -le 300)
  $results += [PSCustomObject]@{
  Node = $hostname
  Status = if ($pass) { "PASS" } else { "REVIEW" }
@@ -249,10 +265,10 @@ azlocal-node04 (10.245.64.24)... PASS
 Verification Summary:
 Node Status OS Build BootDriveGB AdaptersUp
 ---- ------ -- ----- ----------- ----------
-azlocal-node01 PASS Azure Stack HCI 26100 238 4
-azlocal-node02 PASS Azure Stack HCI 26100 238 4
-azlocal-node03 PASS Azure Stack HCI 26100 238 4
-azlocal-node04 PASS Azure Stack HCI 26100 238 4
+azlocal-node01 PASS Azure Stack HCI 26100.33650 238 4
+azlocal-node02 PASS Azure Stack HCI 26100.33650 238 4
+azlocal-node03 PASS Azure Stack HCI 26100.33650 238 4
+azlocal-node04 PASS Azure Stack HCI 26100.33650 238 4
 
 All nodes passed — Phase 02 complete. Proceed to Phase 03: OS Configuration.
 ```
@@ -292,11 +308,11 @@ foreach ($node in $nodes) {
  [PSCustomObject]@{
  Hostname = $env:COMPUTERNAME
  OS = $ci.WindowsProductName
- Build = $ci.OsBuildNumber
+ Build = "$($ci.OsBuildNumber).$((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR)"
  BootDriveGB = [math]::Round($cDrive.Size / 1GB, 0)
  }
  }
- $pass = ($info.OS -match "Azure Stack HCI") -and ($info.Build -ge 26100) -and ($info.BootDriveGB -le 300)
+ $pass = ($info.OS -match "Azure Stack HCI") -and ([version]$info.Build -ge [version]'26100.33650') -and ($info.BootDriveGB -le 300)
  Write-Host " $(if ($pass) {'PASS'} else {'REVIEW'})" -ForegroundColor $(if ($pass) {'Green'} else {'Yellow'})
  $results += [PSCustomObject]@{
  Node = $node.Hostname; Status = if ($pass) {"PASS"} else {"REVIEW"}
@@ -323,10 +339,10 @@ All nodes should produce consistent results:
 
 | Node | OS | Build | Boot Drive | Status |
 |------|-----|-------|------------|--------|
-| azlocal-node01 | Azure Stack HCI | 26100+ | ~238 GB | ✅ PASS |
-| azlocal-node02 | Azure Stack HCI | 26100+ | ~238 GB | ✅ PASS |
-| azlocal-node03 | Azure Stack HCI | 26100+ | ~238 GB | ✅ PASS |
-| azlocal-node04 | Azure Stack HCI | 26100+ | ~238 GB | ✅ PASS |
+| azlocal-node01 | Azure Stack HCI | 26100.33650 | ~238 GB | ✅ PASS |
+| azlocal-node02 | Azure Stack HCI | 26100.33650 | ~238 GB | ✅ PASS |
+| azlocal-node03 | Azure Stack HCI | 26100.33650 | ~238 GB | ✅ PASS |
+| azlocal-node04 | Azure Stack HCI | 26100.33650 | ~238 GB | ✅ PASS |
 
 ---
 
@@ -340,7 +356,9 @@ All nodes should produce consistent results:
 | Boot drive correct | OS on Dell BOSS card M.2 RAID-1 volume (~238 GB) | ☐ |
 | Passwords secured | Administrator passwords stored in Key Vault | ☐ |
 | Server Core prompt | All nodes boot to Server Core / SConfig | ☐ |
-| Build number | 26100 or higher on all nodes | ☐ |
+| Build number | 26100.33650 (Azure Local 2610 media) on all nodes | ☐ |
+| NIC drivers | No physical adapter uses an inbox driver (`DriverProvider` is not `Microsoft`) | ☐ |
+| No Windows Updates installed | Updates were not installed through SConfig or Azure Update Manager (install happens during deployment) | ☐ |
 
 All criteria met — Phase 02 is complete. Proceed to Phase 03: OS Configuration.
 
@@ -351,7 +369,8 @@ All criteria met — Phase 02 is complete. Proceed to Phase 03: OS Configuration
 | Issue | Cause | Resolution |
 |-------|-------|------------|
 | Wrong OS version / product name | Incorrect ISO used in Task 02 | Reinstall with the correct Dell gold image |
-| Build number below 26100 | Outdated ISO | Obtain current gold image and reinstall |
+| Build number below 26100.33650 | Media from an earlier release | Obtain the 2610 OS image (Azure portal download or OEM image) and reinstall |
+| `DriverProvider` is `Microsoft` | Inbox NIC driver in use (not supported) | Install the latest OEM driver per the OEM's instructions |
 | Can't connect remotely (WinRM) | WinRM not yet configured | Use Direct Script tab; enable WinRM manually: `winrm quickconfig -q` |
 | Cannot connect via iDRAC console | iDRAC network issue | Verify iDRAC IP and OOB connectivity |
 | Boot drive wrong size | OS installed on data drive, not BOSS | Reinstall — return to [Task 03](./task-03-manual-os-installation.mdx) and select Drive 0 |
@@ -386,3 +405,4 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
 | 1.1 | 2026-03-04 | Azure Local Cloud | Full frontmatter, Azure badge, add tabs, Stage 12 → Phase 03, Phase 13 → Phase 03, Step 4.x → sequential steps, Step 2/3 → Task 01/03, consolidate checklists, key vault credential references, Navigation table, Version Control footer |
+| 1.2 | 2026-11-08 | Azure Local Cloud | Expect OS build 26100.33650 (Azure Local 2610); add UBR read and inbox NIC driver check |
