@@ -13,11 +13,11 @@ description: "Deploy the Azure Local cluster using Azure Portal or ARM templates
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Azure Local cluster deployment   
 > **PURPOSE**: Deploy the cluster through Azure Portal or ARM templates   
-> **MASTER REFERENCE**: [Microsoft Learn - Deploy Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2609)
+> **MASTER REFERENCE**: [Microsoft Learn - Deploy Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610)
 
 **Status**: Active 
-**Estimated Time**: 1.5-3 hours 
-**Last Updated**: 2026-03-08
+**Estimated Time**: 1.5-3 hours (Learn gives 2.5-3 hours for the ARM deployment itself) 
+**Last Updated**: 2026-11-08 (verified against Microsoft Learn `view=azloc-2610`)
 
 ---
 
@@ -55,7 +55,8 @@ Every machine needs its OS steps done first: OEM drivers and SBE, one static man
 
 :::info Choosing Your Storage Type
 - **S2D (Hyperconverged)**: Local NVMe/SSD/HDD in each node, up to 16 nodes. Compute and storage scale together.
-- **SAN (Disaggregated)**: External SAN via Fiber Channel, up to 64 nodes. Compute and storage scale independently. See [SAN Deployment](./deployment-methods/san/index.mdx) for prerequisites and FC patterns.
+- **SAN (Disaggregated)**: External SAN via Fibre Channel or iSCSI, up to 64 nodes. Compute and storage scale independently. See [SAN Deployment](./deployment-methods/san/index.mdx) for prerequisites and network patterns.
+- **Hybrid (S2D + SAN)**: a SAN attached to a hyperconverged cluster after initial deployment (version 2604 or later). It is a day-2 operation, see [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610).
 :::
 
 :::tip Azure Local Cloud Standard
@@ -72,15 +73,15 @@ For Azure Local Cloud Azure Local deployments, **Active Directory with ARM Templ
 |-------------|------------|
 | Arc registration complete (Phase 04) | All nodes show "Connected" in Azure Portal |
 | Network infrastructure configured | Management, storage, and compute networks ready |
-| Required Azure permissions | Contributor + User Access Administrator on resource group |
-| Storage infrastructure ready | Physical disks and enclosures configured |
+| Required Azure permissions | Subscription: user access administrator and contributor. Resource group used for the Arc machines: Azure Stack HCI Administrator, Reader, Key Vault Data Access Administrator, Key Vault Secrets Officer, Key Vault Contributor, Storage Account Contributor, plus Azure Connected Machine Onboarding and Azure Connected Machine Resource Administrator |
+| Storage infrastructure ready | S2D: physical disks clean and enclosures configured. SAN: infrastructure LUN (250 GB or more) and performance history LUN (20 GB or more) visible and RAW |
 
 ### Active Directory Deployments Only
 
 | Requirement | Validation |
 |-------------|------------|
 | AD pre-created with `New-HciAdObjectsPreCreation` | OU exists, LCM user created in OU, GPO inheritance blocked at OU level |
-| Nodes NOT pre-joined to domain | `(Get-WmiObject Win32_ComputerSystem).Domain` returns `WORKGROUP` |
+| Nodes in workgroup (default) or domain-joined before deployment (optional, 2604 and later) | `(Get-WmiObject Win32_ComputerSystem).Domain` returns `WORKGROUP`, or the domain name if you joined first. If domain-joined, the deployment user is in the local Administrators group. If not joined, the wizard joins the machines to the domain during deployment |
 | DNS resolves the AD domain FQDN from all nodes | `Resolve-DnsName <domain.fqdn>` succeeds on each node |
 
 ### Local Identity Deployments Only
@@ -88,7 +89,8 @@ For Azure Local Cloud Azure Local deployments, **Active Directory with ARM Templ
 | Requirement | Validation |
 |-------------|------------|
 | Non-built-in local admin account with identical credentials on ALL nodes | Account is NOT the built-in Administrator; login succeeds on each node |
-| Azure Key Vault available | Existing KV accessible, or will be created during portal deployment |
+| Nodes remain in workgroup | `(Get-WmiObject Win32_ComputerSystem).Domain` returns `WORKGROUP` |
+| Azure Key Vault available | Existing KV accessible (an existing Key Vault with Private Endpoints is not supported), or will be created during portal deployment |
 | DNS server with zone configured for cluster nodes | `Resolve-DnsName <node-fqdn>` succeeds for each node |
 
 ---
@@ -144,7 +146,20 @@ Azure Local Cloud parameter templates are maintained in the Azure Local Toolkit:
 - `azuredeploy.parameters.ad.json` — Active Directory authentication
 - `azuredeploy.parameters.local-identity.json` — Local Identity authentication
 
-**Microsoft official template:** Pull at deploy time from the [Azure Quickstart Templates](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci/create-cluster) repository. Do not modify the main template — customize only via the parameters file.
+**Microsoft official templates:** Pull at deploy time from the [Azure Quickstart Templates](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci) repository. Do not modify the main template — customize only via the parameters file. Template per scenario (Learn 2610):
+
+| Scenario | Quickstart template |
+|----------|--------------------|
+| S2D, Active Directory | `azurestackhci/create-cluster` |
+| Local identity (hyperconverged) | `azurestackhci/create-adless-cluster-external-dns-public-preview` |
+| Disaggregated, Fibre Channel | `azurestackhci/create-cluster-san` |
+| Disaggregated, iSCSI | `azurestackhci/create-cluster-san-iscsi` |
+
+Learn documents no ARM template for SAN plus local identity.
+:::
+
+:::note Deployment authentication
+Starting with software version 12.2512, new deployments no longer create a Microsoft Entra ID application (service principal). The cluster authenticates to Azure with a system-assigned managed identity.
 :::
 
 ---
@@ -196,7 +211,8 @@ After completing cluster deployment, proceed to [Phase 16: Post Deployment](../p
 ---
 
 **References**:
-- [Microsoft Learn - Deploy via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
-- [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template)
-- [Microsoft Learn - Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites)
+- [Microsoft Learn - Deploy via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610)
+- [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610)
+- [Microsoft Learn - Deployment Prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prerequisites?view=azloc-2610)
+- [Microsoft Learn - Assign Azure permissions for deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-arc-register-server-permissions?view=azloc-2610)
 

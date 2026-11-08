@@ -8,10 +8,10 @@ scope: Portal-based SAN cluster deployment with Local Identity
 purpose: Deploy Azure Local cluster using external SAN storage and Local Identity with Azure Key Vault via the Azure Portal
 author: Azure Local Cloud
 created: 2026-05-01
-updated: 2026-05-01
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags: ["azure-local", "san", "local-identity", "portal", "disaggregated", "key-vault"]
-keywords: ["SAN deployment", "Local Identity", "Key Vault", "portal", "disaggregated", "Fiber Channel"]
+keywords: ["SAN deployment", "Local Identity", "Key Vault", "portal", "disaggregated", "Fibre Channel", "iSCSI"]
 status: Active
 ---
 
@@ -22,24 +22,29 @@ import TabItem from '@theme/TabItem';
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../../index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
-[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2609)
+[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2610)
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Portal-based SAN cluster deployment with Local Identity
 > **PURPOSE**: Deploy Azure Local with external SAN storage and Local Identity (Key Vault)
-> **MASTER REFERENCE**: [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2609)
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2610)
 
 **Status**: Active
+**Verified against**: Microsoft Learn `view=azloc-2610` (see the support note below)
 
 ---
 
 ## Overview
 
 This runbook deploys a disaggregated Azure Local cluster using the Azure Portal wizard with:
-- **Storage**: External SAN (Fiber Channel)
+- **Storage**: External SAN (Fibre Channel; iSCSI is selected in the wizard from 2610)
 - **Identity**: Local Identity with Azure Key Vault (no Active Directory required)
 
-This combination is ideal for edge or remote deployments using existing SAN infrastructure where AD is not available or desired.
+This combination suits edge or remote deployments using existing SAN infrastructure where AD is not available or desired.
+
+:::caution What Learn 2610 does and does not document for this combination
+The disaggregated portal article lets you pick the **Identity provider** on the Basics tab and links to [Deploy Azure Local using local identity](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault?view=azloc-2610). Its Configuration tab walkthrough, however, only describes Active Directory inputs (domain, OU, deployment account). Learn has no dedicated SAN plus local identity walkthrough. The steps below combine the disaggregated wizard with the fields the local identity article describes. Treat the combination as **lab-verify before production**.
+:::
 
 ---
 
@@ -48,14 +53,20 @@ This combination is ideal for edge or remote deployments using existing SAN infr
 Complete all items from the [SAN Prerequisites](../index.mdx#prerequisites) and the [Local Identity Prerequisites](../../index.mdx#local-identity-deployment-s2d-and-san) sections.
 
 Additionally:
-- [ ] Non-built-in local administrator account with identical credentials on ALL nodes
-- [ ] Static IP addresses on all nodes (DHCP not supported with Local Identity)
-- [ ] DNS server with Host A records for each node and the cluster
-- [ ] Azure Key Vault accessible (or will be created during deployment)
-- [ ] FC HBA drivers installed, MPIO enabled, LUNs visible in RAW state
+- [ ] Non-built-in local administrator account (do **not** use the built-in Administrator) with identical credentials on ALL nodes, a member of the local Administrators group
+- [ ] Static IP addresses on all nodes (DHCP is not supported with Local Identity)
+- [ ] DNS server with a properly configured zone and Host A records for each node and for the cluster (first IP of the allocated range), or the Internal DNS option (preview)
+- [ ] SSH enabled on each node (for remote access from the Azure portal)
+- [ ] Azure Key Vault accessible (or created during deployment), one Key Vault per cluster
+- [ ] Nodes in **workgroup** (not domain-joined). Confirm with `(Get-WmiObject Win32_ComputerSystem).Domain` returning `WORKGROUP`
+- [ ] FC HBA drivers installed, MPIO verified, array registered with MSDSM **and claimed**, LUNs visible in RAW state (zoning done before Arc registration; see [SAN Configuration](../index.mdx#san-configuration-before-cluster-deployment-fibre-channel))
 
-:::warning Disaggregated Cannot Be Rack-Aware
-For disaggregated (SAN) deployments, the "Rack aware" cluster option is **not available**.
+:::note Domain join is for Active Directory only
+Domain joining before deployment (supported from 2604) applies to Active Directory deployments. For Local Identity, the nodes stay in a workgroup.
+:::
+
+:::warning Disaggregated Cannot Select Rack Aware
+For disaggregated (SAN) deployments the "Rack aware" cluster option can't be selected in the wizard.
 :::
 
 ---
@@ -72,45 +83,52 @@ For disaggregated (SAN) deployments, the "Rack aware" cluster option is **not av
 1. Select **Subscription** and **Resource group**
 2. Enter the **Instance name**
 3. Select the **Region**
-4. **Cluster options**: Select **Standard** (Rack aware not available for disaggregated)
+4. **Cluster options**: Select **Standard** (Rack aware can't be selected for disaggregated)
 5. **Storage options**: Select **Storage Area Network (SAN)**
 6. **Identity provider**: Select **Local identity with Azure Key Vault**
-7. Select **+ Add machines** — machines must NOT be domain-joined
+7. Select **+ Add machines**, let the Arc extensions install, then **Validate selected machines**
+8. Select or create the **Key Vault**. Azure Local doesn't support an existing Key Vault that has Private Endpoints enabled
 
 ### Step 3: Networking
 
 1. **Storage configuration**: Select **SAN based storage**
-2. Configure **Management** and **Compute** traffic intents
-3. Assign network adapters, VLANs, and subnets
-4. Configure IP allocation
-5. Provide subnet, default gateway, and DNS servers
+2. Configure **Management** and **Compute** traffic intents (no storage intent)
+3. Assign network adapters, VLANs, and subnets for the intents and the cluster networks
+4. Configure IP allocation (static; DHCP is not supported with Local Identity)
+5. Provide the subnet, default gateway and the **DNS server** details. The local identity article also asks for a valid **Zone name** (the private, authoritative DNS namespace for the cluster). For the Internal DNS (preview) option, answer **No** to "Do you have an existing DNS Service?" and provide a zone forwarder
+6. Optional: **Customize network settings**. For disaggregated deployments the RDMA protocol is disabled for cluster networks; jumbo frame size can be 1514, 4088 or 9014. Change adapter properties only on OEM guidance
 
-### Step 4: Management
+### Step 4: Configuration and Management
 
-1. Set the **Custom location name**
-2. Configure the **cloud witness** storage account
-3. Enter **Local administrator** credentials (must match across all nodes, 14+ character complexity requirements)
-4. An Azure Key Vault is provisioned during deployment to store cluster secrets
+1. **iSCSI Configuration** (2610 and later): leave disabled for Fibre Channel. For iSCSI, **Enable**, specify the authentication type and iSCSI network details, **Configure**. Do not enable iSCSI manually on the machines
+2. Enter **Local administrator** credentials (identical on all nodes, 14+ characters with lowercase, uppercase, numeral and special character)
+3. Confirm the **Local Identity with Azure Key Vault** option. The Key Vault stores cluster secrets, local admin credentials and BitLocker recovery keys
 
 ### Step 5: Advanced — SAN Storage Selection
 
-1. Select the **infrastructure LUN** (≥ 250 GB)
-2. Select the **cluster performance history LUN** (≥ 20 GB)
+1. Optionally edit the **Custom location name** and set the **cloud witness** storage account
+2. Select the **infrastructure LUN** (≥ 250 GB) and the **cluster performance history LUN** (≥ 20 GB). Workload LUNs are configured after deployment
 
 ### Step 6: Validation and Deployment
 
-1. Select **Start validation** — monitor progress
+1. Select **Start validation** (about 20 minutes for one to two machines) — monitor progress
 2. After validation succeeds, select **Create**
 
 ---
 
 ## Post-Deployment
 
-1. Connect workload LUNs — see [Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609)
-2. Proceed to [Phase 06: Post-Deployment](../../../../phase-06-post-deployment/index.mdx)
+1. Confirm the system has no AD dependency:
+   ```powershell
+   (Get-WmiObject Win32_ComputerSystem).Domain   # expect WORKGROUP
+   Get-ClusterResource "<Cluster Name>" | Get-ClusterParameter ADAware   # 2 = Local Identity
+   ```
+2. Verify secrets are backed up to Key Vault (BitLocker keys and the `RecoveryAdmin` password)
+3. Connect workload LUNs — see [Post-Deployment: Connect External Storage](../index.mdx#post-deployment-connect-external-storage) and [Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610)
+4. Proceed to [Phase 06: Post-Deployment](../../../../phase-06-post-deployment/index.mdx)
 
 :::info Windows Admin Center Not Supported
-Windows Admin Center is **not supported** with Local Identity environments. Use PowerShell or the Azure portal for administrative tasks.
+Windows Admin Center is **not supported** with Local Identity environments. Use PowerShell, Azure Monitor or the Azure portal for administrative tasks.
 :::
 
 ---
@@ -120,8 +138,9 @@ Windows Admin Center is **not supported** with Local Identity environments. Use 
 | Issue | Resolution |
 |-------|------------|
 | Rack aware option not available | Expected for disaggregated deployments. Use Standard cluster option. |
-| No SAN disks visible | Verify FC zoning, HBA drivers, and MPIO. Run `Get-PhysicalDisk` on each node. |
-| Key Vault creation fails | Verify permissions (Owner or Contributor + RBAC Admin on the resource group). |
+| No SAN disks visible | Verify FC zoning, HBA drivers, MPIO and the MSDSM claim. Run `Get-PhysicalDisk` on each node. |
+| Key Vault creation fails | Verify you hold the Key Vault roles Learn lists for the deployment user on the resource group (Key Vault Contributor, Key Vault Secrets Officer, Key Vault Data Access Administrator). |
+| Key Vault backup extension alerts | Confirm the node identities (Arc machine resources) hold Key Vault Secrets Officer and Key Vault Certificates Officer on the Key Vault. |
 | DNS resolution failures | Ensure Host A records exist for all nodes and the cluster name in your DNS server. |
 
 ---
@@ -136,4 +155,5 @@ Windows Admin Center is **not supported** with Local Identity environments. Use 
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-11-08 | Azure Local Cloud | Updated to Azure Local 2610: documented support gap for SAN plus local identity, workgroup rule kept for local identity only, Key Vault and DNS details from the local identity article, iSCSI configuration, corrected links |
 | 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |

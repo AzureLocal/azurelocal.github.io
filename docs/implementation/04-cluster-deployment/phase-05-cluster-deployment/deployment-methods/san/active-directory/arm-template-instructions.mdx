@@ -8,10 +8,10 @@ scope: ARM template SAN cluster deployment with Active Directory
 purpose: Deploy Azure Local cluster using external SAN storage and AD authentication via ARM templates
 author: Azure Local Cloud
 created: 2026-05-01
-updated: 2026-05-01
-version: "1.0.0"
+updated: 2026-11-08
+version: "1.1.0"
 tags: ["azure-local", "san", "active-directory", "arm-template", "disaggregated"]
-keywords: ["SAN deployment", "Active Directory", "ARM template", "disaggregated", "infrastructure-as-code"]
+keywords: ["SAN deployment", "Active Directory", "ARM template", "disaggregated", "infrastructure-as-code", "create-cluster-san"]
 status: Active
 ---
 
@@ -22,89 +22,132 @@ import TabItem from '@theme/TabItem';
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../../index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
-[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2609)
+[![Storage](https://img.shields.io/badge/Storage-SAN-purple?style=flat-square)](https://learn.microsoft.com/en-us/azure/azure-local/overview/disaggregated-overview?view=azloc-2610)
 
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: ARM template SAN cluster deployment with Active Directory
 > **PURPOSE**: Deploy Azure Local with external SAN storage and AD authentication via ARM
-> **MASTER REFERENCE**: [Microsoft Learn — Deploy via ARM (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated?view=azloc-2609)
+> **MASTER REFERENCE**: [Microsoft Learn — Deploy via ARM (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated?view=azloc-2610)
 
 **Status**: Active
+**Verified against**: Microsoft Learn `view=azloc-2610`
 
 ---
 
 ## Overview
 
 This runbook deploys a disaggregated Azure Local cluster using ARM templates with:
-- **Storage**: External SAN (Fiber Channel)
+- **Storage**: External SAN (Fibre Channel or iSCSI)
 - **Identity**: Active Directory
 
-ARM template deployment provides repeatability, version control, and CI/CD integration. The disaggregated ARM template includes SAN-specific parameters not present in the S2D template.
+ARM template deployment provides repeatability, version control, and CI/CD integration. Microsoft states that ARM template deployment is targeted at deployments at scale and recommends deploying once through the Azure portal first. The disaggregated templates include SAN-specific parameters that are not in the S2D `create-cluster` template.
 
 ---
 
 ## Prerequisites
 
-Complete all items from the [SAN Prerequisites](../index.mdx#prerequisites) and the [AD Prerequisites](../../index.mdx#active-directory-deployment-s2d-and-san) sections.
+Complete all items from the [SAN Prerequisites](../index.mdx#prerequisites) and the [AD Prerequisites](../../index.mdx#active-directory-deployment-s2d-and-san) sections. Also confirm, per Learn, that all machines run the same OS version and have the same network adapter configuration.
+
+Get the object ID of the Azure Local Resource Provider service principal (unique per tenant) by looking it up by application ID:
+
+```powershell
+(Get-AzADServicePrincipal -ApplicationId "1412d89f-b8a8-4111-b4fd-e82905cbd85d").Id
+```
+
+```azurecli
+az ad sp list --filter "appId eq '1412d89f-b8a8-4111-b4fd-e82905cbd85d'" --query "[0].id" -o tsv
+```
+
+Use the result for the `hciResourceProviderObjectID` parameter.
 
 ---
 
+## Choose the Template
+
+There is **no** `storageConfiguration` parameter and no generic `azuredeploy.json` for SAN. Choose the quickstart template by storage protocol:
+
+| Protocol | Quickstart template | Parameter file example |
+|----------|--------------------|------------------------|
+| Fibre Channel | `azurestackhci/create-cluster-san` | [azuredeploy.parameters.json](https://aka.ms/azurelocal-san-arm) |
+| iSCSI | `azurestackhci/create-cluster-san-iscsi` | [azuredeploy.parameters.json](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci/create-cluster-san-iscsi) |
+
+:::warning Fill in every parameter
+"Ensure that all parameters in the JSON file are filled out, including placeholders that appear as `[""]`, which indicate that the parameter expects an array structure. Replace these with actual values based on your deployment environment, or validation will fail." Copy parameter names exactly from the sample file for your template version (the Learn parameter table spells the LCM password parameter `AzureStackLCMAdminPasssword`).
+:::
+
 ## Key Parameter Differences (SAN vs S2D)
 
-The disaggregated ARM template includes parameters specific to SAN deployments:
+| Parameter | Description (Learn 2610) |
+|-----------|--------------------------|
+| `infraVolLunId` | LUN serial number or unique ID for the infrastructure volume. Minimum size 250 GB. |
+| `infraPerfLunId` | LUN serial number or unique ID for the performance history volume. Minimum size 20 GB. |
+| `sanNetworkList` | List of SAN networks. |
+| `intentList` | List of deployment intents. For a disaggregated cluster the portal offers only management and compute traffic (no storage intent). |
+| `nodes` | **iSCSI template only.** Array of nodes for per-node configuration (additional to the FC parameters). |
+| `storageConnectivitySwitchless`, `enableStorageAutoIp` | Take the values from Microsoft's sample parameter file for your template. |
+| `networkingType`, `networkingPattern` | Learn shows `switchedMultiServerDeployment` and `hyperConverged` only as examples. Take the values from the sample parameter file; Learn doesn't document a separate disaggregated value list. |
+| `configurationMode` | "The storage volume configuration mode." Take the value from the sample parameter file (Learn lists `Express`, `InfraOnly` and `KeepStorage` for the local identity template only). |
+| `domainFqdn`, `adouPath`, `AzureStackLCMAdminUsername`, `AzureStackLCMAdminPasssword` | Active Directory inputs. The OU can't be at the top level of the domain. |
+| `deploymentMode` | `Validate` first, then `Deploy`. |
 
-| Parameter | Description |
-|-----------|-------------|
-| `intentList` | List of deployment intents — **no storage intent** (only management + compute) |
-| `sanNetworkList` | List of SAN networks for the FC fabric |
-| `storageConnectivitySwitchless` | Set to `false` — SAN always uses switched connectivity |
-| `sbeVersion` | Solution Builder Extension version for your hardware |
-| `sbeFamily` | SBE package family |
-| `sbePublisher` | SBE publisher/vendor |
+:::info Solution Builder Extension (SBE) is opt-in only
+The `sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource` and `sbeManifestCreationDate` parameters exist in the template. Per Learn, an SBE is used "only if your hardware partner provides" one. **Leave the SBE parameters empty or omitted by default.** Fill them in only when a hardware partner's SBE is explicitly in scope (Azure Local Cloud decision D46).
+:::
 
 ---
 
 ## Step-by-Step
 
-### Step 1: Obtain the ARM Template
+### Step 1: Obtain the Template and Parameter File
 
-Download the disaggregated ARM template from:
-- [Microsoft Learn — ARM Template (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated?view=azloc-2609)
-- Or use the [Azure Quickstart Templates](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci)
+Download the sample parameter file for your protocol from the links above and fill in every value.
 
-### Step 2: Create the Parameters File
+### Step 2: Sketch of the Parameters File
 
-Create a parameters file with SAN-specific values:
+The skeleton below shows the shape only. It is **not** a complete parameter file; start from Microsoft's sample.
 
 ```json
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
+    "deploymentMode": { "value": "Validate" },
     "clusterName": { "value": "<cluster-name>" },
     "location": { "value": "<azure-region>" },
+    "arcNodeResourceIds": { "value": ["<arc-machine-resource-id-1>", "<arc-machine-resource-id-2>"] },
+    "hciResourceProviderObjectID": { "value": "<rp-object-id>" },
     "domainFqdn": { "value": "<domain.fqdn>" },
     "adouPath": { "value": "OU=<ou>,DC=<domain>,DC=<tld>" },
-    "storageConfiguration": { "value": "SAN" },
-    "networkingPattern": { "value": "managementAndCompute" }
+    "infraVolLunId": { "value": "<infrastructure-lun-id>" },
+    "infraPerfLunId": { "value": "<performance-history-lun-id>" },
+    "sanNetworkList": { "value": [] },
+    "intentList": { "value": [] }
   }
 }
 ```
 
-:::info Storage Configuration
-Set `storageConfiguration` to `"SAN"` to deploy with external SAN storage. This is the key differentiator from S2D deployments.
-:::
+### Step 3: Deploy in the Azure Portal (Validate, then Deploy)
 
-### Step 3: Deploy via Azure CLI
+This is the flow Learn documents.
+
+1. In the Azure portal select **+ Create a resource**, then **Create** under **Template deployment (deploy using custom templates)**
+2. Under **Start with a quickstart template or template spec** choose **Quickstart template** and filter for `azurestackhci/create-cluster-san` (or `create-cluster-san-iscsi`). Select the template
+3. On **Basics**, select **Edit parameters** and load your parameters file, or enter the values. **Save**
+4. Choose the resource group and confirm **Deployment Mode = Validate**, then **Review + create** and **Create**. Validation takes about 10 minutes
+5. When validation completes, select **Redeploy**, reload your saved parameters, change the mode from **Validate** to **Deploy**, then **Review + create** and **Create**
+
+You can run the same template with Azure CLI after downloading it:
 
 ```azurecli
 az deployment group create \
   --resource-group <resource-group> \
-  --template-file azuredeploy.json \
-  --parameters @azuredeploy.parameters.san.ad.json
+  --template-file <downloaded-create-cluster-san-azuredeploy.json> \
+  --parameters @<your-parameters-file>.json
 ```
 
 ### Step 4: Monitor Deployment
+
+In a new browser window open the resource group, select the cluster resource, then **Deployments**, and watch the progress from the seed machine. Deployment takes between 2.5 and 3 hours; **Deploy Moc and ARB Stack** takes 40 to 45 minutes.
 
 ```azurecli
 az deployment group show \
@@ -119,7 +162,7 @@ az deployment group show \
 
 After cluster deployment completes:
 
-1. Connect workload LUNs — see [Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2609)
+1. Connect workload LUNs — see [Post-Deployment: Connect External Storage](../index.mdx#post-deployment-connect-external-storage) and [Connect External Storage](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610)
 2. Proceed to [Phase 06: Post-Deployment](../../../../phase-06-post-deployment/index.mdx)
 
 ---
@@ -128,9 +171,12 @@ After cluster deployment completes:
 
 | Issue | Resolution |
 |-------|------------|
-| Template validation fails | Verify all SAN-specific parameters are included. Check `storageConfiguration` is set to `"SAN"`. |
-| Deployment fails on storage | Ensure LUNs are visible and in RAW state on all nodes. Verify MPIO is enabled. |
-| SBE parameters invalid | Contact your hardware vendor for correct SBE version, family, and publisher values. |
+| Template validation fails | Confirm every parameter is filled, including array placeholders. Confirm you used `create-cluster-san` (FC) or `create-cluster-san-iscsi` (iSCSI), and `infraVolLunId` and `infraPerfLunId` are set. |
+| Deployment fails on storage | Ensure the two system LUNs are visible and RAW on all nodes. Verify MPIO is enabled, the array is registered with MSDSM and claimed. |
+| SBE parameters invalid | SBE is opt-in. Remove the SBE values unless your hardware partner supplied an SBE, and place its content at `C:\SBE` on each machine. |
+| "Role assignment already exists" | Occurs when a portal deployment was tried first in the same resource group. Delete the equivalent role assignment named on the failed resource (Resource Group > Access Control (IAM) > Role Assignments) and redeploy. |
+| "Tenant ID, application ID, principal ID, and scope aren't allowed to be updated" | Zombie role assignments from an earlier deployment. Delete assignments of type Unknown ("Identity not found") in the resource group and retry. |
+| License sync issue | Don't start another **Validate** deployment while the system is in the **Deployment failed** state; this resets system properties. |
 
 ---
 
@@ -144,4 +190,5 @@ After cluster deployment completes:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-11-08 | Azure Local Cloud | Updated to Azure Local 2610: real templates (`create-cluster-san`, `create-cluster-san-iscsi`), removed non-existent `storageConfiguration`, added `infraVolLunId`, `infraPerfLunId`, iSCSI `nodes`, SBE opt-in only, Learn troubleshooting items |
 | 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |

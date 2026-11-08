@@ -13,10 +13,10 @@ description: "Azure Local cluster deployment methods - Portal and ARM Template o
 > **DOCUMENT CATEGORY**: Reference   
 > **SCOPE**: Deployment method selection guide   
 > **PURPOSE**: Choose the appropriate deployment method for your environment
-> **MASTER REFERENCE**: [Deploy Azure Local via Azure portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2609)
+> **MASTER REFERENCE**: [Deploy Azure Local via Azure portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610)
 
 **Status**: Active 
-**Last Updated**: 2026-03-08
+**Last Updated**: 2026-11-08 (verified against Microsoft Learn `view=azloc-2610`)
 
 ---
 
@@ -44,10 +44,11 @@ For Azure Local Cloud Azure Local deployments, **Active Directory with ARM Templ
 | Topology | Description | Use Case |
 |----------|-------------|----------|
 | **Storage Spaces Direct (S2D)** | Hyperconverged — local NVMe drives managed by Windows S2D | New deployments without existing SAN investment |
-| **Disaggregated SAN** | External SAN array via Fibre Channel | Environments with existing SAN infrastructure or specific storage requirements |
+| **Disaggregated SAN** | External SAN array via Fibre Channel or iSCSI | Environments with existing SAN infrastructure or specific storage requirements |
+| **Hybrid (S2D + SAN)** | Hyperconverged cluster with a SAN attached **after** initial deployment (version 2604 or later) | Adding SAN capacity to an existing S2D cluster. See [Connect an external storage array](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610) |
 
 :::tip S2D is the default
-Storage Spaces Direct is the recommended topology for most Azure Local Cloud deployments. Choose SAN only when there is an existing Fibre Channel SAN that the customer explicitly wants to use.
+Storage Spaces Direct is the recommended topology for most Azure Local Cloud deployments. Choose SAN only when there is an existing SAN that the customer explicitly wants to use.
 :::
 
 ### SAN Pre-Deployment Requirements
@@ -58,14 +59,15 @@ If using SAN disaggregated topology, complete Phase 03 Tasks 12–14 **before** 
 2. [Task 13 — Configure MPIO & MSDSM](../../phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional.mdx)
 3. [Task 14 — Verify SAN LUN Presentation](../../phase-03-os-configuration/task-14-verify-san-lun-presentation-conditional.mdx)
 
+For iSCSI, from Azure Local 2610 do not enable iSCSI manually on the machines; the deployment wizard has an iSCSI Configuration step (see [SAN (Disaggregated) Deployment](./san/index.mdx)).
+
 :::danger Infrastructure LUNs must be RAW
 The SAN infrastructure volume (≥250 GB) and performance history LUN (≥20 GB) must remain **uninitialized (RAW)** until the deployment wizard claims them. Do not initialize these LUNs before running the wizard.
 :::
 
-:::warning Post-Arc zoning window
-FC zoning is typically completed in two steps:
-1. **Before deployment**: Zone server HBA ports to SAN array target ports
-2. **After Arc registration**: Add the infrastructure volume and performance history LUNs to the host group
+:::warning FC zoning timing depends on the topology
+- **Disaggregated (SAN-only):** zone and unmask the infrastructure and performance history LUNs **before Arc registration**, and confirm you can see them (`Get-PhysicalDisk`) before you register the machines with Arc.
+- **Hybrid (S2D + SAN):** "don't zone in FC HBA World Wide Names (WWNs) until after the Azure Local deployment" (Learn). Hybrid is a day-2 operation, so it does not use Tasks 12–14 before deployment.
 
 Coordinate timing with your SAN administrator.
 :::
@@ -86,11 +88,11 @@ Coordinate timing with your SAN administrator.
 | Authentication | Portal | ARM Template | Recommendation |
 |---------------|--------|--------------|----------------|
 | Active Directory | ✅ Supported | ✅ Supported | **ARM Template** for production |
-| Local Identity | ✅ Supported | ✅ Supported | Portal for edge deployments |
+| Local Identity | ✅ Portal (no dedicated Learn walkthrough, lab-verify first) | ⚠️ Not documented by Microsoft for SAN (use portal or the AD ARM template) | Portal for edge deployments |
 
 :::info Choosing Storage Type
 - **S2D (Hyperconverged)**: Storage is local to each compute node. Scale compute and storage together. Up to 16 nodes.
-- **SAN (Disaggregated)**: External SAN provides storage via Fiber Channel. Scale compute and storage independently. Up to 64 nodes.
+- **SAN (Disaggregated)**: External SAN provides storage via Fibre Channel or iSCSI. Scale compute and storage independently. Up to 64 nodes.
 
 For SAN deployment details, see [SAN (Disaggregated) Deployment](./san/index.mdx).
 :::
@@ -105,7 +107,7 @@ Enterprise deployments using domain-joined nodes with Active Directory authentic
 
 - Run `New-HciAdObjectsPreCreation` to create the OU, LCM user account, and block GPO inheritance at the OU level
 - LCM user password must be ≥14 characters with lowercase, uppercase, numeral, and special character (cannot use `admin` as username)
-- **Nodes must NOT be domain-joined before deployment** — all nodes must be in workgroup state
+- **Nodes are either in a workgroup or domain-joined before deployment (optional, version 2604 and later).** Learn 2610: "Starting with version 2604, domain joining before deployment is supported. If you choose to domain join, you must add the deployment user to the local Administrators group. If you don't domain join beforehand, the machines are automatically joined to a domain during the Deployment via Azure portal." See [Optional: domain join before deployment](../../phase-02-os-installation/manual-installation/task-03-manual-os-installation.mdx#optional-domain-join-before-deployment)
 - DNS resolves the AD domain FQDN from all nodes
 - WinRM (WS-MAN port 5985) open bi-directionally between all nodes for inter-node cluster communication
 - If a firewall exists between Azure Local nodes and AD, firewall rules must permit AD communication
@@ -129,6 +131,7 @@ Deployments using local Windows accounts, suitable for edge scenarios or environ
 
 ### Prerequisites
 
+- Nodes stay in a **workgroup** (not domain-joined); the local identity article verifies this with `(Get-WmiObject Win32_ComputerSystem).Domain` returning `WORKGROUP`
 - Non-built-in local administrator account (NOT the built-in `Administrator`) with identical credentials on ALL nodes — added to local Administrators group on each node
 - Account password must be ≥14 characters with lowercase, uppercase, numeral, and special character
 - Static IP addresses configured on all nodes — DHCP is not supported
@@ -150,7 +153,7 @@ These Local Identity deployment steps apply to both S2D and SAN disaggregated de
 | Method | S2D Runbook | SAN Runbook |
 |--------|-------------|-------------|
 | **Portal** | [LI/S2D — Portal](./s2d/local-identity/portal-instructions.mdx) | [LI/SAN — Portal](./san/local-identity/portal-instructions.mdx) |
-| **ARM Template** | [LI/S2D — ARM Template](./s2d/local-identity/arm-template-instructions.mdx) | [LI/SAN — ARM Template](./san/local-identity/arm-template-instructions.mdx) |
+| **ARM Template** | [LI/S2D — ARM Template](./s2d/local-identity/arm-template-instructions.mdx) | [LI/SAN — status: not documented by Microsoft](./san/local-identity/arm-template-instructions.mdx) |
 
 ---
 
@@ -173,7 +176,7 @@ graph TD
   C2 -->|Yes| E2[SAN + AD - ARM Template]
   C2 -->|No| F2[SAN + AD - Portal]
   D2 --> G2{Need Automation?}
-  G2 -->|Yes| H2[SAN + Local - ARM Template]
+  G2 -->|Yes| H2[SAN + Local - not documented, use Portal or AD ARM]
   G2 -->|No| I2[SAN + Local - Portal]
 ```
 
@@ -181,7 +184,7 @@ graph TD
 
 ## SAN (Disaggregated) Deployment
 
-Deployments using external Storage Area Network (SAN) storage via Fiber Channel. The disaggregated architecture separates compute and storage, supporting up to 64 nodes.
+Deployments using external Storage Area Network (SAN) storage via Fibre Channel or iSCSI. The disaggregated architecture separates compute and storage, supporting up to 64 nodes.
 
 For full details, see [SAN (Disaggregated) Deployment](./san/index.mdx).
 
@@ -192,7 +195,7 @@ For full details, see [SAN (Disaggregated) Deployment](./san/index.mdx).
 | **Active Directory** | Portal | [AD — Portal (SAN)](./san/active-directory/portal-instructions.mdx) |
 | **Active Directory** | ARM Template | [AD — ARM Template (SAN)](./san/active-directory/arm-template-instructions.mdx) |
 | **Local Identity** | Portal | [Local Identity — Portal (SAN)](./san/local-identity/portal-instructions.mdx) |
-| **Local Identity** | ARM Template | [Local Identity — ARM Template (SAN)](./san/local-identity/arm-template-instructions.mdx) |
+| **Local Identity** | ARM Template | [Local Identity — ARM Template (SAN)](./san/local-identity/arm-template-instructions.mdx) (not documented by Microsoft) |
 
 ---
 
@@ -231,7 +234,7 @@ For standard Azure Local Cloud Azure Local deployments with Storage Spaces Direc
 
 For deployments using an external Fibre Channel SAN:
 
-1. Complete Phase 03 Tasks 12–14 (FC HBA, MPIO, LUN verification)
+1. Complete Phase 03 Tasks 12–14 (FC HBA, MPIO, zoning and LUN verification). For disaggregated deployments, the LUNs must be visible **before** Arc registration
 2. Complete [Phase 14: Arc Registration](../../phase-04-arc-registration/index.mdx)
 3. Use [AD/SAN — Portal](./san/active-directory/portal-instructions.mdx) or [AD/SAN — ARM Template](./san/active-directory/arm-template-instructions.mdx)
 4. Proceed to [Phase 16: Post-Deployment](../../phase-06-post-deployment/index.mdx)
@@ -247,8 +250,10 @@ For deployments using an external Fibre Channel SAN:
 ---
 
 **References**:
-- [Microsoft Learn - Deploy via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
-- [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template)
-- [Microsoft Learn - Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault)
-- [Microsoft Learn - Prepare Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory)
-- [Microsoft Learn - Firewall Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements)
+- [Microsoft Learn - Deploy via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal?view=azloc-2610)
+- [Microsoft Learn - Deploy via Portal (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2610)
+- [Microsoft Learn - Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610)
+- [Microsoft Learn - Deploy via ARM Template (Disaggregated)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated?view=azloc-2610)
+- [Microsoft Learn - Local Identity with Key Vault](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault?view=azloc-2610)
+- [Microsoft Learn - Prepare Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610)
+- [Microsoft Learn - Firewall Requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610)
