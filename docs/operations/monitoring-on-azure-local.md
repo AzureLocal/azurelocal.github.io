@@ -49,7 +49,7 @@ Use the platform capabilities first and add the solution below on top of them. M
 | **Metric alerts** | Customer-defined alerts on Azure Local system metrics. | Set up in Azure Monitor. |
 | **Log alerts** | Customer-defined Log Analytics queries with predefined templates. | Needs a Log Analytics workspace. |
 
-Prerequisites: a registered system with the `AzureEdgeTelemetryAndDiagnostics` extension installed. Since release 2605 you can also monitor GPU metrics for GPUs configured with GPU partitioning. For disconnected operations, see [Disconnected operations](./disconnected-operations-on-azure-local.md).
+Prerequisites: a registered system with the `AzureEdgeTelemetryAndDiagnostics` extension installed. Since release 2605 you can also monitor GPU metrics for GPUs configured with GPU partitioning. For disconnected operations, see [Disconnected operations](../disconnected-operations/disconnected-operations-on-azure-local.md).
 
 ## Supported Features
 

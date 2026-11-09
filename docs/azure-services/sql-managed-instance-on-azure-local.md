@@ -26,7 +26,7 @@ SQL Managed Instance on Azure Local provides a cloud-managed database engine on-
 - **Kubernetes** — SQL MI runs as containers orchestrated by AKS, with persistent volumes backed by S2D storage
 - **High availability** — Built-in Always On availability groups for automatic failover within the cluster
 - **Monitoring** — Metrics and logs exported to Azure Monitor and Log Analytics via the Arc data controller
-- **Connectivity mode** — Directly connected mode. The indirectly connected mode was retired in September 2025. For sites without Azure connectivity use [disconnected operations](../operations/disconnected-operations-on-azure-local.md) and check which data services it supports
+- **Connectivity mode** — Directly connected mode. The indirectly connected mode was retired in September 2025. For sites without Azure connectivity use [disconnected operations](../disconnected-operations/disconnected-operations-on-azure-local.md) and check which data services it supports
 
 ## Supported Features
 

@@ -57,7 +57,13 @@ const config = {
         ].map((page) => ({
           from: `/docs/implementation/04-cluster-deployment/phase-02-os-installation/${page}`,
           to: `/docs/implementation/04-cluster-deployment/phase-02-os-installation/manual-installation/${page}`,
-        })),
+        })).concat([
+          // Disconnected operations became its own docs section.
+          {
+            from: '/docs/operations/disconnected-operations-on-azure-local',
+            to: '/docs/disconnected-operations/disconnected-operations-on-azure-local',
+          },
+        ]),
         // Docs used to be versioned (2411 and next). Keep the old URLs working.
         createRedirects(existingPath) {
           if (existingPath === '/docs' || existingPath.startsWith('/docs/')) {
@@ -167,7 +173,7 @@ const config = {
               { label: 'Business continuity and DR', href: 'https://azurelocal.cloud/azurelocal-bcdr/', title: 'Azure Site Recovery and Azure Backup runbooks' },
               { label: 'Cost Management', href: 'https://azurelocal.cloud/azurelocal-cost/', title: 'Chargeback, showback, rightsizing and cost reporting' },
               { label: 'Governance', href: 'https://azurelocal.cloud/azurelocal-governance/', title: 'Azure Policy, security baselines, RBAC and CIS automation' },
-              { label: 'Disconnected Operations', to: '/docs/operations/disconnected-operations-on-azure-local', title: 'Running Azure Local with limited or no connectivity' },
+              { label: 'Disconnected Operations', to: '/docs/disconnected-operations', title: 'Running Azure Local with limited or no connectivity' },
             ],
           },
           {

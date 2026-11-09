@@ -18,7 +18,7 @@ AKS on Azure Local is included with Azure Local release 2402 and later. Microsof
 ### Key Use Cases
 
 - **Cloud-native apps on-premises** — Run containerized microservices architectures in datacenters or edge locations where cloud connectivity is limited or data must remain local
-- **Regulated workloads** — Deploy Kubernetes workloads that must comply with data residency or sovereignty requirements. For fully disconnected sites see [AKS with disconnected operations](../operations/disconnected-operations-on-azure-local.md)
+- **Regulated workloads** — Deploy Kubernetes workloads that must comply with data residency or sovereignty requirements. For fully disconnected sites see [AKS with disconnected operations](../disconnected-operations/disconnected-operations-on-azure-local.md)
 - **Edge computing** — Run Kubernetes clusters at edge sites for real-time processing, analytics, or IoT data aggregation
 - **Developer consistency** — Give development teams the same Kubernetes APIs and tooling (kubectl, Helm, Flux) regardless of whether clusters are in Azure or on-premises
 - **Application modernization** — Containerize legacy workloads and run them on Kubernetes without migrating to the public cloud

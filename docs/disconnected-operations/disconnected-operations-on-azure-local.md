@@ -1,6 +1,6 @@
 ---
 title: Disconnected Operations on Azure Local
-sidebar_position: 9
+sidebar_position: 2
 ---
 
 # Disconnected Operations on Azure Local
@@ -75,7 +75,7 @@ To get access, work with your Microsoft account team or submit the prequalificat
 ## Resources
 
 - **Repository**: [azurelocal-disconnected](https://github.com/AzureLocal/azurelocal-disconnected)
-- **Plan updates**: [Update management and Solution Builder Extension](./update-management-and-sbe.mdx)
+- **Plan updates**: [Update management and Solution Builder Extension](../operations/update-management-and-sbe.mdx)
 
 ## External References
 
