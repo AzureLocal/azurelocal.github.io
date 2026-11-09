@@ -56,7 +56,7 @@ Select the diagram to open it full screen and zoom. The full walk-through of eve
 | The OS is installed | By azurelocal-ztp (ended at the Handoff) or by hand. See [Which method did I use?](./which-method-then-os-configuration.mdx#which-method-did-i-use) |
 | A filled-in master file | `infrastructure.yml`, schema 5, kept **outside** any repository clone if it holds environment data. Keys below |
 | The ZTP handoff (ZTP route) | `<run>.ztp-handoff.json`, schema 2. Optional: without it the Arc machines are found by name in `azure.resource_group` |
-| The SBE (if you want the OEM drivers) | The OEM's folder, named by `hardware.sbe.bundle_path`, and a delivery route. See [the SBE delivery route](#the-sbe-delivery-route) |
+| The SBE package (a requirement) | Your hardware vendor's Solution Builder Extension package for your model and the Azure Local version you deploy, downloaded before you start and available on a share the automation can read (`hardware.sbe.source_path`). It is checked before the cluster is created; see [the pre-cluster checks](#the-sbe-package-and-the-pre-cluster-checks). To install it during the build (and get the OEM drivers), also choose a delivery route: [the SBE delivery route](#the-sbe-delivery-route) |
 | Operator host | PowerShell 7.4 or later, `powershell-yaml`, `Az.Accounts` (and `Az.KeyVault` for the `keyvault://` secrets), signed in with `Connect-AzAccount` |
 | Access | The roles and network paths in [Access and connectivity](#access-and-connectivity) |
 
@@ -165,7 +165,10 @@ All keys are in the master `infrastructure.yml`. See the [variables reference](h
 | `identity.local_admin.username`, `.password` | The deployment's local administrator and its `keyvault://` password reference. Not `Administrator` or `Guest` |
 | `key_vaults[]` | The vault that holds the password |
 | `hardware.vendor` | Picks the OEM definition (`config/oem/<vendor>.json`) for the driver folders |
-| `hardware.sbe.bundle_path` | The folder with the OEM's SBE as downloaded. Without it the SBE and the OEM drivers are skipped |
+| `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason` | `required`, or `not_applicable` (with the reason) for hardware with no SBE or a cluster that downloads it with the vendor credential |
+| `hardware.sbe.source_path` | The share or folder with the vendor's SBE package as downloaded (`bundle_path` has the same meaning; `source_path` is read when both are set). Without a package the SBE and the OEM drivers are skipped |
+| `hardware.sbe.source_username`, `hardware.sbe.source_password` | Optional account that reads the share, and its password as a Key Vault reference (never inline) |
+| `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes` | Optional. The payload's SHA-256 and size as the vendor publishes them |
 | `hardware.sbe.delivery`, `hardware.sbe.node_pull_url` | How the SBE reaches each node. See below |
 | `storage.san.*`, `nodes[].san.hbas[].ports[].wwpn` | SAN only: array, LUN IDs and the expected WWPNs |
 | `os_configuration.clear_storage` | `true` wipes leftover local storage on re-used machines. Default `false` |
@@ -173,15 +176,34 @@ All keys are in the master `infrastructure.yml`. See the [variables reference](h
 
 ---
 
+## The SBE package and the pre-cluster checks
+
+The package is a requirement. Download your hardware vendor's Solution Builder Extension package for your model and the Azure Local version you deploy, before you start. You need it to update the cluster, and the automation reads it from a share (`hardware.sbe.source_path`) and checks it before the cluster is created. To install it during the build, switch on the side-load with `hardware.sbe.delivery`; it is off by default and never done unasked. The same share is used for the first update later (`Add-SolutionUpdate`, then `Start-SolutionUpdate`).
+
+The pre-cluster verification gate runs six checks on the package. All of them block the cluster creation when they fail:
+
+| Check | What it verifies |
+|-------|------------------|
+| SB-001 | The package source is configured, or declared not applicable with a reason |
+| SB-002 | The share is reachable |
+| SB-003 | The three files are present: `SBE_Discovery_<Vendor>.xml`, `SBE_<Vendor>_<Family>_<Version>.xml` and the payload zip |
+| SB-004 | The hashes show the files are unmodified |
+| SB-005 | The hardware model of every node is listed in the package's own supported models. A 17G Intel package fails on AX-760 nodes; the right one is `16G-45n0c-Intel` 5.0.2609.1611 |
+| SB-006 | The version is validated for the target solution version (Dell on 2610: `12.2610.1004.x`) |
+
+Vendors differ in how the package is delivered (some download it for the cluster, some have no SBE). Check your vendor's page; the summary is in [the SBE package prerequisite](../../04-prerequisites-and-assumptions.mdx#sbe-package).
+
+---
+
 ## The SBE delivery route
 
-The OEM's drivers come from the SBE, and the SBE has to be in `C:\SBE` on every node. Azure Arc Run Command cannot carry a file, so how the package reaches a node is a choice you make in the file:
+The package must be on the share either way (see above). The side-load is the only optional part, and it is off by default. The OEM's drivers come from the SBE, and the SBE has to be in `C:\SBE` on every node. Azure Arc Run Command cannot carry a file, so how the package reaches a node is a choice you make in the file:
 
 | `hardware.sbe.delivery` | What happens |
 |-------------------------|--------------|
 | `winrm_copy` | The run copies the files over WinRM from the host running it to a `.part` file on the node, checks the SHA-256 there, then renames it. The host needs a route to TCP 5985 on the nodes and the local administrator credential |
 | `node_pull` | The node downloads the files from `hardware.sbe.node_pull_url`, an address the **nodes** can reach (not necessarily the operator host), and checks the SHA-256 |
-| `skip` (default) | Nothing is delivered. The run reports the package as not delivered, installs no OEM driver, and carries on with every other step |
+| `skip` (default) | Nothing is delivered. The run reports the package as available on the share but not side-loaded, installs no OEM driver, and carries on with every other step |
 
 The package's hash is checked against the OEM's manifest before any node is touched. The SBE is delivered **last**, and the OEM drivers install in the pass after the package has landed, which is why a node can need a second pass. A file that was delivered once and is still wrong is not sent again; the failure stays in the report.
 
@@ -255,7 +277,7 @@ With the default Arc transport the operator host needs **no path to the nodes**.
 | A node reports **Blocked: no adapter has the management MAC** | The MAC in `nodes[].network_adapters[]` is wrong, or the port is down | Compare the file with the node's ports (the plan lists every port by MAC with its OS name). Fix the file |
 | **Blocked: a second default gateway** | A port the file lists as `dhcp` or `dhcp_reservation`, or a port the file does not list, holds a gateway | List the port with `ip_assignment: none`, or remove the gateway. Validate fails with more than one |
 | Management address is wrong after ZTP (Modes B or C) | The OS install reset it. This is expected | Apply sets it by MAC. In Mode C the management port is handled first so the node keeps a way out |
-| **SBE package NOT delivered** | `hardware.sbe.delivery` is `skip`, `winrm_copy` has no WinRM route or no credential, or `node_pull_url` is empty or unreachable from the node | Set the delivery route. Nothing else stops; the OEM drivers wait for the package |
+| **SBE package NOT delivered** | The side-load is off or cannot run: `hardware.sbe.delivery` is `skip`, `winrm_copy` has no WinRM route or no credential, or `node_pull_url` is empty or unreachable from the node | Set the delivery route. Nothing else stops; the OEM drivers wait for the package |
 | **A node did not come back after a restart** | The restart wait is 30 minutes for a new boot time | Check the console (BMC) for the node. Run again once it is `Connected` |
 | **Blocked: leftover storage** on an S2D design | The machine was used before | Set `os_configuration.clear_storage: true` for it, read the disk list in the plan, and apply. Or wipe by hand: [Task 11](./task-11-clear-previous-storage-configuration-conditional.mdx) |
 | **Blocked: a SAN LUN is not visible, is not RAW or has one path** | Zoning or LUN masking is not done, or a LUN was initialised | Fix it on the fabric and the array. The run never changes either. [Task 14](./task-14-verify-san-lun-presentation-conditional.mdx) |

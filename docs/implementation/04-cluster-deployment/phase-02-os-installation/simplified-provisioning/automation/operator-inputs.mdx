@@ -39,7 +39,7 @@ New files use the master `infrastructure.yml` (schema 5), the one file that ever
 :::
 
 :::note The OEM SBE is not a ZTP input
-ZTP resolves and stages no SBE. The SBE (`hardware.sbe.bundle_path` in the master file) is read by OS configuration, which puts it in `C:\SBE` and installs the OEM's network drivers from it. A `ztp.node_preparation` block in an old file is accepted and ignored. See [The OEM SBE](#the-oem-sbe).
+ZTP resolves and stages no SBE. The SBE package (`hardware.sbe.source_path` in the master file) is a requirement and is read by OS configuration, which puts it in `C:\SBE` and installs the OEM's network drivers from it. A `ztp.node_preparation` block in an old file is accepted and ignored. See [The OEM SBE](#the-oem-sbe).
 :::
 
 `Invoke-ZtpEnvironment.ps1` validates the environment file, then generates the JSON inputs that the stage scripts need. Those generated files are specific to your environment. Don't copy them between environments or commit them.
@@ -193,7 +193,7 @@ Don't put a password, token or key in the environment file or in any file you co
 
 A Solution Builder Extension (SBE) is the hardware vendor's package for an Azure Local release. The OEM requires its network drivers to be on the machine before Validate and Deploy; for Dell, the SBE can't install drivers or firmware during deployment. ZTP does neither: **OS configuration** puts the SBE in `C:\SBE` and installs the drivers from it.
 
-Download these from the OEM into one folder outside any repository, and set `hardware.sbe.bundle_path` in the master file to it. Dell requires a support account for the download.
+The package is a **requirement**. Download your hardware vendor's Solution Builder Extension package for your model and the Azure Local version you deploy, before you start, into one folder or share outside any repository, and set `hardware.sbe.source_path` in the master file to it (`bundle_path` has the same meaning, and `source_path` is the one read when both are set). You need it to update the cluster, and the automation reads it from the share and checks it before the cluster is created. Dell requires a support account for the download. To install it during the build, switch on the side-load with `hardware.sbe.delivery`; it is off by default. Vendors differ, so check your vendor's page. The checks, the keys and the vendor summary are in [the SBE package prerequisite](../../../../04-prerequisites-and-assumptions.mdx#sbe-package).
 
 | File | Purpose |
 |------|---------|
@@ -212,7 +212,7 @@ How the files reach each node is a separate choice (`hardware.sbe.delivery`); se
 - [ ] `ztp.share_host` or `ztp.share_host_adapter` is set to the address the BMCs reach
 - [ ] The secrets named in the file exist in Key Vault, and the file holds no secret values
 - [ ] If the machines have BIOS settings that differ during the install, `bios_during_provisioning` names them and `bios` holds the final values
-- [ ] The SBE folder (for OS configuration, not ZTP) holds the zip, its XML and the discovery XML
+- [ ] The SBE share or folder (read by OS configuration and the cluster update, not by ZTP) holds the zip, its XML and the discovery XML, or `hardware.sbe.requirement` is `not_applicable` with a reason
 
 ---
 

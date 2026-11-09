@@ -65,7 +65,7 @@ Someone with enough rights gives the automation identity its roles once, before 
 | Firmware | Match the BMC and machine firmware to the OEM's Azure Local support matrix before you start. Only iDRAC 7.30 was proven. |
 | Secure Boot and TPM | Enabled, as Learn requires for the maintenance environment. |
 | Machine state | The machines carry no cluster to keep. The run **reinstalls** them. |
-| OEM SBE | Not needed by ZTP. OS configuration needs it afterwards; see [Operator inputs](./operator-inputs.mdx#the-oem-sbe). |
+| OEM SBE package | A requirement, downloaded before you start. ZTP itself does not read it, but the OS configuration run and the update later do. Download your hardware vendor's Solution Builder Extension package for your model and the Azure Local version you deploy, and put it on a share the automation can read. To install it during the build, switch on the side-load in the file; it is off by default. See [The OEM SBE](./operator-inputs.mdx#the-oem-sbe) and [the SBE package prerequisite](../../../../04-prerequisites-and-assumptions.mdx#sbe-package). |
 
 :::caution BMC behavior proven on iDRAC 7.30 only
 The Boot stage works around several iDRAC 7.30 behaviors, such as the `InsertMedia` call rejecting `WriteProtected=false`, and `Floppy` being the one-time boot override that reaches the USB-stick slot. These are described in [Troubleshooting and known issues](../troubleshooting.mdx#idrac-730-behaviors-the-boot-stage-works-around). Other BMC models and firmware haven't been proven.
@@ -125,7 +125,7 @@ The host can be a dedicated server, a VM on the management network, or a self-ho
 - [ ] The administrator, BMC and deployment administrator secrets exist in Key Vault
 - [ ] The management host can reach every BMC on TCP 443, and every BMC can reach the host on TCP 445
 - [ ] The management host runs Windows with PowerShell 7, elevated, signed in to Azure
-- [ ] The OEM SBE files are downloaded for the OS configuration step that follows (not needed by ZTP itself)
+- [ ] The OEM SBE package (three files) is downloaded and available on a share the automation can read. ZTP does not read it, but the OS configuration run and the later cluster update need it
 
 ---
 

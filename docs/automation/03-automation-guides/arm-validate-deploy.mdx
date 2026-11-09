@@ -89,8 +89,25 @@ It is **idempotent**. A Validate that already passed with the same parameters is
 The toolkit defines a **pre-cluster verification gate**: a stage that runs after OS configuration and before the cluster ARM Validate.
 
 :::warning Gate details are pending in the toolkit
-The gate's own run guide, `docs/pre-cluster-verification.md` in the azurelocal-toolkit repository, had not landed on the toolkit's `main` branch when this page was written (2026-11-08), and `docs/arm-deployment-guide.md` does not describe it. To avoid inventing behaviour, this page does **not** list the gate's individual checks, parameters, outputs or exit codes. Take them from that document once it is on `main`, and update this section in the same change. Open item for the documentation owner.
+The gate's own run guide, `docs/pre-cluster-verification.md` in the azurelocal-toolkit repository, had not landed on the toolkit's `main` branch when this page was written (2026-11-08), and `docs/arm-deployment-guide.md` does not describe it. To avoid inventing behaviour, this page does **not** list the gate's other checks, parameters, outputs or exit codes (the [SBE package checks](#the-sbe-package-checks) below are the exception). Take them from that document once it is on `main`, and update this section in the same change. Open item for the documentation owner.
 :::
+
+### The SBE package checks
+
+The hardware vendor's Solution Builder Extension (SBE) package is a **requirement**. Download it for your hardware model and the Azure Local version you deploy before you start, and make it available on a share the automation can read (`hardware.sbe.source_path`). You need it to update the cluster, and the gate reads it from the share and checks it before the cluster is created. To install it during the build, switch on the side-load (`hardware.sbe.delivery`); it is off by default.
+
+The gate checks SB-001 to SB-006, and all of them block:
+
+| Check | What it verifies |
+|-------|------------------|
+| SB-001 | The package source is configured, or declared not applicable with a reason (`hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`) |
+| SB-002 | The share is reachable |
+| SB-003 | The three files are present: `SBE_Discovery_<Vendor>.xml`, `SBE_<Vendor>_<Family>_<Version>.xml` and the payload zip |
+| SB-004 | The hashes show the files are unmodified |
+| SB-005 | The hardware model of every node is listed in the package's own supported models (a 17G Intel package fails on AX-760 nodes; the right one is `16G-45n0c-Intel` 5.0.2609.1611) |
+| SB-006 | The version is validated for the target solution version (Dell on 2610: `12.2610.1004.x`) |
+
+The update later reuses the same share: `Add-SolutionUpdate`, then `Start-SolutionUpdate` (see [Import and rediscover updates](https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2610#step-3-import-and-rediscover-updates) on Microsoft Learn). The keys, the vendor differences and the full wording are in [the SBE package prerequisite](../../implementation/04-prerequisites-and-assumptions.mdx#sbe-package).
 
 What is already documented and checked on `main` before Validate:
 
@@ -170,7 +187,7 @@ All checks are read-only. Each is `Passed`, `Failed` (stops the run, exit 1), `W
 | `ArcMachineNaming` | The Arc machine is named after the host. A device-ID name (`<id>-1`) fails the Deploy at step 0.41 on build 2690 | See the known issue below |
 | `OsConfigurationConverged` | The OS configuration report says every node converged, for this cluster | Run the OS configuration with `-Mode Apply` |
 | `OsBuildConsistent` | Every node runs the same OS build | Install the same build everywhere |
-| `SbeConsistent`, `SbeValidatedWithSolution` | The Solution Builder Extension is opt-in. With no `hardware.sbe.version` both pass with "deploying without a Solution Builder Extension". With a version the family must be set too, and the SBE must be validated with the solution version the nodes run | Set `hardware.sbe.family`, or remove the version to deploy without an SBE |
+| `SbeConsistent`, `SbeValidatedWithSolution` | The package must be on the share ([SB-001 to SB-006](#the-sbe-package-checks)), but passing an SBE to the ARM deployment is opt-in. With no `hardware.sbe.version` both pass with "deploying without a Solution Builder Extension". With a version the family must be set too, and the SBE must be validated with the solution version the nodes run | Set `hardware.sbe.family`, or remove the version to deploy without an SBE |
 | `DnsAndTime` | DNS servers set and valid, NTP set, no pending Dns or Time change in the OS report | Fix `networking.management.dns_servers` and `ntp_servers` |
 | `ActiveDirectoryPrepared` | The OU is not at the top of the domain; the LCM user name is 20 characters or fewer; the OU and user exist | Run Microsoft's Active Directory preparation |
 | `LocalIdentityPrerequisites` | `identity.local_identity.dns_zone` is set | Set it |
@@ -183,9 +200,9 @@ The 13 providers are the list in Microsoft Learn, [Assign required permissions f
 
 **Registration is opt in.** By default the run reads and never changes Azure. Pass `-RegisterResourceProviders` (or set `deployment.register_resource_providers: true`) to let a Validate or Deploy run register what is missing. It asks once per provider and reads their state every 10 seconds for up to 15 minutes. Plan mode and `-WhatIf` never change Azure. It needs Owner or Contributor on the subscription.
 
-### The Solution Builder Extension is opt-in
+### Passing the Solution Builder Extension to the deployment is opt-in
 
-A deployment without an SBE is a normal deployment. When `hardware.sbe` is absent, or has no `version`, the run passes none of the seven SBE parameters of Microsoft's template (`sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource`, `sbeManifestCreationDate`, `partnerProperties`, `partnerCredentiallist`). An SBE is passed only when `hardware.sbe.version` is set. If Azure still names an SBE problem in a run without an SBE (the nodes carry a package in `C:\SBE`), the known issue `sbe-referenced-but-not-configured` says so and offers both ways out.
+The SBE package must be downloaded and available on the share (see [the SBE package checks](#the-sbe-package-checks)); what is optional is handing an SBE to the ARM deployment and side-loading it at build time. A deployment without an SBE is a normal deployment. When `hardware.sbe` is absent, or has no `version`, the run passes none of the seven SBE parameters of Microsoft's template (`sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource`, `sbeManifestCreationDate`, `partnerProperties`, `partnerCredentiallist`). An SBE is passed only when `hardware.sbe.version` is set. If Azure still names an SBE problem in a run without an SBE (the nodes carry a package in `C:\SBE`), the known issue `sbe-referenced-but-not-configured` says so and offers both ways out.
 
 ---
 

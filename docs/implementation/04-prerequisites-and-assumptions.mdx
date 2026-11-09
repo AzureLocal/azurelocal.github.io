@@ -107,6 +107,63 @@ The Minimum column is this runbook's production design standard. Microsoft's pub
 - **Console Access**: Direct console access available for troubleshooting
 - **Network Access**: Management interfaces reachable from administration workstations
 
+### Hardware Vendor Solution Builder Extension (SBE) Package {#sbe-package}
+
+:::warning The SBE package is a requirement
+Download your hardware vendor's Solution Builder Extension package for your model and the Azure Local version you deploy, **before you start**. It is a requirement: you need it to update the cluster, and the automation reads it from a share and checks it before the cluster is created. To install it during the build, switch on the side-load in the file; it is off by default.
+:::
+
+Put the package on a share or folder that the automation can read. You need it either way. A vendor whose package has no automatic download for your cluster leaves the first update in the `AdditionalContentRequired` state until you import the files (Dell, for example, without support credentials on the cluster). The later update reuses the same share: `Add-SolutionUpdate` imports the files, then `Start-SolutionUpdate` installs them. See [Import and rediscover updates](https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2610#step-3-import-and-rediscover-updates) on Microsoft Learn and [Update management and Solution Builder Extension](../operations/update-management-and-sbe.mdx).
+
+The share holds the three files as the vendor delivers them:
+
+| File | Purpose |
+|------|---------|
+| `SBE_Discovery_<Vendor>.xml` | The discovery manifest |
+| `SBE_<Vendor>_<Family>_<Version>.xml` | The payload manifest |
+| `SBE_<Vendor>_<Family>_<Version>.zip` | The payload |
+
+**What stays optional** is only the build-time side-load: `hardware.sbe.delivery` is off unless you set it, and the toolkit never side-loads a package you did not ask for.
+
+#### What the automation checks
+
+The pre-cluster verification gate checks the package on the share with six checks. Each one blocks the cluster creation when it fails.
+
+| Check | What it verifies |
+|-------|------------------|
+| SB-001 | The package source is configured (or you declared it not applicable, with a reason) |
+| SB-002 | The share is reachable (read only) |
+| SB-003 | The three files are present |
+| SB-004 | The files are unmodified: the hashes match the manifest and, when you set them, `package_sha256` and `package_size_bytes` |
+| SB-005 | The hardware model of every node is listed in the package's own supported models. A package for the wrong hardware family fails: a 17G Intel package fails on AX-760 nodes, and the right one is `16G-45n0c-Intel` 5.0.2609.1611 |
+| SB-006 | The package version is validated for the target solution version (for Dell on 2610, `12.2610.1004.x`) |
+
+#### Keys in `infrastructure.yml`
+
+| Key | Meaning |
+|-----|---------|
+| `hardware.sbe.requirement` | `required`, or `not_applicable` when the hardware has no SBE or the cluster downloads it with the vendor credential |
+| `hardware.sbe.not_applicable_reason` | Required with `not_applicable`: why, in one sentence |
+| `hardware.sbe.source_path` | The share or folder that holds the three files |
+| `hardware.sbe.source_username` | Optional account that reads the share, if the account running the automation cannot |
+| `hardware.sbe.source_password` | A Key Vault reference (`keyvault://<vault>/<secret>`) for that account. Never the password itself |
+| `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes` | Optional. The payload's SHA-256 and size as the vendor publishes them |
+| `hardware.sbe.delivery` | The build-time side-load: `winrm_copy`, `node_pull` or `skip`. Default `skip` |
+
+#### Vendors differ: check your vendor's page
+
+The table is a summary from Microsoft Learn (release 2610) and vendor pages. It is **not yet verified cell by cell**, so check your vendor's own page, and do not assume "download first" applies in the same way to every vendor. See [Solution Builder Extension updates](https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610) on Microsoft Learn.
+
+| Vendor | What to expect |
+|--------|----------------|
+| Dell (AX, MC) | An SBE package. The download is behind a login. You side-load it unless the cluster has Dell support credentials |
+| HPE | A Standard SBE from HPE's licence portal on some Gen11 models. Other models use a Minimal SBE plus a Windows Admin Center extension |
+| Lenovo ThinkAgile MX Premier | Automatic download and staging |
+| DataON | An SBE on S2D6, S2D7, AZS6 and AZS7. Otherwise a Windows Admin Center extension |
+| Older hardware, Validated Nodes | Hardware older than 2311.2, and Validated Nodes, may have no SBE |
+
+Where your hardware has no SBE, or the cluster downloads it itself, set `hardware.sbe.requirement` to `not_applicable` and give the reason.
+
 ---
 
 ## 3. Software Prerequisites
@@ -374,6 +431,7 @@ Use this checklist to verify all prerequisites before proceeding to implementati
 - [ ] Network connectivity verified (management interfaces)
 - [ ] Hardware specifications meet [Azure Local system requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610)
 - [ ] Firmware/BIOS versions current per OEM solution builder extension
+- [ ] Hardware vendor Solution Builder Extension (SBE) package for your model and Azure Local version downloaded and available on a share the automation can read, or `hardware.sbe.requirement: not_applicable` with a reason (see [the SBE package](#sbe-package))
 - [ ] Storage controllers in HBA/passthrough mode (RAID not supported)
 - [ ] Minimum 2 data drives per node for Storage Spaces Direct
 
