@@ -2,22 +2,22 @@
 title: "Task 01: Enable Defender for Cloud"
 sidebar_label: "Task 01: Defender for Cloud"
 sidebar_position: 1
-description: "Enable Microsoft Defender for Cloud with security policy initiatives for Azure Local deployments"
+description: "Turn on the free level of Microsoft Defender for Cloud that Azure Local needs: Foundational CSPM and the Microsoft cloud security benchmark"
 category: "Runbook"
-scope: "Enable Microsoft Defender for Cloud with security policy initiatives for Azur..."
-purpose: "Enable Microsoft Defender for Cloud with security policy initiatives for Azure Local deployments"
+scope: "The free level of Microsoft Defender for Cloud for Azure Local"
+purpose: "Turn on Foundational CSPM and assign the Microsoft cloud security benchmark so the Azure Local security settings show in the Azure portal"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
-version: "1.0.0"
+updated: 2026-11-12
+version: "2.0.0"
 tags:
   - azure-local
   - operational-foundations
   - security-governance
 keywords:
-  - Enable
-  - Defender
-  - Cloud
+  - Defender for Cloud
+  - Foundational CSPM
+  - Microsoft cloud security benchmark
 status: "Active"
 ---
 
@@ -30,159 +30,111 @@ import TabItem from '@theme/TabItem';
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
 > **DOCUMENT CATEGORY**: Runbook   
-> **SCOPE**: Defender for Cloud enablement   
-> **PURPOSE**: Enable security posture management   
-> **MASTER REFERENCE**: [Microsoft Learn - Defender for Cloud](https://learn.microsoft.com/en-us/azure/defender-for-cloud/defender-for-cloud-introduction)
+> **SCOPE**: The free level of Microsoft Defender for Cloud   
+> **PURPOSE**: Show the Azure Local security settings and recommendations in the Azure portal   
+> **MASTER REFERENCE**: [Microsoft Learn - Manage system security with Microsoft Defender for Cloud](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-security-with-defender-for-cloud)
 
 **Status**: Active
 
-Microsoft Defender for Cloud provides cloud security posture management (CSPM) and cloud workload protection (CWP) for your Azure Local deployment. This step enables Defender plans and configures security policies.
+This task turns on the two free items of Microsoft Defender for Cloud that Azure Local uses. Nothing in this task costs money.
 
-:::tip Azure Local Requirements
-For Azure Local deployments, **Defender for Servers Plan 2** is recommended to provide:
-- Vulnerability assessment for Arc-enabled servers
-- Just-in-time VM access
-- File integrity monitoring
-- Adaptive application controls
+## What this task turns on
+
+| Item | Cost | What it gives you |
+|------|------|-------------------|
+| **Foundational CSPM** | Free | The basic Defender for Cloud plan. It gives security recommendations for Azure Local and your other Azure and Arc resources. |
+| **Microsoft cloud security benchmark** | Free | A policy initiative assigned to the subscription. The Azure Local security settings show in the Azure portal only when it is applied. |
+
+:::info Paid plans are not part of this task
+The guide and the toolkit turn on no paid Defender plan: no Defender for Servers, Storage, Key Vault, Resource Manager, DNS or Defender CSPM, and no agent auto-provisioning. Microsoft Sentinel is not set up either.
+
+Microsoft's page lists Defender for Servers as a further step. It adds security alerts for individual machines and Azure Local VMs, and it is billed per server. Whether to buy it is your decision, made outside this guide. If you want it, follow [Enable the Defender for Servers plan](https://learn.microsoft.com/en-us/azure/defender-for-cloud/tutorial-enable-servers-plan).
 :::
-
-## Overview
-
-| Defender Plan | Purpose | Recommendation |
-|---------------|---------|----------------|
-| **Foundational CSPM** | Free security posture assessment | ✅ Always enabled |
-| **Defender for Servers P2** | Arc-enabled server protection | ✅ Required for Azure Local |
-| **Defender for Key Vault** | Key Vault threat protection | ✅ Recommended |
-| **Defender for Resource Manager** | Management plane protection | ✅ Recommended |
-| **Defender for Storage** | Storage account protection | ⚪ Optional |
-| **Defender for DNS** | DNS threat detection | ⚪ Optional |
 
 ## Prerequisites
 
-- Azure subscription with Owner or Security Administrator role
-- Log Analytics workspace created in Stage 06
+- The Azure Local instance is deployed, registered and connected to Azure.
+- Owner or Contributor on the subscription of the instance, to turn on Foundational CSPM.
+- Resource Policy Contributor (or Owner) on the subscription, to assign the initiative.
 
-## Variables from variables.yml
+## Variables from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `LOG_ANALYTICS_WORKSPACE_NAME` | `monitoring.log_analytics.workspace_name` | `law-azl-DAL-prod-01` |
-| `SECURITY_CONTACT_EMAIL` | `security.contact_email` | `security-team@iic.com` |
+| Key | What it is | Example |
+|-----|------------|---------|
+| `azure.subscription_id` | Subscription of the instance | `00000000-0000-0000-0000-000000000000` |
+| `security.defender_for_cloud.enabled` | `false` skips this task | `true` |
+| `security.defender_for_cloud.apply_cloud_security_benchmark` | `false` leaves the initiative unassigned | `true` |
 
 ## Procedure
 
 <Tabs groupId="deployment-method">
 <TabItem value="manual" label="Azure Portal" default>
 
-### Enable Defender for Cloud
+### Step 1: Turn on Foundational CSPM
 
-1. **Navigate to Defender for Cloud**
- - In Azure Portal, search for **Microsoft Defender for Cloud**
- - Click **Environment settings** in the left menu
+1. In the Azure portal, search for and select **Microsoft Defender for Cloud**.
+2. Follow [Enable Defender for Cloud on your Azure subscription](https://learn.microsoft.com/en-us/azure/defender-for-cloud/connect-azure-subscription#enable-defender-for-cloud-on-your-azure-subscription). Turn on no plan other than Foundational CSPM; any offer to upgrade starts paid plans.
+3. Under **Management**, select **Environment settings**, select the subscription and check that Foundational CSPM is the only plan that is on.
 
-2. **Select Your Subscription**
- - Expand your management group hierarchy
- - Click on your Azure Local subscription
+### Step 2: Apply the Microsoft cloud security benchmark
 
-3. **Enable Defender Plans**
- - Toggle **ON** for the following plans:
- - **Servers** → Select **Plan 2**
- - **Key Vault** → Toggle ON
- - **Resource Manager** → Toggle ON
- - Click **Save**
-
-4. **Configure Auto-Provisioning**
- - Click **Settings & monitoring**
- - Enable **Log Analytics agent** or **Azure Monitor Agent**
- - Select your Log Analytics workspace from Stage 06
- - Enable **Vulnerability assessment for machines**
- - Click **Save**
-
-5. **Configure Security Policies**
- - Go to **Environment settings** → Your subscription
- - Click **Security policy**
- - Ensure **Azure Security Benchmark** is assigned
- - Click **Add more standards** to add custom initiatives
-
-### Configure Email Notifications
-
-1. **Navigate to Email Notifications**
- - In Defender for Cloud, go to **Environment settings**
- - Select your subscription
- - Click **Email notifications**
-
-2. **Configure Alerts**
- - Enter email addresses for security alerts
- - Select alert severity: **High** and **Medium**
- - Toggle **Also notify subscription owners**
- - Click **Save**
+1. Under **Management**, select **Environment settings** and select the subscription.
+2. Select **Security policies**.
+3. For **Microsoft cloud security benchmark**, set **Status** to **On**.
+4. Wait at least one hour for the first evaluation.
 
 </TabItem>
+<TabItem value="orchestrated" label="Toolkit Script">
 
+The toolkit script reads the keys above from `infrastructure.yml`, registers the `Microsoft.Security` resource provider and assigns the initiative. It sets no pricing tier.
+
+**Script**: `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/powershell/Enable-DefenderForCloud.ps1` in [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit).
+
+```powershell
+Connect-AzAccount -Tenant "<your-tenant-id>"
+
+# See what would change, without changing anything
+.\Enable-DefenderForCloud.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
+
+# Turn on the free level
+.\Enable-DefenderForCloud.ps1 -ConfigPath .\configs\infrastructure.yml
+```
+
+The script does nothing when the initiative is already assigned on the subscription or above it. It stops if an assignment named `SecurityCenterBuiltIn` exists for another definition, so it never replaces an assignment it did not create.
+
+</TabItem>
 <TabItem value="standalone" label="Standalone Script">
 
 ```powershell
-# Variables
+#Requires -Version 7.0
 $subscriptionId = "<your-subscription-id>"
-$resourceGroup = "rg-management-prod-eastus2"
-$workspaceName = "law-azlmgmt-prod-eus2"
-$emailAddress = "security-team@Infinite azurelocal Corp.com"
+$scope = "/subscriptions/$subscriptionId"
+# Built-in initiative "Microsoft cloud security benchmark"; the ID is the same in every tenant.
+$benchmarkId = "/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8"
 
-# Connect and set context
 Connect-AzAccount
-Set-AzContext -SubscriptionId $subscriptionId
+Set-AzContext -SubscriptionId $subscriptionId | Out-Null
 
-# Get workspace resource ID
-$workspace = Get-AzOperationalInsightsWorkspace -ResourceGroupName $resourceGroup -Name $workspaceName
-$workspaceId = $workspace.ResourceId
+# Step 1: Foundational CSPM (free) is on once Microsoft.Security is registered
+Register-AzResourceProvider -ProviderNamespace Microsoft.Security | Out-Null
 
-# Enable Defender for Servers Plan 2
-Set-AzSecurityPricing -Name "VirtualMachines" -PricingTier "Standard"
-Write-Host "✅ Defender for Servers enabled" -ForegroundColor Green
-
-# Enable Defender for Key Vault
-Set-AzSecurityPricing -Name "KeyVaults" -PricingTier "Standard"
-Write-Host "✅ Defender for Key Vault enabled" -ForegroundColor Green
-
-# Enable Defender for Resource Manager
-Set-AzSecurityPricing -Name "Arm" -PricingTier "Standard"
-Write-Host "✅ Defender for Resource Manager enabled" -ForegroundColor Green
-
-# Enable Defender for Storage (optional)
-Set-AzSecurityPricing -Name "StorageAccounts" -PricingTier "Standard"
-Write-Host "✅ Defender for Storage enabled" -ForegroundColor Green
-
-# Configure auto-provisioning
-Set-AzSecurityAutoProvisioningSetting -Name "default" -EnableAutoProvision
-Write-Host "✅ Auto-provisioning enabled" -ForegroundColor Green
-
-# Configure workspace
-Set-AzSecurityWorkspaceSetting -Name "default" -Scope "/subscriptions/$subscriptionId" -WorkspaceId $workspaceId
-Write-Host "✅ Workspace configured" -ForegroundColor Green
-
-# Configure security contact
-Set-AzSecurityContact `
- -Name "default1" `
- -Email $emailAddress `
- -AlertAdmin $true `
- -NotifyOnAlert $true
-Write-Host "✅ Security contact configured" -ForegroundColor Green
-
-Write-Host "`n✅ Defender for Cloud configuration complete" -ForegroundColor Green
+# Step 2: assign the Microsoft cloud security benchmark, unless it is already assigned
+$assigned = Get-AzPolicyAssignment -Scope $scope | Where-Object {
+    $id = if ($_.PSObject.Properties['PolicyDefinitionId']) { $_.PolicyDefinitionId } else { $_.Properties.PolicyDefinitionId }
+    $id -eq $benchmarkId
+}
+if ($assigned) {
+    Write-Host "Microsoft cloud security benchmark is already assigned."
+}
+else {
+    $definition = Get-AzPolicySetDefinition -Id $benchmarkId
+    New-AzPolicyAssignment -Name "SecurityCenterBuiltIn" `
+        -DisplayName "Microsoft cloud security benchmark" `
+        -Scope $scope `
+        -PolicySetDefinition $definition | Out-Null
+    Write-Host "Microsoft cloud security benchmark assigned."
+}
 ```
-
-</TabItem>
-<TabItem value="orchestrated" label="Orchestrated Script">
-
-> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
-
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
-
-:::note Content Pending
-Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
-:::
 
 </TabItem>
 </Tabs>
@@ -190,46 +142,34 @@ Orchestrated script content references the toolkit repository. See the Standalon
 ## Validation
 
 ```powershell
-# Check Defender pricing tiers
-$pricingTiers = Get-AzSecurityPricing
-Write-Host "Defender Plan Status:" -ForegroundColor Cyan
-$pricingTiers | Where-Object { $_.PricingTier -eq "Standard" } | Format-Table Name, PricingTier -AutoSize
+$subscriptionId = "<your-subscription-id>"
+$benchmarkId = "/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8"
 
-# Check auto-provisioning
-$autoProvision = Get-AzSecurityAutoProvisioningSetting
-Write-Host "`nAuto-Provisioning: $($autoProvision.AutoProvision)" -ForegroundColor Cyan
+# Foundational CSPM: the provider is registered
+(Get-AzResourceProvider -ProviderNamespace Microsoft.Security | Select-Object -First 1).RegistrationState
 
-# Check workspace setting
-$workspaceSetting = Get-AzSecurityWorkspaceSetting
-Write-Host "Workspace: $($workspaceSetting.WorkspaceId)" -ForegroundColor Cyan
+# The initiative is assigned
+Get-AzPolicyAssignment -Scope "/subscriptions/$subscriptionId" | Where-Object {
+    $id = if ($_.PSObject.Properties['PolicyDefinitionId']) { $_.PolicyDefinitionId } else { $_.Properties.PolicyDefinitionId }
+    $id -eq $benchmarkId
+} | Select-Object Name
 ```
 
 ## Expected Output
 
 ```
-Defender Plan Status:
-Name PricingTier
----- -----------
-VirtualMachines Standard
-KeyVaults Standard
-Arm Standard
-StorageAccounts Standard
+Registered
 
-Auto-Provisioning: On
-Workspace: /subscriptions/.../workspaces/law-azlmgmt-prod-eus2
+Name
+----
+SecurityCenterBuiltIn
 ```
 
-## Cost Considerations
+After the first evaluation, open the Azure Local instance in the portal and select **Security (preview)** > **Microsoft Defender for Cloud**. The recommendations for the instance are listed there.
 
-| Plan | Cost Model | Estimated Monthly Cost |
-|------|------------|----------------------|
-| Defender for Servers P2 | Per server/hour | ~$15/server/month |
-| Defender for Key Vault | Per 10K transactions | ~$0.02/10K transactions |
-| Defender for Resource Manager | Per subscription | ~$4/subscription/month |
+## Recommendations you can ignore for Azure Local
 
-:::note
-Costs vary based on usage. Use [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/) for accurate estimates.
-:::
+Microsoft lists recommendations that do not apply to the storage account, the Key Vault and the machines of an Azure Local instance, for example private link, shared key access and a vulnerability assessment solution on the machines. See [Security recommendation exclusions](https://learn.microsoft.com/en-us/azure/azure-local/manage/manage-security-with-defender-for-cloud#security-recommendation-exclusions) before you act on a recommendation.
 
 ---
 
@@ -237,31 +177,14 @@ Costs vary based on usage. Use [Azure Pricing Calculator](https://azure.microsof
 
 | Issue | Cause | Resolution |
 |-------|-------|------------|
-| Defender plans not visible in portal | Subscription not registered for Microsoft.Security provider | Register provider: `Register-AzResourceProvider -ProviderNamespace Microsoft.Security`; wait 5 minutes |
-| Email notifications not received | Action Group email not configured or in spam | Verify Action Group configuration in Monitor > Alerts > Action Groups; check spam/junk folders |
-| Defender shows no recommendations | Initial scan not yet complete | Wait 24 hours after enabling plans for the first assessment cycle to complete |
+| The security settings do not show on the instance | The Microsoft cloud security benchmark is not assigned | Do Step 2, then wait at least one hour |
+| Defender for Cloud shows no data for the subscription | `Microsoft.Security` is not registered | `Register-AzResourceProvider -ProviderNamespace Microsoft.Security`, then wait a few minutes |
+| No recommendations after the assignment | The first evaluation is not complete | Wait up to 24 hours |
+| The toolkit script stops on `SecurityCenterBuiltIn` | An assignment of that name points at another definition | Remove or rename that assignment, or set `apply_cloud_security_benchmark` to `false` and assign the initiative yourself |
 
 ## Next Steps
 
-Proceed to [Task 3: Apply Azure Policy Initiatives](./task-02-apply-azure-policy-initiatives.mdx) to enforce compliance policies.
-
----
-
-
-:::info Toolkit Reference
-Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
-:::
-
----
-
-## Alternatives
-
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+Proceed to [Task 02: Apply Azure Policy Initiatives](./task-02-apply-azure-policy-initiatives.mdx).
 
 ## Navigation
 
@@ -271,14 +194,9 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 
 ---
 
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0.0 | 2026-03-24 | Azure Local Cloud | Initial release |
-
----
-
 ## Version Control
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.0.0 | 2026-11-12 | Azure Local Cloud | The task turns on only the free level Azure Local needs; paid plans removed |
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |

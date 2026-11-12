@@ -20,7 +20,7 @@ Enterprises running Azure Local need the same governance controls they apply in 
 - **RBAC governance** — Enforce role-based access control boundaries for cluster administration and workload management
 - **Compliance reporting** — Automated compliance status reports against industry frameworks (CIS, NIST, ISO 27001)
 - **Resource locks** — Prevent accidental deletion of critical cluster components
-- **Defender for Cloud** — Enable security posture management and threat detection for Arc-enrolled VMs
+- **Defender for Cloud** — Security posture management at the free level (Foundational CSPM)
 
 ### Architecture
 
@@ -48,7 +48,6 @@ Azure Arc
 - RBAC role assignments automation (custom roles for cluster operators)
 - Resource lock deployment for critical components
 - Compliance report export (PDF/CSV) for audit teams
-- Microsoft Sentinel integration for SIEM log forwarding
 
 ## Deployment Notes
 

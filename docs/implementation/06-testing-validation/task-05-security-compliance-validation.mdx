@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Task 05: Security & Compliance Validation"
 sidebar_label: "Task 05: Security & Compliance"
 sidebar_position: 5
@@ -109,12 +109,15 @@ $ReportHeader | Out-File -FilePath $ReportFile -Encoding UTF8
 "MICROSOFT DEFENDER FOR CLOUD" | Add-Content $ReportFile
 "="*80 | Add-Content $ReportFile
 
-# Get Defender for Cloud pricing tier
-$DefenderStatus = az security pricing list --query "[?name=='VirtualMachines']" -o json | ConvertFrom-Json
+# The free level Azure Local needs: Foundational CSPM (the Microsoft.Security provider is registered)
+# and the Microsoft cloud security benchmark assigned to the subscription. No paid plan is expected.
+$SecurityProvider = az provider show --namespace Microsoft.Security --query "registrationState" -o tsv
+$BenchmarkId = "/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8"
+$Benchmark = az policy assignment list --query "[?policyDefinitionId=='$BenchmarkId'].name" -o tsv
 
-"Defender for Servers Status:" | Add-Content $ReportFile
-" Pricing Tier: $($DefenderStatus.pricingTier)" | Add-Content $ReportFile
-" Free Trial: $($DefenderStatus.freeTrialRemainingTime)" | Add-Content $ReportFile
+"Defender for Cloud (free level):" | Add-Content $ReportFile
+" Foundational CSPM: $(if ($SecurityProvider -eq 'Registered') { 'On' } else { 'Off' })" | Add-Content $ReportFile
+" Microsoft cloud security benchmark: $(if ($Benchmark) { 'Assigned' } else { 'Not assigned' })" | Add-Content $ReportFile
 ```
 
 ### 2.2 Get Secure Score
@@ -152,27 +155,6 @@ if ($Recommendations.Count -eq 0) {
 # Get medium-severity count
 $MediumRecs = az security assessment list --query "[?status.code=='Unhealthy' && metadata.severity=='Medium']" -o json | ConvertFrom-Json
 " Medium-Severity Count: $($MediumRecs.Count)" | Add-Content $ReportFile
-```
-
-### 2.4 Verify Defender Extensions on Nodes
-
-```powershell
-"`nDefender Extensions on Cluster Nodes:" | Add-Content $ReportFile
-
-$Nodes = (Get-ClusterNode).Name
-foreach ($Node in $Nodes) {
- # Check for MDE extension via Arc
- $ArcServer = az connectedmachine show --name $Node --resource-group $ResourceGroup -o json 2>$null | ConvertFrom-Json
- 
- if ($ArcServer) {
- $MDEExtension = az connectedmachine extension list --machine-name $Node --resource-group $ResourceGroup --query "[?name=='MDE.Windows']" -o json | ConvertFrom-Json
- 
- $MDEStatus = if ($MDEExtension) { "Installed" } else { "Not Found" }
- "$Node : MDE Extension = $MDEStatus" | Add-Content $ReportFile
- } else {
- "$Node : Not registered with Arc" | Add-Content $ReportFile
- }
-}
 ```
 
 ---
@@ -400,7 +382,6 @@ if ($PolicyStates.Count -eq 0) {
 # Check for Azure Local Cloud required policies
 $RequiredPolicies = @(
  "Azure Local clusters should have encryption at host enabled",
- "Azure Local clusters should have Azure Defender enabled",
  "Azure Local clusters should have secure boot enabled"
 )
 
@@ -474,7 +455,7 @@ Write-Host $Summary
 |----------|-------------|--------|
 | **Defender** | Secure score ≥ 80% | ☐ |
 | **Defender** | No high-severity recommendations | ☐ |
-| **Defender** | MDE extension installed on all nodes | ☐ |
+| **Defender** | Foundational CSPM on and Microsoft cloud security benchmark assigned | ☐ |
 | **RBAC** | Required roles assigned | ☐ |
 | **RBAC** | No excessive permissions | ☐ |
 | **Encryption** | BitLocker enabled on OS drives | ☐ |
@@ -516,7 +497,7 @@ Update-MpSignature -UpdateSource MicrosoftUpdateServer
 
 | Issue | Cause | Resolution |
 |-------|-------|------------|
-| Secure score shows 0% or no data | Defender for Cloud plans not enabled or initial scan pending | Enable all required Defender plans; wait 24 hours for first assessment cycle |
+| Secure score shows 0% or no data | The free level of Defender for Cloud is not on, or the first evaluation is pending | Do [Task 01: Enable Defender for Cloud](../05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud.mdx); wait 24 hours for the first evaluation |
 | BitLocker encryption fails | TPM not available or not initialized | Verify TPM: `Get-Tpm`; initialize if needed: `Initialize-Tpm`; retry BitLocker enablement |
 | Policy compliance shows unknown state | Azure Monitor Agent not reporting or DCR misconfigured | Verify AMA health: `az connectedmachine extension list`; check DCR associations are correct |
 
