@@ -76,7 +76,7 @@ VMFleet generates significant I/O load. Run during a maintenance window when no 
 |---|---|---|
 | `platform.cluster_name` | String | Cluster name used in report headers |
 | `compute.nodes[].name` | String | Node hostnames for per-node fleet VM distribution |
-| `storage.pool_name` | String | Storage pool name for volume creation |
+| `storage.pool.name` | String | Storage pool name for volume creation. On an Azure Local deployment it is `SU1_Pool`. The commands below look the pool up, so they work with an empty value |
 
 ## Report Output
 
@@ -165,6 +165,9 @@ The **Collect** volume stores VMFleet configuration, results, and the template V
 # Create Collect volume (single volume, accessible from all nodes)
 # Recommended: 200GB minimum for VHD + results
 
+# The pool of an Azure Local deployment is SU1_Pool. It is not named "S2D on <cluster>".
+$PoolName = (Get-StoragePool -IsPrimordial $false).FriendlyName
+
 $CollectVolumeName = "Collect"
 $CollectVolumeSize = 200GB
 
@@ -173,7 +176,7 @@ $ExistingVolume = Get-ClusterSharedVolume | Where-Object { $_.SharedVolumeInfo.F
 
 if (-not $ExistingVolume) {
  # Create the virtual disk and volume
- New-Volume -StoragePoolFriendlyName "S2D on $((Get-Cluster).Name)" `
+ New-Volume -StoragePoolFriendlyName $PoolName `
  -FriendlyName $CollectVolumeName `
  -FileSystem CSVFS_ReFS `
  -Size $CollectVolumeSize
@@ -195,6 +198,7 @@ Each node needs its own **Fleet** volume to host VMFleet VMs. Use the size from 
 ```powershell
 # Get cluster nodes
 $Nodes = (Get-ClusterNode).Name
+$PoolName = (Get-StoragePool -IsPrimordial $false).FriendlyName
 
 # Use volume size from Get-FleetVolumeEstimate or manual calculation
 # Rule of thumb: ~10GB per fleet VM + overhead
@@ -210,7 +214,7 @@ foreach ($Node in $Nodes) {
  
  if (-not $ExistingFleet) {
  # Create Fleet volume for this node
- New-Volume -StoragePoolFriendlyName "S2D on $((Get-Cluster).Name)" `
+ New-Volume -StoragePoolFriendlyName $PoolName `
  -FriendlyName $FleetVolumeName `
  -FileSystem CSVFS_ReFS `
  -Size $FleetVolumeSize

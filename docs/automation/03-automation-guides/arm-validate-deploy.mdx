@@ -9,8 +9,8 @@ scope: "Automation of the ARM Validate and Deploy step of cluster deployment (Ph
 purpose: "Document how the toolkit's Invoke-AzureLocalArmDeployment.ps1 runs the cluster ARM deployment from a jump server or a CI/CD pipeline"
 author: "Azure Local Cloud"
 created: 2026-11-08
-updated: 2026-11-08
-version: "1.0.0"
+updated: 2026-11-13
+version: "1.1.0"
 tags:
   - azure-local
   - automation
@@ -40,7 +40,7 @@ status: "Active"
 > **MASTER REFERENCE**: [azurelocal-toolkit: ARM Validate and Deploy run guide](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/arm-deployment-guide.md)
 
 **Status**: Active
-**Validated against**: the toolkit's `docs/arm-deployment-guide.md` on `main`, and Microsoft Learn view `azloc-2610`
+**Validated against**: the toolkit's `docs/arm-deployment-guide.md` on `main`, the toolkit `CHANGELOG.md` and `config/variables/docs/MIGRATION.md` (schema 5.6.10, for the iSCSI SAN keys), and Microsoft Learn view `azloc-2610`
 
 ---
 
@@ -53,7 +53,7 @@ infrastructure.yml  +  OS configuration report  +  ZTP handoff (optional)
     -> Plan (preconditions) -> Validate -> approval -> Deploy -> report, events, exit code
 ```
 
-It covers Active Directory or local identity; Storage Spaces Direct, a Fibre Channel SAN, or hybrid (deployed as Storage Spaces Direct, the SAN connected afterwards); switchless or switched storage; and 1 to 16 machines. Running it twice is safe.
+It covers Active Directory or local identity; Storage Spaces Direct, a Fibre Channel SAN, an iSCSI SAN (Active Directory only), or hybrid (deployed as Storage Spaces Direct, the SAN connected afterwards); switchless or switched storage; and 1 to 16 machines. Running it twice is safe.
 
 This page automates the manual routes in [Phase 05: Cluster Deployment](../../implementation/04-cluster-deployment/phase-05-cluster-deployment/index.mdx) (portal and ARM template). The manual runbooks stay the reference for each Azure setting.
 
@@ -214,7 +214,31 @@ The SBE package must be downloaded and available on the share (see [the SBE pack
 ARM parameter adouPath (required when scenario.identity is active_directory) needs identity.active_directory.ou_path in infrastructure.yml, and it is empty.
 ```
 
-All missing keys are listed at once. A design the generator does not support yet (iSCSI SAN, disconnected operations, Azure Government with local identity or a SAN, rack aware with a SAN or local identity) stops with exit 2 and says so.
+All missing keys are listed at once. A design the generator does not support yet (disconnected operations, Azure Government with local identity or a SAN, rack aware with a SAN or local identity, an iSCSI SAN with local identity) stops with exit 2 and says so. An iSCSI SAN with local identity is refused because Microsoft has no template for it.
+
+### SAN values in the master file
+
+For a SAN the generator fills the parameters of Microsoft's template: `create-cluster-san` for Fibre Channel and `create-cluster-san-iscsi` for iSCSI. For iSCSI it builds one object per node with the Arc machine ID, the address, the initiator name and the iSCSI ports, and it sets the CHAP type. These keys feed them (example values are from the master template).
+
+| Key | Example | Used for |
+|-----|---------|----------|
+| `storage.san.type` | `iscsi` | `fibre_channel` or `iscsi`. Selects the template |
+| `storage.san.iscsi.targets[]` | `iqn`, `portals`, `fabric` | The array's iSCSI targets |
+| `storage.san.iscsi.networks[].fabric` | `A` | The path: `A` for the ports with the role `iscsi:a`, `B` for `iscsi:b` |
+| `storage.san.iscsi.networks[].subnet` | `198.51.100.0/24` | Subnet of the iSCSI network, in CIDR form. Required |
+| `storage.san.iscsi.networks[].vlan_id` | `0` | VLAN, 0 to 4094. 0 means untagged. Default 0 |
+| `storage.san.iscsi.networks[].next_hop` | `198.51.100.1` | Only when the target portals are in another subnet: the router address on this network |
+| `storage.san.iscsi.jumbo_packet` | `9014` | Jumbo packet size of the iSCSI networks, in bytes. Default 1514 |
+| `storage.san.iscsi.chap.enabled` | `false` | `true` when the targets require CHAP |
+| `storage.san.iscsi.chap.mutual` | `false` | `true`: the initiators also authenticate the targets (ARM chapType `Mutual`). `false`: one-way CHAP (`OneWay`). Default `false` |
+| `nodes[].san.initiator_iqn` | an IQN | The initiator name of each node |
+| `nodes[].network_adapters[].roles` | `iscsi:a`, `iscsi:b` | The ports that carry iSCSI. Every node needs a port with the role `iscsi:a` or `iscsi:b` |
+| `networking.cluster_network_properties.bandwidth_percentage_smb` | `50` | Share of bandwidth reserved for SMB, 1 to 97 percent. Default 50 |
+| `networking.cluster_network_properties.jumbo_packet` | `9014` | JumboPacket of the cluster network adapters: 1514, 4088 or 9014. Default 9014 |
+| `networking.cluster_network_properties.priority_cluster` | `7` | 802.1p priority of the cluster heartbeat, 0 to 7. Default 7 |
+| `networking.cluster_network_properties.priority_smb` | `3` | 802.1p priority of the SMB traffic, 0 to 7. Default 3 |
+
+The CHAP secret stays a Key Vault reference (`storage.san.iscsi.chap.secret`). The four cluster network values are no longer fixed in the generator. Their defaults are the values of Microsoft's template. A Fibre Channel or Storage Spaces Direct file needs none of the new keys.
 
 ---
 

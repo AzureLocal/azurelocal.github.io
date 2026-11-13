@@ -90,6 +90,10 @@ There is **no** `storageConfiguration` parameter and no generic `azuredeploy.jso
 | `domainFqdn`, `adouPath`, `AzureStackLCMAdminUsername`, `AzureStackLCMAdminPasssword` | Active Directory inputs. The OU can't be at the top level of the domain. |
 | `deploymentMode` | `Validate` first, then `Deploy`. |
 
+:::tip Generate the parameters from the master file
+The toolkit can fill both SAN templates from `infrastructure.yml`: `create-cluster-san` for Fibre Channel and `create-cluster-san-iscsi` for iSCSI (with Active Directory). For iSCSI it builds the `nodes` array from the node's Arc machine ID, address, initiator name (`nodes[].san.initiator_iqn`) and iSCSI ports. The keys `storage.san.iscsi.networks[]`, `storage.san.iscsi.jumbo_packet`, `storage.san.iscsi.chap.mutual` and `networking.cluster_network_properties` feed the network and CHAP parameters. An iSCSI SAN with local identity is refused. See [SAN values in the master file](../../../../../../automation/03-automation-guides/arm-validate-deploy.mdx#san-values-in-the-master-file).
+:::
+
 :::info Solution Builder Extension (SBE) is opt-in only
 The `sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource` and `sbeManifestCreationDate` parameters exist in the template. Per Learn, an SBE is used "only if your hardware partner provides" one. **Leave the SBE parameters empty or omitted by default.** Fill them in only when a hardware partner's SBE is explicitly in scope (Azure Local Cloud decision D46).
 :::

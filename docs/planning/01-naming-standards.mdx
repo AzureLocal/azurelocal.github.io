@@ -161,20 +161,24 @@ All Windows servers that will be domain-joined must follow the 15-character NetB
 - `csv-clu01-m2-vmstore-prd-02` (Two-way mirror, production VM storage)
 - `csv-clus01-m2-imgstore-prd-05` (Two-way mirror, production image store)
 
-**Variable Mapping:**
+**Variable Mapping:** the volume name is `storage.volumes[].name` in `infrastructure.yml`.
 ```yaml
-cluster_shared_volumes:
- vmstore_1: "csv-clu01-m3-vmstore-prd-01"
- vmstore_2: "csv-clu01-m2-vmstore-prd-02"
- imgstore: "csv-clus01-m2-imgstore-prd-05"
+storage:
+  volumes:
+    - name: "csv-clu01-m3-vmstore-prd-01"
+      size_gib: 4096
+      resiliency: "three_way"
+    - name: "csv-clu01-m2-vmstore-prd-02"
+      size_gib: 4096
+      resiliency: "two_way"
 ```
 
 :::warning CSV Naming Constraints
 - Must be unique within the cluster
 - Use clear, automation-friendly names
-- Created during Azure Local deployment or via `New-Volume` cmdlet
+- Created after deployment by `New-StorageVolume.ps1` (from `storage.volumes`) or with the `New-Volume` cmdlet
 - Must be accessible by all cluster nodes for high availability
-- Avoid reserved names like `Infrastructure_1`
+- Never use the deployment's names `Infrastructure_<n>` or `UserStorage_<n>`. `New-StorageVolume.ps1` refuses them
 :::
 
 #### Azure Local Storage Paths
@@ -189,12 +193,14 @@ cluster_shared_volumes:
 - `sp-clu01-m2-vmstore-prd-02` (Storage path for two-way mirror, production VM storage)
 - `sp-clus01-m2-imgstore-prd-05` (Storage path for two-way mirror, production image store)
 
-**Variable Mapping:**
+**Variable Mapping:** the name and the folder are `storage.paths[].name` and `storage.paths[].path`.
 ```yaml
-azure_local_storage_paths:
- vmstore_1: "sp-clu01-m3-vmstore-prd-01"
- vmstore_2: "sp-clu01-m2-vmstore-prd-02"
- imgstore: "sp-clus01-m2-imgstore-prd-05"
+storage:
+  paths:
+    - name: "sp-clu01-m3-vmstore-prd-01"
+      path: "C:\\ClusterStorage\\csv-clu01-m3-vmstore-prd-01\\vms"
+    - name: "sp-clu01-m2-vmstore-prd-02"
+      path: "C:\\ClusterStorage\\csv-clu01-m2-vmstore-prd-02\\vms"
 ```
 
 **CSV to Storage Path Mapping Table:**
@@ -209,8 +215,8 @@ azure_local_storage_paths:
 - **Resource Type**: `microsoft.azurestackhci/storagecontainers`
 - **Purpose**: Maps Azure resource to a specific CSV path (e.g., `C:\ClusterStorage\csv-clu01-m3-vmstore-prd-01`)
 - **High Availability**: Must use CSV volumes accessible by all cluster nodes
-- **Creation**: Use `az stack-hci-vm storagepath create` command
-- **Do NOT use**: `Infrastructure_1` volume (reserved for Azure Local components)
+- **Creation**: Use `New-StoragePath.ps1` (from `storage.paths`) or the `az stack-hci-vm storagepath create` command. The name is 3 to 64 letters, digits or hyphens
+- **Do NOT use**: `Infrastructure_1` volume (reserved for Azure Local components). `New-StoragePath.ps1` refuses a path on it
 :::
 
 ### 1.4 Azure Local Resources
