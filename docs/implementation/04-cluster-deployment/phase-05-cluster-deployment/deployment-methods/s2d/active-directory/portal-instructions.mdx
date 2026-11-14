@@ -97,22 +97,22 @@ Per Microsoft Learn 2610, starting with software version 12.2512 new deployments
 
 ---
 
-## Variables from variables.yml
+## Variables from infrastructure.yml
 
 | Path | Type | Description |
 |------|------|-------------|
-| `compute.arm_deployment.cluster_name` | string | Cluster name |
-| `azure_platform.region` | string | Azure region |
-| `identity.ad.domain_fqdn` | string | AD domain FQDN |
-| `identity.ad.organizational_unit` | string | AD OU distinguished name |
-| `identity.accounts.account_lcm_username` | string | LCM service account |
-| `compute.arm_deployment.network_intents[*].intent_adapters` | array | Network adapter names |
-| `compute.arm_deployment.ip_allocation.starting_ip` | string | IP pool start |
-| `compute.arm_deployment.ip_allocation.ending_ip` | string | IP pool end |
-| `compute.arm_deployment.subnet_mask` | string | Subnet mask |
-| `compute.arm_deployment.default_gateway` | string | Default gateway |
-| `compute.arm_deployment.dns_servers` | array | DNS servers |
-| `storage_accounts.storage_accounts.cluster_witness.*` | object | Witness storage account |
+| `cluster.name` | string | Cluster name |
+| `azure.location` | string | Azure region |
+| `identity.active_directory.domain_fqdn` | string | AD domain FQDN |
+| `identity.active_directory.ou_path` | string | AD OU distinguished name |
+| `identity.active_directory.lcm_user.username` | string | LCM service account |
+| `networking.intents[].adapters` | array | Network adapter names |
+| `networking.management.infrastructure_pool.start` | string | IP pool start |
+| `networking.management.infrastructure_pool.end` | string | IP pool end |
+| `networking.management.subnet` | string | Subnet mask |
+| `networking.management.gateway` | string | Default gateway |
+| `networking.management.dns_servers` | array | DNS servers |
+| `cluster.witness.storage_account` | object | Witness storage account |
 
 ---
 
@@ -133,8 +133,8 @@ Per Microsoft Learn 2610, starting with software version 12.2512 new deployments
 |-------|-------|--------|
 | **Subscription** | Select subscription | User Access Administrator and Contributor on the subscription |
 | **Resource group** | Select or create | Dedicated RG for cluster |
-| **Cluster name** | `<CLUSTER_NAME>` | `compute.arm_deployment.cluster_name` |
-| **Region** | `<AZURE_REGION>` | `azure_platform.azure_tenants[*].aztenant_location` |
+| **Cluster name** | `<CLUSTER_NAME>` | `cluster.name` |
+| **Region** | `<AZURE_REGION>` | `azure.location` |
 
 **Add Arc-registered machines:**
 
@@ -163,10 +163,10 @@ The domain credential fields appear in the **Basics tab** after selecting Active
 | Field | Value | Source |
 |-------|-------|--------|
 | **Authentication type** | **Active Directory** | |
-| **Domain FQDN** | `corp.azurelocal.cloud` | `identity.ad.domain_fqdn` |
-| **Computer OU** | `OU=AzureLocal,OU=Servers,DC=corp,DC=azurelocal,DC=cloud` | `identity.ad.organizational_unit` |
-| **Deployment user** | `svc-azl-deploy@corp.azurelocal.cloud` | `identity.accounts.account_lcm_username` |
-| **Deployment password** | [Enter service account password] | `identity.accounts.account_lcm_password` (keyvault ref) |
+| **Domain FQDN** | `corp.azurelocal.cloud` | `identity.active_directory.domain_fqdn` |
+| **Computer OU** | `OU=AzureLocal,OU=Servers,DC=corp,DC=azurelocal,DC=cloud` | `identity.active_directory.ou_path` |
+| **Deployment user** | `svc-azl-deploy@corp.azurelocal.cloud` | `identity.active_directory.lcm_user.username` |
+| **Deployment password** | [Enter service account password] | `identity.active_directory.lcm_user.password` (keyvault ref) |
 
 :::warning LCM account password requirements
 The deployment account password must be **at least 14 characters**. This is a Microsoft hard requirement for the LCM service account. A password shorter than 14 characters will fail portal validation with no clear error message.
@@ -192,7 +192,7 @@ The OU path entered here must exactly match the OU used by `New-HciAdObjectsPreC
 **Network intents:**
 
 :::info Network intents are defined by your planning design
-The number of intents, traffic type assignments, and adapter bindings configured here must match the design from your planning and discovery sessions, as captured in `variables.yml` under `compute.arm_deployment.network_intents`. Do not assume a specific number of intents or a fixed layout.
+The number of intents, traffic type assignments, and adapter bindings configured here must match the design from your planning and discovery sessions, as captured in `infrastructure.yml` under `networking.intents[]`. Do not assume a specific number of intents or a fixed layout.
 
 Typical layouts:
 
@@ -204,18 +204,18 @@ Typical layouts:
 | 3-intent | Compute | Compute |
 | 3-intent | Storage | Storage |
 
-For adapter assignments for each intent, refer to `compute.arm_deployment.network_intents[*].intent_adapters` in your `variables.yml`.
+For adapter assignments for each intent, refer to `networking.intents[].adapters` in your `infrastructure.yml`.
 :::
 
 **IP allocation:**
 
 | Setting | Value | Source |
 |---------|-------|--------|
-| Starting IP | First available management IP | `compute.arm_deployment.ip_allocation.starting_ip` |
-| Ending IP | Last available management IP | `compute.arm_deployment.ip_allocation.ending_ip` |
-| Subnet mask | e.g., `255.255.255.0` | `compute.arm_deployment.subnet_mask` |
-| Default gateway | Gateway IP | `compute.arm_deployment.default_gateway` |
-| DNS servers | Primary, Secondary | `compute.arm_deployment.dns_servers` |
+| Starting IP | First available management IP | `networking.management.infrastructure_pool.start` |
+| Ending IP | Last available management IP | `networking.management.infrastructure_pool.end` |
+| Subnet mask | e.g., `255.255.255.0` | `networking.management.subnet` |
+| Default gateway | Gateway IP | `networking.management.gateway` |
+| DNS servers | Primary, Secondary | `networking.management.dns_servers` |
 
 :::warning IP pool requirement
 A minimum of **6 consecutive IPs** are required for cluster infrastructure (cluster IP, Arc Resource Bridge IP, etc.). Individual node management IPs are separate — do not include them in this pool.
@@ -236,7 +236,7 @@ For each network intent you can select **Customize network settings**. Microsoft
 Learn does not state per-intent defaults for these values (for example RDMA off and jumbo 1514 on management and compute, RDMA and jumbo only on storage). Treat any such default as **lab-verified only** and confirm it on a 2610 deployment with `Get-NetIntent`, `Get-NetAdapterAdvancedProperty -RegistryKeyword *JumboPacket` and `Get-NetAdapterRdma`. Change adapter properties only on OEM guidance. Guest RDMA is not supported on Azure Local. These settings do not apply to low capacity class devices. Portal deployment does not let you specify your own storage intent IPs; use ARM template deployment for custom storage IPs.
 
 :::info DNS must resolve the AD domain FQDN
-For AD deployments, the DNS servers entered here must be able to resolve `identity.ad.domain_fqdn`. Nodes query these DNS servers during the domain join step of deployment. If DNS cannot resolve the domain, deployment will fail at domain join.
+For AD deployments, the DNS servers entered here must be able to resolve `identity.active_directory.domain_fqdn`. Nodes query these DNS servers during the domain join step of deployment. If DNS cannot resolve the domain, deployment will fail at domain join.
 :::
 
 ---
@@ -294,7 +294,7 @@ Select **Recommended security settings** to apply all settings at once.
 3. **Do NOT click "Try again"** while validation is running — wait for it to complete or fail before taking any action
 
 :::tip Run the validation monitor
-While validation runs, start [Monitor-Validation.ps1](../../../deployment-monitoring/monitor-validation.mdx) to see live step status and `EnvironmentValidatorFull` log output. It auto-exits when validation completes.
+While validation runs, watch it with [Azure Local Sonar](../../../deployment-monitoring/index.mdx).
 :::
 
 **Validation checks:**
@@ -346,7 +346,7 @@ Resolve all errors before proceeding to Task 10. Warnings may be acknowledged bu
 7. Provision custom location
 
 :::tip Run the deployment monitor
-After clicking Create, start [Monitor-Deployment.ps1](../../../deployment-monitoring/monitor-deployment.mdx) to track hierarchical step progress and stream `OrchestratorFull` logs in real time. Press Ctrl+C to exit at any time.
+After clicking Create, watch the deployment with [Azure Local Sonar](../../../deployment-monitoring/index.mdx).
 :::
 
 Monitor progress in **Azure Portal > Resource Groups > Your RG > Deployments**.
@@ -398,39 +398,27 @@ Get-Volume |
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Reads cluster node IPs and credentials from `variables.yml`. Resolves credentials from Key Vault. Logs results to `./logs/`.
+### PowerShell
 
-**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1`
+> **When to use**: Verify the domain join and the cluster health on all nodes after the deployment.
 
-```powershell title="Run from repository root"
-.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-03-verify-deployment-completion\powershell\Invoke-VerifyClusterHealth-Orchestrated.ps1 `
- -ConfigPath "config/variables.yml"
-```
+#### Script
 
-WhatIf (dry run, no remote connections):
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyADDomainStatus-Orchestrated.ps1` | Orchestrated wrapper , verifies AD domain join status across all cluster nodes. Supports `-WhatIf`. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1` | Orchestrated cluster health verification for Azure Local deployments. Supports `-WhatIf`. |
+
+Requires: PowerShell 7.
+
+#### Run
 
 ```powershell
-.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-03-verify-deployment-completion\powershell\Invoke-VerifyClusterHealth-Orchestrated.ps1 `
- -ConfigPath "config/variables.yml" `
- -WhatIf
-```
+.\Invoke-VerifyADDomainStatus-Orchestrated.ps1
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-No `variables.yml` required. Edit the `#region CONFIGURATION` block with node IPs before running.
-
-**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-03-verify-deployment-completion/powershell/Test-ClusterHealth-Standalone.ps1`
-
-```powershell title="Edit node IPs before running"
-# Open the script and update these values in #region CONFIGURATION:
-$NodeIPs = @(
- "REPLACE_NODE_01_IP"
- "REPLACE_NODE_02_IP"
- "REPLACE_NODE_03_IP"
-)
-
-.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-03-verify-deployment-completion\powershell\Test-ClusterHealth-Standalone.ps1
+.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml
+.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -TargetNode iic-01-n01
+.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
 ```
 
 </TabItem>

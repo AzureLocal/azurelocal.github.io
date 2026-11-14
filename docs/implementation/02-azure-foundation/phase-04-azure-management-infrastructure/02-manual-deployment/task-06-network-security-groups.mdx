@@ -45,7 +45,7 @@ This task creates two Network Security Groups (NSGs) and associates them with th
 
 :::info Task Classification
 **Execution Target**: Azure-Only (control-plane API operation) 
-**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+**Tab Profile**: 2 tabs — Azure Portal · Azure CLI / PowerShell
 :::
 
 :::info Terraform Reference
@@ -90,14 +90,19 @@ This task creates two Network Security Groups (NSGs) and associates them with th
 - [ ] On-premises management and OOB CIDRs confirmed
 - [ ] CI/CD runner subnet CIDR confirmed (if applicable)
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Subscription ID | `azure.subscriptions.<name>.id` | *(per environment)* |
-| Resource Group | `network.azure_vnets.management.resource_group` | `rg-azrlmgmt-azl-eus-01` |
-| Bastion Subnet CIDR | `network.azure_vnets.management.subnets.bastion.cidr` | `10.250.1.64/26` |
-| Management Subnet CIDR | `network.azure_vnets.management.subnets.management.cidr` | `10.250.1.32/27` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.location, tags
+landing_zone.subscriptions[].name, .id                                  the subscription of each network
+landing_zone.networks[].name, .subscription, .resource_group, .location
+landing_zone.networks[].subnets[].name, .network_security_group         which networks use which group
+landing_zone.network_security_groups[].name
+landing_zone.network_security_groups[].rules[].name, .priority, .direction, .access, .protocol, .source_address_prefixes,
+    .source_port_ranges, .destination_address_prefixes, .destination_port_ranges, .description
+```
 
 ---
 
@@ -107,8 +112,8 @@ This task creates two Network Security Groups (NSGs) and associates them with th
 
 | Field | Value | Config Path |
 |-------|-------|-------------|
-| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
-| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+| Subscription | Customer subscription | `landing_zone.subscriptions[].id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `landing_zone.networks[].resource_group` |
 | Management NSG | `nsg-azrl-{env}-{region}-01` | Derived from naming convention |
 | Bastion NSG | `nsg-bastion-{env}-{region}-01` | Derived from naming convention |
 
@@ -128,8 +133,8 @@ This task creates two Network Security Groups (NSGs) and associates them with th
  | Field | Value | Source |
  |-------|-------|--------|
  | Name | `nsg-azrl-{env}-{region}-01` | Naming convention |
- | Region | Your region | `azure.region` |
- | Resource Group | Management RG | `network.azure_vnets.management.resource_group` |
+ | Region | Your region | `azure.location` |
+ | Resource Group | Management RG | `landing_zone.networks[].resource_group` |
 
 2. **Add Inbound Rules** — Navigate to **Inbound security rules** → **+ Add** for each:
 
@@ -190,190 +195,23 @@ This task creates two Network Security Groups (NSGs) and associates them with th
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
 #### Script
 
-**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-06-network-security-groups/powershell/Deploy-LighthouseNsg.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/powershell/New-LandingZoneNsg.ps1` | Creates the Azure network security groups that landing_zone.network_security_groups of infrastructure.yml lists, with their rules. Supports `-WhatIf`. |
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| PowerShell + Azure CLI | `task-06-network-security-groups/azure-cli/Deploy-LighthouseNsg.azcli.ps1` |
-| Bash + Azure CLI | `task-06-network-security-groups/bash/invoke-network-security-groups.sh` |
+Requires: PowerShell 7.
 
-#### Code
+#### Run
 
 ```powershell
-# ============================================================================
-# Script: Deploy-LighthouseNsg.ps1
-# Execution: Run from management workstation — reads variables.yml
-# Prerequisites: Az.Network module, authenticated to Azure
-# ============================================================================
-
-#Requires -Modules Az.Network, Az.Resources
-
-param(
- [Parameter(Mandatory = $false)]
- [ValidateScript({Test-Path $_})]
- [string]$ConfigPath = "config/variables.yml"
-)
-
-$ErrorActionPreference = "Stop"
-$scriptRoot = $PSScriptRoot
-
-. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
-. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
-
-$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
-
-# Extract values
-$SubscriptionId = $config.azure.subscriptions.($config.network.azure_vnets.management.subscription).id
-$ResourceGroup = $config.network.azure_vnets.management.resource_group
-$Location = $config.network.azure_vnets.management.location
-$VNetName = $config.network.azure_vnets.management.name
-$BastionSubnetCidr = $config.network.azure_vnets.management.subnets.bastion.cidr
-$MgmtSubnetName = $config.network.azure_vnets.management.subnets.management.name
-$OnPremMgmtCidr = $config.network.vlans.management.cidr
-$OnPremOobCidr = $config.network.vlans.oob.cidr
-
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-# ── Management NSG ──
-$mgmtNsgName = "nsg-azrl-$($config.azure.environment)-$($config.azure.region_abbreviation)-01"
-Write-LogInfo "Creating Management NSG: $mgmtNsgName"
-
-$rule1 = New-AzNetworkSecurityRuleConfig -Name "Bastion-SSH-RDP-Inbound" -Priority 110 `
- -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix $BastionSubnetCidr `
- -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange @("22","3389")
-
-$rule2 = New-AzNetworkSecurityRuleConfig -Name "Azure Local Cloud-Runners-SSH-Inbound" -Priority 120 `
- -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix $config.network.azure_vnets.cicd.subnets.cicd.cidr `
- -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "22"
-
-$rule3 = New-AzNetworkSecurityRuleConfig -Name "Azure-Local-OnPrem-Inbound" -Priority 130 `
- -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix @($OnPremMgmtCidr, $OnPremOobCidr) `
- -SourcePortRange "*" -DestinationAddressPrefix $config.network.azure_vnets.management.subnets.management.cidr `
- -DestinationPortRange "*"
-
-$mgmtNsg = New-AzNetworkSecurityGroup -Name $mgmtNsgName -ResourceGroupName $ResourceGroup `
- -Location $Location -SecurityRules @($rule1, $rule2, $rule3)
-
-# ── Bastion NSG ──
-$bastionNsgName = "nsg-bastion-$($config.azure.environment)-$($config.azure.region_abbreviation)-01"
-Write-LogInfo "Creating Bastion NSG: $bastionNsgName"
-
-$bastionRules = @(
- (New-AzNetworkSecurityRuleConfig -Name "AllowHttpsInbound" -Priority 120 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "Internet" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
- (New-AzNetworkSecurityRuleConfig -Name "AllowGatewayManagerInbound" -Priority 130 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "GatewayManager" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
- (New-AzNetworkSecurityRuleConfig -Name "AllowAzureLoadBalancerInbound" -Priority 140 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "AzureLoadBalancer" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
- (New-AzNetworkSecurityRuleConfig -Name "AllowBastionHostCommunicationInbound" -Priority 150 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "VirtualNetwork" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("80","5701")),
- (New-AzNetworkSecurityRuleConfig -Name "AllowSSHRDPOutbound" -Priority 120 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("22","3389")),
- (New-AzNetworkSecurityRuleConfig -Name "AllowAzureCloudOutbound" -Priority 130 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "AzureCloud" -DestinationPortRange "443"),
- (New-AzNetworkSecurityRuleConfig -Name "AllowBastionCommunicationOutbound" -Priority 140 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "VirtualNetwork" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("5701","8080")),
- (New-AzNetworkSecurityRuleConfig -Name "AllowSessionOutbound" -Priority 150 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "80"),
- (New-AzNetworkSecurityRuleConfig -Name "DenyAllOutbound" -Priority 4090 -Direction Outbound -Access Deny -Protocol "*" -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "*")
-)
-
-$bastionNsg = New-AzNetworkSecurityGroup -Name $bastionNsgName -ResourceGroupName $ResourceGroup `
- -Location $Location -SecurityRules $bastionRules
-
-# ── Associate NSGs to Subnets ──
-$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
-
-Write-LogInfo "Associating Management NSG to subnet: $MgmtSubnetName"
-$mgmtSubnet = Get-AzVirtualNetworkSubnetConfig -Name $MgmtSubnetName -VirtualNetwork $vnet
-Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name $MgmtSubnetName `
- -AddressPrefix $mgmtSubnet.AddressPrefix -NetworkSecurityGroupId $mgmtNsg.Id | Out-Null
-
-Write-LogInfo "Associating Bastion NSG to AzureBastionSubnet"
-Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name "AzureBastionSubnet" `
- -AddressPrefix $config.network.azure_vnets.management.subnets.bastion.cidr `
- -NetworkSecurityGroupId $bastionNsg.Id | Out-Null
-
-$vnet | Set-AzVirtualNetwork | Out-Null
-
-Write-LogSuccess "NSGs created and associated successfully"
+./New-LandingZoneNsg.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
-
-#### Validation
-
-```powershell
-Get-AzNetworkSecurityGroup -ResourceGroupName $ResourceGroup | Format-Table Name, @{N="Rules";E={$_.SecurityRules.Count}}, ProvisioningState
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready script — no config file, no helpers needed.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Deploy-NetworkSecurityGroups-Standalone.ps1
-# Execution: Run anywhere — fully self-contained
-# Prerequisites: Az.Network module, authenticated to Azure
-# ============================================================================
-
-#Requires -Modules Az.Network, Az.Resources
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-$SubscriptionId = "00000000-0000-0000-0000-000000000000"
-$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
-$Location = "eastus"
-$VNetName = "vnet-azrl-azl-eus-01"
-$MgmtNsgName = "nsg-azrl-azl-eus-01"
-$BastionNsgName = "nsg-bastion-azl-eus-01"
-$MgmtSubnetName = "snet-azrl-azl-eus-01"
-$BastionSubnetCidr = "10.250.1.64/26"
-$MgmtSubnetCidr = "10.250.1.32/27"
-$OnPremMgmtCidr = "192.168.203.0/24"
-$OnPremOobCidr = "10.245.64.0/24"
-$CicdSubnetCidr = "10.250.0.0/24"
-#endregion CONFIGURATION
-
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-# Management NSG
-Write-Host "Creating Management NSG: $MgmtNsgName" -ForegroundColor Cyan
-$r1 = New-AzNetworkSecurityRuleConfig -Name "Bastion-SSH-RDP-Inbound" -Priority 110 -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix $BastionSubnetCidr -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange @("22","3389")
-$r2 = New-AzNetworkSecurityRuleConfig -Name "Azure Local Cloud-Runners-SSH-Inbound" -Priority 120 -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix $CicdSubnetCidr -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "22"
-$r3 = New-AzNetworkSecurityRuleConfig -Name "Azure-Local-OnPrem-Inbound" -Priority 130 -Direction Inbound -Access Allow -Protocol "*" -SourceAddressPrefix @($OnPremMgmtCidr,$OnPremOobCidr) -SourcePortRange "*" -DestinationAddressPrefix $MgmtSubnetCidr -DestinationPortRange "*"
-$mgmtNsg = New-AzNetworkSecurityGroup -Name $MgmtNsgName -ResourceGroupName $ResourceGroup -Location $Location -SecurityRules @($r1,$r2,$r3)
-
-# Bastion NSG (Microsoft-required rules)
-Write-Host "Creating Bastion NSG: $BastionNsgName" -ForegroundColor Cyan
-$br = @(
- (New-AzNetworkSecurityRuleConfig -Name "AllowHttpsInbound" -Priority 120 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "Internet" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
- (New-AzNetworkSecurityRuleConfig -Name "AllowGatewayManagerInbound" -Priority 130 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "GatewayManager" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
- (New-AzNetworkSecurityRuleConfig -Name "AllowAzureLoadBalancerInbound" -Priority 140 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "AzureLoadBalancer" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "443"),
- (New-AzNetworkSecurityRuleConfig -Name "AllowBastionHostCommunicationInbound" -Priority 150 -Direction Inbound -Access Allow -Protocol Tcp -SourceAddressPrefix "VirtualNetwork" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("80","5701")),
- (New-AzNetworkSecurityRuleConfig -Name "AllowSSHRDPOutbound" -Priority 120 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("22","3389")),
- (New-AzNetworkSecurityRuleConfig -Name "AllowAzureCloudOutbound" -Priority 130 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "AzureCloud" -DestinationPortRange "443"),
- (New-AzNetworkSecurityRuleConfig -Name "AllowBastionCommunicationOutbound" -Priority 140 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "VirtualNetwork" -SourcePortRange "*" -DestinationAddressPrefix "VirtualNetwork" -DestinationPortRange @("5701","8080")),
- (New-AzNetworkSecurityRuleConfig -Name "AllowSessionOutbound" -Priority 150 -Direction Outbound -Access Allow -Protocol Tcp -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "80"),
- (New-AzNetworkSecurityRuleConfig -Name "DenyAllOutbound" -Priority 4090 -Direction Outbound -Access Deny -Protocol "*" -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "*")
-)
-$bastionNsg = New-AzNetworkSecurityGroup -Name $BastionNsgName -ResourceGroupName $ResourceGroup -Location $Location -SecurityRules $br
-
-# Associate
-$vnet = Get-AzVirtualNetwork -Name $VNetName -ResourceGroupName $ResourceGroup
-Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name $MgmtSubnetName -AddressPrefix $MgmtSubnetCidr -NetworkSecurityGroupId $mgmtNsg.Id | Out-Null
-Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name "AzureBastionSubnet" -AddressPrefix $BastionSubnetCidr -NetworkSecurityGroupId $bastionNsg.Id | Out-Null
-$vnet | Set-AzVirtualNetwork | Out-Null
-
-Write-Host "NSGs created and associated" -ForegroundColor Green
-```
-
-:::info No External Dependencies
-Self-contained. Edit the `#region CONFIGURATION` block and run.
-:::
 
 </TabItem>
 </Tabs>
@@ -395,8 +233,8 @@ In the CAF/WAF model, NSGs follow the same pattern but are deployed in the **Con
 
 | Field | Value | Config Path |
 |-------|-------|-------------|
-| Subscription | **Connectivity** subscription | `azure.subscriptions.connectivity.id` |
-| Resource Group | `rg-azrlconn-{env}-{region}-01` | `network.azure_vnets.management.resource_group` |
+| Subscription | **Connectivity** subscription | `landing_zone.subscriptions[].id` |
+| Resource Group | `rg-azrlconn-{env}-{region}-01` | `landing_zone.networks[].resource_group` |
 
 ### Execution Options
 
@@ -415,27 +253,22 @@ Follow the same procedure as [Single Subscription → Azure Portal](#azure-porta
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-:::tip Same Script — Different Config
-The orchestrated script is identical. `variables.yml` references the correct Connectivity subscription for CAF/WAF.
-:::
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-See the [Single Subscription → Azure CLI / PowerShell](#azure-cli--powershell) tab.
+#### Script
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/powershell/New-LandingZoneNsg.ps1` | Creates the Azure network security groups that landing_zone.network_security_groups of infrastructure.yml lists, with their rules. Supports `-WhatIf`. |
 
-### Standalone Script
+Requires: PowerShell 7.
 
-Update the `#region CONFIGURATION` block for Connectivity subscription:
+#### Run
 
 ```powershell
-#region CONFIGURATION
-$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Connectivity subscription ID
-$ResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
-# ... remaining values same as single-sub
-#endregion CONFIGURATION
+./New-LandingZoneNsg.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
 
 </TabItem>
@@ -464,12 +297,7 @@ $ResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

@@ -70,12 +70,20 @@ This task requires **Owner** or **User Access Administrator** permissions at the
 If the deployment SPN already exists in the target environment, the script detects existing SPNs and prompts before creating a new secret. Enter **n** if the existing secret in the platform Key Vault is still valid.
 :::
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Subscription ID | `azure.subscriptions.lab.id` | *(per environment)* |
-| Key Vault Name | `azure_infrastructure.key_vaults.management.name` | `kv-iic-platform` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id                                the tenant the sign-in must belong to
+azure.location                                 the region of the identity
+azure.subscription_id, azure.resource_group    the place when the entry has none
+tags                                           tags for the identity (optional)
+azure.automation_identity.type                 must be managed_identity
+azure.automation_identity.name                 the name of the identity
+azure.automation_identity.subscription_id      the subscription that holds it (optional)
+azure.automation_identity.resource_group       the resource group that holds it (optional)
+```
 
 ---
 
@@ -139,124 +147,25 @@ The client secret value is only displayed once. Copy it immediately and store it
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Script
+### PowerShell
 
-```
-scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/powershell/New-DeploymentServicePrincipal.ps1
-```
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-### Code
+#### Script
 
-```powershell
-# Run from the configs directory
-Set-Location C:\git\Azure Local Cloud-docs-azl-toolkit\configs
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/powershell/New-AutomationManagedIdentity.ps1` | Creates the user-assigned managed identity that azure.automation_identity of infrastructure.yml names. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/powershell/New-DeploymentServicePrincipal.ps1` | Creates the Azure Local deployment service principal for automation. |
 
-# Dry run to preview
-& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-01-create-azure-local-deployment-spn\powershell\New-DeploymentServicePrincipal.ps1" `
- -ConfigFile ".\config\variables.yml" `
- -WhatIf
+Requires: PowerShell 7; modules Az.Resources.
 
-# Execute
-& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-01-create-azure-local-deployment-spn\powershell\New-DeploymentServicePrincipal.ps1" `
- -ConfigFile ".\config\variables.yml"
-```
-
-:::tip Existing SPN Handling
-If `sp-azurelocal-deploy` already exists, the script prompts: `Do you want to create a new secret for the existing SPN? (y/n)` — enter **n** to skip if the existing secret is still valid.
-:::
-
-### Validation
+#### Run
 
 ```powershell
-# Verify service principal exists
-$spn = Get-AzADServicePrincipal -DisplayName "sp-azurelocal-deploy"
-if ($spn) {
- Write-Host "Service principal found: $($spn.DisplayName)" -ForegroundColor Green
- Write-Host " App ID: $($spn.AppId)"
- Write-Host " Object ID: $($spn.Id)"
-} else {
- Write-Host "Service principal not found" -ForegroundColor Red
-}
-```
+./New-AutomationManagedIdentity.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Script
-
-Copy and run this self-contained script. Update the `#region CONFIGURATION` block with your environment values.
-
-```powershell
-#region CONFIGURATION
-# ── Update these values for your environment ──────────────────────────
-$SpnDisplayName = "sp-azurelocal-deploy" # IIC default
-$SecretDescription = "Azure Local Deployment Automation"
-$SecretMonths = 12 # Secret validity in months
-$KeyVaultName = "kv-iic-platform-eus-001" # IIC default — platform Key Vault
-#endregion CONFIGURATION
-
-#region EXECUTION
-Write-Host "`n=== Task 01: Create Azure Local Deployment SPN ===" -ForegroundColor Cyan
-
-# ── Check for existing SPN ────────────────────────────────────────────
-$existingSpn = Get-AzADServicePrincipal -DisplayName $SpnDisplayName -ErrorAction SilentlyContinue
-
-if ($existingSpn) {
- Write-Host "[EXISTS] SPN '$SpnDisplayName' already exists (AppId: $($existingSpn.AppId))" -ForegroundColor Yellow
- $createSecret = Read-Host "Create a new secret for the existing SPN? (y/n)"
- if ($createSecret -ne 'y') {
- Write-Host "[SKIP] Using existing SPN and secret." -ForegroundColor Green
- return
- }
- $appId = $existingSpn.AppId
-} else {
- # ── Create App Registration ───────────────────────────────────────
- Write-Host "[CREATE] Creating app registration '$SpnDisplayName'..." -ForegroundColor White
- $app = New-AzADApplication -DisplayName $SpnDisplayName -SignInAudience AzureADMyOrg
- $sp = New-AzADServicePrincipal -ApplicationId $app.AppId
- $appId = $app.AppId
- Write-Host "[OK] App Registration created (AppId: $appId)" -ForegroundColor Green
- Write-Host "[OK] Service Principal created (ObjectId: $($sp.Id))" -ForegroundColor Green
-}
-
-# ── Create Client Secret ─────────────────────────────────────────────
-Write-Host "[CREATE] Generating client secret..." -ForegroundColor White
-$endDate = (Get-Date).AddMonths($SecretMonths)
-$secret = New-AzADAppCredential -ApplicationId $appId -EndDate $endDate
-$secretValue = $secret.SecretText
-
-if (-not $secretValue) {
- Write-Host "[ERROR] Failed to retrieve secret value." -ForegroundColor Red
- exit 1
-}
-Write-Host "[OK] Client secret created (expires: $endDate)" -ForegroundColor Green
-
-# ── Store Credentials in Key Vault ────────────────────────────────────
-Write-Host "[STORE] Saving credentials to Key Vault '$KeyVaultName'..." -ForegroundColor White
-$tenantId = (Get-AzContext).Tenant.Id
-
-$secrets = @{
- "sp-azurelocal-deploy-appid" = $appId
- "sp-azurelocal-deploy-secret" = $secretValue
- "sp-azurelocal-deploy-tenantid" = $tenantId
-}
-
-foreach ($name in $secrets.Keys) {
- $secureValue = ConvertTo-SecureString $secrets[$name] -AsPlainText -Force
- Set-AzKeyVaultSecret -VaultName $KeyVaultName -Name $name -SecretValue $secureValue | Out-Null
- Write-Host " [OK] $name" -ForegroundColor Green
-}
-
-# ── Summary ───────────────────────────────────────────────────────────
-Write-Host "`n=== Summary ===" -ForegroundColor Cyan
-Write-Host " SPN Display Name : $SpnDisplayName"
-Write-Host " Application ID : $appId"
-Write-Host " Tenant ID : $tenantId"
-Write-Host " Secret Expires : $endDate"
-Write-Host " Key Vault : $KeyVaultName"
-Write-Host " Secrets Stored : $($secrets.Count)"
-Write-Host "`n[DONE] Task 01 complete." -ForegroundColor Green
-#endregion EXECUTION
+.\New-DeploymentServicePrincipal.ps1 -KeyVaultName "kv-azl-prod-eus"
 ```
 
 </TabItem>
@@ -280,12 +189,7 @@ Write-Host "`n[DONE] Task 01 complete." -ForegroundColor Green
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

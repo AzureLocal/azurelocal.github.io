@@ -55,38 +55,38 @@ Create resource groups within each subscription following the full CAF/WAF deplo
 | **Subscriptions** | All subscriptions created and associated with management groups ([Task 02](./task-02-create-subscriptions)) |
 | **Permissions** | Contributor or Owner role on each target subscription |
 | **Authenticated Azure session** | See [Authentication](../../../05-authentication.mdx) |
-| **`variables.yml`** | Configured with resource group names per subscription |
+| **`infrastructure.yml`** | Configured with resource group names per subscription |
 
 ## Resource Group Plan
 
 ### Platform Identity Subscription
 
-Subscription: `iic-platform-identity-001` (config: `azure.subscriptions.platform_identity.name`)
+Subscription: `iic-platform-identity-001` (config: `landing_zone.subscriptions[].name`)
 
 | Resource Group | Purpose | Config Path |
 |---|---|---|
-| `rg-identity-entraconnect-eus-01` | Entra ID Connect servers | `azure_resources.platform_identity.rg_entraconnect` |
-| `rg-identity-pim-eus-01` | Privileged Identity Management | `azure_resources.platform_identity.rg_pim` |
+| `rg-identity-entraconnect-eus-01` | Entra ID Connect servers | `landing_zone.resource_groups[].name` |
+| `rg-identity-pim-eus-01` | Privileged Identity Management | `landing_zone.resource_groups[].name` |
 
 ### Platform Management Subscription
 
-Subscription: `iic-platform-management-001` (config: `azure.subscriptions.platform_management.name`)
+Subscription: `iic-platform-management-001` (config: `landing_zone.subscriptions[].name`)
 
 | Resource Group | Purpose | Config Path |
 |---|---|---|
-| `rg-mgmt-monitoring-eus-01` | Azure Monitor, Log Analytics | `azure_resources.platform_management.rg_monitoring` |
-| `rg-mgmt-automation-eus-01` | Automation accounts, runbooks | `azure_resources.platform_management.rg_automation` |
-| `rg-mgmt-backup-eus-01` | Recovery Services vaults | `azure_resources.platform_management.rg_backup` |
+| `rg-mgmt-monitoring-eus-01` | Azure Monitor, Log Analytics | `landing_zone.resource_groups[].name` |
+| `rg-mgmt-automation-eus-01` | Automation accounts, runbooks | `landing_zone.resource_groups[].name` |
+| `rg-mgmt-backup-eus-01` | Recovery Services vaults | `landing_zone.resource_groups[].name` |
 
 ### Platform Connectivity Subscription
 
-Subscription: `iic-platform-connectivity-001` (config: `azure.subscriptions.platform_connectivity.name`)
+Subscription: `iic-platform-connectivity-001` (config: `landing_zone.subscriptions[].name`)
 
 | Resource Group | Purpose | Config Path |
 |---|---|---|
-| `rg-connectivity-hub-eus-01` | Hub VNet, Azure Firewall | `azure_resources.platform_connectivity.rg_hub` |
-| `rg-connectivity-dns-eus-01` | Private DNS zones | `azure_resources.platform_connectivity.rg_dns` |
-| `rg-connectivity-bastion-eus-01` | Azure Bastion hosts | `azure_resources.platform_connectivity.rg_bastion` |
+| `rg-connectivity-hub-eus-01` | Hub VNet, Azure Firewall | `landing_zone.resource_groups[].name` |
+| `rg-connectivity-dns-eus-01` | Private DNS zones | `landing_zone.resource_groups[].name` |
+| `rg-connectivity-bastion-eus-01` | Azure Bastion hosts | `landing_zone.resource_groups[].name` |
 
 ### Landing Zone Subscriptions
 
@@ -94,25 +94,22 @@ Each landing zone subscription (e.g., `iic-lz-azurelocal-corp-001`) gets a singl
 
 | Resource Group | Purpose | Config Path |
 |---|---|---|
-| `rg-c01-azl-eus-01` | Azure Local cluster + Arc resources | `azure_resources.resource_group_name` |
+| `rg-c01-azl-eus-01` | Azure Local cluster + Arc resources | `azure.resource_group` |
 
 :::tip Scaling Landing Zones
 For multiple clusters in the same subscription, increment the cluster identifier: `rg-c01-azl-eus-01`, `rg-c02-azl-eus-01`, etc.
 :::
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Identity — Entra Connect RG | `azure_resources.platform_identity.rg_entraconnect` | `rg-identity-entraconnect-eus-01` |
-| Identity — PIM RG | `azure_resources.platform_identity.rg_pim` | `rg-identity-pim-eus-01` |
-| Management — Monitoring RG | `azure_resources.platform_management.rg_monitoring` | `rg-mgmt-monitoring-eus-01` |
-| Management — Automation RG | `azure_resources.platform_management.rg_automation` | `rg-mgmt-automation-eus-01` |
-| Management — Backup RG | `azure_resources.platform_management.rg_backup` | `rg-mgmt-backup-eus-01` |
-| Connectivity — Hub RG | `azure_resources.platform_connectivity.rg_hub` | `rg-connectivity-hub-eus-01` |
-| Connectivity — DNS RG | `azure_resources.platform_connectivity.rg_dns` | `rg-connectivity-dns-eus-01` |
-| Connectivity — Bastion RG | `azure_resources.platform_connectivity.rg_bastion` | `rg-connectivity-bastion-eus-01` |
-| Cluster RG | `azure_resources.resource_group_name` | `rg-c01-azl-eus-01` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, tags
+landing_zone.subscriptions[].name, .id                     the subscription of each entry
+landing_zone.resource_groups[].name, .subscription, .location, .purpose
+    (purpose is shown in the progress lines and in the result; it is not written to Azure)
+```
 
 ---
 
@@ -134,7 +131,7 @@ For multiple clusters in the same subscription, increment the cluster identifier
 2. **Create Platform Identity RGs**:
  - **Subscription**: Select `iic-platform-identity-001`
  - **Resource group**: Enter name from the table above
- - **Region**: Per config (`azure.region` or `cluster.location`)
+ - **Region**: Per config (`azure.location` or `azure.location`)
  - Click **Review + create** → **Create**
  - Repeat for each RG in the Platform Identity table
 
@@ -154,7 +151,7 @@ For multiple clusters in the same subscription, increment the cluster identifier
 #### Validation
 
 - [ ] All resource groups created in the correct subscriptions
-- [ ] Resource group names match `variables.yml`
+- [ ] Resource group names match `infrastructure.yml`
 - [ ] Resource groups are in the correct region
 
 #### Links
@@ -164,182 +161,23 @@ For multiple clusters in the same subscription, increment the cluster identifier
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted deployment reading values from `variables.yml`
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
 #### Script
 
-**Primary**: `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1` | Creates the Azure resource groups that landing_zone.resource_groups of infrastructure.yml lists. Supports `-WhatIf`. |
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| PowerShell + Azure CLI | `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/azure-cli/Deploy-ResourceGroups.azcli.ps1` |
-| Bash + Azure CLI | `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/bash/az-deploy-resource-groups.sh` |
+Requires: PowerShell 7.
 
-#### Code
+#### Run
 
 ```powershell
-# ============================================================================
-# Script: Deploy-ResourceGroups.ps1
-# Prerequisites: Az.Resources module, authenticated with Contributor on all subs
-# ============================================================================
-
-#Requires -Modules Az.Resources
-
-# Load configuration
-$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
-$location = $config.azure.region
-
-# Build resource group list: each entry = subscription name + RG name
-$ResourceGroups = @()
-
-# Platform Identity
-$subIdentity = $config.azure.subscriptions.platform_identity.name
-foreach ($rg in $config.azure_resources.platform_identity.PSObject.Properties) {
- $ResourceGroups += @{ Subscription = $subIdentity; Name = $rg.Value }
-}
-
-# Platform Management
-$subManagement = $config.azure.subscriptions.platform_management.name
-foreach ($rg in $config.azure_resources.platform_management.PSObject.Properties) {
- $ResourceGroups += @{ Subscription = $subManagement; Name = $rg.Value }
-}
-
-# Platform Connectivity
-$subConnectivity = $config.azure.subscriptions.platform_connectivity.name
-foreach ($rg in $config.azure_resources.platform_connectivity.PSObject.Properties) {
- $ResourceGroups += @{ Subscription = $subConnectivity; Name = $rg.Value }
-}
-
-# Landing Zone(s) — cluster RG per subscription
-foreach ($lzKey in @('lz_corp', 'lz_online')) {
- $subName = $config.azure.subscriptions.$lzKey.name
- $rgName = $config.azure_resources.resource_group_name
- $ResourceGroups += @{ Subscription = $subName; Name = $rgName }
-}
-
-Write-Host "Creating $($ResourceGroups.Count) resource groups ..." -ForegroundColor Cyan
-
-foreach ($rg in $ResourceGroups) {
- Set-AzContext -Subscription $rg.Subscription | Out-Null
- New-AzResourceGroup -Name $rg.Name -Location $location -Force | Out-Null
- Write-Host " Created: $($rg.Name) in $($rg.Subscription)" -ForegroundColor Gray
-}
-
-Write-Host "Resource groups created successfully" -ForegroundColor Green
+./Deploy-ResourceGroups.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
-
-#### Validation
-
-```powershell
-foreach ($rg in $ResourceGroups) {
- Set-AzContext -Subscription $rg.Subscription | Out-Null
- $result = Get-AzResourceGroup -Name $rg.Name -ErrorAction SilentlyContinue
- if ($result) {
- Write-Host " OK: $($rg.Name) in $($rg.Subscription)" -ForegroundColor Green
- } else {
- Write-Host " MISSING: $($rg.Name) in $($rg.Subscription)" -ForegroundColor Red
- }
-}
-```
-
-**Validation Script**: `scripts/validation/landing-zones/powershell/Test-ResourceGroups.ps1`
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready script — no config file, no helpers, no dependencies.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: New-ResourceGroups-Standalone.ps1
-# Execution: Run anywhere — fully self-contained, no external dependencies
-# Prerequisites: Az.Resources module, authenticated with Contributor on all subs
-# ============================================================================
-
-#Requires -Modules Az.Resources
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-
-$Location = "eastus"
-
-# Each entry: subscription name → array of resource group names
-$Plan = @(
- @{
- Subscription = "iic-platform-identity-001"
- ResourceGroups = @(
- "rg-identity-entraconnect-eus-01",
- "rg-identity-pim-eus-01"
- )
- },
- @{
- Subscription = "iic-platform-management-001"
- ResourceGroups = @(
- "rg-mgmt-monitoring-eus-01",
- "rg-mgmt-automation-eus-01",
- "rg-mgmt-backup-eus-01"
- )
- },
- @{
- Subscription = "iic-platform-connectivity-001"
- ResourceGroups = @(
- "rg-connectivity-hub-eus-01",
- "rg-connectivity-dns-eus-01",
- "rg-connectivity-bastion-eus-01"
- )
- },
- @{
- Subscription = "iic-lz-azurelocal-corp-001"
- ResourceGroups = @(
- "rg-c01-azl-eus-01"
- )
- },
- @{
- Subscription = "iic-lz-azurelocal-online-001"
- ResourceGroups = @(
- "rg-c01-azl-eus-01"
- )
- }
-)
-
-#endregion CONFIGURATION
-
-Write-Host "Creating resource groups ..." -ForegroundColor Cyan
-
-foreach ($entry in $Plan) {
- Set-AzContext -Subscription $entry.Subscription | Out-Null
- foreach ($rgName in $entry.ResourceGroups) {
- New-AzResourceGroup -Name $rgName -Location $Location -Force | Out-Null
- Write-Host " Created: $rgName in $($entry.Subscription)" -ForegroundColor Gray
- }
-}
-
-Write-Host "Resource groups created successfully" -ForegroundColor Green
-
-# Verify
-foreach ($entry in $Plan) {
- Set-AzContext -Subscription $entry.Subscription | Out-Null
- foreach ($rgName in $entry.ResourceGroups) {
- $result = Get-AzResourceGroup -Name $rgName -ErrorAction SilentlyContinue
- if ($result) {
- Write-Host " OK: $rgName in $($entry.Subscription)" -ForegroundColor Green
- } else {
- Write-Host " MISSING: $rgName in $($entry.Subscription)" -ForegroundColor Red
- }
- }
-}
-```
-
-:::info No External Dependencies
-This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `variables.yml`, no config-loader, no helpers required.
-:::
 
 </TabItem>
 </Tabs>
@@ -376,12 +214,7 @@ After resource groups are deployed:
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

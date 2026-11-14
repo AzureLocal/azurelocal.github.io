@@ -62,7 +62,7 @@ Connect-AzAccount -TenantId $TenantId -SubscriptionId $SubscriptionId -DeviceCod
 <TabItem value="azcli-powershell" label="Azure CLI in PowerShell">
 Use this method when running Azure CLI commands from a PowerShell terminal.
 
-```powershell title="connect-azure-session-cli.ps1"
+```powershell title="Connect-AzureCliSession.ps1"
 # Variables - Update these to match your environment
 $TenantId = "your-tenant-id-here" # Azure AD Tenant ID
 $SubscriptionId = "your-subscription-id" # Target Azure Subscription ID
@@ -75,28 +75,6 @@ az account set --subscription $SubscriptionId
 
 # Verify connection
 Write-Host "Connected to Azure:" -ForegroundColor Green
-az account show --output table
-```
-
-</TabItem>
-<TabItem value="azcli-bash" label="Azure CLI (Bash)">
-Use this method when running Azure CLI commands from a Bash terminal on Linux or macOS.
-
-```bash title="connect-azure-session.sh"
-#!/bin/bash
-
-# Variables - Update these to match your environment
-TENANT_ID="your-tenant-id-here" # Azure AD Tenant ID
-SUBSCRIPTION_ID="your-subscription-id" # Target Azure Subscription ID
-
-# Connect to Azure
-az login --tenant "$TENANT_ID"
-
-# Set the subscription context
-az account set --subscription "$SUBSCRIPTION_ID"
-
-# Verify connection
-echo "Connected to Azure:"
 az account show --output table
 ```
 
@@ -126,21 +104,18 @@ Get-AzContext
 
 ### Azure CLI with Service Principal
 
-```bash title="Connect with Service Principal (Azure CLI)"
+```powershell title="Connect with Service Principal (Azure CLI)"
 # Variables
-TENANT_ID="your-tenant-id-here"
-SUBSCRIPTION_ID="your-subscription-id"
-SPN_APP_ID="your-spn-app-id"
-SPN_SECRET="your-spn-secret" # Retrieve from Key Vault in production!
+$TenantId = "your-tenant-id-here"
+$SubscriptionId = "your-subscription-id"
+$SpnAppId = "your-spn-app-id"
+$SpnSecret = "your-spn-secret" # Retrieve from Key Vault in production!
 
 # Connect using service principal
-az login --service-principal \
- --username "$SPN_APP_ID" \
- --password "$SPN_SECRET" \
- --tenant "$TENANT_ID"
+az login --service-principal --username $SpnAppId --password $SpnSecret --tenant $TenantId
 
 # Set subscription
-az account set --subscription "$SUBSCRIPTION_ID"
+az account set --subscription $SubscriptionId
 
 # Verify connection
 az account show --output table
@@ -189,7 +164,7 @@ Never hard-code credentials in scripts or commit secrets to source control.
 | `AADSTS700016` | Application not found | Verify SPN App ID is correct |
 | `AADSTS7000215` | Invalid client secret | Secret expired or incorrect — regenerate in Entra ID |
 | `The subscription could not be found` | Wrong subscription ID or no access | Verify subscription ID and RBAC assignments |
-| Browser doesn't open | Headless/remote session (SSH, jump box) | Use `-UseDeviceAuthentication` (Az), `-UseDeviceCode` (CLI PS), or `--use-device-code` (Bash) |
+| Browser doesn't open | Headless/remote session (SSH, jump box) | Use `-UseDeviceAuthentication` (Az), or `-UseDeviceCode` (the `Connect-AzureCliSession.ps1` helper) |
 | `az: command not found` | Azure CLI not installed or not in PATH | Install from [Microsoft Learn](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) |
 | `Az.Accounts module not found` | Module not installed | Run `Install-Module Az.Accounts -Scope CurrentUser` |
 
@@ -207,7 +182,7 @@ Disconnect-AzAccount
 Connect-AzAccount -TenantId $TenantId
 ```
 
-```bash title="Check Azure CLI Session"
+```powershell title="Check Azure CLI Session"
 # Show current account
 az account show
 
@@ -216,7 +191,7 @@ az account list --output table
 
 # Clear and re-authenticate
 az logout
-az login --tenant "$TENANT_ID"
+az login --tenant $TenantId
 ```
 
 ---

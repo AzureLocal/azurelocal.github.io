@@ -155,8 +155,8 @@ Hardware discovery automates collection of Dell server specifications via iDRAC 
 - **Documentation** of firmware versions and configurations
 - **Change tracking** for hardware lifecycle management
 
-**Primary Script:** `Get-DellServerInventory-FromiDRAC.ps1` 
-**Output:** `discovery/idrac-inventory.json`
+**Primary Script:** `Invoke-HardwareDiscovery.ps1` (Phase 04, Task 02)  
+**Output:** one `<ServiceTag>.json` per server and a `discovery-summary.json`, in the `discovery` folder
 
 ### Prerequisites
 
@@ -187,74 +187,30 @@ Invoke-RestMethod -Uri "https://10.10.10.11/redfish/v1/" -SkipCertificateCheck
 
 ### Running Discovery
 
-**Single Server:**
+**All servers** (the iDRAC address of each server comes from `nodes[].bmc.ip_address` in `infrastructure.yml`):
 ```powershell
 cd C:\git\azurelocal-toolkit
 
-.\scripts\discovery\Get-DellServerInventory-FromiDRAC.ps1 `
- -iDRACIP "10.10.10.11"
-```
-
-**Multiple Servers:**
-```powershell
-# Prompt for iDRAC credentials once
+# Prompt for the iDRAC credentials once
 $cred = Get-Credential -Message "Enter iDRAC Administrator credentials"
 
-# Discover multiple servers
-.\scripts\discovery\Get-DellServerInventory-FromiDRAC.ps1 `
- -iDRACIP @("10.10.10.11", "10.10.10.12", "10.10.10.13", "10.10.10.14") `
- -Credential $cred `
- -Verbose
+.\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-02-hardware-discovery-via-dell-redfish-api\powershell\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml -Credential $cred
 ```
 
-**With Historical Tracking:**
+**One server:**
 ```powershell
-# Keep timestamped files for firmware change tracking
-.\scripts\discovery\Get-DellServerInventory-FromiDRAC.ps1 `
- -iDRACIP @("10.10.10.11", "10.10.10.12") `
- -Credential $cred `
- -KeepTimestampedFiles
+.\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-02-hardware-discovery-via-dell-redfish-api\powershell\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml -Credential $cred -TargetNode "<node-name>"
 ```
+
+The script reads each BMC through the standard Redfish API (read only) and writes one JSON file per server, so you can keep the files of each run to track firmware changes.
 
 ### Validate Hardware Requirements
 
 After discovery, validate hardware meets Azure Local requirements:
 
-```powershell
-$discovery = Get-Content discovery/idrac-inventory.json | ConvertFrom-Json
-
-foreach ($server in $discovery.servers.PSObject.Properties.Value) {
- Write-Host "`nValidating: $($server.service_tag)" -ForegroundColor Cyan
- 
- # CPU validation (minimum 16 cores)
- if ($server.cpu.cores -lt 16) {
- Write-Host " ⚠️ CPU: $($server.cpu.cores) cores (minimum 16 required)" -ForegroundColor Yellow
- } else {
- Write-Host " ✅ CPU: $($server.cpu.cores) cores" -ForegroundColor Green
- }
- 
- # RAM validation (minimum 128 GB)
- if ($server.memory.total_capacity_gb -lt 128) {
- Write-Host " ⚠️ RAM: $($server.memory.total_capacity_gb) GB (minimum 128 GB required)" -ForegroundColor Yellow
- } else {
- Write-Host " ✅ RAM: $($server.memory.total_capacity_gb) GB" -ForegroundColor Green
- }
- 
- # Storage validation (minimum 2 NVMe for S2D cache)
- if ($server.storage.nvme_count -lt 2) {
- Write-Host " ⚠️ NVMe: $($server.storage.nvme_count) drives (minimum 2 required)" -ForegroundColor Yellow
- } else {
- Write-Host " ✅ NVMe: $($server.storage.nvme_count) drives ($($server.storage.nvme_total_gb) GB)" -ForegroundColor Green
- }
- 
- # NIC validation (minimum 2 adapters)
- if ($server.network.adapters.Count -lt 2) {
- Write-Host " ⚠️ NICs: $($server.network.adapters.Count) adapters (minimum 2 required)" -ForegroundColor Yellow
- } else {
- Write-Host " ✅ NICs: $($server.network.adapters.Count) adapters" -ForegroundColor Green
- }
-}
-```
+1. Open `discovery-summary.json` and the `<ServiceTag>.json` file of each server.
+2. Compare each server with the minimums in the tables above: CPU cores, memory, drives with their media type (NVMe, SSD or HDD) and role (cache or capacity), and network ports with their MAC addresses.
+3. Write down every gap. Fix it before the hardware goes to the next phase.
 
 ---
 

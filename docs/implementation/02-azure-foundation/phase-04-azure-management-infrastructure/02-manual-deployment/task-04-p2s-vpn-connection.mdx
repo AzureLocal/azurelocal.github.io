@@ -47,7 +47,7 @@ This task configures Point-to-Site (P2S) VPN on the existing VPN Gateway (Task 0
 
 :::info Task Classification
 **Execution Target**: Azure-Only (control-plane API operation) 
-**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+**Tab Profile**: 2 tabs — Azure Portal · Azure CLI / PowerShell
 :::
 
 :::warning Optional Task
@@ -71,10 +71,10 @@ This task is optional. It is only required when remote administrative VPN access
 
 | Setting | Value | Source |
 |---------|-------|--------|
-| Authentication | Certificate or Entra ID | `network.vpn.p2s.auth_type` |
-| Tunnel Type | OpenVPN | `network.vpn.p2s.tunnel_type` |
-| Client Address Pool | Per config | `network.vpn.p2s.address_pool` |
-| Root Certificate | Key Vault reference | `network.vpn.p2s.root_cert_secret` |
+| Authentication | Certificate or Entra ID | `landing_zone.connectivity.vpn_gateway.point_to_site.authentication` |
+| Tunnel Type | OpenVPN | `landing_zone.connectivity.vpn_gateway.point_to_site.protocols` |
+| Client Address Pool | Per config | `landing_zone.connectivity.vpn_gateway.point_to_site.address_pool` |
+| Root Certificate | Key Vault reference | `landing_zone.connectivity.vpn_gateway.point_to_site.root_certificate` |
 
 ## Prerequisites
 
@@ -83,16 +83,17 @@ This task is optional. It is only required when remote administrative VPN access
 - [ ] Entra ID application registered (if using Entra ID authentication)
 - [ ] Client address pool CIDR does not overlap with VNet or on-premises ranges
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| VPN Gateway Name | `network.vpn.azure_gateway.name` | `vpng-azrl-azl-eus-01` |
-| VPN Gateway RG | `network.vpn.azure_gateway.resource_group` | `rg-azrlmgmt-azl-eus-01` |
-| Auth Type | `network.vpn.p2s.auth_type` | `Certificate` |
-| Tunnel Type | `network.vpn.p2s.tunnel_type` | `OpenVPN` |
-| Client Address Pool | `network.vpn.p2s.address_pool` | `172.16.0.0/24` |
-| Root Certificate | `network.vpn.p2s.root_cert_secret` | `keyvault://...` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.location
+landing_zone.connectivity.vpn_gateway.name, .resource_group, .network            the gateway
+landing_zone.networks[].name, .subscription, .resource_group                     where the network, and so the gateway, is
+landing_zone.subscriptions[].name, .id                                           the subscription that holds the network
+landing_zone.connectivity.vpn_gateway.point_to_site.address_pool, .authentication, .protocols, .root_certificate_name, .root_certificate
+```
 
 ---
 
@@ -102,10 +103,10 @@ This task is optional. It is only required when remote administrative VPN access
 
 | Field | Value | Config Path |
 |-------|-------|-------------|
-| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
-| Resource Group | Same as VPN Gateway | `network.vpn.azure_gateway.resource_group` |
-| VPN Gateway | Existing gateway | `network.vpn.azure_gateway.name` |
-| Client Pool | Per config | `network.vpn.p2s.address_pool` |
+| Subscription | Customer subscription | `landing_zone.subscriptions[].id` |
+| Resource Group | Same as VPN Gateway | `landing_zone.connectivity.vpn_gateway.resource_group` |
+| VPN Gateway | Existing gateway | `landing_zone.connectivity.vpn_gateway.name` |
+| Client Pool | Per config | `landing_zone.connectivity.vpn_gateway.point_to_site.address_pool` |
 
 ### Execution Options
 
@@ -125,21 +126,21 @@ This task is optional. It is only required when remote administrative VPN access
  - Go to **Point-to-site configuration** → **Configure now**
  | Field | Value | Source |
  |-------|-------|--------|
- | Address pool | Client CIDR | `network.vpn.p2s.address_pool` |
- | Tunnel type | OpenVPN (SSL) | `network.vpn.p2s.tunnel_type` |
- | Authentication type | Azure certificate or Entra ID | `network.vpn.p2s.auth_type` |
+ | Address pool | Client CIDR | `landing_zone.connectivity.vpn_gateway.point_to_site.address_pool` |
+ | Tunnel type | OpenVPN (SSL) | `landing_zone.connectivity.vpn_gateway.point_to_site.protocols` |
+ | Authentication type | Azure certificate or Entra ID | `landing_zone.connectivity.vpn_gateway.point_to_site.authentication` |
 
 3. **Upload Root Certificate** (if certificate auth):
  | Field | Value | Source |
  |-------|-------|--------|
- | Name | Root cert name | `network.vpn.p2s.root_cert_name` |
+ | Name | Root cert name | `landing_zone.connectivity.vpn_gateway.point_to_site.root_certificate_name` |
  | Public certificate data | Base64 cert data | From Key Vault |
 
 4. **Configure Entra ID** (if Entra ID auth):
  | Field | Value | Source |
  |-------|-------|--------|
- | Tenant | Entra tenant ID | `azure.tenant.id` |
- | Audience | Entra app ID | `network.vpn.p2s.entra_app_id` |
+ | Tenant | Entra tenant ID | `azure.tenant_id` |
+ | Audience | Entra app ID | no key (the script or Azure decides it) |
  | Issuer | `https://sts.windows.net/{tenant-id}/` | Derived from tenant |
 
 5. **Save** the configuration
@@ -161,131 +162,23 @@ This task is optional. It is only required when remote administrative VPN access
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
 #### Script
 
-**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-04-p2s-vpn-connection/powershell/Configure-P2sVpn.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection/powershell/Configure-P2sVpn.ps1` | Configures point-to-site VPN on the hub VPN gateway that infrastructure.yml describes. Supports `-WhatIf`. |
 
-#### Code
+Requires: PowerShell 7.
 
-```powershell
-# ============================================================================
-# Script: Configure-P2sVpn.ps1
-# Execution: Run from management workstation — reads variables.yml
-# Prerequisites: Az.Network module, authenticated to Azure
-# ============================================================================
-
-#Requires -Modules Az.Network, Az.Resources, Az.KeyVault
-
-param(
- [Parameter(Mandatory = $false)]
- [ValidateScript({Test-Path $_})]
- [string]$ConfigPath = "config/variables.yml"
-)
-
-$ErrorActionPreference = "Stop"
-$scriptRoot = $PSScriptRoot
-
-. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
-. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
-. "$scriptRoot/../../../../../common/utilities/helpers/keyvault-helper.ps1"
-
-$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
-
-# Extract values
-$SubscriptionId = $config.azure.subscriptions.($config.network.azure_vnets.management.subscription).id
-$ResourceGroup = $config.network.vpn.azure_gateway.resource_group
-$GatewayName = $config.network.vpn.azure_gateway.name
-$AddressPool = $config.network.vpn.p2s.address_pool
-$TunnelType = $config.network.vpn.p2s.tunnel_type
-$AuthType = $config.network.vpn.p2s.auth_type
-
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-$gateway = Get-AzVirtualNetworkGateway -Name $GatewayName -ResourceGroupName $ResourceGroup
-
-# Configure P2S
-Write-LogInfo "Configuring P2S VPN on gateway: $GatewayName"
-
-$p2sParams = @{
- VirtualNetworkGateway = $gateway
- VpnClientAddressPool = $AddressPool
- VpnClientProtocol = $TunnelType
-}
-
-if ($AuthType -eq "Certificate") {
- $rootCertData = Get-KeyVaultSecret -SecretUri $config.network.vpn.p2s.root_cert_secret
- $rootCert = New-AzVpnClientRootCertificate -Name $config.network.vpn.p2s.root_cert_name -PublicCertData $rootCertData
- $p2sParams.VpnClientRootCertificates = $rootCert
-}
-
-Set-AzVirtualNetworkGateway @p2sParams
-
-Write-LogSuccess "P2S VPN configured on gateway: $GatewayName"
-```
-
-#### Validation
+#### Run
 
 ```powershell
-$gw = Get-AzVirtualNetworkGateway -Name $GatewayName -ResourceGroupName $ResourceGroup
-$gw.VpnClientConfiguration | Format-List VpnClientAddressPool, VpnClientProtocols, VpnAuthenticationTypes
+./Configure-P2sVpn.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready script — no config file, no helpers needed.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Configure-P2sVpn-Standalone.ps1
-# Execution: Run anywhere — fully self-contained
-# Prerequisites: Az.Network, Az.KeyVault modules, authenticated to Azure
-# ============================================================================
-
-#Requires -Modules Az.Network, Az.KeyVault
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Target subscription
-$ResourceGroup = "rg-azrlmgmt-azl-eus-01" # VPN Gateway resource group
-$GatewayName = "vpng-azrl-azl-eus-01" # VPN Gateway name
-$AddressPool = "172.16.0.0/24" # Client address pool
-$TunnelType = "OpenVPN" # Tunnel type
-$AuthType = "Certificate" # Certificate or AzureAD
-$RootCertName = "P2SRootCert" # Root certificate name
-$KeyVaultName = "kv-demos-platform" # Key Vault with root cert
-$CertSecretName = "p2s-root-cert" # Secret name for cert data
-#endregion CONFIGURATION
-
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-$gateway = Get-AzVirtualNetworkGateway -Name $GatewayName -ResourceGroupName $ResourceGroup
-
-# Get root cert from Key Vault
-$rootCertData = (Get-AzKeyVaultSecret -VaultName $KeyVaultName -Name $CertSecretName).SecretValueText
-$rootCert = New-AzVpnClientRootCertificate -Name $RootCertName -PublicCertData $rootCertData
-
-# Configure P2S
-Write-Host "Configuring P2S VPN on: $GatewayName" -ForegroundColor Cyan
-Set-AzVirtualNetworkGateway -VirtualNetworkGateway $gateway `
- -VpnClientAddressPool $AddressPool `
- -VpnClientProtocol $TunnelType `
- -VpnClientRootCertificates $rootCert
-
-Write-Host "P2S VPN configured on '$GatewayName'" -ForegroundColor Green
-```
-
-:::info No External Dependencies
-Self-contained. Edit the `#region CONFIGURATION` block and run.
-:::
 
 </TabItem>
 </Tabs>
@@ -307,9 +200,9 @@ In the CAF/WAF model, the P2S configuration exists on the VPN Gateway in the **C
 
 | Field | Value | Config Path |
 |-------|-------|-------------|
-| Subscription | **Connectivity** subscription | `azure.subscriptions.connectivity.id` |
-| Resource Group | Connectivity resource group | `network.vpn.azure_gateway.resource_group` |
-| VPN Gateway | Existing gateway | `network.vpn.azure_gateway.name` |
+| Subscription | **Connectivity** subscription | `landing_zone.subscriptions[].id` |
+| Resource Group | Connectivity resource group | `landing_zone.connectivity.vpn_gateway.resource_group` |
+| VPN Gateway | Existing gateway | `landing_zone.connectivity.vpn_gateway.name` |
 
 ### Execution Options
 
@@ -328,27 +221,22 @@ Follow the same procedure as [Single Subscription → Azure Portal](#azure-porta
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-:::tip Same Script — Different Config
-The orchestrated script is identical. `variables.yml` contains the correct Connectivity subscription values for CAF/WAF.
-:::
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-See the [Single Subscription → Azure CLI / PowerShell](#azure-cli--powershell-1) tab for the full script.
+#### Script
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection/powershell/Configure-P2sVpn.ps1` | Configures point-to-site VPN on the hub VPN gateway that infrastructure.yml describes. Supports `-WhatIf`. |
 
-### Standalone Script
+Requires: PowerShell 7.
 
-Use the same standalone script from Single Subscription, updating the `#region CONFIGURATION` block:
+#### Run
 
 ```powershell
-#region CONFIGURATION
-$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Connectivity subscription ID
-$ResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
-# ... remaining values same as single-sub
-#endregion CONFIGURATION
+./Configure-P2sVpn.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
 
 </TabItem>
@@ -378,12 +266,7 @@ $ResourceGroup = "rg-azrlconn-azl-eus-01" # Connectivity resource group
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

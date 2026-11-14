@@ -600,32 +600,41 @@ steps:
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| Runner Pool Name | `cicd.runners.pool_name` | `self-hosted-pool` |
-| Runner Image | `cicd.runners.image` | `ubuntu-latest` |
-| Runner Count | `cicd.runners.count` | `2` |
-
+The script reads `devops.runners[]`, `devops.runner_network`, `devops.runner_access` and `devops.state` of `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
 
-:::info Toolkit Reference
-Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::info Toolkit script
+The toolkit scripts for this task are PowerShell 7. They read `infrastructure.yml`. Run them with `-WhatIf` first: the script reads what exists and lists what it would do.
 :::
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/azurecli/az-deploy-runners.ps1` | Task 06. Deploys the self-hosted runners (Linux and the Windows ztp runner) with Terraform. Azure CLI variant. Supports `-WhatIf`. |
+| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Deploy-CicdRunners.ps1` | Task 06. Deploys the self-hosted runners (Linux and the Windows ztp runner) with Terraform. Supports `-WhatIf`. |
+| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Invoke-CicdRunners-Orchestrated.ps1` | Task 06. Deploys the self-hosted runners (Linux and the Windows ztp runner) with Terraform. Orchestrated variant: reads the one infrastructure file. Supports `-WhatIf`. |
+
+Requires: PowerShell 7.
+
+#### Run
+
+```powershell
+./Deploy-CicdRunners.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Invoke-CicdRunners-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
+```
+
 
 ---
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

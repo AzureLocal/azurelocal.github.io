@@ -16,11 +16,12 @@ This standard defines how multiple automation tools (Terraform, Bicep, ARM, Powe
 
 ```mermaid
 flowchart TB
-    A["config/variables/variables.yml<br/>(single source of truth)"] --> B[Terraform .tfvars]
+    R["master-registry.yaml<br/>(the only master)"] --> A["infrastructure.yml<br/>(schema 5, one file per environment)"]
+    A --> B[Terraform tfvars.json and backend.hcl]
     A --> C[Bicep .bicepparam]
     A --> D[ARM parameters.json]
-    A --> E[PowerShell ConvertFrom-Yaml]
-    A --> F[Ansible group_vars]
+    A --> E[PowerShell Import-AzlInfrastructure]
+    A --> F[Ansible hosts.yml and group_vars]
     B --> G[Identical Infrastructure]
     C --> G
     D --> G
@@ -47,7 +48,7 @@ flowchart TB
 
 ## Interoperability Rules
 
-1. **Single source of truth** — `config/variables/variables.yml` is the only config file. All tool-specific parameter files are derived.
+1. **Single source of truth**: the master registry (`config/variables/schema/master-registry.yaml`) defines every variable, and `infrastructure.yml` is the only environment file. All tool-specific parameter files are derived from it.
 2. **Identical output** — Given the same config, every tool must produce the same infrastructure.
 3. **Idempotency** — All scripts and templates must be safe to re-run.
 4. **Error handling** — Every tool must validate config before executing changes.
@@ -57,7 +58,7 @@ flowchart TB
 
 ## Variable Path Contract
 
-Scripts must use variable paths that exist in the schema. See the [Variable Standards](variables) for naming rules and the [Variable Reference](variables) for the complete catalog.
+Scripts must use variable paths that exist in the registry. A test fails the build on a key that the registry does not have. See [Variable Management](variables) for the rules and the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md) for the complete catalog.
 
 ---
 

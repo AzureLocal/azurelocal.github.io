@@ -63,9 +63,9 @@ Management groups have two identifiers:
 
 | Attribute | Value | Source |
 |-----------|-------|--------|
-| **Parent MG ID** | `cmp-iic-root` | `variables.yml` → `azure.management_groups.tenant_root.name` |
-| **Landing Zone MG ID** | `cmp-landing-zones-iic` | `variables.yml` → `azure.management_groups.landing_zone.name` |
-| **Display Name** | `IIC Landing Zone Management Group` | `variables.yml` → `azure.management_groups.landing_zone.display_name` |
+| **Parent MG ID** | `cmp-iic-root` | `infrastructure.yml` → `landing_zone.management_groups[].parent` |
+| **Landing Zone MG ID** | `cmp-landing-zones-iic` | `infrastructure.yml` → `landing_zone.management_groups[].name` |
+| **Display Name** | `IIC Landing Zone Management Group` | `infrastructure.yml` → `landing_zone.management_groups[].display_name` |
 
 ### Target Structure
 
@@ -80,15 +80,11 @@ Tenant Root Group
 - **Organization root management group** exists in the tenant (or you will create it — see note above)
 - **Permissions**: Management Group Contributor (or Owner) on the root management group. You may need to [elevate access](https://learn.microsoft.com/en-us/azure/role-based-access-control/elevate-access-global-admin) first.
 - **Authenticated Azure session** — see [Authentication](../../../05-authentication.mdx)
-- **`variables.yml`** configured with management group values
+- **`infrastructure.yml`** configured with management group values
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Parent MG ID | `azure.management_groups.tenant_root.name` | `cmp-iic-root` |
-| Landing Zone MG ID | `azure.management_groups.landing_zone.name` | `cmp-landing-zones-iic` |
-| Landing Zone Display Name | `azure.management_groups.landing_zone.display_name` | `IIC Landing Zone Management Group` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -105,23 +101,23 @@ Tenant Root Group
 
 1. **Navigate to Management Groups**:
  - In Azure Portal, search for **Management groups**
- - Locate the root management group (`azure.management_groups.tenant_root.name`)
+ - Locate the root management group (`landing_zone.management_groups[].parent`)
 
 2. **Create the Landing Zone Management Group**:
  - Click **+ Add management group**
 
  | Field | Value | Source |
  |-------|-------|--------|
- | Management group ID | `<landing-zone-mg-id>` | `variables.yml` → `azure.management_groups.landing_zone.name` |
- | Management group display name | `<display-name>` | `variables.yml` → `azure.management_groups.landing_zone.display_name` |
- | Parent | Root MG from config | `variables.yml` → `azure.management_groups.tenant_root.name` |
+ | Management group ID | `<landing-zone-mg-id>` | `infrastructure.yml` → `landing_zone.management_groups[].name` |
+ | Management group display name | `<display-name>` | `infrastructure.yml` → `landing_zone.management_groups[].display_name` |
+ | Parent | Root MG from config | `infrastructure.yml` → `landing_zone.management_groups[].parent` |
 
 3. **Save** and wait for creation to complete.
 
 #### Validation
 
 - [ ] Landing zone MG appears under the root MG in the portal
-- [ ] MG ID matches the value in `variables.yml`
+- [ ] MG ID matches the value in `infrastructure.yml`
 - [ ] Display name is correct
 
 #### Links
@@ -131,100 +127,9 @@ Tenant Root Group
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted deployment reading values from `variables.yml`
-
-#### Script
-
-**Primary**: `scripts/deploy/02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-01-configure-management-group/powershell/Deploy-ManagementGroup.ps1`
-
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| PowerShell + Azure CLI | `scripts/deploy/02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-01-configure-management-group/azure-cli/Deploy-ManagementGroup.azcli.ps1` |
-| Bash + Azure CLI | `scripts/deploy/02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-01-configure-management-group/bash/az-deploy-management-group.sh` |
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Deploy-ManagementGroup.ps1
-# Prerequisites: Az.Resources module, authenticated with MG Contributor on root MG
-# ============================================================================
-
-#Requires -Modules Az.Resources
-
-# Load configuration
-$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
-
-# Extract values
-$ParentMgName = $config.azure.management_groups.tenant_root.name
-$LandingZoneMgName = $config.azure.management_groups.landing_zone.name
-$DisplayName = $config.azure.management_groups.landing_zone.display_name
-
-# Create the landing zone management group
-Write-Host "Creating Management Group: $LandingZoneMgName" -ForegroundColor Cyan
-
-New-AzManagementGroup `
- -GroupName $LandingZoneMgName `
- -DisplayName $DisplayName `
- -ParentId "/providers/Microsoft.Management/managementGroups/$ParentMgName"
-
-Write-Host "Management Group created successfully" -ForegroundColor Green
-```
-
-#### Validation
-
-```powershell
-# Verify creation and parent relationship
-Get-AzManagementGroup -GroupName $LandingZoneMgName | Format-List Name, DisplayName, ParentName
-```
-
-**Validation Script**: `scripts/validation/landing-zones/powershell/Test-ManagementGroup.ps1`
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready script — no config file, no helpers, no dependencies.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: New-ManagementGroup-Standalone.ps1
-# Execution: Run anywhere — fully self-contained, no external dependencies
-# Prerequisites: Az.Resources module, authenticated with MG Contributor on root MG
-# ============================================================================
-
-#Requires -Modules Az.Resources
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-$ParentMgName = "cmp-iic-root" # Root management group ID
-$LandingZoneMgName = "cmp-landing-zones-iic" # Landing zone management group ID
-$DisplayName = "IIC Landing Zone Management Group" # Display name in portal
-#endregion CONFIGURATION
-
-# Create the landing zone management group
-Write-Host "Creating Management Group: $LandingZoneMgName" -ForegroundColor Cyan
-
-New-AzManagementGroup `
- -GroupName $LandingZoneMgName `
- -DisplayName $DisplayName `
- -ParentId "/providers/Microsoft.Management/managementGroups/$ParentMgName"
-
-Write-Host "Management Group '$LandingZoneMgName' created successfully" -ForegroundColor Green
-
-# Verify
-Get-AzManagementGroup -GroupName $LandingZoneMgName | Format-List Name, DisplayName, ParentName
-```
-
-:::info No External Dependencies
-This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `variables.yml`, no config-loader, no helpers required.
-:::
+> **No script yet.** The task folder holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. A simplified landing zone uses the script of the full deployment: `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/powershell/Deploy-ManagementGroups.ps1` reads `landing_zone.management_groups[]`, and a file with one entry gives the same result. Or follow the steps in the other tab of this page.
 
 </TabItem>
 </Tabs>
@@ -237,7 +142,7 @@ This script is completely self-contained. All values are defined in the `#region
 |-------|---------|------------|
 | Permission denied | `AuthorizationFailed` | Verify Management Group Contributor or Owner role on the root MG |
 | Duplicate ID | `ManagementGroupAlreadyExists` | The MG already exists — verify it's under the correct parent and move on |
-| Parent not found | `ParentManagementGroupNotFound` | Confirm the root MG ID in `variables.yml` matches what exists in the tenant |
+| Parent not found | `ParentManagementGroupNotFound` | Confirm the root MG ID in `infrastructure.yml` matches what exists in the tenant |
 
 ## Next Steps
 
@@ -257,12 +162,7 @@ Proceed to [Task 02: Create Subscription](./task-02-create-subscription)
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

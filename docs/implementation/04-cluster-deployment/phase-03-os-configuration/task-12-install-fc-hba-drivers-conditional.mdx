@@ -99,13 +99,13 @@ Learn's disaggregated page requires that the LUNs are unmasked and visible befor
 
 ---
 
-## Variables from variables.yml
+## Variables from infrastructure.yml
 
 | Path | Type | Description |
 |------|------|-------------|
-| `cluster_nodes[].management_ip` | string | PSRemoting target IP (orchestrated mode) |
-| `cluster_nodes[].hostname` | string | Node display name for logging |
-| `cluster_nodes[].fc_hba[].wwpn` | string | Record here after collection — used for FC zoning and LUN masking |
+| `nodes[].network_adapters[].ip_address` | string | PSRemoting target IP (orchestrated mode) |
+| `nodes[].name` | string | Node display name for logging |
+| `nodes[].san.hbas[].ports[].wwpn` | string | Record here after collection — used for FC zoning and LUN masking |
 
 ---
 
@@ -116,7 +116,7 @@ Learn's disaggregated page requires that the LUNs are unmasked and visible befor
 
 Run on each node individually via console, RDP, or PSRemoting.
 
-**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-12-install-fc-hba-drivers-conditional/powershell/Install-FcHbaDrivers-Direct.ps1`
+**Toolkit script:** none for this step. Fibre Channel HBA drivers are not installed by the toolkit. The run checks the result: its **SanVerify** step collects the node WWPNs and checks that every listed WWPN is seen.
 
 ```powershell
 # Task 12 - Install FC HBA Drivers (run on each node)
@@ -131,7 +131,7 @@ Get-InitiatorPort | Select-Object NodeAddress, PortAddress, ConnectionType |
     Where-Object { $_.ConnectionType -eq 'Fibre Channel' } |
     Format-Table -AutoSize
 
-# Stage 3: Record WWPNs for each node (save to variables.yml)
+# Stage 3: Record WWPNs for each node (save to infrastructure.yml)
 # PortAddress field contains the WWPN in XX:XX:XX:XX:XX:XX:XX:XX format
 Get-InitiatorPort | Where-Object { $_.ConnectionType -eq 'Fibre Channel' } |
     Select-Object @{N='Node';E={$env:COMPUTERNAME}}, NodeAddress, PortAddress |
@@ -143,15 +143,13 @@ Get-InitiatorPort | Where-Object { $_.ConnectionType -eq 'Fibre Channel' } |
 
 Run from the management server against all nodes.
 
-**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-12-install-fc-hba-drivers-conditional/powershell/Invoke-FcHbaDrivers-Orchestrated.ps1`
+**Toolkit script:** none for this step. Fibre Channel HBA drivers are not installed by the toolkit. The run checks the result: its **SanVerify** step collects the node WWPNs and checks that every listed WWPN is seen.
 
 ```powershell
 # Task 12 - Install FC HBA Drivers (orchestrated)
-# variables.yml: cluster_nodes[].management_ip -> $ServerList
 
-$ConfigPath = "$env:USERPROFILE\variables.yml"
-$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
-    ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+# The management addresses of the nodes: the management port of each entry of nodes[] in infrastructure.yml
+$ServerList = @('<node-1-management-ip>', '<node-2-management-ip>')
 
 # Collect WWPNs from all nodes
 Invoke-Command -ComputerName $ServerList -ScriptBlock {
@@ -161,17 +159,6 @@ Invoke-Command -ComputerName $ServerList -ScriptBlock {
 ```
 
 > **Note:** Driver installation requires staging the vendor INF to each node before running. Consult your HBA vendor documentation for the driver package appropriate to the installed HBA model.
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
-:::
 
 </TabItem>
 </Tabs>
@@ -254,7 +241,7 @@ For initial pre-cluster deployment (Phase 03), simply reboot each node and confi
 
 - [ ] HBA drivers installed on all nodes (FC), or OEM iSCSI adapter drivers installed and not inbox (iSCSI)
 - [ ] FC initiator ports visible (`Get-InitiatorPort` shows Fibre Channel ports)
-- [ ] WWPNs collected and recorded in `variables.yml` under `cluster_nodes[].fc_hba[].wwpn`
+- [ ] WWPNs collected and recorded in `infrastructure.yml` under `nodes[].san.hbas[].ports[].wwpn`
 - [ ] Disaggregated: WWPN list provided to the SAN and FC fabric administrators now (before Arc registration)
 - [ ] Hybrid: WWNs **not** zoned yet (zone only after the Azure Local deployment)
 

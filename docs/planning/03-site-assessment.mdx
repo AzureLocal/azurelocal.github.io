@@ -27,7 +27,7 @@ Site assessment is a critical discovery phase that evaluates the physical site's
 - **Enterprise Network Validation** - Connectivity, firewall rules, and infrastructure verification
 - **Site Network Infrastructure** - VLAN planning, IP allocation, and switch configuration
 
-All assessment outputs feed directly into `variables.yml` and the provisioning stages.
+All assessment outputs feed directly into `infrastructure.yml` and the provisioning stages.
 
 :::tip Assessment Approach
 Complete this assessment **per site** before proceeding to hardware provisioning. For multi-site deployments, repeat the site-specific sections for each location.
@@ -418,7 +418,7 @@ For deployments where Azure resources already exist, use automated discovery to 
 Connect-AzAccount -Tenant "{{CUSTOMER_TENANT_ID}}"
 
 # Run discovery
-.\scripts\discovery\Inventory-AzureTenant.ps1 `
+.\scripts\common\discovery\Inventory-AzureTenant.ps1 `
  -TenantId "{{CUSTOMER_TENANT_ID}}" `
  -IncludeRBAC `
  -Verbose
@@ -444,11 +444,9 @@ Write-Host "Subscriptions: $($discovery.subscriptions.Count)"
 Write-Host "Resource Groups: $($discovery.resource_groups.Count)"
 Write-Host "VNets: $($discovery.vnets.Count)"
 
-# Preview import (safe WhatIf)
-.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -Azure -WhatIf
-
-# Apply import
-.\scripts\discovery\Update-InfrastructureFromDiscovery.ps1 -Azure
+# Copy the values you need into infrastructure.yml by hand.
+# The toolkit has no import script for the Azure inventory. Its hardware discovery
+# (Update-InfrastructureYml-FromDiscovery.ps1, Phase 04) writes serial numbers and port MACs only.
 ```
 
 ---
@@ -562,7 +560,7 @@ Timing: for a **disaggregated** deployment, zone before Arc registration (the LU
 
 - [ ] Azure tenant discovery completed (if existing resources)
 - [ ] Discovery outputs reviewed and categorized
-- [ ] Relevant resources imported to variables.yml
+- [ ] Relevant resources imported to infrastructure.yml
 
 ### SAN and FC Fabric Infrastructure (Part 5 — SAN deployments only)
 

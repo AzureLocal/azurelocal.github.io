@@ -87,54 +87,22 @@ Microsoft's page lists Defender for Servers as a further step. It adds security 
 </TabItem>
 <TabItem value="orchestrated" label="Toolkit Script">
 
-The toolkit script reads the keys above from `infrastructure.yml`, registers the `Microsoft.Security` resource provider and assigns the initiative. It sets no pricing tier.
+### PowerShell
 
-**Script**: `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/powershell/Enable-DefenderForCloud.ps1` in [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit).
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/powershell/Enable-DefenderForCloud.ps1` | Turns on the free level of Microsoft Defender for Cloud that Azure Local needs. Supports `-WhatIf`. |
+
+Requires: PowerShell 7; modules Az.Accounts, Az.Resources.
+
+#### Run
 
 ```powershell
-Connect-AzAccount -Tenant "<your-tenant-id>"
-
-# See what would change, without changing anything
-.\Enable-DefenderForCloud.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
-
-# Turn on the free level
 .\Enable-DefenderForCloud.ps1 -ConfigPath .\configs\infrastructure.yml
-```
-
-The script does nothing when the initiative is already assigned on the subscription or above it. It stops if an assignment named `SecurityCenterBuiltIn` exists for another definition, so it never replaces an assignment it did not create.
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-#Requires -Version 7.0
-$subscriptionId = "<your-subscription-id>"
-$scope = "/subscriptions/$subscriptionId"
-# Built-in initiative "Microsoft cloud security benchmark"; the ID is the same in every tenant.
-$benchmarkId = "/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8"
-
-Connect-AzAccount
-Set-AzContext -SubscriptionId $subscriptionId | Out-Null
-
-# Step 1: Foundational CSPM (free) is on once Microsoft.Security is registered
-Register-AzResourceProvider -ProviderNamespace Microsoft.Security | Out-Null
-
-# Step 2: assign the Microsoft cloud security benchmark, unless it is already assigned
-$assigned = Get-AzPolicyAssignment -Scope $scope | Where-Object {
-    $id = if ($_.PSObject.Properties['PolicyDefinitionId']) { $_.PolicyDefinitionId } else { $_.Properties.PolicyDefinitionId }
-    $id -eq $benchmarkId
-}
-if ($assigned) {
-    Write-Host "Microsoft cloud security benchmark is already assigned."
-}
-else {
-    $definition = Get-AzPolicySetDefinition -Id $benchmarkId
-    New-AzPolicyAssignment -Name "SecurityCenterBuiltIn" `
-        -DisplayName "Microsoft cloud security benchmark" `
-        -Scope $scope `
-        -PolicySetDefinition $definition | Out-Null
-    Write-Host "Microsoft cloud security benchmark assigned."
-}
 ```
 
 </TabItem>

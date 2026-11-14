@@ -98,15 +98,15 @@ All Dell AX nodes for Azure Local are **Premier Solutions** — validated throug
 ### Required VLANs
 
 :::info Network VLAN Configuration
-Network VLAN assignments are site-specific and defined in `variables.yml`.
+Network VLAN assignments are site-specific and defined in `infrastructure.yml`.
 :::
 
 | Network | Variable Path | Purpose |
 |---------|---------------|---------|
-| iDRAC/BMC | `vlans.oob.vlan_id` | Out-of-band management |
-| Management | `vlans.management.vlan_id` | Cluster management |
-| Storage | `vlans.storage.vlan_id` | Storage Spaces Direct |
-| Compute | `vlans.compute.vlan_id` | VM traffic |
+| iDRAC/BMC | `networking.oob.vlan_id` | Out-of-band management |
+| Management | `networking.management.vlan_id` | Cluster management |
+| Storage | `networking.storage.networks[].vlan_id` | Storage Spaces Direct |
+| Compute | `networking.vlans[].id` | VM traffic |
 
 ---
 
@@ -130,13 +130,13 @@ graph TD
 
 ## Quick Start
 
-Test iDRAC connectivity for all nodes before starting. iDRAC IPs are defined in `variables.yml` under `nodes.<name>.idrac_ip`.
+Test iDRAC connectivity for all nodes before starting. iDRAC IPs are defined in `infrastructure.yml` under `nodes[].bmc.ip_address`.
 
 ```powershell
-# Load iDRAC IPs from variables.yml
-Import-Module powershell-yaml
-$config = Get-Content ".\config\variables.yml" -Raw | ConvertFrom-Yaml
-$iDRACIPs = $config.nodes.Values | ForEach-Object { $_.idrac_ip }
+# Load the iDRAC IPs from infrastructure.yml (run from the toolkit root)
+Import-Module ./scripts/common/infrastructure/AzlInfrastructure.psm1
+$infra = Import-AzlInfrastructure -Path ./infrastructure.yml
+$iDRACIPs = $infra.nodes | ForEach-Object { $_.bmc.ip_address }
 
 foreach ($ip in $iDRACIPs) {
  $result = Test-NetConnection -ComputerName $ip -Port 443 -WarningAction SilentlyContinue

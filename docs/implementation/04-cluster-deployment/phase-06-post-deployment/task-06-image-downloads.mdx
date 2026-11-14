@@ -52,21 +52,19 @@ appendix or in the custom image management section of this documentation.
 - CSV volumes created and healthy (Task 05 complete)
 - Azure identity authenticated: `az login` or Az PowerShell `Connect-AzAccount`
 - `az stack-hci-vm` CLI extension installed (`az extension add --name stack-hci-vm`)
-- `marketplace_images` block populated in `variables.yml`
+- `marketplace_images` block populated in `infrastructure.yml`
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `marketplace_images.images[].offer` | string | Marketplace image offer |
-| `marketplace_images.images[].publisher` | string | Image publisher |
-| `marketplace_images.images[].sku` | string | Image SKU |
-| `marketplace_images.images[].name` | string | Image resource name |
-| `marketplace_images.images[].storage_path` | string | Storage path for download |
-| `azure_platform.resource_groups.cluster.name` | string | Resource group |
-| `compute.azure_local.custom_location` | string | Custom location |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags
+storage.paths[]: name
+storage.vm_images[]: name, os_type, publisher, offer, sku, version, storage_path
+```
 
 ---
 
@@ -121,305 +119,22 @@ or when CLI access is unavailable.
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-**When to use:** Automated or repeatable deployment. Reads image definitions from
-`variables.yml` and creates all images in sequence. Run from the management server.
+### PowerShell
 
-**Script:**
-[`Invoke-MarketplaceImages-Orchestrated.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/Invoke-MarketplaceImages-Orchestrated.ps1)
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-```
-scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
- task-06-image-downloads/powershell/Invoke-MarketplaceImages-Orchestrated.ps1
-```
+#### Script
 
-```powershell title="Invoke-MarketplaceImages-Orchestrated.ps1"
-#Requires -Version 5.1
-<#
-.SYNOPSIS
- Orchestrated: downloads all marketplace_images entries from variables.yml
- to the Azure Local cluster as gallery images.
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-VmImage.ps1` | Downloads the Azure Marketplace images that storage.vm_images of infrastructure.yml lists to Azure Local, as Azure Local VM images. Supports `-WhatIf`. |
 
-.DESCRIPTION
- Phase 06 — Post-Deployment | Task 06 — VM Image Downloads
+Requires: PowerShell 7.
 
- Reads each image definition from marketplace_images.images[] and calls
- az stack-hci-vm image create for each one. Images that already exist are
- skipped. Supports -WhatIf for dry-run validation.
+#### Run
 
-.PARAMETER ConfigPath
- Path to infrastructure YAML. Defaults to config\variables.yml in CWD.
-
-.PARAMETER Credential
- Not used for image creation (uses current az CLI / Az PowerShell session).
- Included for parameter contract compliance.
-
-.PARAMETER TargetNode
- Not used for image creation (ARM operation — no PSRemoting).
- Included for parameter contract compliance.
-
-.PARAMETER WhatIf
- Log planned actions without making any changes.
-
-.PARAMETER LogPath
- Override log directory. Default: logs\task-06-image-downloads\ in CWD.
-
-.NOTES
- Run from the toolkit repo root.
- Requires: az CLI authenticated (az login) and stack-hci-vm extension installed.
- (az extension add --name stack-hci-vm)
- Requires: powershell-yaml module (Install-Module powershell-yaml)
-#>
-
-[CmdletBinding(SupportsShouldProcess)]
-param(
- [string] $ConfigPath = "",
- [PSCredential]$Credential = $null,
- [string[]] $TargetNode = @(),
- [switch] $WhatIf,
- [string] $LogPath = ""
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-#region LOGGING -----------------------------------------------------------------
-$taskFolderName = "task-06-image-downloads"
-$timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
-
-if ([string]::IsNullOrEmpty($LogPath)) {
- $LogPath = Join-Path (Get-Location).Path "logs\$taskFolderName"
-}
-if (-not (Test-Path $LogPath)) { New-Item -ItemType Directory -Path $LogPath -Force | Out-Null }
-$logFile = Join-Path $LogPath "${timestamp}_MarketplaceImages.log"
-
-function Write-Log {
- param([string]$Message, [string]$Level = "INFO")
- $entry = "[{0}] [{1,-5}] {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Level, $Message
- $entry | Tee-Object -FilePath $logFile -Append | Out-Null
- $color = switch ($Level) {
- "ERROR" { "Red" }; "WARN" { "Yellow" }; "OK" { "Green" }; default { "Cyan" }
- }
- Write-Host $entry -ForegroundColor $color
-}
-#endregion
-
-#region CONFIG LOADING ----------------------------------------------------------
-if ([string]::IsNullOrEmpty($ConfigPath)) {
- $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml"
-}
-if (-not (Test-Path $ConfigPath)) {
- Write-Log "Config not found: $ConfigPath" -Level "ERROR"; throw "Config not found"
-}
-
-Import-Module powershell-yaml -ErrorAction Stop
-$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
-
-$imgConfig = $cfg.marketplace_images # marketplace_images
-
-if (-not $imgConfig.enabled) {
- Write-Log "marketplace_images.enabled is false — nothing to do." -Level "WARN"
- exit 0
-}
-
-$images = $imgConfig.images # marketplace_images.images[]
-$subscriptionId = $cfg.azure_platform.subscription_id # azure_platform.subscription_id
-$resourceGroup = $cfg.azure_platform.resource_group # azure_platform.resource_group
-$location = $cfg.azure_platform.location # azure_platform.location
-$customLocation = $cfg.compute.azure_local.custom_location_name # compute.azure_local.custom_location_name
-
-$customLocationId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup" +
- "/providers/Microsoft.ExtendedLocation/customLocations/$customLocation"
-
-Write-Log "Subscription : $subscriptionId"
-Write-Log "Resource group : $resourceGroup"
-Write-Log "Custom location: $customLocation"
-Write-Log "Images defined : $($images.Count)"
-Write-Log "WhatIf : $WhatIf"
-#endregion
-
-#region IMAGE CREATION ----------------------------------------------------------
-foreach ($img in $images) {
- $imgName = $img.name # marketplace_images.images[].name
- $publisher = $img.publisher # marketplace_images.images[].publisher
- $offer = $img.offer # marketplace_images.images[].offer
- $sku = $img.sku # marketplace_images.images[].sku
- $version = if ($img.version) { $img.version } else { "latest" }
- $osType = $img.os_type # marketplace_images.images[].os_type
-
- Write-Log "Image: $imgName ($publisher / $offer / $sku / $version)"
-
- if ($WhatIf) {
- Write-Log " [WhatIf] Would create gallery image '$imgName'" -Level "WARN"
- continue
- }
-
- # Check if image already exists
- $existing = az stack-hci-vm image show `
- --subscription $subscriptionId `
- --resource-group $resourceGroup `
- --name $imgName 2>$null
-
- if ($LASTEXITCODE -eq 0 -and $existing) {
- Write-Log " Already exists — skipped" -Level "WARN"
- continue
- }
-
- try {
- Write-Log " Creating (this may take 15–30 minutes per image)..."
-
- az stack-hci-vm image create `
- --subscription $subscriptionId `
- --resource-group $resourceGroup `
- --custom-location $customLocationId `
- --location $location `
- --name $imgName `
- --os-type $osType `
- --offer $offer `
- --publisher $publisher `
- --sku $sku `
- --version $version `
- --output none
-
- if ($LASTEXITCODE -ne 0) { throw "az stack-hci-vm image create exited $LASTEXITCODE" }
- Write-Log " Created successfully" -Level "OK"
- }
- catch {
- Write-Log " Failed: $_" -Level "ERROR"
- }
-}
-#endregion
-
-Write-Log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Write-Log "Done. Validate with: az stack-hci-vm image list --resource-group <rg>" -Level "OK"
-Write-Log "Log: $logFile"
-```
-
-**Run from the toolkit repo root:**
-
-```powershell title="Run Orchestrated script"
-.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-06-image-downloads\powershell\Invoke-MarketplaceImages-Orchestrated.ps1
-
-# Dry-run first:
-.\...\Invoke-MarketplaceImages-Orchestrated.ps1 -WhatIf
-
-# Explicit config path:
-.\...\Invoke-MarketplaceImages-Orchestrated.ps1 -ConfigPath configs\infrastructure-iic01.yml
-```
-
-:::warning Image creation takes time
-Each image download is 40–60 GB and typically takes 15–30 minutes. The script processes
-images sequentially. Plan for up to 90 minutes for all three images on a standard cluster
-uplink. The script is safe to re-run — existing images are skipped.
-:::
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-**When to use:** When deploying without `variables.yml` — external sharing, one-off
-deployments, or demos. All values are hardcoded in the `#region CONFIGURATION` block.
-
-**Script:**
-[`New-MarketplaceImages-Standalone.ps1`](https://github.com/AzureLocal-docs-azl-toolkit/-/blob/main/scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-MarketplaceImages-Standalone.ps1)
-
-```
-scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
- task-06-image-downloads/powershell/New-MarketplaceImages-Standalone.ps1
-```
-
-```powershell title="New-MarketplaceImages-Standalone.ps1"
-#Requires -Version 5.1
-<#
-.SYNOPSIS
- Standalone: creates Azure Local gallery images from Azure Marketplace.
-
-.DESCRIPTION
- Phase 06 — Post-Deployment | Task 06 — VM Image Downloads
-
- Fill in the #region CONFIGURATION block with your environment values.
- No variables.yml or toolkit dependency. Safe to copy and share.
-
-.NOTES
- Requires: az CLI authenticated (az login) and stack-hci-vm extension.
- (az extension add --name stack-hci-vm)
-#>
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-#region CONFIGURATION -----------------------------------------------------------
-$subscription_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890" # azure_platform.subscription_id
-$resource_group = "rg-iic01-azl-eus-01" # azure_platform.resource_group
-$location = "eastus" # azure_platform.location
-$custom_location_id = "/subscriptions/$subscription_id/resourceGroups/$resource_group" +
- "/providers/Microsoft.ExtendedLocation/customLocations/cl-iic01"
- # compute.azure_local.custom_location_name
-
-$images = @(
- @{
- name = "img-iic01-ws2025-azedition-g2"
- publisher = "MicrosoftWindowsServer"
- offer = "WindowsServer"
- sku = "2025-datacenter-azure-edition-g2"
- version = "latest"
- os_type = "Windows"
- },
- @{
- name = "img-iic01-ws2022-azedition-hotpatch-g2"
- publisher = "MicrosoftWindowsServer"
- offer = "WindowsServer"
- sku = "2022-datacenter-azure-edition-hotpatch-g2"
- version = "latest"
- os_type = "Windows"
- },
- @{
- name = "img-iic01-win11-25h2-avd-m365-g2"
- publisher = "MicrosoftWindowsDesktop"
- offer = "office-365"
- sku = "win11-25h2-avd-m365"
- version = "latest"
- os_type = "Windows"
- }
-)
-#endregion
-
-#region IMAGE CREATION ----------------------------------------------------------
-foreach ($img in $images) {
- Write-Host "[INFO] Creating: $($img.name) ($($img.publisher) / $($img.offer) / $($img.sku))" -ForegroundColor Cyan
- Write-Host " (this may take 15-30 minutes per image...)"
-
- $existing = az stack-hci-vm image show `
- --subscription $subscription_id `
- --resource-group $resource_group `
- --name $img.name 2>$null
-
- if ($LASTEXITCODE -eq 0 -and $existing) {
- Write-Host "[WARN] Already exists — skipped" -ForegroundColor Yellow
- continue
- }
-
- az stack-hci-vm image create `
- --subscription $subscription_id `
- --resource-group $resource_group `
- --custom-location $custom_location_id `
- --location $location `
- --name $img.name `
- --os-type $img.os_type `
- --offer $img.offer `
- --publisher $img.publisher `
- --sku $img.sku `
- --version $img.version `
- --output none
-
- if ($LASTEXITCODE -ne 0) {
- Write-Host "[ERROR] Failed to create $($img.name)" -ForegroundColor Red
- } else {
- Write-Host "[OK] Created: $($img.name)" -ForegroundColor Green
- }
-}
-#endregion
-
-Write-Host ""
-Write-Host "Done. Validate with: az stack-hci-vm image list --resource-group $resource_group" -ForegroundColor Green
+```powershell
+./New-VmImage.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
 
 </TabItem>
@@ -480,12 +195,7 @@ If an image stays in `Downloading` for more than 60 minutes or enters `Failed` s
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

@@ -68,20 +68,21 @@ Creates: Resource Group, Storage Account (GRS, TLS 1.2, versioning), blob contai
 
 ## Usage
 
-### 1. Generate terraform.tfvars from variables.yml
+### 1. Write the variable files from infrastructure.yml
 
 ```powershell
-. scripts/common/utilities/helpers/config-loader.ps1
-$config = Get-Config -ConfigPath "config/variables/variables.yml"
-Export-TerraformTfvars -Config $config -OutputPath "src/terraform/environments/azure-local/terraform.tfvars"
+# Keep the output folder out of the repository.
+./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac
 ```
+
+This writes `terraform.tfvars.json` and `backend.hcl` for each environment. A secret is never written: the script writes `not-written.txt` next to the variable file and names the environment variable that Terraform reads at run time. Settings that `infrastructure.yml` has no key for yet go in an `extra.tfvars` copied from `terraform.tfvars.example`.
 
 ### 2. Initialize and Plan
 
 ```bash
 cd src/terraform/environments/azure-local
-terraform init
-terraform plan -out=tfplan
+terraform init -backend-config=D:\work\iac\terraform\azure-local\backend.hcl
+terraform plan -var-file=D:\work\iac\terraform\azure-local\terraform.tfvars.json -out=tfplan
 ```
 
 ### 3. Apply
@@ -151,16 +152,16 @@ Provisions management VM shells (guest OS configuration handled by Ansible/Power
 
 ## Variable Mapping
 
-Variables flow from `config/variables/variables.yml` → `terraform.tfvars`:
+Variables flow from `infrastructure.yml` to `terraform.tfvars.json`. The registry says, for every Terraform variable, which key it comes from (`tools.terraform.variables`):
 
-| YAML Section | Terraform Variable | Example |
+| `infrastructure.yml` key | Terraform Variable | Example |
 |---|---|---|
-| `azure_platform.management_groups` | `management_groups` | Management group hierarchy |
-| `networking.azure.vnets` | `vnet_*`, `subnets` | Hub VNet configuration |
-| `security.key_vaults` | `key_vault_*` | Key Vault settings |
+| `landing_zone.management_groups` | `management_groups` | Management group hierarchy |
+| `landing_zone.networks[]` | `vnet_*`, `subnets` | Hub VNet configuration |
+| `key_vaults[]` | `key_vault_*` | Key Vault settings |
 | `operations.monitoring` | `log_analytics_*` | Log Analytics config |
-| `security.policies` | `policy_assignments` | Azure Policy |
-| `compute.vms.management` | `management_vms` | VM definitions |
+| `landing_zone.policy` | `policy_assignments` | Azure Policy |
+| `landing_zone.virtual_machines[]` | `management_vms` | VM definitions |
 
 ## Remote State
 

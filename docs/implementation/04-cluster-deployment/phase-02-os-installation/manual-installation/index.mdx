@@ -62,7 +62,7 @@ After the OS is installed, this route continues with **every** task in [Phase 03
 |-------------|-------------|--------|
 | Phase 01 complete | BIOS and iDRAC settings validated and compliant | [Phase 01](../../phase-01-hardware-provisioning/index.mdx) |
 | Dell BOSS cards | Boot Optimized Storage Solution cards in all nodes | Hardware |
-| iDRAC access | Virtual Console and Virtual Media available | `variables.yml: nodes.<name>.idrac_ip` |
+| iDRAC access | Virtual Console and Virtual Media available | `infrastructure.yml`: `nodes[].bmc.ip_address` |
 | OS image | Dell Azure Local gold image ISO, or the Microsoft ISO plus your OEM's drivers | Build team, [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/download-23h2-software?view=azloc-2610) |
 
 ---
@@ -103,16 +103,17 @@ graph TD
 
 ## Quick check before you start
 
-Verify iDRAC access for all nodes. iDRAC addresses are in `variables.yml` under `nodes.<name>.idrac_ip`.
+Verify iDRAC access for all nodes. iDRAC addresses are in `infrastructure.yml` under `nodes[].bmc.ip_address`.
 
 ```powershell
-# Test iDRAC connectivity for all nodes
-Import-Module powershell-yaml
-$config = Get-Content ".\config\variables.yml" -Raw | ConvertFrom-Yaml
-$config.nodes.Values | ForEach-Object {
-  $result = Test-NetConnection -ComputerName $_.idrac_ip -Port 443 -WarningAction SilentlyContinue
+# Test iDRAC connectivity for all nodes (run from the toolkit root)
+Import-Module ./scripts/common/infrastructure/AzlInfrastructure.psm1
+$infra = Import-AzlInfrastructure -Path ./infrastructure.yml
+$infra.nodes | ForEach-Object {
+  $ip = $_.bmc.ip_address
+  $result = Test-NetConnection -ComputerName $ip -Port 443 -WarningAction SilentlyContinue
   $status = if ($result.TcpTestSucceeded) { "Reachable" } else { "Unreachable" }
-  Write-Host "$($_.hostname) iDRAC ($($_.idrac_ip)): $status"
+  Write-Host "$($_.name) iDRAC ($ip): $status"
 }
 ```
 

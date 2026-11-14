@@ -99,7 +99,7 @@ Mirrors `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/`.
 | Verify Arc agent status | `ansible.windows.win_powershell` (azcmagent show) |
 
 ### monitoring-agents
-Mirrors `scripts/deploy/05-operational-foundations/phase-02-monitoring/`.
+Mirrors `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/`.
 
 | Task | Module Used |
 |---|---|
@@ -119,7 +119,7 @@ Promotes management VMs as domain controllers.
 | Configure DNS forwarders | `ansible.windows.win_powershell` |
 
 ### wac-server
-Mirrors `scripts/deploy/05-operational-foundations/phase-02-monitoring/task-05-deploy-wac/`.
+Mirrors the parked Windows Admin Center task (`scripts/deferred/windows-admin-center/`). That task is not a current focus.
 
 | Task | Module Used |
 |---|---|
@@ -129,7 +129,7 @@ Mirrors `scripts/deploy/05-operational-foundations/phase-02-monitoring/task-05-d
 | Configure Kerberos Constrained Delegation | `ansible.windows.win_powershell` |
 
 ### syslog-receiver
-Mirrors `scripts/deploy/05-operational-foundations/phase-02-monitoring/task-06-configure-network-device-logging/`.
+Mirrors the parked network device logging task (`scripts/deferred/network-device-logging/`). That task is not a current focus.
 
 Supports both Linux (rsyslog/snmpd) and Windows (WEF) receivers.
 
@@ -168,11 +168,13 @@ all:
 
 ## Variables
 
-Variables are generated from the central `config/variables/variables.yml`:
+Variables are generated from the master `infrastructure.yml`:
 
 ```powershell
-Export-AnsibleVars -Config $config -OutputPath "src/ansible/inventory/group_vars/all.yml"
+./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac -Target Ansible
 ```
+
+This writes `inventory/hosts.yml`, `group_vars/all.yml` and `host_vars/<node>.yml`. A secret is never written to these files.
 
 Sensitive values should use Ansible Vault:
 

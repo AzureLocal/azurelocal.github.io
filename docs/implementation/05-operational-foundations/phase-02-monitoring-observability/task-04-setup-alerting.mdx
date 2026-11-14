@@ -46,17 +46,18 @@ Azure Monitor alerts provide proactive notification when cluster health degrades
 | Notification Targets | Email addresses, Teams webhooks, etc. | Contact list prepared |
 | RBAC Permissions | Monitoring Contributor | Role assignment verified |
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
-| `AZURE_SUBSCRIPTION_NAME` | `azure.subscription.name` | `Azure Local Production` |
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `SITE_CODE` | `site.code` | `DAL` |
-| `NOC_EMAIL` | `alerting.noc_email` | `noc@iic.com` |
-| `CUSTOMER_EMAIL` | `alerting.customer_email` | `ops@customer.com` |
-| `TEAMS_WEBHOOK_URL` | `alerting.teams_webhook_url` | `https://outlook.office.com/webhook/...` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.subscription_id, tags
+operations.monitoring.enabled                    false means: do nothing
+operations.monitoring.workspace_resource_group   the resource group of the action group
+operations.monitoring.action_group               the name of the action group
+operations.monitoring.alert_email                an address that receives alerts
+operations.notifications.emails                  the addresses that receive notifications
+```
 
 ## Action Groups
 
@@ -94,57 +95,25 @@ Action groups define **who** and **how** to notify when alerts fire. Create thes
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-#Requires -Modules Az.Monitor
-
-# Variables
-$SubscriptionId = "{{AZURE_SUBSCRIPTION_ID}}"
-$ResourceGroup = "{{AZURE_RESOURCE_GROUP}}"
-$SiteCode = "{{SITE_CODE}}"
-$NocEmail = "{{NOC_EMAIL}}"
-$CustomerEmail = "{{CUSTOMER_EMAIL}}"
-
-# Connect to Azure
-Connect-AzAccount -Subscription $SubscriptionId
-
-# Create email receivers
-$nocReceiver = New-AzActionGroupReceiver `
- -Name "Azure Local Cloud-NOC" `
- -EmailReceiver `
- -EmailAddress $NocEmail
-
-$customerReceiver = New-AzActionGroupReceiver `
- -Name "Customer-Contact" `
- -EmailReceiver `
- -EmailAddress $CustomerEmail
-
-# Create Critical Action Group
-$criticalAG = Set-AzActionGroup `
- -ResourceGroupName $ResourceGroup `
- -Name "ag-azl-$SiteCode-critical" `
- -ShortName "AZLCrit" `
- -Receiver $nocReceiver, $customerReceiver `
- -Tag @{
- Environment = "Production"
- Application = "AzureLocal"
- Severity = "Critical"
- }
-
-Write-Host "✅ Action Group created: $($criticalAG.Id)" -ForegroundColor Green
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
-:::
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting/powershell/Deploy-ActionGroup.ps1` | Creates the Azure Monitor action group that tells the operations team about alerts, from infrastructure.yml. Supports `-WhatIf`. |
+
+Requires: PowerShell 7.
+
+#### Run
+
+```powershell
+./Deploy-ActionGroup.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
 
 </TabItem>
 </Tabs>
@@ -338,12 +307,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

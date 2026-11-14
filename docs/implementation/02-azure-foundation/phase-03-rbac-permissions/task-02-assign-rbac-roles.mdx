@@ -57,15 +57,30 @@ After assigning these roles, the deployment SPN will have sufficient permissions
 
 - [ ] Active Azure session with Owner or User Access Administrator role at subscription level
 - [ ] [Task 01: Create Deployment SPN](./task-01-create-azure-local-deployment-spn.mdx) completed — `sp-azurelocal-deploy` exists in Entra ID
-- [ ] Subscription ID confirmed in `variables.yml` → `azure.subscriptions.lab.id`
-- [ ] Cluster resource group confirmed in `variables.yml` → `azure_resources.resource_group_name`
+- [ ] Subscription ID confirmed in `infrastructure.yml` → `azure.subscription_id`
+- [ ] Cluster resource group confirmed in `infrastructure.yml` → `azure.resource_group`
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Subscription ID | `azure.subscriptions.lab.id` | *(per environment)* |
-| Cluster Resource Group | `azure_resources.resource_group_name` | `rg-c01-azl-eus-01` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+`New-EntraSecurityGroups.ps1`:
+
+```text
+azure.tenant_id                       the tenant the sign-in must belong to
+identity.entra.groups[].name          the display name of the group (1 to 256 characters)
+identity.entra.groups[].purpose       the description of the group (optional, up to 1024 characters)
+```
+
+`Set-EntraGroupRoleAssignments.ps1`:
+
+```text
+azure.tenant_id                        the tenant the sign-in must belong to
+azure.subscription_id, azure.resource_group   the default scope of an entry that has none
+identity.entra.groups[].name           the display name of the group
+identity.entra.groups[].roles          the Azure role names to assign
+identity.entra.groups[].scope          where to assign them (optional)
+```
 
 ---
 
@@ -139,121 +154,29 @@ Do **NOT** assign these to the platform Key Vault resource group.
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Script
+### PowerShell
 
-```
-scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/Set-RbacRoleAssignments.ps1
-```
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-### Code
+#### Script
 
-```powershell
-# Run from the configs directory
-Set-Location C:\git\Azure Local Cloud-docs-azl-toolkit\configs
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/New-EntraSecurityGroups.ps1` | Creates the Microsoft Entra security groups that identity.entra.groups of infrastructure.yml lists. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/Set-EntraGroupRoleAssignments.ps1` | Assigns the Azure roles that identity.entra.groups of infrastructure.yml gives each Microsoft Entra group, at the scope it names. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/Set-RbacRoleAssignments.ps1` | Assigns RBAC roles to the Azure Local deployment service principal. Supports `-WhatIf`. |
 
-# Dry run first to preview changes
-& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-02-assign-rbac-roles\powershell\Set-RbacRoleAssignments.ps1" `
- -ConfigFile ".\config\variables.yml" `
- -WhatIf
+Requires: PowerShell 7; modules Az.Accounts, Az.KeyVault, powershell-yaml.
 
-# Execute role assignments
-& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-02-assign-rbac-roles\powershell\Set-RbacRoleAssignments.ps1" `
- -ConfigFile ".\config\variables.yml"
-```
-
-### Validation
+#### Run
 
 ```powershell
-& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\powershell\Test-RbacRoleAssignments.ps1" `
- -ConfigPath ".\config\variables.yml" `
- -ServicePrincipalDisplayName "sp-azurelocal-deploy"
-```
+./New-EntraSecurityGroups.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-**Success Criteria**: All 10 role assignments show `Assigned` or `AlreadyAssigned`, script exits with code 0.
+./Set-EntraGroupRoleAssignments.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Script
-
-Copy and run this self-contained script. Update the `#region CONFIGURATION` block with your environment values.
-
-```powershell
-#region CONFIGURATION
-# ── Update these values for your environment ──────────────────────────
-$SubscriptionId = "00000000-1111-2222-3333-444444444444" # IIC default
-$ResourceGroupName = "rg-c01-azl-eus-01" # IIC default — cluster RG
-$SpnDisplayName = "sp-azurelocal-deploy" # IIC default
-#endregion CONFIGURATION
-
-#region EXECUTION
-Write-Host "`n=== Task 02: Assign RBAC Roles to Service Principal ===" -ForegroundColor Cyan
-
-# ── Resolve the SPN ──────────────────────────────────────────────────
-$spn = Get-AzADServicePrincipal -DisplayName $SpnDisplayName -ErrorAction SilentlyContinue
-if (-not $spn) {
- Write-Host "[ERROR] Service principal '$SpnDisplayName' not found. Run Task 01 first." -ForegroundColor Red
- exit 1
-}
-Write-Host "[OK] Found SPN: $($spn.DisplayName) (ObjectId: $($spn.Id))" -ForegroundColor Green
-
-# ── Define role assignments ──────────────────────────────────────────
-$subscriptionScope = "/subscriptions/$SubscriptionId"
-$resourceGroupScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName"
-
-$roleAssignments = @(
- # Subscription-level roles
- @{ Role = "Contributor"; Scope = $subscriptionScope }
- @{ Role = "User Access Administrator"; Scope = $subscriptionScope }
- @{ Role = "Azure Stack HCI Administrator"; Scope = $subscriptionScope }
- @{ Role = "Reader"; Scope = $subscriptionScope }
- # Resource group-level roles
- @{ Role = "Key Vault Data Access Administrator"; Scope = $resourceGroupScope }
- @{ Role = "Key Vault Secrets Officer"; Scope = $resourceGroupScope }
- @{ Role = "Key Vault Contributor"; Scope = $resourceGroupScope }
- @{ Role = "Storage Account Contributor"; Scope = $resourceGroupScope }
- @{ Role = "Azure Connected Machine Onboarding"; Scope = $resourceGroupScope }
- @{ Role = "Azure Connected Machine Resource Administrator"; Scope = $resourceGroupScope }
-)
-
-# ── Assign roles ─────────────────────────────────────────────────────
-$assigned = 0; $skipped = 0; $failed = 0
-
-foreach ($ra in $roleAssignments) {
- $roleName = $ra.Role
- $scope = $ra.Scope
-
- # Check if already assigned
- $existing = Get-AzRoleAssignment -ObjectId $spn.Id -RoleDefinitionName $roleName -Scope $scope -ErrorAction SilentlyContinue
- if ($existing) {
- Write-Host " [SKIP] $roleName — already assigned" -ForegroundColor Yellow
- $skipped++
- continue
- }
-
- try {
- New-AzRoleAssignment -ObjectId $spn.Id -RoleDefinitionName $roleName -Scope $scope -ErrorAction Stop | Out-Null
- Write-Host " [OK] $roleName" -ForegroundColor Green
- $assigned++
- } catch {
- Write-Host " [FAIL] $roleName — $($_.Exception.Message)" -ForegroundColor Red
- $failed++
- }
-}
-
-# ── Summary ──────────────────────────────────────────────────────────
-Write-Host "`n=== Summary ===" -ForegroundColor Cyan
-Write-Host " Assigned : $assigned"
-Write-Host " Skipped : $skipped (already existed)"
-Write-Host " Failed : $failed"
-
-if ($failed -gt 0) {
- Write-Host "`n[WARNING] $failed role(s) failed. Review errors above." -ForegroundColor Red
- exit 1
-} else {
- Write-Host "`n[DONE] All $($roleAssignments.Count) roles verified." -ForegroundColor Green
-}
-#endregion EXECUTION
+# Assign RBAC roles (dry run)
+.\Set-RbacRoleAssignments.ps1 -ConfigFile ..\..\infrastructure.yml -WhatIf
 ```
 
 </TabItem>
@@ -290,105 +213,29 @@ Assign the same 10 roles listed in Section 1 (4 subscription-level + 6 resource 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Code
+### PowerShell
+
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/New-EntraSecurityGroups.ps1` | Creates the Microsoft Entra security groups that identity.entra.groups of infrastructure.yml lists. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/Set-EntraGroupRoleAssignments.ps1` | Assigns the Azure roles that identity.entra.groups of infrastructure.yml gives each Microsoft Entra group, at the scope it names. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/Set-RbacRoleAssignments.ps1` | Assigns RBAC roles to the Azure Local deployment service principal. Supports `-WhatIf`. |
+
+Requires: PowerShell 7; modules Az.Accounts, Az.KeyVault, powershell-yaml.
+
+#### Run
 
 ```powershell
-# Run from the configs directory
-Set-Location C:\git\Azure Local Cloud-docs-azl-toolkit\configs
+./New-EntraSecurityGroups.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\task-02-assign-rbac-roles\powershell\Set-RbacRoleAssignments.ps1" `
- -ConfigFile ".\config\variables.yml" `
- -UserPrincipalName "user@azurelocal.cloud"
-```
+./Set-EntraGroupRoleAssignments.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-### Validation
-
-```powershell
-& "..\scripts\deploy\02-azure-foundation\phase-03-rbac-permissions\powershell\Test-RbacRoleAssignments.ps1" `
- -ConfigPath ".\config\variables.yml" `
- -UserPrincipalName "user@azurelocal.cloud"
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Script
-
-Modify the Section 1 standalone script: replace the SPN lookup with a user lookup.
-
-```powershell
-#region CONFIGURATION
-# ── Update these values for your environment ──────────────────────────
-$SubscriptionId = "00000000-1111-2222-3333-444444444444" # IIC default
-$ResourceGroupName = "rg-c01-azl-eus-01" # IIC default — cluster RG
-$UserPrincipalName = "user@azurelocal.cloud" # IIC default
-#endregion CONFIGURATION
-
-#region EXECUTION
-Write-Host "`n=== Task 02: Assign RBAC Roles to Deployment User ===" -ForegroundColor Cyan
-
-# ── Resolve the user ─────────────────────────────────────────────────
-$user = Get-AzADUser -UserPrincipalName $UserPrincipalName -ErrorAction SilentlyContinue
-if (-not $user) {
- Write-Host "[ERROR] User '$UserPrincipalName' not found in Entra ID." -ForegroundColor Red
- exit 1
-}
-Write-Host "[OK] Found user: $($user.DisplayName) (ObjectId: $($user.Id))" -ForegroundColor Green
-
-# ── Define role assignments (same as SPN) ────────────────────────────
-$subscriptionScope = "/subscriptions/$SubscriptionId"
-$resourceGroupScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName"
-
-$roleAssignments = @(
- @{ Role = "Contributor"; Scope = $subscriptionScope }
- @{ Role = "User Access Administrator"; Scope = $subscriptionScope }
- @{ Role = "Azure Stack HCI Administrator"; Scope = $subscriptionScope }
- @{ Role = "Reader"; Scope = $subscriptionScope }
- @{ Role = "Key Vault Data Access Administrator"; Scope = $resourceGroupScope }
- @{ Role = "Key Vault Secrets Officer"; Scope = $resourceGroupScope }
- @{ Role = "Key Vault Contributor"; Scope = $resourceGroupScope }
- @{ Role = "Storage Account Contributor"; Scope = $resourceGroupScope }
- @{ Role = "Azure Connected Machine Onboarding"; Scope = $resourceGroupScope }
- @{ Role = "Azure Connected Machine Resource Administrator"; Scope = $resourceGroupScope }
-)
-
-# ── Assign roles ─────────────────────────────────────────────────────
-$assigned = 0; $skipped = 0; $failed = 0
-
-foreach ($ra in $roleAssignments) {
- $roleName = $ra.Role
- $scope = $ra.Scope
-
- $existing = Get-AzRoleAssignment -ObjectId $user.Id -RoleDefinitionName $roleName -Scope $scope -ErrorAction SilentlyContinue
- if ($existing) {
- Write-Host " [SKIP] $roleName — already assigned" -ForegroundColor Yellow
- $skipped++
- continue
- }
-
- try {
- New-AzRoleAssignment -ObjectId $user.Id -RoleDefinitionName $roleName -Scope $scope -ErrorAction Stop | Out-Null
- Write-Host " [OK] $roleName" -ForegroundColor Green
- $assigned++
- } catch {
- Write-Host " [FAIL] $roleName — $($_.Exception.Message)" -ForegroundColor Red
- $failed++
- }
-}
-
-# ── Summary ──────────────────────────────────────────────────────────
-Write-Host "`n=== Summary ===" -ForegroundColor Cyan
-Write-Host " Assigned : $assigned"
-Write-Host " Skipped : $skipped (already existed)"
-Write-Host " Failed : $failed"
-
-if ($failed -gt 0) {
- Write-Host "`n[WARNING] $failed role(s) failed." -ForegroundColor Red
- exit 1
-} else {
- Write-Host "`n[DONE] All $($roleAssignments.Count) roles verified for $UserPrincipalName." -ForegroundColor Green
-}
-#endregion EXECUTION
+# Assign RBAC roles (dry run)
+.\Set-RbacRoleAssignments.ps1 -ConfigFile ..\..\infrastructure.yml -WhatIf
 ```
 
 </TabItem>
@@ -412,12 +259,7 @@ if ($failed -gt 0) {
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

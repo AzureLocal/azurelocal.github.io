@@ -58,17 +58,14 @@ WinRM is already enabled from [Task 01](./task-01-enable-winrm-for-remote-manage
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Task 01 Complete | WinRM enabled on all nodes | [Task 01: Enable WinRM](./task-01-enable-winrm-for-remote-management.mdx) |
-| iDRAC console access | Virtual Console accessible for each node (if using SConfig or Direct tab) | `variables.yml: nodes.<name>.idrac_ip` |
+| iDRAC console access | Virtual Console accessible for each node (if using SConfig or Direct tab) | `infrastructure.yml`: `nodes[].bmc.ip_address` |
 | Administrator credentials | Local admin password set during OS installation | Key Vault: `node-<hostname>-local-admin` |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `nodes.<name>.management_ip` | string | Node IP for RDP connection after enabling |
-| `cluster_nodes[].hostname` | string | Node hostname for connection verification |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -92,69 +89,25 @@ Run on each node via iDRAC Virtual Console.
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run from the management server. Reads node names from `variables.yml`.
+### PowerShell
+
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-02-enable-rdp/powershell/Enable-RDP.ps1` | Enables Remote Desktop Protocol on the local Azure Local node. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-02-enable-rdp/powershell/Invoke-EnableRdp-Orchestrated.ps1` | Enables RDP on all Azure Local nodes from the management server. |
+
+Requires: PowerShell 5.1; PowerShell 7.
+
+#### Run
 
 ```powershell
-$ConfigPath = ".\config\variables.yml"
-$config = ConvertFrom-Yaml (Get-Content $ConfigPath -Raw)
-$NodeNames = $config.cluster.nodes | ForEach-Object { $_.name }
-$Credential = Get-Credential -Message "Enter local Administrator credentials"
+.\Enable-RDP.ps1
 
-foreach ($node in $NodeNames) {
- Write-Host "Enabling RDP on $node..." -ForegroundColor Cyan
-
- Invoke-Command -ComputerName $node -Credential $Credential -ScriptBlock {
- Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
- -Name "fDenyTSConnections" -Value 0
-
- Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-
- $rdp = Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
- -Name "fDenyTSConnections"
-
- [PSCustomObject]@{
- Node = $env:COMPUTERNAME
- RDPEnabled = ($rdp.fDenyTSConnections -eq 0)
- }
- } | ForEach-Object {
- $status = if ($_.RDPEnabled) { "Green" } else { "Red" }
- Write-Host " $($_.Node): $(if ($_.RDPEnabled) { 'Enabled' } else { 'Not enabled' })" -ForegroundColor $status
- }
-}
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-Self-contained script. Update `$NodeNames` and `$Credential` before running.
-
-```powershell
-#region CONFIGURATION
-$NodeNames = @("node01", "node02", "node03", "node04")
-$Credential = Get-Credential -Message "Enter local Administrator credentials"
-#endregion CONFIGURATION
-
-foreach ($node in $NodeNames) {
- Write-Host "Enabling RDP on $node..." -ForegroundColor Cyan
-
- Invoke-Command -ComputerName $node -Credential $Credential -ScriptBlock {
- Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
- -Name "fDenyTSConnections" -Value 0
-
- Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-
- $rdp = Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
- -Name "fDenyTSConnections"
-
- [PSCustomObject]@{
- Node = $env:COMPUTERNAME
- RDPEnabled = ($rdp.fDenyTSConnections -eq 0)
- }
- } | ForEach-Object {
- $status = if ($_.RDPEnabled) { "Green" } else { "Red" }
- Write-Host " $($_.Node): $(if ($_.RDPEnabled) { 'Enabled' } else { 'Not enabled' })" -ForegroundColor $status
- }
-}
+.\Invoke-EnableRdp-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
 ```
 
 </TabItem>
@@ -196,12 +149,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 
@@ -216,4 +164,4 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
-| 2.0 | 2026-03-04 | Azure Local Cloud | Full rewrite to standards — complete frontmatter, 4-tab structure, orchestrated reads variables.yml, standalone with config region, Navigation and Version Control |
+| 2.0 | 2026-03-04 | Azure Local Cloud | Full rewrite to standards — complete frontmatter, 4-tab structure, orchestrated reads infrastructure.yml, standalone with config region, Navigation and Version Control |

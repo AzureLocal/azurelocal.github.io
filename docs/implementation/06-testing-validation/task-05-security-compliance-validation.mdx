@@ -55,16 +55,9 @@ All validation results are saved to:
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable Path | Type | Description |
-|---|---|---|
-| `azure.subscription.id` | String | Azure subscription ID for Defender/policy queries |
-| `azure.resource_group.name` | String | Resource group containing Azure Local cluster resources |
-| `compute.nodes[].name` | String | Node hostnames for per-node security checks |
-| `operations.policy.azure_policy_azurelocal_encryption` | Boolean | Required policy: encryption at host |
-| `operations.policy.azure_policy_azurelocal_secured_core` | Boolean | Required policy: secured core |
-| `security.keyvault.name` | String | Key Vault name for encryption key validation |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -521,24 +514,23 @@ See procedure steps above for manual execution guidance.
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository.
-:::
+#### Script
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+| Script | What it does |
+|---|---|
+| `scripts/deploy/06-testing-validation/task-05-security-compliance-validation/powershell/Test-SecurityCompliance.ps1` | Validates security configuration and compliance posture. |
 
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+Requires: PowerShell 7; -Module Az.Accounts; -Module Az.Resources.
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+#### Run
 
-:::note Content Pending
-Standalone script content references the toolkit repository.
-:::
+```powershell
+.\Test-SecurityCompliance.ps1 -ClusterName "azl-cluster-01" -SubscriptionId "00000000-0000-0000-0000-000000000000" -ResourceGroupName "rg-azurelocal-01"
+```
 
 </TabItem>
 </Tabs>
@@ -552,12 +544,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

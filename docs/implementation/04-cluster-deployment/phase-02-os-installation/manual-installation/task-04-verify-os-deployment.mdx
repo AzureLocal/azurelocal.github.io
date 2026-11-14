@@ -67,18 +67,14 @@ This task confirms Task 03 produced a healthy installation on every node.
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Task 03 Complete | OS installation finished on all nodes | [Task 03](./task-03-manual-os-installation.mdx) |
-| iDRAC console access | Virtual Console accessible for each node | `variables.yml: nodes.<name>.idrac_ip` |
+| iDRAC console access | Virtual Console accessible for each node | `infrastructure.yml`: `nodes[].bmc.ip_address` |
 | Administrator credentials | Local admin password set during Task 03 | Key Vault: `node-<hostname>-local-admin` |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `nodes.<name>.idrac_ip` | string | iDRAC IP for console access during verification |
-| `nodes.<name>.hostname` | string | Expected hostname for verification |
-| `nodes.<name>.management_ip` | string | Expected management IP for network test |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -163,169 +159,22 @@ Perform Steps 1–5 for each remaining node before proceeding.
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run the toolkit verification script from the management server. It reads all node details from `variables.yml`, connects via PowerShell remoting, and produces a summary report.
+### PowerShell
 
-:::info WinRM Requirement
-PowerShell remoting (WinRM) is not yet enabled on fresh nodes. If running this immediately after Task 03, you must either:
-- Enable WinRM on each node first via iDRAC console: `winrm quickconfig -q`
-- Or use the **Direct Script (On Node)** tab for now and run the orchestrated check again after WinRM is configured in Phase 03.
-:::
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-`scripts/deploy/04-cluster-deployment/phase-02-os-installation/task-04-verify-os-deployment/powershell/Test-OsDeployment.ps1`
+#### Script
 
-```powershell
-#Requires -Version 7.0
-# ============================================================================
-# Script: Test-OsDeployment.ps1
-# Execution: Run FROM management server — PSRemoting to each node
-# Prerequisites: powershell-yaml, WinRM enabled on all nodes
-# ============================================================================
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-02-os-installation/task-04-verify-os-deployment/powershell/Test-OsDeployment.ps1` | Verifies OS deployment on Azure Local nodes. |
 
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath = ".\config\variables.yml"
-)
+Requires: PowerShell 7.
 
-Import-Module powershell-yaml -ErrorAction Stop
-Import-Module Az.KeyVault -ErrorAction Stop
-
-$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
-$vaultName = $config.key_vault.name
-
-$results = @()
-
-foreach ($nodeKey in $config.nodes.Keys) {
- $node = $config.nodes[$nodeKey]
- $hostname = $node.hostname
- $mgmtIP = $node.management_ip
-
- # Retrieve local admin credential from Key Vault
- $secretName = "node-$hostname-local-admin"
- $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName
- $credential = [PSCredential]::new(
- "Administrator",
- $secret.SecretValue
- )
-
- Write-Host "$hostname ($mgmtIP)..." -ForegroundColor Yellow
-
- try {
- $info = Invoke-Command -ComputerName $mgmtIP -Credential $credential -ScriptBlock {
- $ci = Get-ComputerInfo
- $cDrive = Get-Volume -DriveLetter C -ErrorAction SilentlyContinue
- $netAdapters = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }).Count
- [PSCustomObject]@{
- Hostname = $env:COMPUTERNAME
- OS = $ci.WindowsProductName
- Build = "$($ci.OsBuildNumber).$((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR)"
- BootDriveGB = [math]::Round($cDrive.Size / 1GB, 0)
- AdaptersUp = $netAdapters
- }
- }
-
- $pass = ($info.OS -match "Azure Stack HCI") -and ([version]$info.Build -ge [version]'26100.33650') -and ($info.BootDriveGB -le 300)
- $results += [PSCustomObject]@{
- Node = $hostname
- Status = if ($pass) { "PASS" } else { "REVIEW" }
- OS = $info.OS
- Build = $info.Build
- BootDriveGB = $info.BootDriveGB
- AdaptersUp = $info.AdaptersUp
- }
- Write-Host " $(if ($pass) { 'PASS' } else { 'REVIEW' })" -ForegroundColor $(if ($pass) { 'Green' } else { 'Yellow' })
-
- } catch {
- Write-Host " UNREACHABLE: $_" -ForegroundColor Red
- $results += [PSCustomObject]@{
- Node = $hostname; Status = "UNREACHABLE"
- OS = "N/A"; Build = "N/A"; BootDriveGB = "N/A"; AdaptersUp = "N/A"
- }
- }
-}
-
-Write-Host "`nVerification Summary:" -ForegroundColor Cyan
-$results | Format-Table -AutoSize
-
-$failed = $results | Where-Object { $_.Status -notin @("PASS") }
-if ($failed) {
- Write-Host "$($failed.Count) node(s) require review — resolve before proceeding to Phase 03" -ForegroundColor Yellow
-} else {
- Write-Host "All nodes passed — Phase 02 complete. Proceed to Phase 03: OS Configuration." -ForegroundColor Green
-}
-```
-
-### Expected Output
-
-```
-azlocal-node01 (10.245.64.21)... PASS
-azlocal-node02 (10.245.64.22)... PASS
-azlocal-node03 (10.245.64.23)... PASS
-azlocal-node04 (10.245.64.24)... PASS
-
-Verification Summary:
-Node Status OS Build BootDriveGB AdaptersUp
----- ------ -- ----- ----------- ----------
-azlocal-node01 PASS Azure Stack HCI 26100.33650 238 4
-azlocal-node02 PASS Azure Stack HCI 26100.33650 238 4
-azlocal-node03 PASS Azure Stack HCI 26100.33650 238 4
-azlocal-node04 PASS Azure Stack HCI 26100.33650 238 4
-
-All nodes passed — Phase 02 complete. Proceed to Phase 03: OS Configuration.
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+#### Run
 
 ```powershell
-#Requires -Version 5.1
-# ============================================================================
-# Script: Test-OsDeployment-Standalone.ps1
-# Execution: Run FROM any workstation — PSRemoting to each node
-# Prerequisites: WinRM enabled on all nodes
-# ============================================================================
-
-#region CONFIGURATION
-$adminUser = "Administrator"
-$adminPassSecure = Read-Host "Enter local Administrator password" -AsSecureString
-$credential = [PSCredential]::new($adminUser, $adminPassSecure)
-
-$nodes = @(
- @{ Hostname = "azlocal-node01"; ManagementIP = "10.245.64.21" },
- @{ Hostname = "azlocal-node02"; ManagementIP = "10.245.64.22" },
- @{ Hostname = "azlocal-node03"; ManagementIP = "10.245.64.23" },
- @{ Hostname = "azlocal-node04"; ManagementIP = "10.245.64.24" }
-)
-#endregion
-
-$results = @()
-
-foreach ($node in $nodes) {
- Write-Host "$($node.Hostname) ($($node.ManagementIP))..." -ForegroundColor Yellow
- try {
- $info = Invoke-Command -ComputerName $node.ManagementIP -Credential $credential -ScriptBlock {
- $ci = Get-ComputerInfo
- $cDrive = Get-Volume -DriveLetter C -ErrorAction SilentlyContinue
- [PSCustomObject]@{
- Hostname = $env:COMPUTERNAME
- OS = $ci.WindowsProductName
- Build = "$($ci.OsBuildNumber).$((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR)"
- BootDriveGB = [math]::Round($cDrive.Size / 1GB, 0)
- }
- }
- $pass = ($info.OS -match "Azure Stack HCI") -and ([version]$info.Build -ge [version]'26100.33650') -and ($info.BootDriveGB -le 300)
- Write-Host " $(if ($pass) {'PASS'} else {'REVIEW'})" -ForegroundColor $(if ($pass) {'Green'} else {'Yellow'})
- $results += [PSCustomObject]@{
- Node = $node.Hostname; Status = if ($pass) {"PASS"} else {"REVIEW"}
- OS = $info.OS; Build = $info.Build; BootDriveGB = $info.BootDriveGB
- }
- } catch {
- Write-Host " UNREACHABLE: $_" -ForegroundColor Red
- $results += [PSCustomObject]@{ Node = $node.Hostname; Status = "UNREACHABLE"
- OS = "N/A"; Build = "N/A"; BootDriveGB = "N/A" }
- }
-}
-
-$results | Format-Table -AutoSize
+.\Test-OsDeployment.ps1 -NodeNames @("node01", "node02")
 ```
 
 </TabItem>
@@ -384,12 +233,7 @@ All criteria met — Phase 02 is complete. Proceed to Phase 03: OS Configuration
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

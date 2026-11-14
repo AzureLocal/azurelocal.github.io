@@ -26,7 +26,7 @@ PowerShell provides the orchestration layer for much of the Azure Local automati
 
 | Area | Typical Use |
 |---|---|
-| Variable loading | Read and validate `variables.yml` |
+| Variable loading | Read and validate `infrastructure.yml` |
 | Script orchestration | Chain multi-step deployment tasks |
 | Azure automation | Execute `Az` module workflows and helper functions |
 | On-premises execution | Configure nodes, trigger validations, and perform operational tasks |
@@ -38,29 +38,28 @@ PowerShell provides the orchestration layer for much of the Azure Local automati
 |---|---|
 | **Direct Script** | Run directly on the target node or management host |
 | **Orchestrated Script** | Execute from a management server across multiple systems |
-| **Standalone Script** | Self-contained task logic for sharing, demos, or one-off execution |
 | **Azure CLI Variant** | PowerShell wrapper around `az` commands where needed |
 
 ## Variable Loading
 
-Most PowerShell automation starts by loading the shared configuration:
+PowerShell automation starts by loading the shared configuration, the master `infrastructure.yml`:
 
 ```powershell
-. scripts/common/utilities/helpers/config-loader.ps1
-$config = Get-Config -ConfigPath "config/variables/variables.yml"
+Import-Module ./scripts/common/infrastructure/AzlInfrastructure.psm1
+$infra = Import-AzlInfrastructure -Path ./infrastructure.yml   # stops if the file has errors
 ```
 
-This enables the script to resolve environment-specific values from the central source of truth instead of hard-coding them inline.
+The script resolves environment-specific values from the central source of truth instead of hard-coding them inline. A test fails the build when a script carries a value that a deployment chooses. A script parameter that is not registered in the master registry fails a test too.
 
 ## Helper Usage
 
-Common helper functions typically cover:
+Common helpers cover:
 
-- Configuration loading and validation
-- Variable lookups by path
-- Exporting values for Terraform and Ansible
-- Logging, transcript capture, and structured output
-- Safety checks and preflight validation
+- Loading and validating the infrastructure file (`AzlInfrastructure.psm1`)
+- Variable lookups by path (`Get-AzlInfrastructureValue`)
+- Resolving secret references: `keyvault://`, `env://`, `file://` and `command://` (`AzlSecret.psm1`)
+- Writing the Terraform and Ansible variable files (`config/variables/scripts/New-IacVariableFiles.ps1`)
+- Progress lines with an optional `-LogPath` file, and preflight validation
 
 ## Execution Guidance
 
@@ -87,15 +86,14 @@ These scripts take the master `infrastructure.yml` and run unchanged on a workst
 | Path | Purpose |
 |---|---|
 | `scripts/common/` | Shared helpers and reusable utilities |
-| `scripts/deploy/` | Deployment phase scripts |
-| `scripts/validate/` | Validation and post-deployment checks |
+| `scripts/deploy/` | Deployment phase scripts. The generated [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page says which task has a real script |
+| `scripts/validation/` | Validation and post-deployment checks |
 | `config/variables/` | Shared configuration consumed by the scripts |
 
 ## Example Exports
 
 ```powershell
-Export-TerraformTfvars -Config $config -OutputPath "src/terraform/environments/azure-local/terraform.tfvars"
-Export-AnsibleVars -Config $config -OutputPath "src/ansible/inventory/group_vars/all.yml"
+./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac
 ```
 
 ## Relationship to Other Guides

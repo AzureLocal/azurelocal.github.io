@@ -49,20 +49,21 @@ This separation keeps platform setup, delivery orchestration, and tool implement
 
 ## Architecture
 
-:::info Two input models
-The diagram below is the Terraform and Ansible model, which reads a `variables.yml`-style file through the toolkit's `config-loader.ps1`. The ZTP, OS configuration and ARM Validate/Deploy tools read the **master `infrastructure.yml`** (schema 5.x) instead. That file, its schema, its templates and its variables reference are generated from the toolkit's master registry (`config/variables/schema/master-registry.yaml`), and a new variable is added to the registry first. Secrets are never in the file: a secret key holds only a `keyvault://<vault>/<secret>` reference.
+:::info One input model
+Every tool reads the **master `infrastructure.yml`** (schema 5, current version 5.6.21): the toolkit scripts, azurelocal-ztp, azurelocal-sonar, OS configuration, ARM Validate and Deploy, Terraform and Ansible. The file, its schema, its templates and its variables reference are generated from the toolkit's master registry (`config/variables/schema/master-registry.yaml`), and a new variable is added to the registry first. Secrets are never in the file: a secret key holds only a reference (`keyvault://<vault>/<secret>`, `env://<VARIABLE>`, `file://<name>` or `command://<name>`).
 :::
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        variables.yml                                │
-│              (Single Source of Truth for the Terraform and Ansible model)               │
+│                         infrastructure.yml                          │
+│              (one file per environment, defined by the registry)    │
 └────────────┬───────────────────┬──────────────────┬─────────────────┘
              │                   │                  │
-     Export-TerraformTfvars  Export-AnsibleVars  Export-BicepParams
+     New-IacVariableFiles.ps1  (same script)   Import-AzlInfrastructure
              │                   │                  │
              ▼                   ▼                  ▼
-      terraform.tfvars    group_vars/all.yml   *.bicepparam
+  terraform.tfvars.json    inventory/hosts.yml,   PowerShell scripts,
+  and backend.hcl          group_vars, host_vars  ZTP, Sonar, ARM
              │                   │
              ▼                   ▼
       ┌─────────────┐   ┌───────────────┐
@@ -70,13 +71,13 @@ The diagram below is the Terraform and Ansible model, which reads a `variables.y
       │  Modules    │   │    Roles      │
       ├─────────────┤   ├───────────────┤
       │ landing-zone│   │ ad-preparation│
-      │ networking  │   │ os-config     │
-      │ identity    │   │ arc-register  │
-      │ monitoring  │   │ monitoring    │
-      │ security    │   │ domain-ctrl   │
-      │ compute     │   │ wac-server    │
-      └──────┬──────┘   │ syslog        │
-             │           └───────┬───────┘
+      │ networking  │   │ os-configuration│
+      │ identity    │   │ arc-registration│
+      │ monitoring  │   │ monitoring-agents│
+      │ security    │   │ domain-controller│
+      │ compute     │   │ cicd_runner   │
+      │ cicd-runner │   └───────┬───────┘
+      └──────┬──────┘           │
              ▼                   ▼
       Azure Resources      On-Prem Config
 ```
@@ -93,15 +94,13 @@ The diagram below is the Terraform and Ansible model, which reads a `variables.y
 
 ## Variable System
 
-The Terraform and Ansible model consumes a central variables file and exports it into tool-specific formats. The ZTP, OS configuration and ARM Validate/Deploy tools consume the master `infrastructure.yml` instead (see the note under Architecture); check which model a script reads before you run it. Export functions for the first model:
+One master file feeds every tool. The Terraform and Ansible variable files are written from it:
 
 ```powershell
-. scripts/common/utilities/helpers/config-loader.ps1
-$config = Get-Config -ConfigPath "config/variables/variables.yml"
-
-Export-TerraformTfvars -Config $config -OutputPath "src/terraform/environments/azure-local/terraform.tfvars"
-Export-AnsibleVars -Config $config -OutputPath "src/ansible/inventory/group_vars/all.yml"
+./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac -WhatIf
 ```
+
+`New-IacVariableFiles.ps1` writes `terraform.tfvars.json` and `backend.hcl` for each Terraform environment and `inventory/hosts.yml`, `group_vars/all.yml` and `host_vars/<node>.yml` for Ansible. Every variable of the code says in the registry which key it comes from. A secret is never written to a file. See [Variable Management](https://azurelocal.cloud/standards/variables).
 
 ## Repository
 

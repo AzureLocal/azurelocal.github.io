@@ -2,14 +2,14 @@
 title: "Deployment Monitoring"
 sidebar_label: "Deployment Monitoring"
 sidebar_position: 1
-description: "Real-time dashboard scripts for monitoring Azure Local cluster validation and deployment progress"
+description: "Watch Azure Local cluster validation and deployment progress with Azure Local Sonar"
 category: "REFERENCE"
 scope: "Phase 05 cluster deployment monitoring"
-purpose: "Provide real-time visibility into validation and deployment progress via Azure API polling and live node log streaming"
+purpose: "Watch validation and deployment progress with Azure Local Sonar"
 author: "Azure Local Cloud Azure Local Cloud"
 created: 2026-03-09
-updated: 2026-03-09
-version: "1.0.0"
+updated: 2026-11-13
+version: "2.0.0"
 tags:
  - azure-local
  - monitoring
@@ -27,90 +27,48 @@ status: "approved"
 
 # Deployment Monitoring
 
-> **DOCUMENT CATEGORY**: Reference   
-> **SCOPE**: Phase 05 cluster deployment and validation monitoring   
-> **PURPOSE**: Real-time dashboard visibility into Azure Local cluster deployment   
-> **MASTER REFERENCE**: [Microsoft Learn — Deploy via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
+> **DOCUMENT CATEGORY**: Reference
+> **SCOPE**: Phase 05 cluster deployment and validation monitoring
+> **PURPOSE**: Watch Azure Local cluster validation and deployment with Azure Local Sonar
+> **MASTER REFERENCE**: [Microsoft Learn: Deploy via Portal](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal)
 
 [![Reference](https://img.shields.io/badge/Type-Reference-blue?style=flat-square)](../index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 
-**Status**: Active 
-**Last Updated**: 2026-03-09
+**Status**: Active
+**Last Updated**: 2026-11-13
 
 ---
 
 ## Overview
 
-Phase 05 cluster deployment runs in two sequential phases — validation (~15 minutes) then deployment (~2–3 hours). Both phases run silently in the background from Azure's perspective; the portal only updates periodically. These monitoring scripts provide a real-time ANSI dashboard that combines:
+Phase 05 cluster deployment runs in two steps: validation (about 10 to 30 minutes), then deployment (about 2.5 to 3 hours). Both run in the background from Azure's point of view, and the portal updates only now and then.
 
-- **Azure API polling** — live step status from `deploymentSettings/default`
-- **Remote log streaming** — live tail of `EnvironmentValidatorFull` or `OrchestratorFull` logs from cluster nodes via PSRemoting
+The toolkit has no monitoring scripts of its own for this any more. **Deployment progress is watched with [Azure Local Sonar](https://azurelocal.cloud/azurelocal-sonar/).** Sonar follows the validation steps, the deployment steps and the known failures live, and it is read only.
 
-Both scripts are auth-method-agnostic — they work identically for Active Directory and Local Identity deployments.
+## Start Sonar
 
----
-
-## When to Run Each Script
-
-| Phase | Script | When to Start | When It Stops |
-|-------|--------|--------------|---------------|
-| **Task 9: Validation** | [Monitor Validation](./monitor-validation.mdx) | After clicking **Start validation** in the portal | Auto-exits on validation success or failure |
-| **Task 10: Deployment** | [Monitor Deployment](./monitor-deployment.mdx) | After clicking **Create** in the portal | Run until deployment completes (~2–3 hours) |
-
-:::info Run on any machine
-Both scripts run from **any machine** with network access to the cluster node management IPs and an active Azure authentication context. They do not need to run from a cluster node or the management server used for toolkit scripts.
-:::
-
----
-
-## Prerequisites
-
-| Requirement | Details |
-|-------------|---------|
-| PowerShell 7+ | `$PSVersionTable.PSVersion` — must be 7.x |
-| Az PowerShell module | `Install-Module Az -Scope CurrentUser` |
-| Azure CLI | `az --version` — required for ARM API calls |
-| Azure authenticated | `Connect-AzAccount` or existing SPN context |
-| Network access | PSRemoting (TCP 5985/5986) to cluster node management IPs |
-| Local admin credentials | Identical credentials used during deployment |
-
----
-
-## Script Locations
-
-| Script | Toolkit Path |
-|--------|-------------|
-| Monitor-Validation.ps1 | `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/monitoring/powershell/Monitor-Validation.ps1` |
-| Monitor-Deployment.ps1 | `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/monitoring/powershell/Monitor-Deployment.ps1` |
-
----
-
-## Credential Resolution
-
-Both scripts resolve credentials in the same priority order:
-
-```
-1. Direct params: -LocalAdminUsername + -LocalAdminPassword
- ↓ (if not provided)
-2. Azure Key Vault: -KeyVaultName with -LocalAdminUsernameSecretName / -LocalAdminPasswordSecretName
- ↓ (if KV unavailable or not configured)
-3. Interactive: Read-Host prompt at startup
+```powershell
+Connect-AzAccount
+./Start-AzlSonar.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
-Azure authentication (for API access) follows the same pattern with SPN credentials:
-```
-1. -SPNClientId + -SPNClientSecret params
- ↓
-2. Key Vault: -SPNClientIdSecretName / -SPNClientSecretSecretName
- ↓
-3. Existing Connect-AzAccount context
-```
+Sonar reads the cluster, the nodes and the Azure targets from the master `infrastructure.yml` (schema 5), the same file the toolkit uses. It only reads: it changes nothing on the nodes or in Azure. Run it from any machine that can reach the nodes and has an Azure sign-in.
+
+Start it before you click **Start validation** or **Create** in the portal, or before you run `Invoke-AzureLocalClusterDeployment.ps1 -Execute`. Leave it open until the deployment ends.
+
+## Which page to read
+
+| Phase | Page |
+|-------|------|
+| **Task 9: Validation** | [Monitor Validation](./monitor-validation.mdx) |
+| **Task 10: Deployment** | [Monitor Deployment](./monitor-deployment.mdx) |
+
+For the full list of what Sonar can watch, and how, read the [Sonar documentation](https://azurelocal.cloud/azurelocal-sonar/).
 
 ---
 
 **Version Control**
 - Created: 2026-03-09 by Azure Local Cloud
-- Last Updated: 2026-03-09 by Azure Local Cloud
-- Version: 1.0.0
-- Tags: azure-local, monitoring, deployment, validation, runbook
+- Last Updated: 2026-11-13 by Azure Local Cloud
+- Version: 2.0.0

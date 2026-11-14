@@ -52,7 +52,7 @@ This task configures Privileged Identity Management (PIM) for just-in-time privi
 
 :::info Task Classification
 **Execution Target**: Azure-Only (Entra ID / Azure control-plane API operations) 
-**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+**Tab Profile**: 2 tabs — Azure Portal · Azure CLI / PowerShell
 :::
 
 :::warning License Requirement
@@ -208,142 +208,21 @@ Before starting this task, ensure:
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted PIM configuration from management workstation — reads values from `variables.yml`
+> **When to use**: This task is parked and nothing runs it. The scripts below are under `scripts/deferred` and they still read an older configuration layout.
 
-:::note No Toolkit Script
-There is no dedicated toolkit script for PIM configuration. Use the Microsoft Graph PowerShell commands below. The commands read subscription and user IDs from `variables.yml`.
-:::
+#### Script
 
-#### Code
+| Script | What it does |
+|---|---|
+| `scripts/deferred/pim-conditional-access/phase-05-identity-security/task-01-pim-conditional-access/powershell/Deploy-KeyVault.ps1` | Deploys Key Vault for platform secrets in Security subscription. Supports `-WhatIf`. |
 
-```powershell
-# ============================================================================
-# PIM Configuration — Microsoft Graph PowerShell
-# Execution: Run from management workstation
-# Prerequisites: Microsoft.Graph module, Global Administrator or PRA role
-# ============================================================================
-
-#Requires -Modules Microsoft.Graph.Identity.Governance, Az.Accounts
-
-param(
- [string]$ConfigPath = "./config/variables.yml"
-)
-
-# Load configuration
-$config = Get-Content $ConfigPath | ConvertFrom-Yaml
-
-$SubscriptionId = $config.azure.subscriptions.lab.id
-$TenantId = $config.azure.tenant.id
-
-# Connect to Microsoft Graph
-Connect-MgGraph -TenantId $TenantId -Scopes @(
- "RoleManagement.ReadWrite.Directory",
- "PrivilegedAccess.ReadWrite.AzureResources"
-)
-
-# ── PIM: Configure Contributor role settings on subscription ─────────────────
-$scope = "/subscriptions/$SubscriptionId"
-
-# Get role definition: Contributor = b24988ac-6180-42a0-ab88-20f7382dd24c
-$contributorRoleId = "b24988ac-6180-42a0-ab88-20f7382dd24c"
-
-# Find existing role management policy for Contributor
-$policies = Get-MgPolicyRoleManagementPolicy -Filter "scopeId eq '$SubscriptionId' and scopeType eq 'subscription'"
-Write-Host "Found $($policies.Count) role management policies for this subscription" -ForegroundColor Cyan
-
-# ── PIM: Add eligible assignment ──────────────────────────────────────────────
-# Get user to assign (replace with actual user principal name from config)
-$AdminUpn = $config.deployment.admin_upn # e.g., admin@customer.com
-$AdminUser = Get-MgUser -Filter "userPrincipalName eq '$AdminUpn'"
-
-$assignmentParams = @{
- Action = "AdminAssign"
- Justification = "Azure Local deployment administrator eligible assignment"
- RoleDefinitionId = $contributorRoleId
- DirectoryScopeId = $scope
- PrincipalId = $AdminUser.Id
- ScheduleInfo = @{
- StartDateTime = (Get-Date).ToUniversalTime().ToString("o")
- Expiration = @{ Type = "NoExpiration" }
- }
-}
-
-New-MgRoleManagementDirectoryRoleEligibilityScheduleRequest -BodyParameter $assignmentParams
-Write-Host "Eligible Contributor assignment created for $($AdminUser.DisplayName)" -ForegroundColor Green
-```
-
-#### Validation
+#### Run
 
 ```powershell
-# Verify eligible assignments
-$eligible = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All |
- Where-Object { $_.RoleDefinitionId -eq $contributorRoleId }
-$eligible | Format-Table PrincipalId, RoleDefinitionId, Status, EndDateTime
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready — no `variables.yml`, no helpers, no dependencies. Edit the `#region CONFIGURATION` block and run.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Set-PimConfiguration-Standalone.ps1
-# Execution: Run anywhere — fully self-contained, no external dependencies
-# Prerequisites: Microsoft.Graph module, Global Administrator or PRA role
-# ============================================================================
-
-#Requires -Modules Microsoft.Graph.Identity.Governance
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-$TenantId = "00000000-0000-0000-0000-000000000000" # Your Entra ID tenant ID
-$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Azure subscription to protect
-$AdminUpn = "admin@yourdomain.com" # Admin to receive eligible assignment
-#endregion CONFIGURATION
-
-# Connect
-Connect-MgGraph -TenantId $TenantId -Scopes @(
- "RoleManagement.ReadWrite.Directory",
- "PrivilegedAccess.ReadWrite.AzureResources"
-)
-
-$scope = "/subscriptions/$SubscriptionId"
-$contributorRoleId = "b24988ac-6180-42a0-ab88-20f7382dd24c"
-
-# Get user
-$user = Get-MgUser -Filter "userPrincipalName eq '$AdminUpn'"
-if (-not $user) {
- Write-Error "User not found: $AdminUpn"; exit 1
-}
-Write-Host "Creating eligible Contributor assignment for: $($user.DisplayName)" -ForegroundColor Cyan
-
-# Create eligible assignment
-$params = @{
- Action = "AdminAssign"
- Justification = "Azure Local deployment administrator eligible assignment"
- RoleDefinitionId = $contributorRoleId
- DirectoryScopeId = $scope
- PrincipalId = $user.Id
- ScheduleInfo = @{
- StartDateTime = (Get-Date).ToUniversalTime().ToString("o")
- Expiration = @{ Type = "NoExpiration" }
- }
-}
-
-New-MgRoleManagementDirectoryRoleEligibilityScheduleRequest -BodyParameter $params
-Write-Host "Eligible assignment created successfully" -ForegroundColor Green
-
-# Verify
-$assignments = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All |
- Where-Object { $_.PrincipalId -eq $user.Id }
-$assignments | Format-Table RoleDefinitionId, Status, StartDateTime
+# Using solution configuration
+.\Deploy-KeyVault.ps1 -Solution "azure-local"
 ```
 
 </TabItem>
@@ -455,207 +334,21 @@ After 24–48 hours in report-only, review the **Conditional Access Insights** w
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted CA policy creation from management workstation — reads break-glass account IDs from `variables.yml`
+> **When to use**: This task is parked and nothing runs it. The scripts below are under `scripts/deferred` and they still read an older configuration layout.
 
-:::note No Toolkit Script
-There is no dedicated toolkit script for Conditional Access configuration. Use the Microsoft Graph PowerShell commands below.
-:::
+#### Script
 
-#### Code
+| Script | What it does |
+|---|---|
+| `scripts/deferred/pim-conditional-access/phase-05-identity-security/task-01-pim-conditional-access/powershell/Deploy-KeyVault.ps1` | Deploys Key Vault for platform secrets in Security subscription. Supports `-WhatIf`. |
 
-```powershell
-# ============================================================================
-# Conditional Access Policy Creation — Microsoft Graph PowerShell
-# Execution: Run from management workstation
-# Prerequisites: Microsoft.Graph module, Security Administrator or Global Administrator
-# ============================================================================
-
-#Requires -Modules Microsoft.Graph.Identity.SignIns
-
-param(
- [string]$ConfigPath = "./config/variables.yml"
-)
-
-$config = Get-Content $ConfigPath | ConvertFrom-Yaml
-$TenantId = $config.azure.tenant.id
-$BreakGlassIds = $config.identity.break_glass_account_ids # Array of object IDs
-
-Connect-MgGraph -TenantId $TenantId -Scopes "Policy.ReadWrite.ConditionalAccess", "Application.Read.All"
-
-# Azure Management app ID (constant across all tenants)
-$AzureManagementAppId = "797f4846-ba00-4fd7-ba43-dac1f8f63013"
-
-# ── CA001: Require MFA for Azure Management ───────────────────────────────────
-$ca001 = @{
- DisplayName = "CA001-Require-MFA-AzureManagement"
- State = "enabledForReportingButNotEnforced"
- Conditions = @{
- Users = @{
- IncludeUsers = @("All")
- ExcludeUsers = $BreakGlassIds
- }
- Applications = @{
- IncludeApplications = @($AzureManagementAppId)
- }
- ClientAppTypes = @("all")
- }
- GrantControls = @{
- Operator = "OR"
- BuiltInControls = @("mfa")
- }
-}
-New-MgIdentityConditionalAccessPolicy -BodyParameter $ca001
-Write-Host "Created: CA001-Require-MFA-AzureManagement" -ForegroundColor Green
-
-# ── CA002: Block Legacy Authentication ───────────────────────────────────────
-$ca002 = @{
- DisplayName = "CA002-Block-LegacyAuth"
- State = "enabledForReportingButNotEnforced"
- Conditions = @{
- Users = @{
- IncludeUsers = @("All")
- ExcludeUsers = $BreakGlassIds
- }
- Applications = @{ IncludeApplications = @("All") }
- ClientAppTypes = @("exchangeActiveSync", "other")
- }
- GrantControls = @{
- Operator = "OR"
- BuiltInControls = @("block")
- }
-}
-New-MgIdentityConditionalAccessPolicy -BodyParameter $ca002
-Write-Host "Created: CA002-Block-LegacyAuth" -ForegroundColor Green
-
-# ── CA003: Require MFA for Privileged Roles ──────────────────────────────────
-$privilegedRoles = @(
- "62e90394-69f5-4237-9190-012177145e10", # Global Administrator
- "194ae4cb-b126-40b2-bd5b-6091b380977d", # Security Administrator
- "e8611ab8-c189-46e8-94e1-60213ab1f814", # Privileged Role Administrator
- "fe930be7-5e62-47db-91af-98c3a49a38b1" # User Administrator
-)
-$ca003 = @{
- DisplayName = "CA003-Require-MFA-PrivilegedRoles"
- State = "enabledForReportingButNotEnforced"
- Conditions = @{
- Users = @{
- IncludeRoles = $privilegedRoles
- ExcludeUsers = $BreakGlassIds
- }
- Applications = @{ IncludeApplications = @("All") }
- ClientAppTypes = @("all")
- }
- GrantControls = @{
- Operator = "OR"
- BuiltInControls = @("mfa")
- }
-}
-New-MgIdentityConditionalAccessPolicy -BodyParameter $ca003
-Write-Host "Created: CA003-Require-MFA-PrivilegedRoles" -ForegroundColor Green
-
-Write-Host "`nAll policies created in Report-Only mode." -ForegroundColor Yellow
-Write-Host "Review sign-in logs for 24-48 hours before enabling enforcement." -ForegroundColor Yellow
-```
-
-#### Validation
+#### Run
 
 ```powershell
-# List all CA policies and their states
-Get-MgIdentityConditionalAccessPolicy -All |
- Where-Object { $_.DisplayName -match "^CA0" } |
- Format-Table DisplayName, State
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready — no `variables.yml`, no helpers, no dependencies. Edit the `#region CONFIGURATION` block with your break-glass account object IDs.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: New-ConditionalAccessPolicies-Standalone.ps1
-# Execution: Run anywhere — fully self-contained, no external dependencies
-# Prerequisites: Microsoft.Graph module, Security Administrator or Global Administrator
-# ============================================================================
-
-#Requires -Modules Microsoft.Graph.Identity.SignIns
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-$TenantId = "00000000-0000-0000-0000-000000000000" # Your Entra ID tenant ID
-
-# Object IDs of your break-glass (emergency access) accounts — MUST be excluded from all policies
-$BreakGlassIds = @(
- "00000000-0000-0000-0000-000000000001", # break-glass-01
- "00000000-0000-0000-0000-000000000002" # break-glass-02
-)
-#endregion CONFIGURATION
-
-Connect-MgGraph -TenantId $TenantId -Scopes "Policy.ReadWrite.ConditionalAccess", "Application.Read.All"
-
-$AzureManagementAppId = "797f4846-ba00-4fd7-ba43-dac1f8f63013"
-
-# CA001
-New-MgIdentityConditionalAccessPolicy -BodyParameter @{
- DisplayName = "CA001-Require-MFA-AzureManagement"
- State = "enabledForReportingButNotEnforced"
- Conditions = @{
- Users = @{ IncludeUsers = @("All"); ExcludeUsers = $BreakGlassIds }
- Applications = @{ IncludeApplications = @($AzureManagementAppId) }
- ClientAppTypes = @("all")
- }
- GrantControls = @{ Operator = "OR"; BuiltInControls = @("mfa") }
-}
-Write-Host "Created: CA001" -ForegroundColor Green
-
-# CA002
-New-MgIdentityConditionalAccessPolicy -BodyParameter @{
- DisplayName = "CA002-Block-LegacyAuth"
- State = "enabledForReportingButNotEnforced"
- Conditions = @{
- Users = @{ IncludeUsers = @("All"); ExcludeUsers = $BreakGlassIds }
- Applications = @{ IncludeApplications = @("All") }
- ClientAppTypes = @("exchangeActiveSync", "other")
- }
- GrantControls = @{ Operator = "OR"; BuiltInControls = @("block") }
-}
-Write-Host "Created: CA002" -ForegroundColor Green
-
-# CA003
-New-MgIdentityConditionalAccessPolicy -BodyParameter @{
- DisplayName = "CA003-Require-MFA-PrivilegedRoles"
- State = "enabledForReportingButNotEnforced"
- Conditions = @{
- Users = @{
- IncludeRoles = @(
- "62e90394-69f5-4237-9190-012177145e10", # Global Administrator
- "194ae4cb-b126-40b2-bd5b-6091b380977d", # Security Administrator
- "e8611ab8-c189-46e8-94e1-60213ab1f814", # Privileged Role Administrator
- "fe930be7-5e62-47db-91af-98c3a49a38b1" # User Administrator
- )
- ExcludeUsers = $BreakGlassIds
- }
- Applications = @{ IncludeApplications = @("All") }
- ClientAppTypes = @("all")
- }
- GrantControls = @{ Operator = "OR"; BuiltInControls = @("mfa") }
-}
-Write-Host "Created: CA003" -ForegroundColor Green
-
-Write-Host "`nAll CA policies created in Report-Only mode." -ForegroundColor Yellow
-Write-Host "Review sign-in logs before switching to On." -ForegroundColor Yellow
-
-# Verify
-Write-Host "`nCreated policies:" -ForegroundColor Cyan
-Get-MgIdentityConditionalAccessPolicy -All |
- Where-Object { $_.DisplayName -match "^CA0" } |
- Format-Table DisplayName, State
+# Using solution configuration
+.\Deploy-KeyVault.ps1 -Solution "azure-local"
 ```
 
 </TabItem>
@@ -688,7 +381,7 @@ Two permanently-exempt emergency access accounts are **mandatory** before any Co
 - [ ] Permanent Global Administrator role assigned (not eligible — PIM excluded)
 - [ ] Passwords stored offline (safe or sealed envelope)
 - [ ] FIDO2 key registered (stored separately from password)
-- [ ] Object IDs documented in `variables.yml` under `identity.break_glass_account_ids`
+- [ ] Object IDs documented in `infrastructure.yml` under `identity.break_glass_account_ids`
 - [ ] Excluded from CA001, CA002, CA003 by object ID
 - [ ] Alert configured: trigger on any sign-in from either account
 - [ ] Access review procedure documented (test annually)
@@ -732,13 +425,9 @@ Get-MgIdentityConditionalAccessPolicy -All |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| PIM Role Definitions | `azure.identity.pim.roles` | `Owner, Contributor` |
-| Conditional Access Policy | `azure.identity.conditional_access.policy` | `require-mfa-admins` |
-| Eligible Duration | `azure.identity.pim.eligible_duration_hours` | `8` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -777,12 +466,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

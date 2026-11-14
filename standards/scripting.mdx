@@ -2,7 +2,21 @@
 
 > **Canonical reference:** [Scripting Standards (full)](https://azurelocal.cloud/standards/scripting/scripting-standards)  
 > **Applies to:** All AzureLocal repositories  
-> **Last Updated:** 2026-04-01
+> **Last Updated:** 2026-11-13
+
+---
+
+## Language and Header
+
+All scripts are PowerShell 7 or later. There are no Bash scripts and no Windows PowerShell 5.1 scripts. Every script starts with:
+
+```powershell
+#Requires -Version 7.0
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+```
+
+A script has comment-based help: `.SYNOPSIS`, `.DESCRIPTION` (including the keys it reads from `infrastructure.yml` and its exit codes), `.PARAMETER` for every parameter and `.EXAMPLE`.
 
 ---
 
@@ -10,44 +24,30 @@
 
 | Script Type | Pattern | Example |
 |-------------|---------|---------|
-| PowerShell Core | `Verb-Noun.ps1` | `Deploy-Solution.ps1` |
-| Azure PowerShell | `Verb-AzResource.ps1` | `New-AzKeyVault.ps1` |
-| Azure CLI (PowerShell) | `az-verb-resource.ps1` | `az-deploy-resource.ps1` |
-| Azure CLI (Bash) | `az-verb-resource.sh` | `az-deploy-resource.sh` |
-| Standalone (no config) | `Verb-Noun-Standalone.ps1` | `Deploy-Solution-Standalone.ps1` |
-| Remote/orchestration | `Invoke-<Task>.ps1` | `Invoke-Deployment.ps1` |
+| PowerShell | `Verb-Noun.ps1` | `Deploy-VirtualNetworks.ps1` |
+| Azure CLI (written in PowerShell) | `az-verb-noun.ps1` or `Verb-Noun.azcli.ps1` | `Register-ResourceProviders.azcli.ps1` |
+| Remote/orchestration | `Invoke-<Task>-Orchestrated.ps1` | `Invoke-SSHConnectivity-Orchestrated.ps1` |
+
+Azure CLI scripts exist only for tasks that act on Azure. They are PowerShell files that call `az`.
 
 ---
 
-## Config-Driven vs Standalone
+## Values Come From infrastructure.yml
 
-| Mode | Config File | Dependencies | Use Case |
-|------|-------------|-------------|----------|
-| Config-driven (Options 2-4) | `config/variables/variables.yml` | Config loader, helpers, Key Vault | Multi-environment automation, CI/CD |
-| Standalone (Option 5) | Inline `#region CONFIGURATION` | None | Demos, single-use, external sharing |
+Every script reads its values from `infrastructure.yml` (schema 5). A script carries no value that a deployment chooses.
 
 ### Config-Driven Rules
 
-- Read all values from `config/variables/variables.yml` — never hardcode
-- Accept `-ConfigPath` parameter (auto-discover if not provided)
-- Use helper functions: `ConvertFrom-Yaml`, `Resolve-KeyVaultRef`, logging
-- If runtime config is missing, auto-create it from `config/variables/variables.example.yml` before parsing
+- Take the file as `-InfrastructureFile` (older scripts that are not migrated yet take `-ConfigPath`).
+- Read it with `Import-AzlInfrastructure` from `scripts/common/infrastructure/AzlInfrastructure.psm1`. Read only the keys the script needs, and list them in the help.
+- Never hard-code a value that a deployment chooses (an address, a name, an ID, a region). The enforcement test `tests/variables/Enforcement.Tests.ps1` fails the build on it.
+- Never ask for a value with `Read-Host` or `Get-Credential` when the file can answer.
+- Register every parameter in the master registry. `./config/variables/scripts/New-ScriptParameterRegistry.ps1` does it from the `param()` block. A parameter that is not registered fails a test.
+- A new key goes into the registry first. See [Variable Management](variables).
 
-### Required Bootstrap Sequence
+### No Standalone Copies
 
-For every config-driven entry point:
-
-1. Resolve repository runtime config path (`config/variables/variables.yml`).
-2. Check for runtime config file.
-3. If missing, locate template at `config/variables/variables.example.yml`.
-4. Create directories as needed and copy template to runtime path.
-5. Continue execution; fail only when no template is present.
-
-### Standalone Rules
-
-- All variables in `#region CONFIGURATION` block at top
-- Variable names match `variables.yml` paths (e.g., `$subscription_id`)
-- Zero external dependencies — copy, paste, run
+The toolkit keeps no standalone copies of its scripts. A copy with its values inline carries a hard-coded value by design, and it drifts from the real script. Share the script and the file instead.
 
 ---
 
@@ -57,27 +57,38 @@ For every config-driven entry point:
 
 | Parameter | Type | Default | Purpose |
 |-----------|------|---------|---------|
-| `-ConfigPath` | `[string]` | `""` | Path to `variables.yml` |
-| `-Credential` | `[PSCredential]` | `$null` | Override credential resolution |
+| `-InfrastructureFile` | `[string]` | none (mandatory) | Path to `infrastructure.yml` |
+| `-Credential` | `[PSCredential]` | `$null` | Override credential resolution (where the script connects to nodes) |
 | `-TargetNode` | `[string[]]` | `@()` (all) | Limit to specific node(s) |
-| `-WhatIf` | `[switch]` | `$false` | Dry-run mode |
-| `-LogPath` | `[string]` | `""` (auto) | Override log file path |
+| `-WhatIf` | `[switch]` | `$false` | Dry run: read, check and print the plan, change nothing |
+| `-LogPath` | `[string]` | `""` (none) | Also append the progress lines to this file. Keep it out of the repository |
 
-All `Invoke-` scripts must use `[CmdletBinding()]` to enable `-Verbose` and `-Debug`.
+Scripts use `[CmdletBinding(SupportsShouldProcess)]` where they change something, so `-WhatIf`, `-Verbose` and `-Debug` work.
 
-### Credential Resolution Order
+### Credential Resolution
 
-1. **`-Credential` parameter** — if passed, use immediately
-2. **Key Vault** — read from config; try `Az.KeyVault`, fall back to `az` CLI
-3. **Interactive prompt** — `Get-Credential` with username pre-filled
+A password in the file is a secret reference (`keyvault://<vault>/<secret>`, `env://<VARIABLE>`, `file://<name>` or `command://<name>`). The scripts resolve it with `scripts/common/secrets/AzlSecret.psm1`. A script never names a vault and never writes a secret to a file, a log or a report.
+
+1. **`-Credential` parameter**: if passed, use it.
+2. **The reference in the file**: resolved by the resolver, in memory only.
+3. If neither works, the script exits with an error. It does not prompt.
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Done: created, already in place, planned under `-WhatIf`, or nothing to do |
+| 1 | A precondition or an Azure call failed |
+| 2 | A value in the file is missing or not usable |
+| 3 | A placeholder: the task has no script yet (it prints `NOT IMPLEMENTED` and changes nothing) |
 
 ---
 
 ## Logging
 
-- Log to `./logs/<task-name>/<timestamp>.log`
-- Use `Write-Verbose` for detailed output
-- Log format: `[YYYY-MM-DD HH:MM:SS] [LEVEL] Message`
+- Progress lines go to the information stream. `-LogPath` also appends them to a file.
+- Use `Write-Verbose` for detailed output.
+- Log format: `[YYYY-MM-DD HH:MM:SS] message`
 
 ---
 
@@ -86,15 +97,15 @@ All `Invoke-` scripts must use `[CmdletBinding()]` to enable `-Verbose` and `-De
 | Convention | Rule |
 |-----------|------|
 | IaC tools | Terraform, Bicep, ARM, PowerShell, Ansible |
-| Config source | `config/variables/variables.yml` (single source of truth) |
-| Parameter derivation | All tool-specific param files derived from central config |
+| Config source | `infrastructure.yml` (single source of truth, defined by the master registry) |
+| Parameter derivation | Terraform and Ansible variable files are written from the file by `New-IacVariableFiles.ps1` |
 | Idempotency | All scripts must be safe to re-run |
 
 ---
 
 ## Related Standards
 
+- [Variable Management](variables)
 - [PowerShell Organization Standard](https://azurelocal.cloud/standards/scripting/powershell-organization-standard)
 - [Scripting Framework](https://azurelocal.cloud/standards/scripting/scripting-framework)
-- [Bash Scripting Standards](https://azurelocal.cloud/standards/scripting/bash-scripting-standards)
 - [Automation Interoperability](automation)

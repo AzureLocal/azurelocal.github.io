@@ -64,17 +64,17 @@ Full automation for Windows Setup OS deployment is not yet implemented. Manual i
 |-------------|-------------|--------|
 | Task 01 Complete | BOSS virtual disk deleted and recreated | [Task 01](./task-01-delete-and-recreate-virtual-disk-on-dell-boss-card.mdx) |
 | Task 02 Complete | Dell gold image ISO mounted or USB inserted on all nodes | [Task 02](./task-02-mount-and-verify-dell-gold-image-iso.mdx) |
-| iDRAC access | Virtual Console access to each node | `variables.yml: nodes.<name>.idrac_ip` |
+| iDRAC access | Virtual Console access to each node | `infrastructure.yml`: `nodes[].bmc.ip_address` |
 | Administrator password | Strong password prepared per Azure Local Cloud password policy | Store in Key Vault after installation |
 
 ---
 
-## Variables from variables.yml
+## Variables from infrastructure.yml
 
 | Path | Type | Description |
 |------|------|-------------|
-| `nodes.<name>.idrac_ip` | string | iDRAC IP address for Virtual Console access |
-| `nodes.<name>.hostname` | string | Target hostname (set post-installation) |
+| `nodes[].bmc.ip_address` | string | iDRAC IP address for Virtual Console access |
+| `nodes[].name` | string | Target hostname (set post-installation) |
 
 ---
 
@@ -181,7 +181,7 @@ After the first reboot, Windows Server Core displays:
 5. **"Your password has been changed"** — click **OK**
 
 :::tip Store Password in Key Vault
-Record the Administrator password and store it in the Key Vault referenced in `variables.yml` under the `key_vault.name` value (secret name: `node-<hostname>-local-admin`). Do not save it in any file or document.
+Record the Administrator password and store it in the Key Vault referenced in `infrastructure.yml` under the `key_vaults[].name` value (secret name: `node-<hostname>-local-admin`). Do not save it in any file or document.
 :::
 
 ### Step 9 — Verify Server Core Prompt
@@ -258,8 +258,8 @@ Use the same path on every machine of an instance. Active Directory must already
 <TabItem value="powershell" label="PowerShell">
 
 ```powershell title="Join the machine to the domain, directly into the deployment OU (run on each machine)"
-$domain = "<DOMAIN_FQDN>"                              # identity.ad.domain_fqdn
-$ouPath = "<DEPLOYMENT_OU_DISTINGUISHED_NAME>"        # identity.ad.organizational_unit
+$domain = "<DOMAIN_FQDN>"                              # identity.active_directory.domain_fqdn
+$ouPath = "<DEPLOYMENT_OU_DISTINGUISHED_NAME>"        # identity.active_directory.ou_path
 Add-Computer -DomainName $domain -OUPath $ouPath -Credential (Get-Credential) -Restart
 ```
 
@@ -318,23 +318,12 @@ See procedure steps above for manual execution guidance.
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying across multiple nodes from a management server using `variables.yml`.
+> **When to use**: Use this option when deploying across multiple nodes from a management server using `infrastructure.yml`.
 
 **Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
 
 :::note Content Pending
 Orchestrated script content references the toolkit repository.
-:::
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository.
 :::
 
 </TabItem>
@@ -349,12 +338,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

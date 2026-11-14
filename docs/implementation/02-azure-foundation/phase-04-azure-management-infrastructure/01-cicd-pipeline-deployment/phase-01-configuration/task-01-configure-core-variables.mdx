@@ -31,7 +31,7 @@ import TabItem from '@theme/TabItem';
 > **DOCUMENT CATEGORY**: Task   
 > **SCOPE**: Core Terraform variable configuration   
 > **PURPOSE**: Define customer and CI/CD integration variables  
-> **MASTER REFERENCE**: [azurelocal-toolkit Variables](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/terraform/variables.tf)
+> **MASTER REFERENCE**: [azurelocal-toolkit Terraform variables](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/src/terraform/environments/azure-local/variables.tf)
 
 **Status**: Active 
 **Last Updated**: 2026-02-07
@@ -40,141 +40,69 @@ import TabItem from '@theme/TabItem';
 
 ## Objective
 
-Configure the core Terraform variables required for all CI/CD deployments, including customer details, environment settings, and CI/CD Infrastructure integration.
+Set the core values that every CI/CD deployment needs (tenant, subscription, location, tags and the CI/CD integration) in `infrastructure.yml`, then write the Terraform variable files from it.
+
+---
+
+:::info The Terraform variables come from infrastructure.yml
+The Terraform code (`src/terraform`) does not define the facts of an environment a second time. `New-IacVariableFiles.ps1` reads `infrastructure.yml` and writes `terraform.tfvars.json` and `backend.hcl`. The registry says, for every Terraform variable, which key it comes from. Settings that `infrastructure.yml` has no key for yet go in an `extra.tfvars` file (copy `terraform.tfvars.example`). A secret is never written to a file: the generator writes `not-written.txt` and names the environment variable that Terraform reads at run time.
+:::
 
 ---
 
 ## Prerequisites
 
-- [ ] Customer short name (from project naming convention)
-- [ ] Azure tenant ID
-- [ ] Azure subscription ID
-- [ ] CI/CD Infrastructure runner principal ID (from [Part 1: CI/CD Infrastructure](../../../../01-cicd-infra/))
-- [ ] Azure Local Entra ID group object ID (from [Part 1: CI/CD Infrastructure](../../../../01-cicd-infra/))
+- [ ] `infrastructure.yml` started from a template (see [Variable Management](https://azurelocal.cloud/standards/variables))
+- [ ] Azure tenant ID and subscription ID
+- [ ] The CI/CD infrastructure of [Part 1](../../../../01-cicd-infra/) deployed: the runners, and the `devops` section of the file filled in
 
 ---
 
 ## Procedure
 
-### 1. Open Terraform Variables File
+### 1. Set the core keys
 
-Navigate to your source control project and open the Terraform variables file:
+| Key | What it holds |
+|-----|---------------|
+| `azure.tenant_id` | The Azure tenant ID |
+| `azure.subscription_id` | The target subscription ID |
+| `azure.location` | The Azure region |
+| `tags` | The resource tags |
+| `site.code` | The short site code that the names use |
+| `devops` | The CI/CD platform, project, repository, environments, runners and Terraform state |
 
-```bash
-# Typically located at:
-terraform/environments/<environment>/terraform.tfvars
-# or
-terraform.tfvars
+Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+### 2. Check the file
+
+```powershell
+./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path ./infrastructure.yml
 ```
 
-### 2. Configure Customer Variables
+### 3. Write the Terraform variable files
 
-Add the core customer variables:
-
-```hcl
-# Customer Configuration
-customer_name = "iic"        # Customer short name (lowercase, hyphens)
-environment   = "prd"        # Environment: prd, dev, stg (max 3 chars)
-location      = "eastus"     # Azure region (eastus, westus, centralus, etc.)
-tenant_id     = "12345678-1234-1234-1234-123456789012" # Customer Azure tenant ID
+```powershell
+# Keep the output folder out of the repository.
+./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac
 ```
-
-### 3. Configure CI/CD Infrastructure Integration
-
-Add the CI/CD Infrastructure variables from Part 2:
-
-```hcl
-# CI/CD Infrastructure (from Part 1)
-azurelocal_cicd = {
-  runner_principal_id = "87654321-4321-4321-4321-210987654321" # CI/CD runner service principal
-}
-
-# Azure Local Entra ID Group (from Part 1)
-azurelocal_group_object_id = "abcdef12-3456-7890-abcd-ef1234567890" # Azure Local management group
-```
-
-### 4. Add Optional Tags (Recommended)
-
-```hcl
-# Optional: Resource tags
-tags = {
- Customer = "Customer Name"
- Environment = "Production"
- ManagedBy = "Azure Local Cloud CI/CD"
- CostCenter = "IT Infrastructure"
-}
-```
-
----
-
-## Variable Reference
-
-| Variable | Type | Description | Required | Example |
-|----------|------|-------------|----------|---------|
-| `customer_name` | string | Customer short name | ✅ | `"iic"` |
-| `environment` | string | Environment identifier (max 3 chars) | ✅ | `"prd"`, `"dev"`, `"stg"` |
-| `location` | string | Azure region for resource deployment | ✅ | `"eastus"`, `"westus"` |
-| `tenant_id` | string | Customer Azure tenant ID (GUID) | ✅ | `"12345678-1234-..."` |
-| `azurelocal_cicd.runner_principal_id` | string | CI/CD runner service principal ID | ✅ | `"87654321-4321-..."` |
-| `azurelocal_group_object_id` | string | Azure Local Entra ID group object ID | ✅ | `"abcdef12-3456-..."` |
-| `tags` | map(string) | Optional resource tags | ❌ | `{ Customer = "..." }` |
 
 ---
 
 ## Validation
 
-After configuration, verify:
+After you write the files, verify:
 
-- [ ] Customer name follows naming convention
-- [ ] Environment code is valid (3 characters maximum)
-- [ ] Azure region is correct and available
-- [ ] Tenant ID is correct customer tenant GUID
-- [ ] Runner principal ID matches CI/CD pipeline service principal from Part 1
-- [ ] Azure Local group object ID matches Entra ID group from Part 1
-- [ ] No syntax errors in HCL configuration
+- [ ] `Test-InfrastructureFile.ps1` reports no error
+- [ ] `terraform.tfvars.json` and `backend.hcl` exist for each environment you use
+- [ ] The tenant ID and the subscription ID are the ones of this customer
+- [ ] No secret is in a file. The reference in `infrastructure.yml` is the only place a secret is named
+- [ ] The output folder is outside the repository
 
 ---
 
-## Example Complete Configuration
+## Values from infrastructure.yml
 
-```hcl
-# terraform.tfvars
-
-# Customer Configuration
-customer_name = "acme"
-environment   = "prd"
-location      = "eastus"
-tenant_id     = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-
-# CI/CD Infrastructure
-azurelocal_cicd = {
-  runner_principal_id = "11223344-5566-7788-99aa-bbccddeeff00"
-}
-
-# Azure Local Entra ID Group
-azurelocal_group_object_id = "ffeeddcc-bbaa-9988-7766-554433221100"
-
-# Optional Tags
-tags = {
-  Customer    = "Acme Corporation"
-  Environment = "Production"
-  ManagedBy   = "Azure Local CI/CD"
-  CostCenter  = "IT-Infrastructure"
-  Project     = "Azure Local Deployment"
-}
-```
-
-
----
-
-## Variables from variables.yml
-
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| Subscription ID | `azure.subscription.id` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
-| Resource Group | `azure.resource_groups.management.name` | `rg-management-01` |
-| Location | `azure.location` | `eastus` |
-| Environment | `azure.environment` | `production` |
+See the table in the procedure above. The older Terraform variables of this page (`customer_name`, `azurelocal_cicd` and `azurelocal_group_object_id`) do not exist in the Terraform code any more.
 
 ---
 
@@ -235,12 +163,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

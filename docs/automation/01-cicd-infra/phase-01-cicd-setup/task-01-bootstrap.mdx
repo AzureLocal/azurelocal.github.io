@@ -50,12 +50,9 @@ Create an Entra ID app registration and service principal in the target tenant s
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| Tenant ID | `azure.tenant_id` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
-| Target Subscription ID | `azure.subscription.id` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+The script reads the `devops` section (platform, URL, organization, project, `authentication`), `azure`, `key_vaults[]` and `landing_zone` of `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -201,20 +198,34 @@ See procedure steps for Azure DevOps-specific configuration.
 
 
 
-:::info Toolkit Reference
-Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
+:::info Toolkit script
+The toolkit scripts for this task are PowerShell 7. They read `infrastructure.yml`. Run them with `-WhatIf` first: the script reads what exists and lists what it would do.
 :::
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-01-bootstrap/azurecli/az-bootstrap-cicd-sp.ps1` | Task 01. Creates the CI/CD service principal and its Azure access. Azure CLI variant. Supports `-WhatIf`. |
+| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-01-bootstrap/powershell/Invoke-CicdBootstrap-Orchestrated.ps1` | Task 01. Creates the CI/CD service principal and its Azure access. Orchestrated variant: reads the one infrastructure file. Supports `-WhatIf`. |
+| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-01-bootstrap/powershell/New-CicdBootstrap.ps1` | Task 01. Creates the CI/CD service principal and its Azure access. Supports `-WhatIf`. |
+
+Requires: PowerShell 7.
+
+#### Run
+
+```powershell
+./Invoke-CicdBootstrap-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
+
+./New-CicdBootstrap.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
 
 ---
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

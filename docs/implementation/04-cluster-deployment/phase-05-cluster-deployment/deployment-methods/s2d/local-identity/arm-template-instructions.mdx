@@ -19,7 +19,7 @@ import TabItem from '@theme/TabItem';
 > **MASTER REFERENCE**: [Microsoft Learn - Local Identity with Key Vault ARM template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault-template?view=azloc-2610)
 
 :::info Script Options in This Document
-This runbook uses **Option 2 — Azure PowerShell** (config-driven, reads `variables.yml`) as the primary automated path alongside **Option 1 — Manual** steps.
+This runbook uses **Option 2 — Azure PowerShell** (config-driven, reads `infrastructure.yml`) as the primary automated path alongside **Option 1 — Manual** steps.
 
 Alternative script options (Option 3: Azure CLI PowerShell, Option 4: Azure CLI Bash, Option 5: Standalone) are available in the Reference section below.
 :::
@@ -51,7 +51,7 @@ Authentication uses the local administrator account (not the built-in `Administr
 The template folder name ends in `public-preview` on Microsoft Learn 2610, and Learn does not state an API version or a total parameter count for it. This runbook therefore does not quote either. Treat the exact `apiVersion` and parameter count as **lab-verified only**: diff your parameter file against the current `azuredeploy.parameters.json` in the quickstart template before each deployment. Learn also notes that every parameter must be filled in, including array placeholders such as `[""]`, or validation fails.
 :::
 
-The Azure Local Cloud toolkit provides parameter template files and a generation script that populate the parameter file from `variables.yml`. Confirm that the generator's `-AuthType LocalIdentity` output matches the parameter set above (it must emit `identityProvider`, `dnsServerConfig` and `dnsZones`, and must not emit the Active Directory or LCM parameters) before you use it. See the [Reference](#reference) section for the parameter reference.
+The Azure Local Cloud toolkit provides parameter template files and a generation script that populate the parameter file from `infrastructure.yml`. Confirm that the generator's `-AuthType LocalIdentity` output matches the parameter set above (it must emit `identityProvider`, `dnsServerConfig` and `dnsZones`, and must not emit the Active Directory or LCM parameters) before you use it. See the [Reference](#reference) section for the parameter reference.
 
 ---
 
@@ -73,38 +73,38 @@ The Azure Local Cloud toolkit provides parameter template files and a generation
 
 Before starting the deployment procedure, confirm each item:
 
-1. **`variables.yml` fully populated** — all 13 sections complete, including `cluster_arm_deployment`, `accounts`, `network_intents`, and `compute.cluster_nodes`
+1. **`infrastructure.yml` fully populated** — all 13 sections complete, including `cluster_arm_deployment`, `accounts`, `network_intents`, and `compute.cluster_nodes`
 2. **Authenticated to Azure** — run `Connect-AzAccount` (PowerShell) or `az login` (CLI) on the machine where you will execute commands
 3. **`powershell-yaml` module installed** — required by the generation script: `Install-Module powershell-yaml -Scope CurrentUser`
-4. **Arc nodes registered** — Phase 04 complete; `arc_node_resource_ids` populated in `variables.yml`
+4. **Arc nodes registered** — Phase 04 complete; `arc_node_resource_ids` populated in `infrastructure.yml`
 5. **Platform Key Vault secret stored** — the `local-admin-password` secret exists in the platform Key Vault (from prior phases). Local identity has no LCM deployment account, so no `lcm-deployment-password` secret is needed for this template
 6. **Nodes in a workgroup** — local identity deployments do not use Active Directory: Learn tells you to skip the AD prerequisites and verifies after deployment that the nodes report `WORKGROUP`. Do not domain join the nodes (the domain-join-before-deployment option in Learn is described for Active Directory deployments). Each node has the same custom local administrator account (not the built-in `Administrator`), static IP addressing (DHCP is not supported for local identity nodes) and SSH enabled, per Microsoft Learn
 
 :::info Where to Run From
-All commands in this runbook run from the **azl-toolkit repo root** on a management/jump box authenticated to Azure. The toolkit scripts expect `variables.yml` at `config/variables.yml` relative to the repo root.
+All commands in this runbook run from the **azurelocal-toolkit repository root** on a management/jump box authenticated to Azure. The toolkit scripts expect `infrastructure.yml` at `infrastructure.yml` relative to the repo root.
 :::
 
 :::info Key Vault Architecture
 Two Key Vaults are involved in Azure Local deployment:
 
 - **Platform Key Vault** — Already exists from prior phases. Stores the local administrator password. Referenced in the parameter file via a Key Vault reference. **No action needed here.**
-- **Cluster Key Vault** — Created automatically by the ARM template when `createNewKeyVault` is `true`. The name (`keyVaultName`) and other settings are already defined in `variables.yml`.
+- **Cluster Key Vault** — Created automatically by the ARM template when `createNewKeyVault` is `true`. The name (`keyVaultName`) and other settings are already defined in `infrastructure.yml`.
 :::
 
 ---
 
-## Variables from variables.yml
+## Variables from infrastructure.yml
 
 | Path | Type | Description |
 |------|------|-------------|
-| `compute.arm_deployment.cluster_name` | string | Cluster name |
-| `compute.arm_deployment.cluster_resource_group` | string | Cluster resource group |
-| `compute.cluster_nodes[*].ipv4_address` | string | Node IP addresses |
-| `compute.cluster_nodes[*].arc_node_resource_ids` | string | Arc resource IDs |
-| `cluster_arm_deployment.resource_provider_object_id` | string | HCI RP Object ID |
-| `identity.accounts.account_local_admin_username` | string | Local admin username |
-| `security.keyvault.*` | object | Key Vault references |
-| `networking.*` | object | Network intents and IP allocation |
+| `cluster.name` | string | Cluster name |
+| `azure.resource_group` | string | Cluster resource group |
+| `nodes[].network_adapters[].ip_address` | string | Node IP addresses |
+| `nodes[].arc_machine_name` | string | Arc resource IDs |
+| `azure.hci_resource_provider_object_id` | string | HCI RP Object ID |
+| `identity.local_admin.username` | string | Local admin username |
+| `key_vaults[]` | object | Key Vault references |
+| `networking` | object | Network intents and IP allocation |
 
 ---
 
@@ -112,7 +112,7 @@ Two Key Vaults are involved in Azure Local deployment:
 
 ### Task 1: Get HCI Resource Provider Object ID
 
-The `hciResourceProviderObjectID` parameter requires the tenant-specific Object ID of the `Microsoft.AzureStackHCI` resource provider service principal. This GUID is unique per Entra ID tenant and must be looked up once, then stored in `variables.yml` at `cluster_arm_deployment.resource_provider_object_id`.
+The `hciResourceProviderObjectID` parameter requires the tenant-specific Object ID of the `Microsoft.AzureStackHCI` resource provider service principal. This GUID is unique per Entra ID tenant and must be looked up once, then stored in `infrastructure.yml` at `azure.hci_resource_provider_object_id`.
 
 <Tabs groupId="deployment-method">
 <TabItem value="manual" label="Manual" default>
@@ -131,204 +131,25 @@ The application ID `1412d89f-b8a8-4111-b4fd-e82905cbd85d` is the Azure Local res
 
 **Expected output**: A single GUID, e.g. `ab12cd34-ef56-7890-ab12-cd34ef567890`
 
-**Next**: Open `variables.yml`, find `cluster_arm_deployment.resource_provider_object_id`, and paste the GUID as the value.
+**Next**: Open `infrastructure.yml`, find `azure.hci_resource_provider_object_id`, and paste the GUID as the value.
 
 </TabItem>
 <TabItem value="azure-powershell" label="Azure PowerShell">
 
-Looks up the `Microsoft.AzureStackHCI` resource provider Object ID and writes it directly into `variables.yml` at `cluster_arm_deployment.resource_provider_object_id`. Without `-UpdateConfig`, the script only prints the GUID.
+### PowerShell
 
-```powershell title="Invoke (look up Object ID and auto-update variables.yml)"
-.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-01-initiate-deployment-via-arm-template\powershell\Get-HciResourceProviderObjectId.ps1 `
- -ConfigPath "config/variables.yml" `
- -UpdateConfig
-```
+> **When to use**: Look up the tenant specific Object ID of the `Microsoft.AzureStackHCI` resource provider. With `-UpdateConfig` the script writes it to `azure.hci_resource_provider_object_id` of the file.
 
-```powershell title="Get-HciResourceProviderObjectId.ps1"
-<#
-.SYNOPSIS
- Get-HciResourceProviderObjectId.ps1
- Retrieves the Microsoft.AzureStackHCI resource provider service principal Object ID
- and updates variables.yml with the value.
+#### Script
 
-.DESCRIPTION
- Config-driven script (Option 2). Reads variables.yml, looks up the
- Microsoft.AzureStackHCI resource provider's service principal Object ID from
- Entra ID, and writes it back to the config file at
- cluster_arm_deployment.resource_provider_object_id.
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template/powershell/Get-HciResourceProviderObjectId.ps1` | Retrieves the Microsoft.AzureStackHCI resource provider service principal Object ID and updates infrastructure.yml with the value. |
 
- variables.yml paths used:
- cluster_arm_deployment.resource_provider_object_id - Target field to update
+#### Run
 
- Requires:
- - Az.Resources module (Get-AzADServicePrincipal)
- - Authenticated Azure session (Connect-AzAccount)
-
-.PARAMETER ConfigPath
- Path to variables.yml. Auto-discovers infrastructure*.yml if not provided.
-
-.PARAMETER UpdateConfig
- When specified, writes the Object ID back to variables.yml.
- Without this switch, the script only displays the value.
-
-.EXAMPLE
- .\Get-HciResourceProviderObjectId.ps1 -ConfigPath .\config\variables.yml
-
-.EXAMPLE
- .\Get-HciResourceProviderObjectId.ps1 -ConfigPath .\config\variables.yml -UpdateConfig
-
-.NOTES
- Author: Azure Local Cloud Azure Local Cloud
- Version: 1.0.0
- Phase: 05-cluster-deployment
- Task: task-01-initiate-deployment-via-arm-template (HCI RP Object ID lookup)
- Execution: Run from management/jump box
- Script Type: Config-driven (Option 2 — Azure PowerShell)
-#>
-
-[CmdletBinding()]
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath = "",
-
- [Parameter(Mandatory = $false)]
- [switch]$UpdateConfig
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-#region HELPERS
-
-function Write-Log {
- param([string]$Message, [string]$Level = "INFO")
- $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
- switch ($Level) {
- "SUCCESS" { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
- "ERROR" { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
- "WARN" { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
- "HEADER" { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
- default { Write-Host "[$ts] [INFO] $Message" }
- }
-
- if ($script:LogFile) {
- "[$ts] [$Level] $Message" | Add-Content -Path $script:LogFile -ErrorAction SilentlyContinue
- }
-}
-
-function Resolve-ConfigPath {
- param([string]$Provided)
-
- if ($Provided -ne "" -and (Test-Path $Provided)) { return (Resolve-Path $Provided).Path }
-
- $searchPaths = @(
- (Join-Path (Get-Location).Path "configs"),
- (Join-Path $PSScriptRoot "..\..\..\..\..\..\..\..\configs"),
- "C:\configs",
- "C:\AzureLocal\configs"
- )
-
- $found = @()
- foreach ($dir in $searchPaths) {
- if (Test-Path $dir) {
- $found += Get-ChildItem -Path $dir -Filter "infrastructure*.yml" -File -ErrorAction SilentlyContinue
- }
- }
-
- $found = @($found | Sort-Object FullName -Unique)
-
- if ($found.Count -eq 0) {
- throw "No infrastructure*.yml found. Pass -ConfigPath or place it in a standard location."
- }
-
- if ($found.Count -eq 1) {
- Write-Log "Config: $($found[0].FullName)"
- return $found[0].FullName
- }
-
- Write-Log "Multiple config files found:" "WARN"
- for ($i = 0; $i -lt $found.Count; $i++) {
- Write-Host " [$($i+1)] $($found[$i].FullName)" -ForegroundColor Yellow
- }
- $choice = Read-Host "Select config [1-$($found.Count)]"
- $idx = [int]$choice - 1
- if ($idx -lt 0 -or $idx -ge $found.Count) { throw "Invalid selection." }
- return $found[$idx].FullName
-}
-
-#endregion HELPERS
-
-#region LOGGING
-
-$taskFolderName = "task-01-initiate-deployment-via-arm-template"
-$logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
-if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory -Force | Out-Null }
-$script:LogFile = Join-Path $logDir "$(Get-Date -Format 'yyyy-MM-dd')_$(Get-Date -Format 'HHmmss')_Get-HciRPObjectId.log"
-
-#endregion LOGGING
-
-#region MAIN
-
-Write-Log "========================================" "HEADER"
-Write-Log " Get HCI Resource Provider Object ID" "HEADER"
-Write-Log "========================================" "HEADER"
-
-# --- Resolve config ---
-$configFile = Resolve-ConfigPath -Provided $ConfigPath
-Write-Log "Using config: $configFile"
-
-# --- Verify Azure context ---
-$ctx = Get-AzContext -ErrorAction SilentlyContinue
-if (-not $ctx) {
- throw "Not authenticated to Azure. Run Connect-AzAccount first."
-}
-Write-Log "Azure context: $($ctx.Account.Id) / Tenant: $($ctx.Tenant.Id)"
-
-# --- Lookup HCI Resource Provider SP ---
-Write-Log "Looking up Microsoft.AzureStackHCI Resource Provider service principal..."
-$hciRP = Get-AzADServicePrincipal -ApplicationId "1412d89f-b8a8-4111-b4fd-e82905cbd85d" -ErrorAction Stop
-
-if (-not $hciRP) {
- Write-Log "Microsoft.AzureStackHCI Resource Provider not found in this tenant." "ERROR"
- throw "HCI RP service principal not found. Ensure Azure Local resource provider is registered."
-}
-
-$objectId = $hciRP.Id
-Write-Log "HCI Resource Provider Object ID: $objectId" "SUCCESS"
-
-# --- Update config if requested ---
-if ($UpdateConfig) {
- Write-Log "Updating variables.yml at cluster_arm_deployment.resource_provider_object_id..."
-
- $content = Get-Content -Path $configFile -Raw
- $pattern = '(?m)(^\s*resource_provider_object_id:\s*)"[^"]*"'
- if ($content -match $pattern) {
- $updated = $content -replace $pattern, "`$1`"$objectId`""
- Set-Content -Path $configFile -Value $updated -NoNewline
- Write-Log "Updated $configFile with Object ID: $objectId" "SUCCESS"
- }
- else {
- Write-Log "Could not find resource_provider_object_id field in $configFile. Update manually." "WARN"
- Write-Log " YAML path: cluster_arm_deployment.resource_provider_object_id" "WARN"
- Write-Log " Value: $objectId" "WARN"
- }
-}
-else {
- Write-Log ""
- Write-Log "To update variables.yml, re-run with -UpdateConfig:" "INFO"
- Write-Log " .\Get-HciResourceProviderObjectId.ps1 -ConfigPath `"$configFile`" -UpdateConfig" "INFO"
- Write-Log ""
- Write-Log "Or set manually in variables.yml:" "INFO"
- Write-Log " YAML path: cluster_arm_deployment.resource_provider_object_id" "INFO"
- Write-Log " Value: $objectId" "INFO"
-}
-
-Write-Log "========================================" "HEADER"
-Write-Log " Complete" "HEADER"
-Write-Log "========================================" "HEADER"
-Write-Log "Log: $($script:LogFile)"
-
-#endregion MAIN
+```powershell
+.\Get-HciResourceProviderObjectId.ps1 -ConfigPath .\configs\infrastructure.yml
 ```
 
 </TabItem>
@@ -346,21 +167,21 @@ Create the deployment-ready JSON parameter file for the `create-adless-cluster-e
 **When to use**: You want to build the parameter file by hand or use a pre-built example as a starting point.
 
 1. Copy the template: `configs/azure/arm-templates/04-cluster-deployment/azuredeploy.parameters.local-identity.json`
-2. Replace all `{{VARIABLE}}` placeholders with values from your `variables.yml`
+2. Replace all `{{VARIABLE}}` placeholders with values from your `infrastructure.yml`
 
 **Key placeholders to replace** (most common errors come from these):
 
 | Placeholder | YAML Source Path | Description |
 |-------------|-----------------|-------------|
-| `{{CLUSTER_NAME}}` | `cluster_arm_deployment.cluster_name` | Cluster resource name |
+| `{{CLUSTER_NAME}}` | `cluster.name` | Cluster resource name |
 | `{{RESOURCE_GROUP}}` | `azure.resource_group` | Target resource group |
 | `{{LOCATION}}` | `azure.location` | Azure region |
-| `{{KEY_VAULT_NAME}}` | `cluster_arm_deployment.key_vault_name` | Cluster KV (created by ARM) |
-| `{{DIAGNOSTIC_STORAGE}}` | `cluster_arm_deployment.arm_diagnostic_storage_account_name` | KV diagnostics storage |
-| `{{WITNESS_STORAGE}}` | `cluster_arm_deployment.cloud_witness_storage_account` | Cloud witness storage |
-| `{{LOCAL_ADMIN_USER}}` | `accounts.local_admin.username` | Local admin on all nodes |
-| `{{HCI_RP_OBJECT_ID}}` | `cluster_arm_deployment.resource_provider_object_id` | From Task 1 |
-| `{{NAMING_PREFIX}}` | `cluster_arm_deployment.naming_prefix` | Resource prefix |
+| `{{KEY_VAULT_NAME}}` | `cluster.key_vault.name` | Cluster KV (created by ARM) |
+| `{{DIAGNOSTIC_STORAGE}}` | `cluster.diagnostics.storage_account` | KV diagnostics storage |
+| `{{WITNESS_STORAGE}}` | `cluster.witness.storage_account` | Cloud witness storage |
+| `{{LOCAL_ADMIN_USER}}` | `identity.local_admin.username` | Local admin on all nodes |
+| `{{HCI_RP_OBJECT_ID}}` | `azure.hci_resource_provider_object_id` | From Task 1 |
+| `{{NAMING_PREFIX}}` | `cluster.naming_prefix` | Resource prefix |
 
 For Local Identity, **omit** `domainFqdn`, `adouPath`, `AzureStackLCMAdminUsername` and `AzureStackLCMAdminPassword`: they are not parameters of the local identity template. Instead set:
 
@@ -388,45 +209,28 @@ For `localAdminPassword`, use a Key Vault reference (not plain text):
 4. Save as `azuredeploy.parameters.local-identity.json` in your working directory
 
 :::tip Use an Example as Reference
-Validated IIC examples exist for each networking pattern in `configs/azure/arm-templates/examples/`. Compare your file against the matching pattern — see the **Example Parameter Files** collapsible in the [Reference](#reference) section below.
+Validated IIC examples exist for each networking pattern in `config/azure/arm-templates/examples/`. Compare your file against the matching pattern — see the **Example Parameter Files** collapsible in the [Reference](#reference) section below.
 :::
 
 </TabItem>
 <TabItem value="azure-powershell" label="Azure PowerShell">
 
-:::info Parameter generation is automatic in Tasks 3 & 4
-When using `Deploy-AzureLocalCluster.ps1` (Tasks 3 and 4), the script calls `Generate-AzureLocal-Parameters.ps1` internally — you do not need to run this step separately. Use this task only if you want to generate and review the parameter file before running the deployment script.
-:::
+### PowerShell
 
-```powershell title="Generate the parameter file from variables.yml (optional pre-review)"
-.\configs\Generate-AzureLocal-Parameters.ps1 `
- -ConfigPath "config/variables.yml" `
- -AuthType LocalIdentity `
- -OutputPath "azuredeploy.parameters.local-identity.generated.json"
-```
+> **When to use**: Write the full ARM parameter file for Microsoft's quickstart template from `infrastructure.yml`. Deploy-time secrets stay Key Vault references; the file holds no password.
 
-**What the script does:**
-1. Reads `variables.yml` and maps the parameters from the YAML config sections
-2. Auto-derives `networkingPattern` (hyperConverged / convergedManagementCompute / custom) from the intent definitions
-3. Auto-derives `networkingType` (switched / switchless / single) from node count and config
-4. Builds the complex arrays (`intentList`, `storageNetworkList`, `physicalNodesSettings`) dynamically
-5. Uses a Key Vault reference for `localAdminPassword`
-6. For `-AuthType LocalIdentity`: must set `identityProvider`, `dnsServerConfig` and `dnsZones` and omit the Active Directory and LCM parameters (verify the generated file against the list above; older generator versions emitted empty `domainFqdn`/`adouPath` strings)
-7. Writes the output JSON and prints a summary
+#### Script
 
-**Verify the generated file** — spot-check these critical values:
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/New-AzureLocalArmParameters.ps1` | Writes the full ARM parameter file for Microsoft's Azure Local quickstart template from infrastructure.yml (schema 5). |
 
-```powershell title="Quick validation of generated parameters"
-$params = (Get-Content "azuredeploy.parameters.local-identity.generated.json" | ConvertFrom-Json).parameters
-Write-Host "Cluster: $($params.clusterName.value)"
-Write-Host "identityProvider: '$($params.identityProvider.value)'" # Should be LocalIdentity
-Write-Host "dnsServerConfig: '$($params.dnsServerConfig.value)'" # Should be UseDnsServer
-Write-Host "dnsZones: $($params.dnsZones.value | ConvertTo-Json -Compress)"
-Write-Host "domainFqdn present: $($null -ne $params.PSObject.Properties['domainFqdn'])" # Should be False
-Write-Host "adouPath present: $($null -ne $params.PSObject.Properties['adouPath'])" # Should be False
-Write-Host "Nodes: $($params.physicalNodesSettings.value.Count)"
-Write-Host "Pattern: $($params.networkingPattern.value)"
-Write-Host "Mode: $($params.deploymentMode.value)"
+Requires: PowerShell 7.
+
+#### Run
+
+```powershell
+./New-AzureLocalArmParameters.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath ./osconfig-report.json
 ```
 
 </TabItem>
@@ -444,9 +248,9 @@ Run the ARM template in **Validate** mode first. Validation executes the full de
 **When to use**: You built the parameter file manually in Task 2 and want to run validation directly.
 
 ```powershell title="Define deployment variables"
-# Values from variables.yml
-$subscriptionId = "<SUB_ID>" # azure_platform.azure_tenants[0].aztenant_subscription_id
-$resourceGroup = "<RESOURCE_GROUP>" # compute.azure_local.resource_group
+# Values from infrastructure.yml
+$subscriptionId = "<SUB_ID>" # azure.subscription_id
+$resourceGroup = "<RESOURCE_GROUP>" # azure.resource_group
 $parametersFile = ".\azuredeploy.parameters.local-identity.json" # File from Task 2
 $templateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.json"
 
@@ -491,349 +295,31 @@ If validation fails, check the error output against the [Troubleshooting](#troub
 </TabItem>
 <TabItem value="azure-powershell" label="Azure PowerShell">
 
-Single command: reads `variables.yml`, generates the parameter file, patches `deploymentMode` to `Validate`, and runs `New-AzResourceGroupDeployment`. Use `-DeploymentMode Deploy` in Task 4 to deploy after validation passes.
+### PowerShell
 
-```powershell title="Invoke (generate parameters and run validation)"
-.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-01-initiate-deployment-via-arm-template\powershell\Deploy-AzureLocalCluster.ps1 `
- -ConfigPath "config/variables.yml" `
- -AuthType LocalIdentity `
- -DeploymentMode Validate
+> **When to use**: Submit the ARM template in Validate mode. Without `-Execute` the script only plans: it writes the parameter file and prints what it would submit.
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalClusterDeployment.ps1` | ARM Validate, then Deploy, of an Azure Local instance from `infrastructure.yml` (schema 5). |
+
+Requires PowerShell 7.
+
+```powershell
+# Plan: writes the parameter file and prints what it would submit. Nothing is created.
+./Invoke-AzureLocalClusterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath ./osconfig-report.json
+
+# Validate: submits deploymentMode Validate, waits about 10 to 30 minutes and reports every validation step.
+./Invoke-AzureLocalClusterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath ./osconfig-report.json -Mode Validate -Execute
 ```
 
-```powershell title="Deploy-AzureLocalCluster.ps1"
-<#
-.SYNOPSIS
- Deploy-AzureLocalCluster.ps1
- Validates or deploys an Azure Local cluster via ARM template using parameters
- generated from variables.yml.
-
-.DESCRIPTION
- Config-driven script (Option 2). Reads variables.yml, calls
- Generate-AzureLocal-Parameters.ps1 to produce the parameters file, then executes
- New-AzResourceGroupDeployment against the Microsoft quickstart ARM template.
-
- Supports two modes:
- - Validate: Runs the full deployment pipeline but stops before provisioning.
- Always run this first.
- - Deploy: Full deployment. Run only after validation passes.
-
- variables.yml paths used:
- azure_platform.azure_tenants[0].aztenant_subscription_id - Subscription
- compute.azure_local.resource_group - Resource group
- cluster_arm_deployment.arm_mode - Validate or Deploy
-
- The generation script (Generate-AzureLocal-Parameters.ps1) reads the ARM
- parameter values from the config. This script orchestrates generation + deployment.
-
- Requires:
- - Az.Resources module (New-AzResourceGroupDeployment)
- - powershell-yaml module (for Generate-AzureLocal-Parameters.ps1)
- - Authenticated Azure session (Connect-AzAccount)
-
-.PARAMETER ConfigPath
- Path to variables.yml. Auto-discovers infrastructure*.yml if not provided.
-
-.PARAMETER AuthType
- Authentication type: AD or LocalIdentity. Determines which parameters template
- is used. LocalIdentity uses identityProvider/dnsServerConfig/dnsZones and does
- not populate domainFqdn/adouPath or the LCM admin parameters.
-
-.PARAMETER DeploymentMode
- Validate or Deploy. Overrides cluster_arm_deployment.arm_mode in variables.yml.
- Default: reads from config (typically "Validate").
-
-.PARAMETER ParametersFile
- Path to a pre-built parameters file. When provided, skips generation and uses
- this file directly. Useful when parameters have been manually reviewed.
-
-.PARAMETER TemplateUri
- Override the ARM template URI. Defaults to the Microsoft quickstart template.
-
-.PARAMETER LogPath
- Override log file path. Default: .\logs\task-01-initiate-deployment-via-arm-template\<timestamp>.log
-
-.PARAMETER WhatIf
- Dry-run mode — shows what would happen without deploying.
-
-.EXAMPLE
- .\Deploy-AzureLocalCluster.ps1 -ConfigPath .\config\variables.yml -AuthType LocalIdentity -DeploymentMode Validate
-
-.EXAMPLE
- .\Deploy-AzureLocalCluster.ps1 -ConfigPath .\config\variables.yml -AuthType AD -DeploymentMode Deploy
-
-.EXAMPLE
- .\Deploy-AzureLocalCluster.ps1 -ParametersFile .\azuredeploy.parameters.ad.json -DeploymentMode Validate
-
-.EXAMPLE
- .\Deploy-AzureLocalCluster.ps1 -ConfigPath .\config\variables.yml -AuthType LocalIdentity -WhatIf
-
-.NOTES
- Author: Azure Local Cloud Azure Local Cloud
- Version: 1.0.0
- Phase: 05-cluster-deployment
- Task: task-01-initiate-deployment-via-arm-template
- Execution: Run from management/jump box (authenticated to Azure)
- Script Type: Config-driven (Option 2 — Azure PowerShell)
-#>
-
-[CmdletBinding(SupportsShouldProcess)]
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath = "",
-
- [Parameter(Mandatory = $false)]
- [ValidateSet("AD", "LocalIdentity")]
- [string]$AuthType = "LocalIdentity",
-
- [Parameter(Mandatory = $false)]
- [ValidateSet("Validate", "Deploy")]
- [string]$DeploymentMode = "",
-
- [Parameter(Mandatory = $false)]
- [string]$ParametersFile = "",
-
- [Parameter(Mandatory = $false)]
- [string]$TemplateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.json",
-
- [Parameter(Mandatory = $false)]
- [string]$LogPath = ""
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-#region HELPERS
-
-function Write-Log {
- param([string]$Message, [string]$Level = "INFO")
- $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
- switch ($Level) {
- "SUCCESS" { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
- "ERROR" { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
- "WARN" { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
- "HEADER" { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
- default { Write-Host "[$ts] [INFO] $Message" }
- }
-
- if ($script:LogFile) {
- "[$ts] [$Level] $Message" | Add-Content -Path $script:LogFile -ErrorAction SilentlyContinue
- }
-}
-
-function Resolve-ConfigPath {
- param([string]$Provided)
-
- if ($Provided -ne "" -and (Test-Path $Provided)) { return (Resolve-Path $Provided).Path }
-
- $searchPaths = @(
- (Join-Path (Get-Location).Path "configs"),
- (Join-Path $PSScriptRoot "..\..\..\..\..\..\..\..\configs"),
- "C:\configs",
- "C:\AzureLocal\configs"
- )
-
- $found = @()
- foreach ($dir in $searchPaths) {
- if (Test-Path $dir) {
- $found += Get-ChildItem -Path $dir -Filter "infrastructure*.yml" -File -ErrorAction SilentlyContinue
- }
- }
-
- $found = @($found | Sort-Object FullName -Unique)
-
- if ($found.Count -eq 0) {
- throw "No infrastructure*.yml found. Pass -ConfigPath or place it in a standard location."
- }
-
- if ($found.Count -eq 1) {
- Write-Log "Config: $($found[0].FullName)"
- return $found[0].FullName
- }
-
- Write-Log "Multiple config files found:" "WARN"
- for ($i = 0; $i -lt $found.Count; $i++) {
- Write-Host " [$($i+1)] $($found[$i].FullName)" -ForegroundColor Yellow
- }
- $choice = Read-Host "Select config [1-$($found.Count)]"
- $idx = [int]$choice - 1
- if ($idx -lt 0 -or $idx -ge $found.Count) { throw "Invalid selection." }
- return $found[$idx].FullName
-}
-
-#endregion HELPERS
-
-#region LOGGING
-
-$taskFolderName = "task-01-initiate-deployment-via-arm-template"
-if ($LogPath -ne "") {
- $script:LogFile = $LogPath
-}
-else {
- $logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
- if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory -Force | Out-Null }
- $script:LogFile = Join-Path $logDir "$(Get-Date -Format 'yyyy-MM-dd')_$(Get-Date -Format 'HHmmss')_Deploy-AzureLocalCluster.log"
-}
-
-#endregion LOGGING
-
-#region MAIN
-
-Write-Log "========================================" "HEADER"
-Write-Log " Azure Local Cluster — ARM Template Deployment" "HEADER"
-Write-Log "========================================" "HEADER"
-
-# --- Verify Azure context ---
-$ctx = Get-AzContext -ErrorAction SilentlyContinue
-if (-not $ctx) {
- throw "Not authenticated to Azure. Run Connect-AzAccount first."
-}
-Write-Log "Azure context: $($ctx.Account.Id) / Tenant: $($ctx.Tenant.Id)"
-
-# --- Resolve config ---
-$configFile = Resolve-ConfigPath -Provided $ConfigPath
-Write-Log "Using config: $configFile"
-
-# --- Load YAML for subscription and resource group ---
-if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
- throw "Module 'powershell-yaml' is required. Install with: Install-Module powershell-yaml -Scope CurrentUser"
-}
-Import-Module powershell-yaml -ErrorAction Stop
-
-$yamlContent = Get-Content -Path $configFile -Raw | ConvertFrom-Yaml
-$subscriptionId = $yamlContent.azure_platform.azure_tenants[0].aztenant_subscription_id # azure_platform.azure_tenants[0].aztenant_subscription_id
-$resourceGroup = $yamlContent.compute.azure_local.resource_group # compute.azure_local.resource_group
-$clusterName = $yamlContent.cluster_arm_deployment.cluster_name # cluster_arm_deployment.cluster_name
-
-Write-Log "Subscription: $subscriptionId"
-Write-Log "Resource Group: $resourceGroup"
-Write-Log "Cluster Name: $clusterName"
-Write-Log "Auth Type: $AuthType"
-
-# --- Resolve deployment mode ---
-if ($DeploymentMode -eq "") {
- $configMode = $yamlContent.cluster_arm_deployment.arm_mode # cluster_arm_deployment.arm_mode
- if ($configMode -eq "deploy") {
- $DeploymentMode = "Deploy"
- }
- else {
- $DeploymentMode = "Validate"
- }
- Write-Log "Deployment mode from config: $DeploymentMode"
-}
-else {
- Write-Log "Deployment mode (override): $DeploymentMode"
-}
-
-# --- Set subscription context ---
-Write-Log "Setting Azure context to subscription: $subscriptionId"
-Set-AzContext -SubscriptionId $subscriptionId -ErrorAction Stop | Out-Null
-
-# --- Generate or use provided parameters file ---
-if ($ParametersFile -ne "" -and (Test-Path $ParametersFile)) {
- $paramsPath = (Resolve-Path $ParametersFile).Path
- Write-Log "Using provided parameters file: $paramsPath"
-}
-else {
- # Locate the generation script
- $generatorPaths = @(
- (Join-Path (Get-Location).Path "configs\Generate-AzureLocal-Parameters.ps1"),
- (Join-Path $PSScriptRoot "..\..\..\..\..\..\..\..\configs\Generate-AzureLocal-Parameters.ps1")
- )
-
- $generatorScript = $null
- foreach ($gp in $generatorPaths) {
- if (Test-Path $gp) { $generatorScript = (Resolve-Path $gp).Path; break }
- }
-
- if (-not $generatorScript) {
- throw "Generate-AzureLocal-Parameters.ps1 not found. Pass -ParametersFile with a pre-built file, or ensure the generator is in configs/."
- }
-
- Write-Log "Generator script: $generatorScript"
-
- $authSuffix = if ($AuthType -eq "AD") { "ad" } else { "local-identity" }
- $paramsPath = Join-Path (Split-Path $configFile) "azuredeploy.parameters.$authSuffix.generated.json"
-
- Write-Log "Generating parameters file: $paramsPath"
-
- & $generatorScript `
- -ConfigPath $configFile `
- -AuthType $AuthType `
- -OutputPath $paramsPath
-
- if (-not (Test-Path $paramsPath)) {
- throw "Parameter generation failed — output file not created: $paramsPath"
- }
-
- Write-Log "Parameters file generated: $paramsPath" "SUCCESS"
-}
-
-# --- Set deploymentMode in generated parameters ---
-Write-Log "Setting deploymentMode to '$DeploymentMode' in parameters file..."
-$paramsJson = Get-Content -Path $paramsPath -Raw | ConvertFrom-Json
-$paramsJson.parameters.deploymentMode.value = $DeploymentMode
-$paramsJson | ConvertTo-Json -Depth 20 | Set-Content -Path $paramsPath -Encoding UTF8
-Write-Log "deploymentMode set to: $DeploymentMode" "SUCCESS"
-
-# --- Deploy ---
-$deploymentName = "azl-$($DeploymentMode.ToLower())-$(Get-Date -Format 'yyyyMMddHHmmss')"
-Write-Log "Deployment name: $deploymentName"
-Write-Log "Template URI: $TemplateUri"
-Write-Log ""
-
-if ($PSCmdlet.ShouldProcess("$resourceGroup/$clusterName", "ARM Template $DeploymentMode")) {
- Write-Log "Starting $DeploymentMode..." "HEADER"
-
- $deployment = New-AzResourceGroupDeployment `
- -Name $deploymentName `
- -ResourceGroupName $resourceGroup `
- -TemplateUri $TemplateUri `
- -TemplateParameterFile $paramsPath `
- -Verbose
-
- $state = $deployment.ProvisioningState
- Write-Log ""
- Write-Log "Deployment: $deploymentName" "HEADER"
- Write-Log "State: $state" $(if ($state -eq "Succeeded") { "SUCCESS" } else { "ERROR" })
- Write-Log "Timestamp: $($deployment.Timestamp)"
-
- if ($state -ne "Succeeded") {
- Write-Log "Deployment did not succeed. Check Azure Portal → Resource Group → Deployments for details." "ERROR"
- Write-Log " az deployment group show --name $deploymentName --resource-group $resourceGroup --query properties.error" "INFO"
- }
- elseif ($DeploymentMode -eq "Validate") {
- Write-Log "" "INFO"
- Write-Log "Validation passed. To deploy, re-run with -DeploymentMode Deploy:" "SUCCESS"
- Write-Log " .\Deploy-AzureLocalCluster.ps1 -ConfigPath `"$configFile`" -AuthType $AuthType -DeploymentMode Deploy" "INFO"
- }
- else {
- Write-Log "" "INFO"
- Write-Log "Deployment initiated. Monitor progress with:" "SUCCESS"
- Write-Log " .\Monitor-Deployment.ps1 or check Azure Portal → Deployments" "INFO"
- }
-}
-else {
- Write-Log "[WhatIf] Would run New-AzResourceGroupDeployment:" "WARN"
- Write-Log " Name: $deploymentName" "WARN"
- Write-Log " ResourceGroup: $resourceGroup" "WARN"
- Write-Log " TemplateUri: $TemplateUri" "WARN"
- Write-Log " ParametersFile: $paramsPath" "WARN"
- Write-Log " DeploymentMode: $DeploymentMode" "WARN"
-}
-
-Write-Log "========================================" "HEADER"
-Write-Log " Complete" "HEADER"
-Write-Log "========================================" "HEADER"
-Write-Log "Log: $($script:LogFile)"
-
-#endregion MAIN
-```
+The script refuses a second Validate when the instance is in a failed deployment state, because Microsoft says a second Validate resets the system properties. The same job, with preconditions, an approval step and a report, is done by `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1` (use `-Mode Plan`, then `-Mode Validate`).
 
 </TabItem>
 </Tabs>
 
 :::tip Run the Validation Monitor
-While validation runs, start [Monitor-Validation.ps1](../../../deployment-monitoring/monitor-validation.mdx) to see live step status and `EnvironmentValidatorFull` log output. It auto-exits when validation completes.
+While validation runs, watch it with [Azure Local Sonar](../../../deployment-monitoring/index.mdx).
 :::
 
 :::warning Validate First — Always
@@ -862,7 +348,7 @@ Write-Host "Updated deploymentMode to Deploy" -ForegroundColor Green
 
 ```powershell title="Step 2 — Run deployment"
 $templateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.json"
-$resourceGroup = "<RESOURCE_GROUP>" # compute.azure_local.resource_group
+$resourceGroup = "<RESOURCE_GROUP>" # azure.resource_group
 $deploymentName = "azl-deploy-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
 $deployment = New-AzResourceGroupDeployment `
@@ -882,349 +368,25 @@ The `New-AzResourceGroupDeployment` command blocks until deployment completes (1
 </TabItem>
 <TabItem value="azure-powershell" label="Azure PowerShell">
 
-Same script as Task 3, invoked with `-DeploymentMode Deploy`. The script reads `variables.yml`, generates the parameter file, patches `deploymentMode` to `Deploy`, and runs `New-AzResourceGroupDeployment`. This is a long-running operation — do not close the terminal.
+### PowerShell
 
-```powershell title="Invoke (run deployment after validation passed)"
-.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-01-initiate-deployment-via-arm-template\powershell\Deploy-AzureLocalCluster.ps1 `
- -ConfigPath "config/variables.yml" `
- -AuthType LocalIdentity `
- -DeploymentMode Deploy
+> **When to use**: The real deployment. It is a separate, explicit run and it needs a Validate that succeeded.
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalClusterDeployment.ps1` | ARM Validate, then Deploy, of an Azure Local instance from `infrastructure.yml` (schema 5). |
+
+```powershell
+./Invoke-AzureLocalClusterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath ./osconfig-report.json -Mode Deploy -Execute
 ```
 
-```powershell title="Deploy-AzureLocalCluster.ps1"
-<#
-.SYNOPSIS
- Deploy-AzureLocalCluster.ps1
- Validates or deploys an Azure Local cluster via ARM template using parameters
- generated from variables.yml.
-
-.DESCRIPTION
- Config-driven script (Option 2). Reads variables.yml, calls
- Generate-AzureLocal-Parameters.ps1 to produce the parameters file, then executes
- New-AzResourceGroupDeployment against the Microsoft quickstart ARM template.
-
- Supports two modes:
- - Validate: Runs the full deployment pipeline but stops before provisioning.
- Always run this first.
- - Deploy: Full deployment. Run only after validation passes.
-
- variables.yml paths used:
- azure_platform.azure_tenants[0].aztenant_subscription_id - Subscription
- compute.azure_local.resource_group - Resource group
- cluster_arm_deployment.arm_mode - Validate or Deploy
-
- The generation script (Generate-AzureLocal-Parameters.ps1) reads the ARM
- parameter values from the config. This script orchestrates generation + deployment.
-
- Requires:
- - Az.Resources module (New-AzResourceGroupDeployment)
- - powershell-yaml module (for Generate-AzureLocal-Parameters.ps1)
- - Authenticated Azure session (Connect-AzAccount)
-
-.PARAMETER ConfigPath
- Path to variables.yml. Auto-discovers infrastructure*.yml if not provided.
-
-.PARAMETER AuthType
- Authentication type: AD or LocalIdentity. Determines which parameters template
- is used. LocalIdentity uses identityProvider/dnsServerConfig/dnsZones and does
- not populate domainFqdn/adouPath or the LCM admin parameters.
-
-.PARAMETER DeploymentMode
- Validate or Deploy. Overrides cluster_arm_deployment.arm_mode in variables.yml.
- Default: reads from config (typically "Validate").
-
-.PARAMETER ParametersFile
- Path to a pre-built parameters file. When provided, skips generation and uses
- this file directly. Useful when parameters have been manually reviewed.
-
-.PARAMETER TemplateUri
- Override the ARM template URI. Defaults to the Microsoft quickstart template.
-
-.PARAMETER LogPath
- Override log file path. Default: .\logs\task-01-initiate-deployment-via-arm-template\<timestamp>.log
-
-.PARAMETER WhatIf
- Dry-run mode — shows what would happen without deploying.
-
-.EXAMPLE
- .\Deploy-AzureLocalCluster.ps1 -ConfigPath .\config\variables.yml -AuthType LocalIdentity -DeploymentMode Validate
-
-.EXAMPLE
- .\Deploy-AzureLocalCluster.ps1 -ConfigPath .\config\variables.yml -AuthType LocalIdentity -DeploymentMode Deploy
-
-.EXAMPLE
- .\Deploy-AzureLocalCluster.ps1 -ParametersFile .\azuredeploy.parameters.local-identity.json -DeploymentMode Deploy
-
-.EXAMPLE
- .\Deploy-AzureLocalCluster.ps1 -ConfigPath .\config\variables.yml -AuthType LocalIdentity -DeploymentMode Deploy -WhatIf
-
-.NOTES
- Author: Azure Local Cloud Azure Local Cloud
- Version: 1.0.0
- Phase: 05-cluster-deployment
- Task: task-01-initiate-deployment-via-arm-template
- Execution: Run from management/jump box (authenticated to Azure)
- Script Type: Config-driven (Option 2 — Azure PowerShell)
-#>
-
-[CmdletBinding(SupportsShouldProcess)]
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath = "",
-
- [Parameter(Mandatory = $false)]
- [ValidateSet("AD", "LocalIdentity")]
- [string]$AuthType = "LocalIdentity",
-
- [Parameter(Mandatory = $false)]
- [ValidateSet("Validate", "Deploy")]
- [string]$DeploymentMode = "",
-
- [Parameter(Mandatory = $false)]
- [string]$ParametersFile = "",
-
- [Parameter(Mandatory = $false)]
- [string]$TemplateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.json",
-
- [Parameter(Mandatory = $false)]
- [string]$LogPath = ""
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-#region HELPERS
-
-function Write-Log {
- param([string]$Message, [string]$Level = "INFO")
- $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
- switch ($Level) {
- "SUCCESS" { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
- "ERROR" { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
- "WARN" { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
- "HEADER" { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
- default { Write-Host "[$ts] [INFO] $Message" }
- }
-
- if ($script:LogFile) {
- "[$ts] [$Level] $Message" | Add-Content -Path $script:LogFile -ErrorAction SilentlyContinue
- }
-}
-
-function Resolve-ConfigPath {
- param([string]$Provided)
-
- if ($Provided -ne "" -and (Test-Path $Provided)) { return (Resolve-Path $Provided).Path }
-
- $searchPaths = @(
- (Join-Path (Get-Location).Path "configs"),
- (Join-Path $PSScriptRoot "..\..\..\..\..\..\..\..\configs"),
- "C:\configs",
- "C:\AzureLocal\configs"
- )
-
- $found = @()
- foreach ($dir in $searchPaths) {
- if (Test-Path $dir) {
- $found += Get-ChildItem -Path $dir -Filter "infrastructure*.yml" -File -ErrorAction SilentlyContinue
- }
- }
-
- $found = @($found | Sort-Object FullName -Unique)
-
- if ($found.Count -eq 0) {
- throw "No infrastructure*.yml found. Pass -ConfigPath or place it in a standard location."
- }
-
- if ($found.Count -eq 1) {
- Write-Log "Config: $($found[0].FullName)"
- return $found[0].FullName
- }
-
- Write-Log "Multiple config files found:" "WARN"
- for ($i = 0; $i -lt $found.Count; $i++) {
- Write-Host " [$($i+1)] $($found[$i].FullName)" -ForegroundColor Yellow
- }
- $choice = Read-Host "Select config [1-$($found.Count)]"
- $idx = [int]$choice - 1
- if ($idx -lt 0 -or $idx -ge $found.Count) { throw "Invalid selection." }
- return $found[$idx].FullName
-}
-
-#endregion HELPERS
-
-#region LOGGING
-
-$taskFolderName = "task-01-initiate-deployment-via-arm-template"
-if ($LogPath -ne "") {
- $script:LogFile = $LogPath
-}
-else {
- $logDir = Join-Path (Get-Location).Path "logs\$taskFolderName"
- if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory -Force | Out-Null }
- $script:LogFile = Join-Path $logDir "$(Get-Date -Format 'yyyy-MM-dd')_$(Get-Date -Format 'HHmmss')_Deploy-AzureLocalCluster.log"
-}
-
-#endregion LOGGING
-
-#region MAIN
-
-Write-Log "========================================" "HEADER"
-Write-Log " Azure Local Cluster — ARM Template Deployment" "HEADER"
-Write-Log "========================================" "HEADER"
-
-# --- Verify Azure context ---
-$ctx = Get-AzContext -ErrorAction SilentlyContinue
-if (-not $ctx) {
- throw "Not authenticated to Azure. Run Connect-AzAccount first."
-}
-Write-Log "Azure context: $($ctx.Account.Id) / Tenant: $($ctx.Tenant.Id)"
-
-# --- Resolve config ---
-$configFile = Resolve-ConfigPath -Provided $ConfigPath
-Write-Log "Using config: $configFile"
-
-# --- Load YAML for subscription and resource group ---
-if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
- throw "Module 'powershell-yaml' is required. Install with: Install-Module powershell-yaml -Scope CurrentUser"
-}
-Import-Module powershell-yaml -ErrorAction Stop
-
-$yamlContent = Get-Content -Path $configFile -Raw | ConvertFrom-Yaml
-$subscriptionId = $yamlContent.azure_platform.azure_tenants[0].aztenant_subscription_id # azure_platform.azure_tenants[0].aztenant_subscription_id
-$resourceGroup = $yamlContent.compute.azure_local.resource_group # compute.azure_local.resource_group
-$clusterName = $yamlContent.cluster_arm_deployment.cluster_name # cluster_arm_deployment.cluster_name
-
-Write-Log "Subscription: $subscriptionId"
-Write-Log "Resource Group: $resourceGroup"
-Write-Log "Cluster Name: $clusterName"
-Write-Log "Auth Type: $AuthType"
-
-# --- Resolve deployment mode ---
-if ($DeploymentMode -eq "") {
- $configMode = $yamlContent.cluster_arm_deployment.arm_mode # cluster_arm_deployment.arm_mode
- if ($configMode -eq "deploy") {
- $DeploymentMode = "Deploy"
- }
- else {
- $DeploymentMode = "Validate"
- }
- Write-Log "Deployment mode from config: $DeploymentMode"
-}
-else {
- Write-Log "Deployment mode (override): $DeploymentMode"
-}
-
-# --- Set subscription context ---
-Write-Log "Setting Azure context to subscription: $subscriptionId"
-Set-AzContext -SubscriptionId $subscriptionId -ErrorAction Stop | Out-Null
-
-# --- Generate or use provided parameters file ---
-if ($ParametersFile -ne "" -and (Test-Path $ParametersFile)) {
- $paramsPath = (Resolve-Path $ParametersFile).Path
- Write-Log "Using provided parameters file: $paramsPath"
-}
-else {
- # Locate the generation script
- $generatorPaths = @(
- (Join-Path (Get-Location).Path "configs\Generate-AzureLocal-Parameters.ps1"),
- (Join-Path $PSScriptRoot "..\..\..\..\..\..\..\..\configs\Generate-AzureLocal-Parameters.ps1")
- )
-
- $generatorScript = $null
- foreach ($gp in $generatorPaths) {
- if (Test-Path $gp) { $generatorScript = (Resolve-Path $gp).Path; break }
- }
-
- if (-not $generatorScript) {
- throw "Generate-AzureLocal-Parameters.ps1 not found. Pass -ParametersFile with a pre-built file, or ensure the generator is in configs/."
- }
-
- Write-Log "Generator script: $generatorScript"
-
- $authSuffix = if ($AuthType -eq "AD") { "ad" } else { "local-identity" }
- $paramsPath = Join-Path (Split-Path $configFile) "azuredeploy.parameters.$authSuffix.generated.json"
-
- Write-Log "Generating parameters file: $paramsPath"
-
- & $generatorScript `
- -ConfigPath $configFile `
- -AuthType $AuthType `
- -OutputPath $paramsPath
-
- if (-not (Test-Path $paramsPath)) {
- throw "Parameter generation failed — output file not created: $paramsPath"
- }
-
- Write-Log "Parameters file generated: $paramsPath" "SUCCESS"
-}
-
-# --- Set deploymentMode in generated parameters ---
-Write-Log "Setting deploymentMode to '$DeploymentMode' in parameters file..."
-$paramsJson = Get-Content -Path $paramsPath -Raw | ConvertFrom-Json
-$paramsJson.parameters.deploymentMode.value = $DeploymentMode
-$paramsJson | ConvertTo-Json -Depth 20 | Set-Content -Path $paramsPath -Encoding UTF8
-Write-Log "deploymentMode set to: $DeploymentMode" "SUCCESS"
-
-# --- Deploy ---
-$deploymentName = "azl-$($DeploymentMode.ToLower())-$(Get-Date -Format 'yyyyMMddHHmmss')"
-Write-Log "Deployment name: $deploymentName"
-Write-Log "Template URI: $TemplateUri"
-Write-Log ""
-
-if ($PSCmdlet.ShouldProcess("$resourceGroup/$clusterName", "ARM Template $DeploymentMode")) {
- Write-Log "Starting $DeploymentMode..." "HEADER"
-
- $deployment = New-AzResourceGroupDeployment `
- -Name $deploymentName `
- -ResourceGroupName $resourceGroup `
- -TemplateUri $TemplateUri `
- -TemplateParameterFile $paramsPath `
- -Verbose
-
- $state = $deployment.ProvisioningState
- Write-Log ""
- Write-Log "Deployment: $deploymentName" "HEADER"
- Write-Log "State: $state" $(if ($state -eq "Succeeded") { "SUCCESS" } else { "ERROR" })
- Write-Log "Timestamp: $($deployment.Timestamp)"
-
- if ($state -ne "Succeeded") {
- Write-Log "Deployment did not succeed. Check Azure Portal → Resource Group → Deployments for details." "ERROR"
- Write-Log " az deployment group show --name $deploymentName --resource-group $resourceGroup --query properties.error" "INFO"
- }
- elseif ($DeploymentMode -eq "Validate") {
- Write-Log "" "INFO"
- Write-Log "Validation passed. To deploy, re-run with -DeploymentMode Deploy:" "SUCCESS"
- Write-Log " .\Deploy-AzureLocalCluster.ps1 -ConfigPath `"$configFile`" -AuthType $AuthType -DeploymentMode Deploy" "INFO"
- }
- else {
- Write-Log "" "INFO"
- Write-Log "Deployment initiated. Monitor progress with:" "SUCCESS"
- Write-Log " .\Monitor-Deployment.ps1 or check Azure Portal → Deployments" "INFO"
- }
-}
-else {
- Write-Log "[WhatIf] Would run New-AzResourceGroupDeployment:" "WARN"
- Write-Log " Name: $deploymentName" "WARN"
- Write-Log " ResourceGroup: $resourceGroup" "WARN"
- Write-Log " TemplateUri: $TemplateUri" "WARN"
- Write-Log " ParametersFile: $paramsPath" "WARN"
- Write-Log " DeploymentMode: $DeploymentMode" "WARN"
-}
-
-Write-Log "========================================" "HEADER"
-Write-Log " Complete" "HEADER"
-Write-Log "========================================" "HEADER"
-Write-Log "Log: $($script:LogFile)"
-
-#endregion MAIN
-```
+The deployment takes about 2.5 to 3 hours. The secrets (the local administrator and the LCM user, as `keyvault://` references) are read from Key Vault into memory and sent as secure parameters. They are never written to the parameter file or to the result. To watch the steps while it runs, use [Azure Local Sonar](../../../deployment-monitoring/index.mdx).
 
 </TabItem>
 </Tabs>
 
 :::tip Run the Deployment Monitor
-After deployment starts, open a second terminal and run [Monitor-Deployment.ps1](../../../deployment-monitoring/monitor-deployment.mdx) to track hierarchical step progress and stream `OrchestratorFull` logs in real time. Press Ctrl+C to exit at any time.
+After deployment starts, watch it with [Azure Local Sonar](../../../deployment-monitoring/index.mdx).
 :::
 
 **Expected Duration:**
@@ -1247,7 +409,7 @@ After deployment completes successfully, verify the cluster is healthy, all node
 **When to use**: Verify the deployment step-by-step using standard commands.
 
 ```powershell title="Step 1 — Verify cluster resource in Azure"
-$resourceGroup = "<RESOURCE_GROUP>" # compute.azure_local.resource_group
+$resourceGroup = "<RESOURCE_GROUP>" # azure.resource_group
 Get-AzResource -ResourceGroupName $resourceGroup `
  -ResourceType "Microsoft.AzureStackHCI/clusters" |
  Format-Table Name, Location, ProvisioningState
@@ -1256,7 +418,7 @@ Get-AzResource -ResourceGroupName $resourceGroup `
 **Expected**: Cluster shows `ProvisioningState = Succeeded`
 
 ```powershell title="Step 2 — Connect to a node and verify cluster health"
-$nodeIP = "<NODE_IP>" # compute.cluster_nodes[0].management_ip
+$nodeIP = "<NODE_IP>" # nodes[].network_adapters[].ip_address
 $cred = Get-Credential -Message "Enter local admin credentials"
 
 Invoke-Command -ComputerName $nodeIP -Credential $cred -ScriptBlock {
@@ -1282,406 +444,29 @@ Invoke-Command -ComputerName $nodeIP -Credential $cred -ScriptBlock {
 </TabItem>
 <TabItem value="azure-powershell" label="Azure PowerShell">
 
-Two orchestrated scripts verify health across all nodes via PSRemoting using node IPs and credentials from `variables.yml`. Run both — the first checks cluster and storage health, the second confirms local identity (AD-less) configuration.
+### PowerShell
 
-```powershell title="Invoke — cluster health (all nodes)"
-.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-02-verify-deployment-completion\powershell\Invoke-VerifyClusterHealth-Orchestrated.ps1 `
- -ConfigPath "config/variables.yml"
-```
+> **When to use**: Verify the cluster health and the local identity set-up on all nodes after the deployment.
 
-```powershell title="Invoke — local identity config verification (all nodes)"
-.\scripts\deploy\04-cluster-deployment\phase-05-cluster-deployment\local-identity\task-02-verify-deployment-completion\powershell\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 `
- -ConfigPath "config/variables.yml"
-```
+#### Script
 
-```powershell title="Invoke-VerifyClusterHealth-Orchestrated.ps1"
-<#
-.SYNOPSIS
- Invoke-VerifyClusterHealth-Orchestrated.ps1
- Orchestrated cluster health verification for Azure Local deployments.
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1` | Orchestrated cluster health verification for Azure Local deployments. Supports `-WhatIf`. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1` | Orchestrated Local Identity configuration verification for Azure Local deployments. Supports `-WhatIf`. |
 
-.DESCRIPTION
- Reads cluster configuration from variables.yml and verifies health
- on all cluster nodes (or specific nodes via -TargetNode). Checks cluster
- state, node state, and storage pool health on each node via PSRemoting.
+Requires: PowerShell 7.
 
- Credentials are resolved in priority order:
- 1. -Credential parameter
- 2. Key Vault reference in variables.yml (keyvault://<vault>/<secret>)
- 3. Interactive Get-Credential prompt
+#### Run
 
-.PARAMETER ConfigPath
- Path to variables.yml. Defaults to 'config/variables.yml' relative
- to the working directory.
+```powershell
+.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml
+.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -TargetNode iic-01-n01
+.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
 
-.PARAMETER Credential
- Override credential for PSRemoting. If omitted, resolved from Key Vault or prompt.
-
-.PARAMETER TargetNode
- Limit verification to specific node(s). Empty = all cluster nodes.
-
-.PARAMETER WhatIf
- Dry-run mode. Resolves config and credentials, shows what would be checked,
- but performs no PSRemoting connections.
-
-.PARAMETER LogPath
- Override log file path. Default: logs/task-03-verify-deployment-completion/<date>_<time>_VerifyClusterHealth.log
-
-.NOTES
- Author: Azure Local Cloud Azure Local Cloud
- Version: 1.0.0
- Phase: 05-cluster-deployment
- Task: task-03-verify-deployment-completion
- Execution: Run from management server with access to variables.yml
-
-.EXAMPLE
- .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath config/variables.yml
- .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath config/variables.yml -TargetNode iic-01-n01
- .\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath config/variables.yml -WhatIf
-#>
-
-[CmdletBinding(SupportsShouldProcess)]
-param(
- [string]$ConfigPath = "",
- [PSCredential]$Credential,
- [string[]]$TargetNode = @(),
- [switch]$WhatIf,
- [string]$LogPath = ""
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-#region LOGGING
-$TaskFolderName = "task-03-verify-deployment-completion"
-$ShortName = "VerifyClusterHealth"
-
-if (-not $LogPath) {
- $LogDir = Join-Path (Get-Location).Path "logs\$TaskFolderName"
- $LogPath = Join-Path $LogDir ("{0}_{1}_{2}.log" -f (Get-Date -f 'yyyy-MM-dd'), (Get-Date -f 'HHmmss'), $ShortName)
-}
-
-if (-not (Test-Path (Split-Path $LogPath -Parent))) {
- New-Item -ItemType Directory -Path (Split-Path $LogPath -Parent) -Force | Out-Null
-}
-
-function Write-Log {
- param([string]$Message, [ValidateSet('INFO','WARN','ERROR','DEBUG')][string]$Level = 'INFO')
- $entry = "{0} [{1}] {2}" -f (Get-Date -f 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
- Add-Content -Path $LogPath -Value $entry
- switch ($Level) {
- 'WARN' { Write-Host $entry -ForegroundColor Yellow }
- 'ERROR' { Write-Host $entry -ForegroundColor Red }
- default { Write-Host $entry }
- }
-}
-#endregion LOGGING
-
-#region CONFIG LOADING
-# Helpers — dot-source from repo root
-. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\config-loader.ps1")
-. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\keyvault-helper.ps1")
-
-if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml" }
-Write-Log "Loading configuration from: $ConfigPath"
-$cfg = Get-ClusterConfig -ConfigPath $ConfigPath
-#endregion CONFIG LOADING
-
-#region RESOLVE NODES
-$allNodes = $cfg.compute.cluster_nodes # compute.cluster_nodes[*]
-if ($TargetNode.Count -gt 0) {
- $nodes = @($allNodes | Where-Object { $_.name -in $TargetNode })
- if ($nodes.Count -eq 0) {
- Write-Log "No matching nodes found for: $($TargetNode -join ', ')" -Level ERROR
- exit 1
- }
-} else {
- $nodes = @($allNodes)
-}
-Write-Log "Nodes to verify: $($nodes.name -join ', ')"
-#endregion RESOLVE NODES
-
-#region RESOLVE CREDENTIAL
-if (-not $Credential) {
- $kvPassword = $cfg.identity.accounts.account_local_admin_password # identity.accounts.account_local_admin_password
- $username = $cfg.identity.accounts.account_local_admin_username # identity.accounts.account_local_admin_username
- if ($kvPassword -match '^keyvault://') {
- Write-Log "Resolving local admin password from Key Vault..."
- $kvName = $cfg.security.keyvault.kv_azl.kv_azl_name # security.keyvault.kv_azl.kv_azl_name
- $secret = Resolve-KeyVaultRef -Uri $kvPassword -VaultName $kvName
- $Credential = New-Object PSCredential($username, (ConvertTo-SecureString $secret -AsPlainText -Force))
- } else {
- Write-Log "Credential not provided and no KV reference found; prompting..." -Level WARN
- $Credential = Get-Credential -Message "Enter local admin credentials for cluster nodes"
- }
-}
-#endregion RESOLVE CREDENTIAL
-
-#region WHATIF
-if ($WhatIf) {
- Write-Log "[WhatIf] Would verify cluster health on: $($nodes | ForEach-Object { $_.management_ip } | Join-String ', ')"
- Write-Log "[WhatIf] Checks: cluster state, node state, storage pool health"
- exit 0
-}
-#endregion WHATIF
-
-#region MAIN
-Write-Log "=== Cluster Health Verification ==="
-
-$results = [System.Collections.Generic.List[PSCustomObject]]::new()
-$failCount = 0
-
-foreach ($node in $nodes) {
- $ip = $node.management_ip # compute.cluster_nodes[*].management_ip
- Write-Log "Connecting to $($node.name) ($ip)..."
-
- try {
- $nodeResult = Invoke-Command -ComputerName $ip -Credential $Credential -ScriptBlock {
- $r = [PSCustomObject]@{
- NodeName = $env:COMPUTERNAME
- ClusterName = $null
- NodeState = $null
- AllNodesUp = $false
- PoolHealthy = $false
- Errors = @()
- }
-
- try {
- $cluster = Get-Cluster
- $r.ClusterName = $cluster.Name
- } catch { $r.Errors += "Get-Cluster failed: $_" }
-
- try {
- $clNodes = @(Get-ClusterNode)
- $r.NodeState = ($clNodes | Select-Object Name, State | Out-String).Trim()
- $r.AllNodesUp = ($clNodes | Where-Object { $_.State -ne 'Up' }).Count -eq 0
- } catch { $r.Errors += "Get-ClusterNode failed: $_" }
-
- try {
- $pools = @(Get-StoragePool | Where-Object { -not $_.IsPrimordial })
- $r.PoolHealthy = ($pools.Count -eq 0) -or ($pools | Where-Object { $_.HealthStatus -ne 'Healthy' }).Count -eq 0
- } catch { $r.Errors += "Get-StoragePool failed: $_" }
-
- $r
- }
-
- Write-Log " Cluster : $($nodeResult.ClusterName)"
- Write-Log " Nodes Up : $($nodeResult.AllNodesUp)"
- Write-Log " Pool OK : $($nodeResult.PoolHealthy)"
- foreach ($err in $nodeResult.Errors) {
- Write-Log " $err" -Level WARN
- }
- if (-not $nodeResult.AllNodesUp -or -not $nodeResult.PoolHealthy) {
- $failCount++
- }
- $results.Add($nodeResult)
-
- } catch {
- Write-Log "Failed to connect to $ip : $_" -Level ERROR
- $failCount++
- }
-}
-
-Write-Log "=== Summary: $($nodes.Count) node(s) checked, $failCount warning(s) ==="
-
-if ($failCount -gt 0) {
- Write-Log "Cluster health check completed with warnings — review log: $LogPath" -Level WARN
- exit 1
-} else {
- Write-Log "Cluster health check passed on all nodes."
-}
-#endregion MAIN
-```
-
-```powershell title="Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1"
-<#
-.SYNOPSIS
- Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1
- Orchestrated Local Identity configuration verification for Azure Local deployments.
-
-.DESCRIPTION
- Reads cluster configuration from variables.yml and verifies Local Identity
- state on all cluster nodes (or specific nodes via -TargetNode) via PSRemoting.
-
- Verifies per node:
- 1. Node Domain = WORKGROUP (not domain-joined)
- 2. Cluster ADAware parameter = 2 (AD-less / Local Identity mode)
-
- Credentials are resolved in priority order:
- 1. -Credential parameter
- 2. Key Vault reference in variables.yml (keyvault://<vault>/<secret>)
- 3. Interactive Get-Credential prompt
-
- Source: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault
-
-.PARAMETER ConfigPath
- Path to variables.yml. Defaults to 'config/variables.yml' relative
- to the working directory.
-
-.PARAMETER Credential
- Override credential for PSRemoting. If omitted, resolved from Key Vault or prompt.
-
-.PARAMETER TargetNode
- Limit verification to specific node(s). Empty = all cluster nodes.
-
-.PARAMETER WhatIf
- Dry-run mode. Resolves config and credentials, shows what would be checked,
- but performs no PSRemoting connections.
-
-.PARAMETER LogPath
- Override log file path. Default: logs/task-03-verify-deployment-completion/<date>_<time>_VerifyLocalIdentityConfig.log
-
-.NOTES
- Author: Azure Local Cloud Azure Local Cloud
- Version: 1.0.0
- Phase: 05-cluster-deployment
- Task: task-03-verify-deployment-completion
- Execution: Run from management server with access to variables.yml
-
-.EXAMPLE
- .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/variables.yml
- .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/variables.yml -TargetNode iic-01-n01,iic-01-n02
- .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/variables.yml -WhatIf
-#>
-
-[CmdletBinding(SupportsShouldProcess)]
-param(
- [string]$ConfigPath = "",
- [PSCredential]$Credential,
- [string[]]$TargetNode = @(),
- [switch]$WhatIf,
- [string]$LogPath = ""
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-#region LOGGING
-$TaskFolderName = "task-03-verify-deployment-completion"
-$ShortName = "VerifyLocalIdentityConfig"
-
-if (-not $LogPath) {
- $LogDir = Join-Path (Get-Location).Path "logs\$TaskFolderName"
- $LogPath = Join-Path $LogDir ("{0}_{1}_{2}.log" -f (Get-Date -f 'yyyy-MM-dd'), (Get-Date -f 'HHmmss'), $ShortName)
-}
-
-if (-not (Test-Path (Split-Path $LogPath -Parent))) {
- New-Item -ItemType Directory -Path (Split-Path $LogPath -Parent) -Force | Out-Null
-}
-
-function Write-Log {
- param([string]$Message, [ValidateSet('INFO','WARN','ERROR','DEBUG')][string]$Level = 'INFO')
- $entry = "{0} [{1}] {2}" -f (Get-Date -f 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
- Add-Content -Path $LogPath -Value $entry
- switch ($Level) {
- 'WARN' { Write-Host $entry -ForegroundColor Yellow }
- 'ERROR' { Write-Host $entry -ForegroundColor Red }
- default { Write-Host $entry }
- }
-}
-#endregion LOGGING
-
-#region CONFIG LOADING
-. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\config-loader.ps1")
-. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\keyvault-helper.ps1")
-
-if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "config\variables.yml" }
-Write-Log "Loading configuration from: $ConfigPath"
-$cfg = Get-ClusterConfig -ConfigPath $ConfigPath
-#endregion CONFIG LOADING
-
-#region RESOLVE NODES
-$allNodes = $cfg.compute.cluster_nodes # compute.cluster_nodes[*]
-if ($TargetNode.Count -gt 0) {
- $nodes = @($allNodes | Where-Object { $_.name -in $TargetNode })
- if ($nodes.Count -eq 0) {
- Write-Log "No matching nodes found for: $($TargetNode -join ', ')" -Level ERROR
- exit 1
- }
-} else {
- $nodes = @($allNodes)
-}
-Write-Log "Nodes to verify: $($nodes.name -join ', ')"
-#endregion RESOLVE NODES
-
-#region RESOLVE CREDENTIAL
-if (-not $Credential) {
- $kvPassword = $cfg.identity.accounts.account_local_admin_password # identity.accounts.account_local_admin_password
- $username = $cfg.identity.accounts.account_local_admin_username # identity.accounts.account_local_admin_username
- if ($kvPassword -match '^keyvault://') {
- Write-Log "Resolving local admin password from Key Vault..."
- $kvName = $cfg.security.keyvault.kv_azl.kv_azl_name # security.keyvault.kv_azl.kv_azl_name
- $secret = Resolve-KeyVaultRef -Uri $kvPassword -VaultName $kvName
- $Credential = New-Object PSCredential($username, (ConvertTo-SecureString $secret -AsPlainText -Force))
- } else {
- Write-Log "Credential not provided and no KV reference found; prompting..." -Level WARN
- $Credential = Get-Credential -Message "Enter local admin credentials for cluster nodes"
- }
-}
-#endregion RESOLVE CREDENTIAL
-
-#region WHATIF
-if ($WhatIf) {
- Write-Log "[WhatIf] Would verify Local Identity config on: $($nodes | ForEach-Object { $_.management_ip } | Join-String ', ')"
- Write-Log "[WhatIf] Checks: Domain = WORKGROUP, ADAware = 2"
- exit 0
-}
-#endregion WHATIF
-
-#region MAIN
-Write-Log "=== Local Identity Configuration Verification ==="
-
-$failCount = 0
-$results = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-foreach ($node in $nodes) {
- $ip = $node.management_ip # compute.cluster_nodes[*].management_ip
- Write-Log "Connecting to $($node.name) ($ip)..."
-
- try {
- $nodeResult = Invoke-Command -ComputerName $ip -Credential $Credential -ScriptBlock {
- $r = [PSCustomObject]@{
- NodeName = $env:COMPUTERNAME
- Domain = (Get-WmiObject Win32_ComputerSystem).Domain
- ADAware = $null
- Errors = @()
- }
- try {
- $adAware = Get-ClusterResource "Cluster Name" | Get-ClusterParameter ADAware
- $r.ADAware = $adAware.Value
- } catch {
- $r.Errors += "ADAware check failed: $_"
- }
- $r
- }
-
- $domainPass = $nodeResult.Domain -eq 'WORKGROUP'
- $adAwarePass = $nodeResult.ADAware -eq 2
-
- Write-Log " Domain : $($nodeResult.Domain) — $(if ($domainPass) { 'PASS' } else { 'FAIL' })"
- Write-Log " ADAware : $($nodeResult.ADAware) — $(if ($adAwarePass) { 'PASS' } else { 'FAIL' })"
- foreach ($err in $nodeResult.Errors) { Write-Log " $err" -Level WARN }
-
- if (-not $domainPass -or -not $adAwarePass) { $failCount++ }
- $results.Add($nodeResult)
-
- } catch {
- Write-Log "Failed to connect to $ip : $_" -Level ERROR
- $failCount++
- }
-}
-
-# ── Summary table ─────────────────────────────────────────────────────────────
-Write-Log "=== Summary: $($nodes.Count) node(s) checked, $failCount failure(s) ==="
-$results | Format-Table NodeName, Domain, ADAware -AutoSize | Out-String | ForEach-Object { Write-Log $_ }
-
-if ($failCount -gt 0) {
- Write-Log "Local Identity verification completed with failures — review log: $LogPath" -Level ERROR
- exit 1
-} else {
- Write-Log "Local Identity configuration verified on all nodes."
-}
-#endregion MAIN
+.\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath ./infrastructure.yml
+.\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -TargetNode iic-01-n01,iic-01-n02
+.\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
 ```
 
 </TabItem>
@@ -1971,7 +756,7 @@ Always use Key Vault references to the platform Key Vault for sensitive paramete
 <summary><strong>Example Parameter Files by Networking Pattern</strong></summary>
 
 Azure Local Cloud maintains validated IIC examples for each networking pattern in:
-`azl-toolkit/configs/azure/arm-templates/examples/`
+`azurelocal-toolkit/config/azure/arm-templates/examples/`
 
 <Tabs>
 <TabItem value="single" label="1-Intent (HyperConverged)" default>

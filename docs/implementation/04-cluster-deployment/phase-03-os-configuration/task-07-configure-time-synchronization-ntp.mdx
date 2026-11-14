@@ -5,7 +5,7 @@ sidebar_position: 7
 description: "Configure the NTP time source on each Azure Local node using w32tm — required for Kerberos authentication and AD domain operations."
 category: "Runbook"
 scope: Time synchronization
-purpose: Configure w32tm with the NTP server from variables.yml so all cluster nodes synchronize time from the same authoritative source
+purpose: Configure w32tm with the NTP server from infrastructure.yml so all cluster nodes synchronize time from the same authoritative source
 author: Azure Local Cloud
 created: 2026-01-31
 updated: 2026-11-08
@@ -42,7 +42,7 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Time synchronization   
-> **PURPOSE**: Configure w32tm with the NTP server from `variables.yml` so all cluster nodes synchronize to the same authoritative time source — required for Kerberos, Active Directory, and Arc registration   
+> **PURPOSE**: Configure w32tm with the NTP server from `infrastructure.yml` so all cluster nodes synchronize to the same authoritative time source — required for Kerberos, Active Directory, and Arc registration   
 > **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
 
 **Status**: Active 
@@ -60,7 +60,7 @@ immediate resync, and validates the resulting stratum.
 **What the scripts do:**
 
 1. Hard-fail on any `REPLACE` placeholder remaining in `#region CONFIGURATION`
-2. Configure w32tm with the NTP server from `active_directory.ntp_servers`
+2. Configure w32tm with the NTP server from `networking.ntp_servers`
 3. Restart the Windows Time service
 4. Force an immediate resync (`w32tm /resync /force`)
 5. Verify the resulting sync status and stratum — warn if stratum 16 (unsynchronized)
@@ -72,21 +72,21 @@ immediate resync, and validates the resulting stratum.
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Task 06 complete | DNS client verified and functional | [Task 06: Verify DNS](./task-06-verify-dns-client-configuration.mdx) |
-| NTP server address | FQDN or IP of the authoritative NTP server | `variables.yml`: `active_directory.ntp_servers` |
+| NTP server address | FQDN or IP of the authoritative NTP server | `infrastructure.yml`: `networking.ntp_servers` |
 | Local admin rights | Required to restart Windows Time service | Node credentials |
 
 ---
 
 ## Configuration Reference
 
-| `variables.yml` path | Script variable | Example |
+| `infrastructure.yml` path | Script variable | Example |
 |----------------------------|----------------|---------|
-| `active_directory.ntp_servers[0]` | `$NTPServer` | `10.100.10.1` |
-| `cluster_nodes[].management_ip` | PSRemoting target (orchestrated only) | `10.100.200.11` |
-| `cluster_nodes[].hostname` | Node display name (orchestrated only) | `azlocal-node01` |
+| `networking.ntp_servers` | `$NTPServer` | `10.100.10.1` |
+| `nodes[].network_adapters[].ip_address` | PSRemoting target (orchestrated only) | `10.100.200.11` |
+| `nodes[].name` | Node display name (orchestrated only) | `azlocal-node01` |
 
-:::info variables.yml — NTP server list
-`active_directory.ntp_servers` is a YAML list. The direct script uses the primary (first) entry.
+:::info infrastructure.yml — NTP server list
+`networking.ntp_servers` is a YAML list. The direct script uses the primary (first) entry.
 The orchestrated script joins all entries as a space-separated `manualpeerlist`, with the `0x8` flag on each peer.
 :::
 
@@ -111,11 +111,11 @@ Run on each node individually — via RDP, console, or KVM.
 
 **Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Set-NTPConfiguration.ps1`
 
-Set `$NTPServer` to the first entry from `active_directory.ntp_servers` in `variables.yml`.
+Set `$NTPServer` to the first entry from `networking.ntp_servers` in `infrastructure.yml`.
 
 ```powershell title="Set-NTPConfiguration.ps1"
 # -- Edit before running -------------------------------------------------
-$NTPServer = "REPLACE_WITH_NTP_SERVER" # active_directory.ntp_servers[0]
+$NTPServer = "REPLACE_WITH_NTP_SERVER" # networking.ntp_servers
 # ------------------------------------------------------------------------
 
 if ($NTPServer -match "^REPLACE_") { Write-Host "[ERROR] Set NTPServer before running" -ForegroundColor Red; exit 1 }
@@ -132,238 +132,24 @@ if ((w32tm /query /status | Out-String) -match 'Local CMOS Clock') { Write-Host 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run from the management server to configure all nodes in a single pass.
+### PowerShell
 
-**Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Invoke-ConfigureNTP-Orchestrated.ps1`
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-Reads `active_directory.ntp_servers` and all `cluster_nodes` entries from
-`variables.yml`. Connects to each node via PSRemoting and configures w32tm.
-Produces a per-node summary table with stratum and sync source.
+#### Script
 
-```powershell title="Invoke-ConfigureNTP-Orchestrated.ps1"
-<#
-.SYNOPSIS
- Invoke-ConfigureNTP-Orchestrated.ps1
- Configures NTP on all Azure Local nodes via PSRemoting.
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Invoke-ConfigureNTP-Orchestrated.ps1` | Configures NTP on all Azure Local nodes via PSRemoting. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Set-NTPConfiguration.ps1` | Configures the NTP time source on the local Azure Local node. |
 
-.DESCRIPTION
- Runs from the management server. Reads NTP server list and node IPs from
- variables.yml, connects to each node over PSRemoting, and configures
- the Windows Time service.
+Requires: PowerShell 7.
 
- variables.yml paths used:
- active_directory.ntp_servers - List of NTP servers (joined for manualpeerlist)
- cluster_nodes[].management_ip - PSRemoting connection target per node
- cluster_nodes[].hostname - Node hostname (display only)
+#### Run
 
-.NOTES
- Author: Azure Local Cloud Azure Local Cloud
- Version: 1.0.0
- Phase: 03-os-configuration
- Task: task-07-configure-time-synchronization-ntp
- Execution: Run from management server (PSRemoting outbound to nodes)
- Prerequisites: WinRM enabled on all nodes, admin credentials
- Run after: Task 06 - DNS verified
-
-.EXAMPLE
- .\Invoke-ConfigureNTP-Orchestrated.ps1
- .\Invoke-ConfigureNTP-Orchestrated.ps1 -ConfigPath "C:\config\variables.yml"
-#>
-
-[CmdletBinding()]
-param(
- [string]$ConfigPath = ""
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-#region HELPERS
-
-function Write-Log {
- param([string]$Message, [string]$Level = "INFO")
- $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
- switch ($Level) {
- "SUCCESS" { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
- "ERROR" { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
- "WARN" { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
- "HEADER" { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
- default { Write-Host "[$ts] [INFO] $Message" }
- }
-}
-
-function Resolve-ConfigPath {
- param([string]$Provided)
- if ($Provided -ne "" -and (Test-Path $Provided)) { return $Provided }
- $candidates = @(
- "$env:USERPROFILE\variables.yml",
- "C:\config\variables.yml",
- "$PSScriptRoot\..\..\..\..\..\config\variables.yml"
- )
- foreach ($c in $candidates) {
- if (Test-Path $c) { return (Resolve-Path $c).Path }
- }
- throw "variables.yml not found. Pass -ConfigPath or place it in a standard location."
-}
-
-function Get-YamlList {
- param([string]$FilePath, [string[]]$KeyPath)
- $lines = Get-Content -Path $FilePath -Encoding UTF8
- $inParent = $false
- $inKey = $false
- $items = @()
- $parentDepth = 0
-
- foreach ($line in $lines) {
- if ($line -match '^\s*#' -or $line.Trim() -eq '') { continue }
- $indent = $line.Length - $line.TrimStart().Length
-
- if (-not $inParent) {
- if ($line -match '^\s*([\w][\w_-]*):\s*$' -and $Matches[1] -eq $KeyPath[0]) {
- $inParent = $true; $parentDepth = $indent; continue
- }
- } elseif (-not $inKey) {
- if ($indent -le $parentDepth -and $line -notmatch '^\s+-') { $inParent = $false; continue }
- if ($line -match '^\s+([\w][\w_-]*):\s*$' -and $Matches[1] -eq $KeyPath[1]) {
- $inKey = $true; continue
- }
- } else {
- if ($indent -le $parentDepth) { break }
- if ($line -match '^\s+-\s+"?([^"]+)"?\s*$') { $items += $Matches[1].Trim() }
- elseif ($line -match '^\s+[\w]' -and $line -notmatch '^\s+-') { break }
- }
- }
- return $items
-}
-
-function Get-ClusterNodes {
- param([string]$FilePath)
- $lines = Get-Content -Path $FilePath -Encoding UTF8
- $inNodes = $false
- $nodes = @()
- $current = $null
-
- foreach ($line in $lines) {
- if ($line -match '^\s*#' -or $line.Trim() -eq '') { continue }
- if ($line -match '^cluster_nodes:') { $inNodes = $true; continue }
- if ($inNodes) {
- if ($line -match '^[^\s-]') { break }
- if ($line -match '^\s+-\s+hostname:\s+"?([^"]+)"?') {
- if ($current -and $current.hostname -ne "") { $nodes += $current }
- $current = @{ hostname = $Matches[1].Trim(); management_ip = "" }
- } elseif ($line -match '^\s+hostname:\s+"?([^"]+)"?' -and $current) {
- $current.hostname = $Matches[1].Trim()
- } elseif ($line -match '^\s+management_ip:\s+"?([^"]+)"?' -and $current) {
- $current.management_ip = $Matches[1].Trim()
- }
- }
- }
- if ($current -and $current.hostname -ne "") { $nodes += $current }
- return $nodes
-}
-
-#endregion HELPERS
-
-#region MAIN
-
-Write-Log "=== Task 07 - Configure Time Synchronization (NTP) ===" "HEADER"
-
-$configFile = Resolve-ConfigPath -Provided $ConfigPath
-Write-Log "Config: $configFile"
-
-$ntpList = Get-YamlList -FilePath $configFile -KeyPath @("active_directory", "ntp_servers")
-$nodes = Get-ClusterNodes -FilePath $configFile
-
-if ($ntpList.Count -eq 0) { throw "active_directory.ntp_servers not found or empty in variables.yml" }
-if ($nodes.Count -eq 0) { throw "cluster_nodes not found or empty in variables.yml" }
-
-# Each peer carries the 0x8 flag (client mode), peers are space separated
-$ntpPeerList = ($ntpList | ForEach-Object { "$_,0x8" }) -join " "
-Write-Log "NTP servers : $ntpPeerList"
-Write-Log "Nodes : $($nodes.Count) found"
-
-$cred = Get-Credential -Message "Enter credentials for PSRemoting to Azure Local nodes"
-
-$results = @()
-
-foreach ($node in $nodes) {
- $ip = $node.management_ip
- $hostname = $node.hostname
- if (-not $ip) {
- Write-Log "[$hostname] management_ip missing -- skipping" "WARN"
- continue
- }
-
- Write-Log "[$hostname] Connecting to $ip..."
-
- try {
- $r = Invoke-Command -ComputerName $ip -Credential $cred -ArgumentList $ntpPeerList -ScriptBlock {
- param($peerList)
-
- w32tm "/config" "/manualpeerlist:$peerList" /syncfromflags:manual /update | Out-Null
- Restart-Service w32time -Force
- Start-Sleep -Seconds 3
- w32tm /resync /force | Out-Null
-
- $status = w32tm /query /status
- $stratum = ($status | Select-String "Stratum:") -replace ".*Stratum:\s*(\d+).*", '$1'
- $source = ($status | Select-String "Source:") -replace ".*Source:\s*(.+)", '$1'
-
- [PSCustomObject]@{
- Hostname = $env:COMPUTERNAME
- Stratum = $stratum.Trim()
- Source = $source.Trim()
- Status = if ([int]$stratum -lt 16) { "PASS" } else { "WARN" }
- }
- }
-
- $color = if ($r.Status -eq "PASS") { "SUCCESS" } else { "WARN" }
- Write-Log "[$hostname] $($r.Status) Stratum: $($r.Stratum) Source: $($r.Source)" $color
-
- $results += [PSCustomObject]@{
- Node = $hostname
- IP = $ip
- Stratum = $r.Stratum
- Source = $r.Source
- Status = $r.Status
- }
- } catch {
- Write-Log "[$hostname] PSRemoting failed: $_" "ERROR"
- $results += [PSCustomObject]@{
- Node = $hostname
- IP = $ip
- Stratum = ""
- Source = ""
- Status = "ERROR"
- }
- }
-}
-
-Write-Log ""
-Write-Log "=== NTP Configuration Summary ===" "HEADER"
-$results | Format-Table Node, IP, Stratum, Source, Status -AutoSize
-
-$failCount = ($results | Where-Object { $_.Status -eq "ERROR" }).Count
-if ($failCount -eq 0) {
- Write-Log "All $($results.Count) node(s) NTP configured successfully." "SUCCESS"
-} else {
- Write-Log "$failCount node(s) failed. Review output above." "ERROR"
- exit 1
-}
-
-#endregion MAIN
+```powershell
+.\Set-NTPConfiguration.ps1
 ```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
-:::
 
 </TabItem>
 </Tabs>
@@ -381,13 +167,9 @@ Standalone script content references the toolkit repository. See the Orchestrate
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| NTP Server | `cluster.time.ntp_server` | `time.windows.com` |
-| NTP Fallback | `cluster.time.ntp_fallback` | `pool.ntp.org` |
-| Sync Interval | `cluster.time.sync_interval_seconds` | `3600` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -395,10 +177,10 @@ Standalone script content references the toolkit repository. See the Orchestrate
 
 | Issue | Root Cause | Remediation |
 |-------|------------|-------------|
-| Script hard-fails on startup | `REPLACE` placeholder value remains | Edit `#region CONFIGURATION` with the NTP server from `variables.yml` |
+| Script hard-fails on startup | `REPLACE` placeholder value remains | Edit `#region CONFIGURATION` with the NTP server from `infrastructure.yml` |
 | Stratum 16 after resync | NTP server unreachable or DNS not resolving | Verify NTP server IP; confirm Task 06 (DNS) passed; check firewall rules |
 | `w32tm /resync` exits non-zero | Time service not yet fully started | Wait 10 seconds and re-run `w32tm /resync /force` manually |
-| Orchestrated: `ntp_servers not found` | Key missing or wrong path in `variables.yml` | Confirm `active_directory.ntp_servers:` list exists in yml |
+| Orchestrated: `ntp_servers not found` | Key missing or wrong path in `infrastructure.yml` | Confirm `active_directory.ntp_servers:` list exists in yml |
 | Orchestrated: node unreachable | WinRM not enabled or firewall blocking | Verify WinRM configured (Task 01); check firewall allows port 5985/5986 |
 | Time keeps drifting back | VM host overriding guest time | Disable Hyper-V Time Synchronization integration service if applicable |
 
@@ -409,12 +191,7 @@ Standalone script content references the toolkit repository. See the Orchestrate
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 
@@ -429,5 +206,5 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
-| 2.0 | 2026-03-04 | Azure Local Cloud | Full rewrite to standards — complete frontmatter, bare-node 2-tab structure (Direct, Orchestrated), Standalone tab removed, YAML key corrected to `active_directory.ntp_servers` list, full embedded scripts with `Assert-ConfigValues` hard-fail, `Get-YamlList` and `Get-ClusterNodes` helpers |
+| 2.0 | 2026-03-04 | Azure Local Cloud | Full rewrite to standards — complete frontmatter, bare-node 2-tab structure (Direct, Orchestrated), Standalone tab removed, YAML key corrected to `networking.ntp_servers` list, full embedded scripts with `Assert-ConfigValues` hard-fail, `Get-YamlList` and `Get-ClusterNodes` helpers |
 | 2.1 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610 (Learn "Install the OS"): `w32tm` uses `,0x8` on each peer, `/reliable:YES` removed, CMOS clock check added, domain-joined PDC emulator note |

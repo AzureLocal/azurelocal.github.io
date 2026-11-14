@@ -67,18 +67,9 @@ Before registering nodes with Azure Arc, validate three categories of prerequisi
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `identity.service_principal.client_id` | string | SPN Application (Client) ID |
-| `compute.azure_local.arc_resource_group` | string | Arc resource group name |
-| `security.keyvault.kv_azl.kv_azl_name` | string | Key Vault name for SPN secret |
-| `compute.azure_local.arc_gateway_id` | string | Arc Gateway resource ID |
-| `compute.cluster_nodes[].management_ip` | string | Node management IPs |
-| `azure_platform.tenant.id` | string | Azure Tenant ID |
-| `azure_platform.subscriptions.lab.id` | string | Azure Subscription ID |
-| `azure_platform.region` | string | Azure region |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -162,47 +153,28 @@ if ($secret -and $secret.Enabled) {
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run identity checks only using the `Invoke-ArcPrerequisites-Orchestrated.ps1` script with `-SkipConnectivity`. Reads SPN, resource group, Key Vault, and Arc Gateway details from `variables.yml`.
+### PowerShell
 
-:::tip Standards-Compliant Script
-**`Invoke-ArcPrerequisites-Orchestrated.ps1`** includes both identity and connectivity checks. Use `-SkipConnectivity` to run identity checks only, or `-SkipIdentity` to run connectivity only. Both run by default. Use `-NoArcGateway` to skip the Arc Gateway validation check.
-:::
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-```powershell title="Identity checks only (no node connections)"
-# Requires: Connect-AzAccount before running
-# Requires: Az.Accounts, Az.Resources, Az.KeyVault modules
+#### Script
 
-.\scripts\deploy\04-cluster-deployment\phase-04-arc-registration\task-01-pre-registration-validation\powershell\Invoke-ArcPrerequisites-Orchestrated.ps1 `
- -ConfigPath .\configs\infrastructure-azl-lab.yml `
- -SkipConnectivity
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1` | Validates Azure Arc registration prerequisites across all cluster nodes. |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Test-ArcPrerequisites-Orchestrated.ps1` | See the comment-based help of the script. |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Test-ArcPrerequisites.ps1` | See the comment-based help of the script. |
+
+Requires: PowerShell 7.
+
+#### Run
+
+```powershell
+.\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
 ```
-
-```powershell title="WhatIf — preview identity checks"
-.\scripts\deploy\04-cluster-deployment\phase-04-arc-registration\task-01-pre-registration-validation\powershell\Invoke-ArcPrerequisites-Orchestrated.ps1 `
- -ConfigPath .\configs\infrastructure-azl-lab.yml `
- -SkipConnectivity `
- -WhatIf
-```
-
-The script performs four checks:
-1. **SPN exists** — queries Entra ID for the service principal by `identity.service_principal.client_id`
-2. **RBAC roles** — verifies the SPN has a recognized role on `compute.azure_local.arc_resource_group` (Contributor, Azure Connected Machine Onboarding, Azure Connected Machine Resource Administrator, or Azure Stack HCI Administrator)
-3. **Key Vault secret** — confirms the SPN secret referenced by `identity.service_principal.secret` is accessible and enabled
-4. **Arc Gateway** — verifies the Arc Gateway resource referenced by `compute.azure_local.arc_gateway_id` exists in Azure and is provisioned. Skip with `-NoArcGateway`
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Self-contained deployment without shared config file.
-
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit).
-
-:::note Content Pending
-See Orchestrated Script tab for primary implementation.
-:::
-
-</TabItem>
 
 </Tabs>
 
@@ -220,28 +192,24 @@ OS configuration is now complete on the cluster nodes. Running Environment Check
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run from management server against all nodes via PSRemoting.
+### PowerShell
 
-:::tip Standards-Compliant Script
-For production deployments, use **`Invoke-ArcPrerequisites-Orchestrated.ps1`** with `-SkipIdentity` to run connectivity only, or omit it to run both checks. Supports `-ConfigPath`, `-WhatIf`, `-TargetNode`, and `-Credential`. Includes logging, Key Vault credential resolution, and parallel execution. The module must already be installed on each node.
-:::
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1` | Validates Azure Arc registration prerequisites across all cluster nodes. |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Test-ArcPrerequisites-Orchestrated.ps1` | See the comment-based help of the script. |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Test-ArcPrerequisites.ps1` | See the comment-based help of the script. |
+
+Requires: PowerShell 7.
+
+#### Run
 
 ```powershell
-# Task 01 Step 2 — Connectivity Validation (orchestrated, all nodes)
-# variables.yml variables:
-# compute.cluster_nodes[].management_ip -> $ServerList
-
-$ConfigPath = ".\config\variables.yml"
-$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
- ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
-
-Invoke-Command ($ServerList) {
- if (-not (Get-Module -ListAvailable -Name AzStackHci.EnvironmentChecker)) {
- Install-Module -Name AzStackHci.EnvironmentChecker -Repository PSGallery -Force -AllowClobber
- }
- Import-Module AzStackHci.EnvironmentChecker
- Invoke-AzStackHciConnectivityValidation
-} | Sort -Property PsComputerName
+.\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
 ```
 
 </TabItem>
@@ -302,7 +270,7 @@ All Environment Checker tests should show `Succeeded`:
 
 | Issue | Resolution |
 |---|---|
-| SPN not found | Verify `identity.service_principal.client_id` in `variables.yml` matches Entra ID app registration |
+| SPN not found | Verify `azure.automation_identity.client_id` in `infrastructure.yml` matches Entra ID app registration |
 | No RBAC role on RG | Assign both **Azure Connected Machine Onboarding** and **Azure Connected Machine Resource Administrator** on the Arc resource group (Learn requires both, or resource group owner) |
 | KV secret not accessible | Check Key Vault access policies or RBAC; verify secret name matches the `keyvault://` URI in YAML |
 | Secret expired or disabled | Rotate the SPN secret in Entra ID and update Key Vault |
@@ -323,12 +291,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

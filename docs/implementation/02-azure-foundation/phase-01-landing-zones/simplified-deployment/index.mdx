@@ -45,14 +45,14 @@ Choose Single Subscription Deployment when:
 
 ## Architecture Overview
 
-The example below uses Infinite azurelocal Corp (IIC). Replace names with values from your `variables.yml`.
+The example below uses Infinite azurelocal Corp (IIC). Replace names with values from your `infrastructure.yml`.
 
 ```
 Tenant Root Group
-└── cmp-iic-root                          # azure.management_groups.tenant_root.name
-    └── cmp-landing-zones-iic             # azure.management_groups.landing_zone.name
+└── cmp-iic-root                          # landing_zone.management_groups[].parent
+    └── cmp-landing-zones-iic             # landing_zone.management_groups[].name
         └── iic-lz-azurelocal-001         # azure.subscriptions.<env>.name
-            └── rg-c01-azl-eus-01         # azure_resources.resource_group_name
+            └── rg-c01-azl-eus-01         # azure.resource_group
 ```
 
 All cluster resources — Arc registration, Key Vault, storage accounts, cloud witness, and the cluster itself — reside in that single resource group. No multi-RG split is needed for this deployment model.
@@ -61,7 +61,7 @@ All cluster resources — Arc registration, Key Vault, storage accounts, cloud w
 
 | Aspect | Implementation |
 |--------|----------------|
-| **Management Groups** | Organization Root MG + Landing Zone MG (from `variables.yml`) |
+| **Management Groups** | Organization Root MG + Landing Zone MG (from `infrastructure.yml`) |
 | **Subscriptions** | Single subscription for all resources |
 | **Resource Groups** | Single RG for all cluster resources |
 | **Policy Scope** | Subscription-level policies |
@@ -74,7 +74,7 @@ Before starting this deployment path:
 
 - [ ] **Entra ID tenant** established and accessible
 - [ ] **Billing access** — EA enrollment account owner, MCA billing profile owner, or Azure Portal access to create subscriptions
-- [ ] **`variables.yml`** configured with tenant, subscription, and resource group values
+- [ ] **`infrastructure.yml`** configured with tenant, subscription, and resource group values
 - [ ] **Authenticated Azure session** — see [Authentication](../../../05-authentication.mdx)
 - [ ] **Permissions** — Owner or User Access Administrator at tenant root scope (see [Elevate Access](https://learn.microsoft.com/en-us/azure/role-based-access-control/elevate-access-global-admin))
 
@@ -113,10 +113,10 @@ Before starting this deployment path:
 
 At the end of this phase, you will have:
 
-- [ ] Organization root management group created (`azure.management_groups.tenant_root.name`)
-- [ ] Landing zone management group created (`azure.management_groups.landing_zone.name`)
+- [ ] Organization root management group created (`landing_zone.management_groups[].parent`)
+- [ ] Landing zone management group created (`landing_zone.management_groups[].name`)
 - [ ] Subscription created and associated with the landing zone management group
-- [ ] Single resource group created (`azure_resources.resource_group_name`)
+- [ ] Single resource group created (`azure.resource_group`)
 
 ## Next Steps
 

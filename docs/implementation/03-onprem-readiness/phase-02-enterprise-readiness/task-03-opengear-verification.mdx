@@ -62,15 +62,13 @@ This verification requires access to the Lighthouse portal. Ensure you have the 
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable Path | Type | Description |
-|---|---|---|
-| `networking.network_devices.opengear` | Object | OpenGear hostname, IP, model, Lighthouse enrollment token |
-| `networking.network_devices.opengear.ports[]` | Array | Serial port-to-node mappings (port number, connected device, baud rate) |
-| `compute.nodes[]` | Array | Node hostnames for console port label verification |
-| `networking.onprem.vlans.oob` | Object | OOB VLAN ID, CIDR, gateway for network connectivity tests |
-| `virtual_machines.lighthouse` | Object | Lighthouse portal VM details |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+network_devices[]: hostname, type, role, vendor, management.ip_address, management.protocol, credentials.username, credentials.password
+```
 
 ---
 
@@ -112,147 +110,22 @@ Click on the node to view details:
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Managing from a domain-joined management server — config-driven via variables.yml
+### PowerShell
+
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
 #### Script
 
-**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpenGearVerification.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1` | Checks that every console server of network_devices in infrastructure.yml can be reached and that its login can be read. Changes nothing. |
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| Azure CLI | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/azure-cli/Test-OpenGearVerification.ps1` |
-| Bash | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/bash/test-opengear-verification.sh` |
+Requires: PowerShell 7.
 
-#### Code
+#### Run
 
 ```powershell
-# ============================================================================
-# Script: Test-OpenGearVerification.ps1
-# Execution: Run FROM management server — reads variables.yml
-# Prerequisites: powershell-yaml module, Lighthouse API token, OOB network access
-# ============================================================================
-
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath,
- [Parameter(Mandatory = $false)]
- [string]$LighthouseToken
-)
-
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if ($ConfigPath) {
- $ConfigFile = $ConfigPath
-} else {
- $ConfigFile = Join-Path $ScriptDir "..\\..\\..\\..\\configs\\variables.yml"
-}
-if (!(Test-Path $ConfigFile)) { throw "variables.yml not found at $ConfigFile" }
-
-Import-Module powershell-yaml -ErrorAction Stop
-
-$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
-$ogIp = $config["network_devices"]["opengear"]["ip"]
-$ogHost = $config["network_devices"]["opengear"]["hostname"]
-$ogPorts = $config["network_devices"]["opengear"]["ports"]
-$nodes = $config["nodes"]
-$lhVm = $config["virtual_machines"]["lighthouse"]
-$lhFqdn = $lhVm["fqdn"]
-
-# --- Test OpenGear reachability ---
-Write-Host "[1/4] Testing OpenGear connectivity ($ogHost - $ogIp)..." -ForegroundColor Cyan
-$ogTest = Test-NetConnection -ComputerName $ogIp -Port 443 -WarningAction SilentlyContinue
-if ($ogTest.TcpTestSucceeded) {
- Write-Host " [PASS] $ogHost ($ogIp) reachable on port 443" -ForegroundColor Green
-} else {
- Write-Host " [FAIL] $ogHost ($ogIp) unreachable on port 443" -ForegroundColor Red
-}
-
-# --- Test Lighthouse reachability ---
-Write-Host "\n[2/4] Testing Lighthouse VM ($($lhVm["name"]) - $($lhVm["private_ip"]))..." -ForegroundColor Cyan
-$lhTest = Test-NetConnection -ComputerName $lhVm["private_ip"] -Port 443 -WarningAction SilentlyContinue
-if ($lhTest.TcpTestSucceeded) {
- Write-Host " [PASS] Lighthouse reachable" -ForegroundColor Green
-} else {
- Write-Host " [FAIL] Lighthouse unreachable" -ForegroundColor Red
-}
-
-# --- Query Lighthouse API (if token provided) ---
-Write-Host "\n[3/4] Querying Lighthouse API..." -ForegroundColor Cyan
-if ($LighthouseToken) {
- $headers = @{ Authorization = "Bearer $LighthouseToken" }
- try {
- $response = Invoke-RestMethod -Uri "https://$lhFqdn/api/v1.0/nodes?filter=name:$ogHost" `
- -Headers $headers -Method Get -ErrorAction Stop
- foreach ($node in $response.nodes) {
- Write-Host " Node: $($node.name) | Status: $($node.status) | Last Seen: $($node.last_seen)" -ForegroundColor Green
- }
- } catch {
- Write-Host " [WARN] API query failed: $($_.Exception.Message)" -ForegroundColor Yellow
- }
-} else {
- Write-Host " [SKIP] No Lighthouse token provided (-LighthouseToken parameter)" -ForegroundColor Yellow
-}
-
-# --- Test iDRAC connectivity via OOB ---
-Write-Host "\n[4/4] Testing iDRAC connectivity (OOB network)..." -ForegroundColor Cyan
-foreach ($key in $nodes.Keys) {
- $node = $nodes[$key]
- $idracIp = $node["idrac_ip"]
- $ping = Test-Connection -ComputerName $idracIp -Count 2 -Quiet -ErrorAction SilentlyContinue
- $status = if ($ping) { "[PASS]" } else { "[FAIL]" }
- $color = if ($ping) { "Green" } else { "Red" }
- Write-Host " $status $($node["hostname"]) iDRAC ($idracIp)" -ForegroundColor $color
-}
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Quick verification without variables.yml — manually set variables in the configuration block.
-
-#### Script
-
-**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpenGearVerification-Standalone.ps1`
-
-#### Code
-
-```powershell
-#region CONFIGURATION
-$OpenGearHostname = "og01-azl-demo"
-$OpenGearIP = "10.245.64.5"
-$LighthouseUrl = "https://lh-eus-01.azrl.mgmt"
-$LighthouseToken = "" # Set token for API verification, or leave empty to skip
-$iDRACs = @(
- @{ Hostname = "azl-demo-01-n01"; IP = "10.245.64.11" },
- @{ Hostname = "azl-demo-01-n02"; IP = "10.245.64.12" }
-)
-#endregion
-
-# --- OpenGear connectivity ---
-Write-Host "=== OpenGear Connectivity ===" -ForegroundColor Cyan
-$ogTest = Test-NetConnection -ComputerName $OpenGearIP -Port 443 -WarningAction SilentlyContinue
-$status = if ($ogTest.TcpTestSucceeded) { "[PASS]" } else { "[FAIL]" }
-Write-Host " $status $OpenGearHostname ($OpenGearIP)" -ForegroundColor $(if ($ogTest.TcpTestSucceeded) {"Green"} else {"Red"})
-
-# --- Lighthouse API (optional) ---
-if ($LighthouseToken) {
- Write-Host "\n=== Lighthouse API ===" -ForegroundColor Cyan
- $headers = @{ Authorization = "Bearer $LighthouseToken" }
- try {
- $r = Invoke-RestMethod -Uri "$LighthouseUrl/api/v1.0/nodes?filter=name:$OpenGearHostname" -Headers $headers -Method Get -EA Stop
- $r.nodes | ForEach-Object { Write-Host " Node: $($_.name) | Status: $($_.status)" -ForegroundColor Green }
- } catch {
- Write-Host " [WARN] API query failed: $($_.Exception.Message)" -ForegroundColor Yellow
- }
-}
-
-# --- iDRAC connectivity ---
-Write-Host "\n=== iDRAC Connectivity (OOB) ===" -ForegroundColor Cyan
-foreach ($node in $iDRACs) {
- $ping = Test-Connection -ComputerName $node.IP -Count 2 -Quiet -EA SilentlyContinue
- $status = if ($ping) { "[PASS]" } else { "[FAIL]" }
- Write-Host " $status $($node.Hostname) ($($node.IP))" -ForegroundColor $(if ($ping) {"Green"} else {"Red"})
-}
+./Test-OpengearVerification.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>
@@ -270,9 +143,9 @@ foreach ($node in $iDRACs) {
 
 | Port | Expected Label | Configured | Status |
 |------|----------------|------------|--------|
-| Console ports | Per variables.yml `network_devices.opengear.ports.console` | ☐ | ☐ |
-| Network ports | Per variables.yml `network_devices.opengear.ports.network` | ☐ | ☐ |
-| Switch ports | Per variables.yml `network_devices.opengear.ports.switch` | ☐ | ☐ |
+| Console ports | Per infrastructure.yml `network_devices[]` | ☐ | ☐ |
+| Network ports | Per infrastructure.yml `network_devices[]` | ☐ | ☐ |
+| Switch ports | Per infrastructure.yml `network_devices[]` | ☐ | ☐ |
 
 ### Step 3.5: Test Console Access
 
@@ -296,7 +169,7 @@ foreach ($node in $iDRACs) {
 | Setting | Expected Value | Status |
 |---------|----------------|--------|
 | Bridge Members | net2, sw0p1-sw0p8 | ☐ |
-| IP Address | Per variables.yml `vlans.oob` | ☐ |
+| IP Address | Per infrastructure.yml `networking.oob.subnet` | ☐ |
 | Default Route | Disabled | ☐ |
 
 ### Step 3.7: Test iDRAC Connectivity (via Lighthouse)
@@ -306,10 +179,10 @@ foreach ($node in $iDRACs) {
 
 ```bash
 # SSH to OpenGear via Lighthouse, then ping each node iDRAC IP
-# from variables.yml: nodes.<node_name>.idrac_ip
+# from infrastructure.yml: nodes.<node_name>.idrac_ip
 ping -c 2 <IDRAC_IP_NODE1>
 ping -c 2 <IDRAC_IP_NODE2>
-# Repeat for all nodes defined in variables.yml
+# Repeat for all nodes defined in infrastructure.yml
 ```
 
 **Expected Result**: All iDRAC IPs respond to ping from OpenGear.
@@ -385,12 +258,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

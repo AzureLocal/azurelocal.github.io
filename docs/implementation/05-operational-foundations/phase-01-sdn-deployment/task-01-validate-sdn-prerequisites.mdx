@@ -102,220 +102,23 @@ Document the following from the portal:
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run this script from the management server to validate SDN prerequisites remotely.
+### PowerShell
 
-```powershell title="Validate-SDNPrerequisites-Orchestrated.ps1 (Run FROM Management Server)"
-#Requires -Modules Az.Accounts, Az.Resources, Az.StackHCI
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-<#
-.SYNOPSIS
- Validates SDN prerequisites on an Azure Local cluster from a management server.
-.DESCRIPTION
- This script connects to Azure and validates that the target cluster meets
- all requirements for enabling SDN via Azure Arc.
-.PARAMETER ClusterName
- The name of the Azure Local cluster.
-.PARAMETER ResourceGroupName
- The resource group containing the cluster.
-.PARAMETER SubscriptionId
- The Azure subscription ID.
-.PARAMETER NodeName
- The name of a cluster node for remote PowerShell validation.
-.PARAMETER Credential
- Credentials for connecting to cluster nodes.
-#>
+#### Script
 
-[CmdletBinding()]
-param(
- [Parameter(Mandatory = $true)]
- [string]$ClusterName,
- 
- [Parameter(Mandatory = $true)]
- [string]$ResourceGroupName,
- 
- [Parameter(Mandatory = $false)]
- [string]$SubscriptionId,
- 
- [Parameter(Mandatory = $true)]
- [string]$NodeName,
- 
- [Parameter(Mandatory = $false)]
- [PSCredential]$Credential
-)
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Test-SdnPrerequisites.ps1` | Validates SDN prerequisites for Azure Local deployment. |
 
-$ErrorActionPreference = 'Stop'
+Requires: PowerShell 7.
 
-# Connect to Azure if not already connected
-$context = Get-AzContext
-if (-not $context) {
- Write-Host "Connecting to Azure..." -ForegroundColor Yellow
- Connect-AzAccount
-}
+#### Run
 
-if ($SubscriptionId) {
- Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-}
-
-Write-Host "=" * 60 -ForegroundColor Cyan
-Write-Host "SDN Prerequisites Validation (Remote)" -ForegroundColor Cyan
-Write-Host "Cluster: $ClusterName" -ForegroundColor Cyan
-Write-Host "=" * 60 -ForegroundColor Cyan
-
-# Get cluster resource from Azure
-Write-Host "`n[1/4] Retrieving cluster information from Azure..." -ForegroundColor Yellow
-$cluster = Get-AzResource -ResourceGroupName $ResourceGroupName -Name $ClusterName -ResourceType "Microsoft.AzureStackHCI/clusters" -ExpandProperties
-
-if (-not $cluster) {
- throw "Cluster '$ClusterName' not found in resource group '$ResourceGroupName'"
-}
-
-Write-Host " Cluster ID: $($cluster.ResourceId)" -ForegroundColor Gray
-Write-Host " Status: $($cluster.Properties.status)" -ForegroundColor Gray
-Write-Host " Connectivity: $($cluster.Properties.connectivityStatus)" -ForegroundColor Gray
-
-# Check version via Azure
-Write-Host "`n[2/4] Checking cluster version..." -ForegroundColor Yellow
-$reportedVersion = $cluster.Properties.reportedProperties.clusterVersion
-Write-Host " Reported Version: $reportedVersion"
-
-# Check connectivity status
-Write-Host "`n[3/4] Checking Arc connectivity..." -ForegroundColor Yellow
-$connectivityStatus = $cluster.Properties.connectivityStatus
-if ($connectivityStatus -eq "Connected") {
- Write-Host " ✓ Cluster is connected to Azure Arc" -ForegroundColor Green
-} else {
- Write-Host " ✗ Cluster connectivity: $connectivityStatus" -ForegroundColor Red
-}
-
-# Remote validation on node
-Write-Host "`n[4/4] Running remote validation on node: $NodeName..." -ForegroundColor Yellow
-
-$remoteParams = @{
- ComputerName = $NodeName
-}
-
-if ($Credential) {
- $remoteParams.Credential = $Credential
-}
-
-$remoteResult = Invoke-Command @remoteParams -ScriptBlock {
- $result = @{
- OSBuild = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuild
- IntentCount = (Get-NetIntent | Measure-Object).Count
- Intents = Get-NetIntent | Select-Object IntentName, @{N='TrafficTypes';E={$_.TrafficType -join ','}}
- }
- return $result
-}
-
-Write-Host " OS Build: $($remoteResult.OSBuild)" -ForegroundColor Gray
-Write-Host " Network Intents: $($remoteResult.IntentCount)" -ForegroundColor Gray
-foreach ($intent in $remoteResult.Intents) {
- Write-Host " - $($intent.IntentName): $($intent.TrafficTypes)" -ForegroundColor Gray
-}
-
-# Summary
-Write-Host "`n" + "=" * 60 -ForegroundColor Cyan
-Write-Host "Validation Complete" -ForegroundColor Cyan
-Write-Host "=" * 60 -ForegroundColor Cyan
-
-Write-Host @"
-
-Review the output above and verify:
- [ ] Cluster version is 2601+
- [ ] OS build is 26100+
- [ ] Arc connectivity is Connected
- [ ] Network intent configuration is compatible
- [ ] No AKS workloads are running
-
-If all prerequisites are met, proceed to Post-Deployment: Deploy SDN.
-"@ -ForegroundColor Yellow
+```powershell
+.\Test-SdnPrerequisites.ps1
 ```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-Copy-paste ready validation script — no config file, no helpers, no dependencies.
-
-```powershell title="Validate-SDNPrerequisites-Standalone.ps1"
-# ============================================================================
-# Script: Validate-SDNPrerequisites-Standalone.ps1
-# Execution: Run anywhere — fully self-contained, no external dependencies
-# Prerequisites: PowerShell, run ON an Azure Local cluster node
-# ============================================================================
-
-#region CONFIGURATION
-# ── No configuration needed — this script reads values from the local node ──
-#endregion CONFIGURATION
-
-$ErrorActionPreference = 'Stop'
-
-Write-Host "=" * 60 -ForegroundColor Cyan
-Write-Host "SDN Prerequisites Validation (Standalone)" -ForegroundColor Cyan
-Write-Host "=" * 60 -ForegroundColor Cyan
-
-$results = @{ Pass = 0; Fail = 0 }
-
-# [1/5] Azure Local version
-Write-Host "`n[1/5] Checking Azure Local version..." -ForegroundColor Yellow
-$registration = Get-AzStackHCI
-$version = $registration.ClusterVersion
-Write-Host " Cluster Version: $version"
-if ($version -match "^2[6-9]\." -or $version -match "^[3-9][0-9]\.") {
- Write-Host " ✓ Version requirement met (2601+)" -ForegroundColor Green; $results.Pass++
-} else {
- Write-Host " ✗ Version 2601+ required" -ForegroundColor Red; $results.Fail++
-}
-
-# [2/5] OS Build
-Write-Host "`n[2/5] Checking OS build version..." -ForegroundColor Yellow
-$osBuild = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuild
-Write-Host " OS Build: $osBuild"
-if ([int]$osBuild -ge 26100) {
- Write-Host " ✓ OS build requirement met (26100+)" -ForegroundColor Green; $results.Pass++
-} else {
- Write-Host " ✗ OS build 26100+ required" -ForegroundColor Red; $results.Fail++
-}
-
-# [3/5] Arc connection
-Write-Host "`n[3/5] Checking Arc connection status..." -ForegroundColor Yellow
-Write-Host " Connection Status: $($registration.ConnectionStatus)"
-if ($registration.ConnectionStatus -eq 'Connected') {
- Write-Host " ✓ Arc connection active" -ForegroundColor Green; $results.Pass++
-} else {
- Write-Host " ✗ Arc connection required" -ForegroundColor Red; $results.Fail++
-}
-
-# [4/5] Network intents
-Write-Host "`n[4/5] Checking Network ATC intents..." -ForegroundColor Yellow
-try {
- $intents = Get-NetIntent
- foreach ($i in $intents) { Write-Host " - $($i.IntentName): $($i.TrafficType -join ', ')" -ForegroundColor Gray }
- Write-Host " ✓ Network intent configuration retrieved" -ForegroundColor Green; $results.Pass++
-} catch {
- Write-Host " ⚠ Could not retrieve network intents: $_" -ForegroundColor Yellow; $results.Fail++
-}
-
-# [5/5] AKS workloads
-Write-Host "`n[5/5] Checking for AKS workloads..." -ForegroundColor Yellow
-try {
- $aksCount = (Get-VM | Where-Object { $_.Name -match "^(aks|kubernetes|k8s)" } | Measure-Object).Count
- if ($aksCount -eq 0) {
- Write-Host " ✓ No AKS workloads detected" -ForegroundColor Green; $results.Pass++
- } else {
- Write-Host " ✗ AKS workloads detected ($aksCount VMs)" -ForegroundColor Red; $results.Fail++
- }
-} catch {
- Write-Host " ⚠ Could not check VMs: $_" -ForegroundColor Yellow; $results.Pass++
-}
-
-# Summary
-Write-Host "`n" + "=" * 60 -ForegroundColor Cyan
-Write-Host "Results: $($results.Pass) passed, $($results.Fail) failed" -ForegroundColor $(if ($results.Fail -eq 0) { 'Green' } else { 'Red' })
-```
-
-:::info No External Dependencies
-This script is completely self-contained. Run it directly on any Azure Local cluster node — no `variables.yml`, no config-loader, no helpers required.
-:::
 
 </TabItem>
 </Tabs>
@@ -360,12 +163,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 
@@ -383,12 +181,9 @@ The procedures in this task use the scripted methods shown in the tabs above. Ad
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| SDN Prerequisites | `operational.sdn.prerequisites_check` | `true` |
-| Network Controller FQDN | `operational.sdn.nc_fqdn` | `nc.iic.local` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 

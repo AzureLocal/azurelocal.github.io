@@ -57,14 +57,14 @@ The active directory information in these documents should have been decided in 
 - Service and admin accounts created (Step 4)
 - Domain admin access for group management
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable Path | Type | Description |
-|--------------|------|-------------|
-| `identity.accounts.account_lcm_username` | string | LCM account name (cluster ID extracted for group lookup) |
-| `identity.active_directory.security_groups` | object | Full security groups configuration object |
-| `identity.active_directory.security_groups.<key>.name` | string | Security group name per role |
-| `identity.active_directory.security_groups.<key>.members` | string | Members to assign to each group |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+scenario.identity, identity.active_directory.domain_fqdn
+identity.active_directory.security_groups[].name, .members
+```
 
 ---
 
@@ -91,149 +91,23 @@ The active directory information in these documents should have been decided in 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Managing from a domain-joined management server — config-driven via variables.yml
+### PowerShell
+
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
 #### Script
 
-**Primary**: `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Invoke-ADGroupAssignments.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1` | Adds the members that identity.active_directory.security_groups[].members of infrastructure.yml lists to their Active Directory security groups. Supports `-WhatIf`. |
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| Azure CLI | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/azure-cli/Invoke-ADGroupAssignments.ps1` |
-| Bash | `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/bash/invoke-ad-group-assignments.sh` |
+Requires: PowerShell 7.
 
-#### Code
+#### Run
 
 ```powershell
-# ============================================================================
-# Script: Invoke-ADGroupAssignments.ps1
-# Execution: Run FROM management server — reads variables.yml
-# Prerequisites: powershell-yaml module, ActiveDirectory RSAT, domain access
-# ============================================================================
-
-param(
- [Parameter(Mandatory = False)]
- [string]$ConfigPath
-)
-
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if ($ConfigPath) {
- $ConfigFile = $ConfigPath
-} else {
- $ConfigFile = Join-Path $ScriptDir "..\..\..\..\config\variables.yml"
-}
-if (!(Test-Path $ConfigFile)) { throw "variables.yml not found at $ConfigFile" }
-
-Import-Module powershell-yaml -ErrorAction Stop
-Import-Module ActiveDirectory
-
-$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
-$clusterId = ($config["accounts"]["account_lcm_username"] -split '-' | Select-Object -Skip 2 -First 1)
-$sgConfig = $config["active_directory"]["security_groups"]
-
-$breakGlass = "adm-AzureLocal-BreakGlass-$clusterId"
-
-Write-Host "[1/2] Assigning members to security groups..." -ForegroundColor Cyan
-
-# Iterate over all security groups defined in variables.yml
-foreach ($key in $sgConfig.Keys) {
- $groupName = $sgConfig[$key]["name"]
- $members = $sgConfig[$key]["members"]
- if (-not $members) { continue }
-
- # Split comma-separated members if multiple are defined
- foreach ($member in ($members -split ',\s*')) {
- try {
- Add-ADGroupMember -Identity $groupName -Members $member -ErrorAction Stop
- Write-Host " Added $member -> $groupName" -ForegroundColor Green
- } catch {
- Write-Host " Skipped ($groupName): $($_.Exception.Message)" -ForegroundColor Yellow
- }
- }
-}
-
-# Add break-glass admin to the admin group
-$adminGroup = $sgConfig["azure_local_admins"]["name"]
-try {
- Add-ADGroupMember -Identity $adminGroup -Members $breakGlass -ErrorAction Stop
- Write-Host " Added $breakGlass -> $adminGroup" -ForegroundColor Green
-} catch {
- Write-Host " Skipped ($adminGroup): $($_.Exception.Message)" -ForegroundColor Yellow
-}
-
-Write-Host "[2/2] Verifying group membership..." -ForegroundColor Cyan
-foreach ($key in $sgConfig.Keys) {
- $groupName = $sgConfig[$key]["name"]
- Write-Host "\n$groupName" -ForegroundColor Cyan
- Get-ADGroupMember $groupName -EA SilentlyContinue | Select-Object SamAccountName
-}
+./Set-ADGroupMemberships.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
-
-**Validation Script**: `scripts/validation/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Test-ADGroupAssignments.ps1`
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-
-```powershell
-#region CONFIGURATION
-$ClusterId = "clus01"
-$GroupsOuDN = "OU=Security Groups,OU=IAM,DC=hybrid,DC=mgmt"
-$EnterpriseAdminGroup = "Enterprise-Admins" # Your org's admin group
-$EnterpriseOpsGroup = "Enterprise-Operations" # Your org's operations group
-$SupportGroup = "Enterprise-Support" # Your org's support/read-only group
-$WACAdminGroup = "Enterprise-Admins" # WAC full-access group (may overlap)
-$HyperVAdminGroup = "Enterprise-Admins" # Hyper-V admin group (may overlap)
-$StorageAdminGroup = "Enterprise-Operations" # Storage admin group (may overlap)
-#endregion
-
-Import-Module ActiveDirectory
-$BreakGlassSam = "adm-AzureLocal-BreakGlass-$ClusterId"
-
-# --- Map accounts/groups into security groups ---
-# NOTE: LCM user is created and managed by Task 01 — do not assign it here.
-$assignments = @(
- # Administrators
- @{ G="SG-AzureLocal-Administrators"; M=$BreakGlassSam },
- @{ G="SG-AzureLocal-Administrators"; M=$EnterpriseAdminGroup },
- # Operations
- @{ G="SG-AzureLocal-Operations"; M=$EnterpriseOpsGroup },
- # Read-Only
- @{ G="SG-AzureLocal-ReadOnly"; M=$SupportGroup },
- # WAC
- @{ G="SG-AzureLocal-WAC-Administrators"; M=$WACAdminGroup },
- @{ G="SG-AzureLocal-WAC-Users"; M=$SupportGroup },
- # Hyper-V & Storage
- @{ G="SG-AzureLocal-HyperV-Administrators"; M=$HyperVAdminGroup },
- @{ G="SG-AzureLocal-Storage-Administrators"; M=$StorageAdminGroup }
-)
-
-foreach ($a in $assignments) {
- try {
- Add-ADGroupMember -Identity $a.G -Members $a.M -EA Stop
- Write-Host " Added $($a.M) -> $($a.G)" -ForegroundColor Green
- } catch {
- Write-Host " Skipped ($($a.G)): $($_.Exception.Message)" -ForegroundColor Yellow
- }
-}
-
-# --- Verify all groups ---
-$groups = @(
- "SG-AzureLocal-Administrators",
- "SG-AzureLocal-Operations",
- "SG-AzureLocal-ReadOnly",
- "SG-AzureLocal-WAC-Administrators",
- "SG-AzureLocal-WAC-Users",
- "SG-AzureLocal-HyperV-Administrators",
- "SG-AzureLocal-Storage-Administrators"
-)
-foreach ($g in $groups) {
- Write-Host "`n$g" -ForegroundColor Cyan
- Get-ADGroupMember $g -EA SilentlyContinue | Select-Object SamAccountName
-}
-```
-
 
 </TabItem>
 </Tabs>
@@ -296,12 +170,7 @@ After completing group assignments, proceed to [Phase 09 - Enterprise Network Re
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

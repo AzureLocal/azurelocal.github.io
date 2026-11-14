@@ -64,20 +64,15 @@ Remediate non-compliant BIOS or iDRAC settings identified in Task 04 using Dell 
 |-------------|-------------|--------|
 | Task 02 Complete | Discovery JSON files present for all nodes | `configs/network-devices/bmc/<service-tag>.json` |
 | Task 04 Complete | Compliance report identifying non-compliant settings | `configs/network-devices/bmc/bios-compliance-report.json` |
-| iDRAC Access | Redfish API reachable on port 443 | `variables.yml: nodes.<name>.idrac_ip` |
-| iDRAC Credentials | iDRAC admin credentials in Azure Key Vault | `variables.yml: key_vault.*` |
+| iDRAC Access | Redfish API reachable on port 443 | `infrastructure.yml`: `nodes[].bmc.ip_address` |
+| iDRAC Credentials | iDRAC admin credentials in Azure Key Vault | `infrastructure.yml`: `key_vaults[]` |
 | Maintenance Window | Nodes can be rebooted (~10 min per node for BIOS changes) | Scheduled with customer |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `nodes.<name>.idrac_ip` | string | iDRAC IP address for Redfish API connection |
-| `nodes.<name>.service_tag` | string | Service tag to match compliance report entries |
-| `nodes.<name>.hostname` | string | Node hostname for logging |
-| `key_vault.name` | string | Azure Key Vault name for iDRAC credentials |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -121,182 +116,22 @@ For each node listed as FAIL in the Task 04 compliance report, apply remediation
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Apply remediation automatically using the Task 04 compliance report. Reads `variables.yml` for iDRAC IPs and Key Vault references, calls the Redfish API, schedules reboots, and confirms compliance.
+### PowerShell
 
-`scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-05-bios-and-idrac-settings-remediation/powershell/Invoke-BIOSRemediation.ps1`
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-```powershell
-#Requires -Version 7.0
-# ============================================================================
-# Script: Invoke-BIOSRemediation.ps1
-# Execution: Run FROM management server — Redfish API to each iDRAC
-# Prerequisites: powershell-yaml, Az module, iDRAC Redfish API reachable,
-# Task 04 compliance report at configs/network-devices/bmc/
-# ============================================================================
+#### Script
 
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath = ".\config\variables.yml",
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-05-bios-and-idrac-settings-remediation/powershell/Set-BiosIdracSettings.ps1` | Remediates non-compliant BIOS and iDRAC settings via Dell Redfish API. Supports `-WhatIf`. |
 
- [Parameter(Mandatory = $false)]
- [string]$ComplianceReportPath = ".\configs\network-devices\bmc\bios-compliance-report.json",
+Requires: PowerShell 7.
 
- [Parameter(Mandatory = $false)]
- [int]$RebootWaitMinutes = 15
-)
-
-Import-Module powershell-yaml -ErrorAction Stop
-Import-Module Az.KeyVault -ErrorAction Stop
-
-$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
-$report = Get-Content $ComplianceReportPath | ConvertFrom-Json
-$secrets = Get-AzKeyVaultSecret -VaultName $config.key_vault.name
-
-$iDRACUser = ($secrets | Where-Object { $_.Name -eq "idrac-username" }).SecretValue |
- ConvertFrom-SecureString -AsPlainText
-$iDRACPass = ($secrets | Where-Object { $_.Name -eq "idrac-password" }).SecretValue |
- ConvertFrom-SecureString -AsPlainText
-$credential = [PSCredential]::new($iDRACUser, (ConvertTo-SecureString $iDRACPass -AsPlainText -Force))
-
-$failedNodes = $report | Where-Object { $_.Status -eq "FAIL" }
-
-if (-not $failedNodes) {
- Write-Host "All nodes already PASS — no remediation required." -ForegroundColor Green
- exit 0
-}
-
-Write-Host "Remediating $($failedNodes.Count) non-compliant node(s)..." -ForegroundColor Cyan
-
-foreach ($node in $failedNodes) {
- $nodeConfig = $config.nodes.Values | Where-Object { $_.service_tag -eq $node.ServiceTag }
- $iDRACIP = $nodeConfig.idrac_ip
-
- Write-Host "`n Node: $($node.ServiceTag) — iDRAC: $iDRACIP" -ForegroundColor Yellow
- Write-Host " Applying $($node.FailedSettings.Count) failed setting(s)..." -ForegroundColor Yellow
-
- # Apply BIOS and iDRAC settings via Redfish
- # ... (Invoke-BIOSRemediation.ps1 applies each FailedSetting via PATCH to
- # /redfish/v1/Systems/System.Embedded.1/Bios/Settings or
- # /redfish/v1/Managers/iDRAC.Embedded.1/Attributes)
-
- # Schedule BIOS job + reboot if any BIOS settings changed
- $biosChanges = $node.FailedSettings | Where-Object { $_.Category -eq "BIOS" }
- if ($biosChanges) {
- Write-Host " Scheduling BIOS config job + reboot..." -ForegroundColor Yellow
- # POST /redfish/v1/Managers/iDRAC.Embedded.1/Jobs
- # Wait $RebootWaitMinutes for reboot to complete
- Start-Sleep -Seconds ($RebootWaitMinutes * 60)
- }
-
- Write-Host " Remediation applied for $($node.ServiceTag)" -ForegroundColor Green
-}
-
-Write-Host "`nAll remediations applied." -ForegroundColor Green
-Write-Host "Next: Re-run Task 02 (hardware discovery) to collect fresh configuration," -ForegroundColor Cyan
-Write-Host " then re-run Task 04 (validation) to confirm 100% compliance." -ForegroundColor Cyan
-```
-
-### Post-Remediation Steps
-
-After the script completes:
-
-1. **Re-run Task 02** to collect fresh BIOS/iDRAC configuration:
-
- ```powershell
- # Re-run Task 02: Hardware Discovery
- .\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-02-hardware-discovery-via-dell-redfish-api\powershell\Invoke-HardwareDiscovery.ps1
- ```
-
-2. **Re-run Task 04** to validate the updated configuration:
-
- ```powershell
- # Re-run Task 04: BIOS Compliance Validation
- .\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-04-bios-and-idrac-settings-validation\powershell\Invoke-BIOSComplianceValidation.ps1
- ```
-
-3. Confirm all nodes report `"Status": "PASS"` in the updated compliance report
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+#### Run
 
 ```powershell
-#Requires -Version 5.1
-# ============================================================================
-# Script: Invoke-BIOSRemediation-Standalone.ps1
-# Execution: Run FROM any workstation — Redfish API to each iDRAC
-# Prerequisites: iDRAC Redfish API reachable on port 443, admin credentials
-# ============================================================================
-
-#region CONFIGURATION
-$ComplianceReportPath = ".\configs\network-devices\bmc\bios-compliance-report.json"
-$RebootWaitMinutes = 15
-
-# iDRAC credentials (enter at runtime — do not hardcode)
-$iDRACUser = "root"
-$iDRACPassSecure = Read-Host "Enter iDRAC password" -AsSecureString
-$credential = [PSCredential]::new($iDRACUser, $iDRACPassSecure)
-
-# Node iDRAC IP map (ServiceTag -> iDRACIP)
-$nodeIPMap = @{
- "8T6GDB4" = "10.245.64.11"
- "9T6GDB4" = "10.245.64.12"
-}
-#endregion
-
-$report = Get-Content $ComplianceReportPath | ConvertFrom-Json
-$failedNodes = $report | Where-Object { $_.Status -eq "FAIL" }
-
-if (-not $failedNodes) {
- Write-Host "All nodes already PASS — no remediation required." -ForegroundColor Green
- exit 0
-}
-
-Write-Host "Remediating $($failedNodes.Count) non-compliant node(s)..." -ForegroundColor Cyan
-
-foreach ($node in $failedNodes) {
- $iDRACIP = $nodeIPMap[$node.ServiceTag]
- if (-not $iDRACIP) { Write-Warning "No IP mapping for $($node.ServiceTag) — skipping"; continue }
-
- Write-Host "`n $($node.ServiceTag) — $iDRACIP" -ForegroundColor Yellow
-
- $baseUri = "https://$iDRACIP/redfish/v1"
- $headers = @{ "Content-Type" = "application/json" }
- $invokeParams = @{ Credential = $credential; SkipCertificateCheck = $true; Headers = $headers }
-
- $biosAttribs = @{}
- $iDRACAttribs = @{}
-
- foreach ($setting in $node.FailedSettings) {
- if ($setting.Category -eq "BIOS") { $biosAttribs[$setting.Setting] = $setting.Expected }
- if ($setting.Category -eq "iDRAC") { $iDRACAttribs[$setting.Setting] = $setting.Expected }
- }
-
- if ($biosAttribs.Count -gt 0) {
- $body = @{ Attributes = $biosAttribs } | ConvertTo-Json
- Invoke-RestMethod -Uri "$baseUri/Systems/System.Embedded.1/Bios/Settings" `
- -Method PATCH -Body $body @invokeParams | Out-Null
-
- # Create BIOS job + reboot
- $jobBody = '{"TargetSettingsURI":"/redfish/v1/Systems/System.Embedded.1/Bios/Settings"}'
- Invoke-RestMethod -Uri "$baseUri/Managers/iDRAC.Embedded.1/Jobs" `
- -Method POST -Body $jobBody @invokeParams | Out-Null
-
- Write-Host " BIOS job created — waiting $RebootWaitMinutes min for reboot..." -ForegroundColor Yellow
- Start-Sleep -Seconds ($RebootWaitMinutes * 60)
- }
-
- if ($iDRACAttribs.Count -gt 0) {
- $body = @{ Attributes = $iDRACAttribs } | ConvertTo-Json
- Invoke-RestMethod -Uri "$baseUri/Managers/iDRAC.Embedded.1/Attributes" `
- -Method PATCH -Body $body @invokeParams | Out-Null
- Write-Host " iDRAC settings applied (no reboot required)" -ForegroundColor Green
- }
-
- Write-Host " Done: $($node.ServiceTag)" -ForegroundColor Green
-}
-
-Write-Host "`nRemediation complete." -ForegroundColor Green
-Write-Host "Next: Re-run Task 02 then Task 04 to confirm 100% compliance." -ForegroundColor Cyan
+.\Set-BiosIdracSettings.ps1 -ConfigPath ".\configs\infrastructure.yml" -RebootAfterBios
 ```
 
 </TabItem>
@@ -348,12 +183,7 @@ If TPM cannot be enabled via Redfish, manual iDRAC console access is required:
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

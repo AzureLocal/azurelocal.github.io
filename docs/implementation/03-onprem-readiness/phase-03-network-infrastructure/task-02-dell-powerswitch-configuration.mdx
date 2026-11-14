@@ -65,15 +65,13 @@ Configure Dell PowerSwitch TOR switches with Data Center Bridging (DCB) for RDMA
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable Path | Type | Description |
-|---|---|---|
-| `networking.network_devices.switch_primary` | Object | Primary ToR switch hostname, management IP, model |
-| `networking.network_devices.switch_secondary` | Object | Secondary ToR switch hostname, management IP, model |
-| `networking.onprem.vlans.management` | Object | Management VLAN ID, CIDR, gateway |
-| `networking.onprem.storage.vlans` | Object | Storage VLAN IDs (711-714) for trunk port configuration |
-| `compute.nodes[].hostname` | String | Node hostnames for port description labels |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+network_devices[]: hostname, type, role, vendor, management.ip_address, management.protocol, credentials.username, credentials.password
+```
 
 ---
 
@@ -509,24 +507,23 @@ See procedure steps above for manual execution guidance.
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository.
-:::
+#### Script
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+| Script | What it does |
+|---|---|
+| `scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1` | Checks that every switch of network_devices in infrastructure.yml can be reached and that its login can be read. Changes nothing on a switch. |
 
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+Requires: PowerShell 7.
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+#### Run
 
-:::note Content Pending
-Standalone script content references the toolkit repository.
-:::
+```powershell
+./Set-PowerSwitchEndpoint.ps1 -InfrastructureFile ./infrastructure.yml
+```
 
 </TabItem>
 </Tabs>
@@ -540,12 +537,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

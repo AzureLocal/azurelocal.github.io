@@ -35,7 +35,7 @@ status: Active
 The operator supplies one input: **the environment file**, a YAML file that describes the machines, the network, the BIOS settings, the Azure target and the ZTP settings. Everything else is automated, with a gate at each step.
 
 :::info The master file, and the older layout
-New files use the master `infrastructure.yml` (schema 5), the one file that every tool in the route reads: ZTP, [OS configuration](../../../phase-03-os-configuration/index.mdx) and the cluster deployment. Its schema, examples and variables reference are in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/config/infrastructure) and described in [azurelocal-ztp: schema 5](https://azurelocal.cloud/azurelocal-ztp/infrastructure-schema-5). The example and tables below use the older layout, which ZTP still reads; the keys map one to one.
+New files use the master `infrastructure.yml` (schema 5), the one file that every tool in the route reads: ZTP, [OS configuration](../../../phase-03-os-configuration/index.mdx) and the cluster deployment. Its schema, examples and variables reference are in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/config/variables) and described in [azurelocal-ztp: schema 5](https://azurelocal.cloud/azurelocal-ztp/infrastructure-schema-5). The example and tables below use the older layout, which ZTP still reads; the keys map one to one.
 :::
 
 :::note The OEM SBE is not a ZTP input
@@ -137,16 +137,16 @@ ztp:
 
 | Key | What it is |
 |-----|------------|
-| `cluster_nodes[].name` | The node name. Also the name of its provisioned machine in Azure. |
-| `cluster_nodes[].service_tag` | The machine serial or service tag. It must match the serial in the voucher. |
-| `cluster_nodes[].idrac_ip` | The BMC address. |
-| `cluster_nodes[].ip_address` | The node's management address. With a static assignment (Mode B or C), the Device stage sets it on the port with the MAC below before the claim; with a DHCP reservation (Mode A), the Network stage verifies it. See [Management address modes](./index.mdx#management-address-modes). |
-| `cluster_nodes[].mac_address` | The MAC of the management port. The Device stage finds the maintenance environment's adapter by it, the Network stage finds the installed machine's adapter by it, and OS configuration finds the port by it too. The installed OS names its ports `Port0` to `Port6`. |
-| `network_intents.management.ip_assignment` | How each management address is set: `dhcp_reservation` (Mode A, recommended), `static` (Mode B or C), `dhcp` or `preconfigured`. |
-| `network_intents.management.static_method` | Who sets a static address: `device` (default, the Device stage) or `site`. |
-| `network_intents.management.subnet` | Management subnet in CIDR form. The prefix length is read from it. |
-| `network_intents.management.gateway` | The one default gateway. |
-| `network_intents.management.dns_servers` | DNS servers for the management network. ZTP passes them to the Device stage (Modes B and C); OS configuration sets them on the host. |
+| `nodes[].name` | The node name. Also the name of its provisioned machine in Azure. |
+| `nodes[].serial_number` | The machine serial or service tag. It must match the serial in the voucher. |
+| `nodes[].bmc.ip_address` | The BMC address. |
+| `nodes[].network_adapters[].ip_address` | The node's management address. With a static assignment (Mode B or C), the Device stage sets it on the port with the MAC below before the claim; with a DHCP reservation (Mode A), the Network stage verifies it. See [Management address modes](./index.mdx#management-address-modes). |
+| `nodes[].network_adapters[].mac_address` | The MAC of the management port. The Device stage finds the maintenance environment's adapter by it, the Network stage finds the installed machine's adapter by it, and OS configuration finds the port by it too. The installed OS names its ports `Port0` to `Port6`. |
+| `networking.management.ip_assignment` | How each management address is set: `dhcp_reservation` (Mode A, recommended), `static` (Mode B or C), `dhcp` or `preconfigured`. |
+| `networking.management.static_method` | Who sets a static address: `device` (default, the Device stage) or `site`. |
+| `networking.management.subnet` | Management subnet in CIDR form. The prefix length is read from it. |
+| `networking.management.gateway` | The one default gateway. |
+| `networking.management.dns_servers` | DNS servers for the management network. ZTP passes them to the Device stage (Modes B and C); OS configuration sets them on the host. |
 | `hardware.bios` and `hardware.bios_during_provisioning` | BIOS settings by attribute. Boot applies `bios_during_provisioning` over `bios`, so an install-only value wins; Restore sets those attributes back. See [BIOS isolation during the install](./index.mdx#bios-isolation-during-the-install). |
 | `hardware.vendor` | The OEM, such as `Dell`. It selects the OEM definition for the BMC (manager and system IDs, the USB-stick slot, the log signals). |
 
@@ -154,8 +154,8 @@ ztp:
 
 | Key | What it is |
 |-----|------------|
-| `azure_identity.azure_tenant_id` | Tenant for sign-in and for the Azure context. |
-| `azure_resources.location` | Region. The preview supports East US only. |
+| `azure.tenant_id` | Tenant for sign-in and for the Azure context. |
+| `azure.location` | Region. The preview supports East US only. |
 | `site.name` | Display name of the site. |
 | `ztp.subscription_id` | Subscription of the site and the machines. |
 | `ztp.resource_group` | Resource group of the site and the machines. The run creates it if it doesn't exist. |
@@ -228,7 +228,7 @@ How the files reach each node is a separate choice (`hardware.sbe.delivery`); se
 
 - [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp) — full parameter reference and JSON schemas
 - [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
-- [azurelocal-toolkit — master infrastructure file](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/config/infrastructure)
+- [azurelocal-toolkit — master infrastructure file](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/config/variables)
 - [Microsoft Learn — Solution Builder Extension updates](https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610)
 
 ---

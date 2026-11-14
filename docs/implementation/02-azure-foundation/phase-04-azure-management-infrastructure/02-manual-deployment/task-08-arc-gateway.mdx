@@ -45,7 +45,7 @@ This task deploys an Azure Arc Gateway resource. The Arc Gateway provides a cent
 
 :::info Task Classification
 **Execution Target**: Azure-Only (control-plane API operation)
-**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+**Tab Profile**: 2 tabs — Azure Portal · Azure CLI / PowerShell
 :::
 
 :::danger Decide before you deploy the cluster
@@ -76,8 +76,8 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 
 | Setting          | Value                 | Source                                          |
 | ---------------- | --------------------- | ----------------------------------------------- |
-| Name             | Per naming convention | `cluster.deployment.arc_gateway.name`           |
-| Resource Group   | Cluster RG            | `cluster.deployment.arc_gateway.resource_group` |
+| Name             | Per naming convention | `networking.outbound.arc_gateway.name`           |
+| Resource Group   | Cluster RG            | `networking.outbound.arc_gateway.resource_group` |
 | Gateway Type     | Public                | Only valid value currently                      |
 | Allowed Features | All (`*`)             | Default                                         |
 
@@ -87,13 +87,15 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 - [ ] Resource group for Arc Gateway exists
 - [ ] Contributor role on target resource group
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable         | Config Path                                     | Example (IIC)                |
-| ---------------- | ----------------------------------------------- | ---------------------------- |
-| Subscription ID  | `azure.subscriptions.<name>.id`                 | _(per environment)_          |
-| Resource Group   | `cluster.deployment.arc_gateway.resource_group` | `rg-c01-azl-eus-01`          |
-| Arc Gateway Name | `cluster.deployment.arc_gateway.name`           | `arcgw-c01azleus-azl-eus-01` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.subscription_id, azure.location, azure.resource_group, tags
+scenario.outbound_path
+networking.outbound.arc_gateway.name, .resource_group
+```
 
 ---
 
@@ -103,9 +105,9 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 
 | Field            | Value                            | Config Path                                     |
 | ---------------- | -------------------------------- | ----------------------------------------------- |
-| Subscription     | Customer subscription            | `azure.subscriptions.<name>.id`                 |
-| Resource Group   | `rg-{cluster}-{env}-{region}-01` | `cluster.deployment.arc_gateway.resource_group` |
-| Arc Gateway Name | Per config                       | `cluster.deployment.arc_gateway.name`           |
+| Subscription     | Customer subscription            | `landing_zone.subscriptions[].id`                 |
+| Resource Group   | `rg-{cluster}-{env}-{region}-01` | `networking.outbound.arc_gateway.resource_group` |
+| Arc Gateway Name | Per config                       | `networking.outbound.arc_gateway.name`           |
 
 ### Execution Options
 
@@ -128,10 +130,10 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 - Click **+ Create**
   | Field | Value | Source |
   |-------|-------|--------|
-  | Name | Per config | `cluster.deployment.arc_gateway.name` |
-  | Subscription | Target subscription | `azure.subscriptions.<name>.id` |
-  | Resource Group | Cluster RG | `cluster.deployment.arc_gateway.resource_group` |
-  | Region | Your region | `azure.region` |
+  | Name | Per config | `networking.outbound.arc_gateway.name` |
+  | Subscription | Target subscription | `landing_zone.subscriptions[].id` |
+  | Resource Group | Cluster RG | `networking.outbound.arc_gateway.resource_group` |
+  | Region | Your region | `azure.location` |
   | Gateway Type | Public | Only option |
 
 3. **Review + create**: Verify → Click **Create** → Record the **Gateway Endpoint** URL
@@ -146,7 +148,7 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 
 - [ ] Arc Gateway provisioning state: **Succeeded**
 - [ ] Gateway endpoint URL recorded
-- [ ] Resource ID saved in `variables.yml` at `cluster.deployment.arc_gateway.id`
+- [ ] Resource ID saved in `infrastructure.yml` at `networking.outbound.arc_gateway.name`
 
 #### Links
 
@@ -155,140 +157,23 @@ The Arc Gateway uses the `Microsoft.HybridCompute/gateways` resource type. As of
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
 #### Script
 
-**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-08-arc-gateway/powershell/New-ArcGateway.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway/powershell/New-ArcGateway.ps1` | Creates the Azure Arc gateway resource that networking.outbound.arc_gateway of infrastructure.yml names. Supports `-WhatIf`. |
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| PowerShell + Azure CLI | `task-08-arc-gateway/azure-cli/New-ArcGateway.azcli.ps1` |
-| Bash + Azure CLI | `task-08-arc-gateway/bash/invoke-arc-gateway.sh` |
+Requires: PowerShell 7.
 
-#### Code
+#### Run
 
 ```powershell
-# ============================================================================
-# Script: New-ArcGateway.ps1
-# Execution: Run from management workstation — reads variables.yml
-# Prerequisites: Az.Resources module, authenticated to Azure
-# NOTE: Uses REST API (Microsoft.HybridCompute/gateways not in Az.* modules yet)
-# ============================================================================
-
-#Requires -Modules Az.Resources, Az.Accounts
-
-param(
- [Parameter(Mandatory = $false)]
- [ValidateScript({Test-Path $_})]
- [string]$ConfigPath = "config/variables.yml"
-)
-
-$ErrorActionPreference = "Stop"
-$scriptRoot = $PSScriptRoot
-
-. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
-. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
-
-$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
-
-$SubscriptionId = $config.azure.subscriptions.($config.network.azure_vnets.management.subscription).id
-$ResourceGroup = $config.cluster.deployment.arc_gateway.resource_group
-$GatewayName = $config.cluster.deployment.arc_gateway.name
-$Location = $config.network.azure_vnets.management.location
-
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-# Use Azure REST API
-$apiVersion = "2025-01-13"
-$resourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.HybridCompute/gateways/$GatewayName"
-
-$body = @{
- location = $Location
- properties = @{
- allowedFeatures = @("*")
- gatewayType = "Public"
- }
-} | ConvertTo-Json -Depth 5
-
-Write-LogInfo "Creating Arc Gateway: $GatewayName"
-$token = (Get-AzAccessToken).Token
-$headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
-$uri = "https://management.azure.com$resourceId`?api-version=$apiVersion"
-
-$response = Invoke-RestMethod -Uri $uri -Method Put -Headers $headers -Body $body
-
-Write-LogSuccess "Arc Gateway created: $GatewayName"
-Write-LogInfo "Gateway Endpoint: $($response.properties.gatewayEndpoint)"
-Write-LogInfo "Resource ID: $resourceId"
-$response
+./New-ArcGateway.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
-
-#### Validation
-
-```powershell
-$token = (Get-AzAccessToken).Token
-$headers = @{ Authorization = "Bearer $token" }
-$uri = "https://management.azure.com$resourceId`?api-version=$apiVersion"
-(Invoke-RestMethod -Uri $uri -Headers $headers).properties | Format-List gatewayEndpoint, provisioningState
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready script — no config file, no helpers needed.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: New-ArcGateway-Standalone.ps1
-# Execution: Run anywhere — fully self-contained
-# Prerequisites: Az.Accounts module, authenticated to Azure
-# ============================================================================
-
-#Requires -Modules Az.Accounts
-
-#region CONFIGURATION
-$SubscriptionId = "00000000-0000-0000-0000-000000000000"
-$ResourceGroup = "rg-azl-arc-gw-eus-01"
-$GatewayName = "azl-arc-gw-centralus-01"
-$Location = "eastus"
-#endregion CONFIGURATION
-
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-$apiVersion = "2025-01-13"
-$resourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.HybridCompute/gateways/$GatewayName"
-
-$body = @{
- location = $Location
- properties = @{
- allowedFeatures = @("*")
- gatewayType = "Public"
- }
-} | ConvertTo-Json -Depth 5
-
-$token = (Get-AzAccessToken).Token
-$headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
-$uri = "https://management.azure.com$resourceId`?api-version=$apiVersion"
-
-Write-Host "Creating Arc Gateway: $GatewayName" -ForegroundColor Cyan
-$response = Invoke-RestMethod -Uri $uri -Method Put -Headers $headers -Body $body
-
-Write-Host "Arc Gateway created" -ForegroundColor Green
-Write-Host "Gateway Endpoint: $($response.properties.gatewayEndpoint)"
-Write-Host "Resource ID: $resourceId"
-```
-
-:::info No External Dependencies
-Self-contained. Edit the `#region CONFIGURATION` block and run.
-:::
 
 </TabItem>
 </Tabs>
@@ -309,9 +194,9 @@ In the CAF/WAF model, the Arc Gateway is typically deployed in the **Management*
 
 | Field            | Value                       | Config Path                                     |
 | ---------------- | --------------------------- | ----------------------------------------------- |
-| Subscription     | **Management** subscription | `azure.subscriptions.management.id`             |
-| Resource Group   | Per config                  | `cluster.deployment.arc_gateway.resource_group` |
-| Arc Gateway Name | Per config                  | `cluster.deployment.arc_gateway.name`           |
+| Subscription     | **Management** subscription | `landing_zone.subscriptions[].id`             |
+| Resource Group   | Per config                  | `networking.outbound.arc_gateway.resource_group` |
+| Arc Gateway Name | Per config                  | `networking.outbound.arc_gateway.name`           |
 
 ### Execution Options
 
@@ -330,25 +215,22 @@ Follow the same procedure as [Single Subscription → Azure Portal](#azure-porta
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-:::tip Same Script — Different Config
-The orchestrated script is identical. `variables.yml` references the correct Management subscription for CAF/WAF.
-:::
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+#### Script
 
-### Standalone Script
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway/powershell/New-ArcGateway.ps1` | Creates the Azure Arc gateway resource that networking.outbound.arc_gateway of infrastructure.yml names. Supports `-WhatIf`. |
 
-Update `#region CONFIGURATION` for the Management subscription:
+Requires: PowerShell 7.
+
+#### Run
 
 ```powershell
-#region CONFIGURATION
-$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Management subscription
-$ResourceGroup = "rg-azl-arc-gw-eus-01"
-# ...
-#endregion CONFIGURATION
+./New-ArcGateway.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
 
 </TabItem>
@@ -376,12 +258,7 @@ $ResourceGroup = "rg-azl-arc-gw-eus-01"
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method    | Description                                                      |
-| --------- | ---------------------------------------------------------------- |
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash      | Linux/macOS compatible shell scripts for pipeline environments   |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

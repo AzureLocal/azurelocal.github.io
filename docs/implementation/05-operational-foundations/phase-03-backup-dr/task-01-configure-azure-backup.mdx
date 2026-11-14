@@ -54,15 +54,9 @@ Azure Backup provides enterprise backup capabilities for Azure Local VMs with bo
 | Cluster Access | Domain account with local admin on all nodes | CredSSP or Kerberos delegation |
 | Integration Components | Same version on guest VMs and hosts | Required for backup consistency |
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `RECOVERY_VAULT_NAME` | `backup.recovery_vault_name` | `rsv-azl-dal-prod-01` |
-| `BACKUP_SERVER_NAME` | `backup.server_name` | `azl-dal-bkp-01` |
-| `CLUSTER_STORAGE_PATH` | `storage.cluster_storage_path` | `C:\ClusterStorage\Volume01` |
-| `MANAGEMENT_VIRTUAL_SWITCH` | `networking.management.virtual_switch` | `ConvergedSwitch(mgmt_compute)` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ## Architecture Overview
 
@@ -134,26 +128,6 @@ Add-VMHardDiskDrive -VMName $VMName -Path $StorageDisk.Path
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-# Connect to Azure
-Connect-AzAccount
-
-# Get Recovery Services vault
-$vault = Get-AzRecoveryServicesVault `
- -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
- -Name "{{RECOVERY_VAULT_NAME}}"
-
-# Generate vault credentials file
-$credentialsPath = "C:\Temp"
-Get-AzRecoveryServicesVaultSettingsFile `
- -Vault $vault `
- -Backup `
- -Path $credentialsPath
-```
-
-</TabItem>
 </Tabs>
 
 ### Step 1.3: Configure Azure Backup Storage Pool
@@ -178,12 +152,24 @@ If Azure Benefits is enabled with WDAC, temporarily switch to **Audit** mode bef
 <Tabs groupId="deployment-method">
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-1. In backup console, navigate to **Management** → **Agents**
-2. Click **Install** in the toolbar
-3. Select **Install agents**
-4. Enter cluster node names or browse Active Directory
-5. Provide credentials with local admin rights
-6. Complete installation wizard
+### PowerShell
+
+> **When to use**: This task is parked and nothing runs it. The scripts below are under `scripts/deferred` and they still read an older configuration layout.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deferred/backup-dr/phase-03-backup-dr/task-01-configure-azure-backup/azurecli/Set-BackupConfiguration.azcli.ps1` | Configures Azure Backup for Azure Local cluster using Azure CLI. |
+| `scripts/deferred/backup-dr/phase-03-backup-dr/task-01-configure-azure-backup/powershell/Set-BackupConfiguration.ps1` | Configures Azure Backup and Disaster Recovery for Azure Local. |
+
+#### Run
+
+```powershell
+.\Set-BackupConfiguration.azcli.ps1 -ClusterName "AZL-CLUSTER01" -ResourceGroupName "rg-azl-backup" -VaultName "rsv-azl-prod"
+
+.\Set-BackupConfiguration.ps1 -ClusterName "azl-cluster-01" -ResourceGroup "rg-azl-01" -VaultName "rsv-azl-01"
+```
 
 </TabItem>
 
@@ -380,12 +366,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

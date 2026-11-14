@@ -49,16 +49,9 @@ Perform visual inspection of all physical infrastructure to verify installation 
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable Path | Type | Description |
-|---|---|---|
-| `compute.nodes[]` | Array | Node hostnames, management IPs, iDRAC IPs, MAC addresses |
-| `compute.nodes[].hostname` | String | Server hostname for label verification |
-| `compute.nodes[].idrac_ip` | String | iDRAC IP address for remote management |
-| `networking.network_devices.opengear` | Object | OpenGear console server hostname, IP, model, port mappings |
-| `networking.network_devices.switch_primary` | Object | Primary ToR switch hostname, IP, model |
-| `networking.network_devices.switch_secondary` | Object | Secondary ToR switch hostname, IP, model |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -79,107 +72,22 @@ Walk the data center and verify each checklist item below. Take photos of:
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Managing from a domain-joined management server — config-driven via variables.yml
+### PowerShell
+
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
 #### Script
 
-**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/powershell/Test-HardwareInspection.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/powershell/Test-HardwareInspection.ps1` | Performs hardware inspection and validation for Azure Local nodes. |
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| Azure CLI | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/azure-cli/Test-HardwareInspection.ps1` |
-| Bash | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/bash/test-hardware-inspection.sh` |
+Requires: PowerShell 7.
 
-#### Code
+#### Run
 
 ```powershell
-# ============================================================================
-# Script: Test-HardwareInspection.ps1
-# Execution: Run FROM management server — reads variables.yml
-# Prerequisites: powershell-yaml module, network access to OOB VLAN
-# ============================================================================
-
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath
-)
-
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if ($ConfigPath) {
- $ConfigFile = $ConfigPath
-} else {
- $ConfigFile = Join-Path $ScriptDir "..\..\..\..\config\variables.yml"
-}
-if (!(Test-Path $ConfigFile)) { throw "variables.yml not found at $ConfigFile" }
-
-Import-Module powershell-yaml -ErrorAction Stop
-
-$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
-$nodes = $config["nodes"]
-
-Write-Host "[1/3] Testing iDRAC connectivity..." -ForegroundColor Cyan
-$results = @()
-foreach ($key in $nodes.Keys) {
- $node = $nodes[$key]
- $hostname = $node["hostname"]
- $idracIp = $node["idrac_ip"]
-
- $test = Test-NetConnection -ComputerName $idracIp -Port 443 -WarningAction SilentlyContinue
- $status = if ($test.TcpTestSucceeded) { "Reachable" } else { "UNREACHABLE" }
- $color = if ($test.TcpTestSucceeded) { "Green" } else { "Red" }
- Write-Host " $hostname ($idracIp): $status" -ForegroundColor $color
- $results += [PSCustomObject]@{ Node = $hostname; iDRAC = $idracIp; Status = $status }
-}
-
-Write-Host "
-[2/3] Testing OpenGear connectivity..." -ForegroundColor Cyan
-$ogIp = $config["network_devices"]["opengear"]["ip"]
-$ogHost = $config["network_devices"]["opengear"]["hostname"]
-$ogTest = Test-NetConnection -ComputerName $ogIp -Port 443 -WarningAction SilentlyContinue
-$ogStatus = if ($ogTest.TcpTestSucceeded) { "Reachable" } else { "UNREACHABLE" }
-$ogColor = if ($ogTest.TcpTestSucceeded) { "Green" } else { "Red" }
-Write-Host " $ogHost ($ogIp): $ogStatus" -ForegroundColor $ogColor
-
-Write-Host "
-[3/3] Summary" -ForegroundColor Cyan
-$results | Format-Table -AutoSize
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Quick verification without variables.yml — manually set variables in the configuration block.
-
-#### Script
-
-**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/powershell/Test-HardwareInspection-Standalone.ps1`
-
-#### Code
-
-```powershell
-#region CONFIGURATION
-$iDRACs = @(
- @{ Hostname = "node01"; IP = "10.245.64.11" },
- @{ Hostname = "node02"; IP = "10.245.64.12" }
-)
-$OpenGearIP = "10.245.64.5"
-$OpenGearName = "og01"
-#endregion
-
-Write-Host "=== iDRAC Connectivity ===" -ForegroundColor Cyan
-foreach ($node in $iDRACs) {
- $test = Test-NetConnection -ComputerName $node.IP -Port 443 -WarningAction SilentlyContinue
- $status = if ($test.TcpTestSucceeded) { "Reachable" } else { "UNREACHABLE" }
- $color = if ($test.TcpTestSucceeded) { "Green" } else { "Red" }
- Write-Host " $($node.Hostname) ($($node.IP)): $status" -ForegroundColor $color
-}
-
-Write-Host "
-=== OpenGear Connectivity ===" -ForegroundColor Cyan
-$ogTest = Test-NetConnection -ComputerName $OpenGearIP -Port 443 -WarningAction SilentlyContinue
-$ogStatus = if ($ogTest.TcpTestSucceeded) { "Reachable" } else { "UNREACHABLE" }
-Write-Host " $OpenGearName ($OpenGearIP): $ogStatus" -ForegroundColor $(if ($ogTest.TcpTestSucceeded) {"Green"} else {"Red"})
+.\Test-HardwareInspection.ps1 -NodeNames @("node01-idrac", "node02-idrac")
 ```
 
 </TabItem>
@@ -310,12 +218,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

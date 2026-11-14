@@ -115,7 +115,7 @@ On 2610 the deployment wizard's **iSCSI Configuration** connects the targets, so
 
 Run on each node individually via console, KVM, or RDP.
 
-**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-14-verify-san-lun-presentation-conditional/powershell/Verify-SANLUNs-Direct.ps1`
+**Toolkit script:** none for this step. The run does this in its read only **SanVerify** step: each LUN must be seen once, by UniqueId, and `mpclaim -s -d` must list it as an MPIO disk with paths.
 
 ```powershell
 # Task 14 - Verify SAN LUN Presentation (run on each node)
@@ -143,15 +143,12 @@ mpclaim -s -d
 
 Run from the management server against all nodes.
 
-**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-14-verify-san-lun-presentation-conditional/powershell/Verify-SANLUNs-Orchestrated.ps1`
+**Toolkit script:** none for this step. The run does this in its read only **SanVerify** step: each LUN must be seen once, by UniqueId, and `mpclaim -s -d` must list it as an MPIO disk with paths.
 
 ```powershell
 # Task 14 - Verify SAN LUN Presentation (orchestrated, all nodes)
-# variables.yml variables:
-# cluster_nodes[].management_ip -> $ServerList
-$ConfigPath = "$env:USERPROFILE\variables.yml"
-$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
-    ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+# The management addresses of the nodes: the management port of each entry of nodes[] in infrastructure.yml
+$ServerList = @('<node-1-management-ip>', '<node-2-management-ip>')
 
 Write-Host "=== SAN Disk Inventory ===" -ForegroundColor Cyan
 Invoke-Command -ComputerName $ServerList -ScriptBlock {
@@ -167,17 +164,6 @@ Invoke-Command -ComputerName $ServerList -ScriptBlock {
     } | Select-Object @{N='Node';E={$env:COMPUTERNAME}}, Number, FriendlyName, Size, PartitionStyle
 } | Sort-Object Node | Format-Table -AutoSize
 ```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
-
-:::note Content Pending
-See toolkit repository for standalone implementation.
-:::
 
 </TabItem>
 </Tabs>
@@ -217,12 +203,7 @@ MPIO is registered but not claiming the disk (lab-verified symptom on a Pure Fla
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ---
 

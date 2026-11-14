@@ -83,48 +83,45 @@ The `azurelocal-toolkit` repository is the reference implementation. All other r
 
 ```text
 azurelocal-toolkit/
+├── ansible/                      # Ansible roles for OS configuration
 ├── config/
-│   ├── azure/                    # ARM templates, discovery, iDRAC, service principals, utilities
-│   └── variables/                # Variable system (see Variable Standards)
-│       ├── variables.example.yml # Template (committed)
-│       ├── variables.yml         # Your config (gitignored)
-│       ├── reports/              # Generated validation reports
-│       ├── schema/               # JSON Schema, master registry, alias/drift policy files
-│       └── scripts/              # Validation and generation scripts
-├── docs/                         # Repo-local documentation
+│   ├── azure/                    # ARM templates and examples
+│   ├── known-issues/             # Known issues the checks look for
+│   ├── network-devices/          # Network device settings
+│   ├── oem/                      # OEM data
+│   ├── san/                      # SAN data (MSDSM vendors)
+│   └── variables/                # Variable system (see Variable Management)
+│       ├── schema/               # master-registry.yaml (the only master) and the generated schemas
+│       ├── templates/            # Generated: master template, scenarios, one template per tool
+│       ├── examples/             # Worked infrastructure.yml examples
+│       ├── docs/                 # infrastructure-file.md, MIGRATION.md, VARIABLES.md, VARIABLE-MAP.md
+│       ├── tool-mappings/        # Names of the variables of other tools mapped to registry paths
+│       └── scripts/              # Validators and generators
+├── docs/                         # Repo-local documentation (script status, guides)
 ├── logs/                         # Runtime logs (gitignored)
 ├── pipelines/                    # CI/CD pipeline definitions
 ├── repo-management/              # Planning docs, ADRs, decision logs
 ├── scripts/
-│   ├── common/                   # Shared modules: ansible, arm-templates, bicep, terraform
-│   ├── deploy/                   # Task scripts — mirrors docs/implementation structure (see below)
-│   ├── handover/
-│   │   ├── customer-transfer/    # Handover checklists and artifacts
-│   │   └── documentation/        # Generated customer-facing docs
-│   ├── lifecycle/
-│   │   ├── operations/           # Day-2 operational scripts
-│   │   └── updates/              # Patch and update automation
-│   ├── tools/                    # Contributor tooling (script templates, install helpers)
-│   └── validation/               # Health checks and test suites
-│       ├── arc-tests/
-│       ├── cluster-health/
-│       ├── network-tests/
-│       ├── storage-tests/
-│       └── workload-tests/
+│   ├── common/                   # Shared modules and helpers
+│   ├── deploy/                   # Task scripts, mirrors the docs/implementation structure (see below)
+│   ├── deferred/                 # Parked tasks (not a current focus)
+│   ├── handover/                 # Customer transfer and deployment documentation
+│   ├── lifecycle/                # Day-2 operations and updates
+│   ├── optional/                 # Optional services
+│   ├── tools/                    # Contributor tooling (script templates, quality checks)
+│   └── validation/               # Health checks
 ├── src/                          # IaC source: ansible, arm-templates, bicep, terraform
-├── styles/                       # Shared style/lint config
 ├── tests/                        # Automated test harness
-└── tools/                        # Repo-level tools (Generate-SolutionConfig.ps1, planning/)
+└── tools/                        # Repo-level tools (install-tools.ps1, planning)
 ```
 
 ### `scripts/deploy/` Task Contract
 
-Every task folder under `scripts/deploy/` mirrors the path of its corresponding doc in `docs/implementation/` and contains exactly three subdirectories:
+Every task folder under `scripts/deploy/` follows the stage and phase of its corresponding doc in `docs/implementation/` and contains up to two subdirectories. The toolkit has no Bash scripts. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page lists which task has a real script:
 
 ```text
 scripts/deploy/<part>/<phase>/<task>/
-├── azurecli/     # Azure CLI scripts (.ps1 using az commands, or .sh)
-├── bash/         # Pure Bash scripts (.sh)
+├── azurecli/     # Azure CLI scripts (PowerShell files that call az), only for tasks that act on Azure
 └── powershell/   # PowerShell scripts (.ps1)
 ```
 
@@ -133,10 +130,10 @@ Top-level parts and their phases:
 | Part | Phases |
 |------|--------|
 | `01-cicd-infra` | `phase-01-cicd-setup` |
-| `02-azure-foundation` | `phase-01-landing-zones`, `phase-02-resource-providers`, `phase-03-rbac-permissions`, `phase-04-azure-management-infrastructure`, `phase-05-identity-security` |
+| `02-azure-foundation` | `phase-01-landing-zones`, `phase-02-resource-providers`, `phase-03-rbac-permissions`, `phase-04-azure-management-infrastructure` |
 | `03-onprem-readiness` | `phase-01-active-directory`, `phase-02-enterprise-readiness`, `phase-03-network-infrastructure` |
 | `04-cluster-deployment` | `phase-01-hardware-provisioning`, `phase-02-os-installation`, `phase-03-os-configuration`, `phase-04-arc-registration`, `phase-05-cluster-deployment`, `phase-06-post-deployment` |
-| `05-operational-foundations` | `phase-01-sdn-deployment`, `phase-02-monitoring-observability`, `phase-03-backup-dr`, `phase-04-security-governance`, `phase-05-licensing-telemetry` |
+| `05-operational-foundations` | `phase-01-sdn-deployment`, `phase-02-monitoring-observability`, `phase-04-security-governance`, `phase-05-licensing-telemetry` |
 | `06-testing-validation` | *(tasks directly under part)* |
 | `07-validation-handover` | *(tasks directly under part)* |
 
@@ -147,5 +144,5 @@ Top-level parts and their phases:
 - [Infrastructure Generation & Deployment Process](https://azurelocal.cloud/standards/infrastructure/infrastructure-generation-deployment-process)
 - [State Management](https://azurelocal.cloud/standards/infrastructure/state-management)
 - [Solution Development Standard](solutions)
-- [Variable Standards](variables) — includes master registry and infrastructure type definitions
+- [Variable Management](variables): the master registry, the infrastructure file and the infrastructure type definitions
 - [Automation Interoperability](automation)

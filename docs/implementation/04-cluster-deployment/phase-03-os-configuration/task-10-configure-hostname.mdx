@@ -42,12 +42,12 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 
 ## Overview
 
-Rename each node to its target hostname from `variables.yml`. Nodes must restart to apply the change.
+Rename each node to its target hostname from `infrastructure.yml`. Nodes must restart to apply the change.
 
 :::warning Computer name rules (Azure Local 2610)
 - **Do not use an underscore (`_`)** in the computer name. Learn: "Using an underscore (`_`) in the computer name is not supported, as it impacts storage path creation."
 - The computer name is the name shown in the Azure portal and, once joined, in Active Directory. Choose it now; it is not a cosmetic setting.
-- Use a name that is unique in the domain and matches the node name in `variables.yml` and the Active Directory preparation (Phase 01).
+- Use a name that is unique in the domain and matches the node name in `infrastructure.yml` and the Active Directory preparation (Phase 01).
 :::
 
 ---
@@ -57,7 +57,7 @@ Rename each node to its target hostname from `variables.yml`. Nodes must restart
 | Requirement | Details |
 |---|---|
 | Tasks 01–09 complete | Unused adapters disabled |
-| Hostnames from variables.yml | `cluster_nodes[].hostname` |
+| Hostnames from infrastructure.yml | `nodes[].name` |
 
 ---
 
@@ -65,8 +65,8 @@ Rename each node to its target hostname from `variables.yml`. Nodes must restart
 
 | YAML Key | Variable | Example |
 |---|---|---|
-| `cluster_nodes[].hostname` | `$NewHostname` | `azlocal-node01` |
-| `cluster_nodes[].management_ip` | `$ServerList` / `$node.ip` | `10.0.0.11` |
+| `nodes[].name` | `$NewHostname` | `azlocal-node01` |
+| `nodes[].network_adapters[].ip_address` | `$ServerList` / `$node.ip` | `10.0.0.11` |
 
 ---
 
@@ -79,7 +79,7 @@ Run on each node via console, KVM, or RDP. SConfig is the simplest method.
 
 1. At the PowerShell prompt, type `SConfig` and press Enter
 2. Select **option 2** — Computer Name
-3. Type the hostname from `variables.yml` (`cluster_nodes[].hostname`)
+3. Type the hostname from `infrastructure.yml` (`nodes[].name`)
 4. Press Enter and confirm
 5. Select **Yes** to restart now
 
@@ -89,56 +89,25 @@ Repeat on each node.
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run from the management server. Reads all node IPs and hostnames from `variables.yml`, renames each node, restarts it, and waits for it to come back online.
+### PowerShell
 
-**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname/powershell/Invoke-ConfigureHostname-Orchestrated.ps1`
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname/powershell/Invoke-ConfigureHostname-Orchestrated.ps1` | Configures hostnames on all Azure Local nodes via PSRemoting. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname/powershell/Set-NodeHostname.ps1` | See the comment-based help of the script. |
+
+Requires: PowerShell 7.
+
+#### Run
 
 ```powershell
-# Task 10 - Configure Hostname (orchestrated, all nodes)
-# variables.yml variables:
-# cluster_nodes[].management_ip -> connection IP per node
-# cluster_nodes[].hostname -> target hostname per node
-
-$ConfigPath = "$env:USERPROFILE\variables.yml"
-$lines = Get-Content $ConfigPath
-$nodes = @()
-$current = $null
-foreach ($line in $lines) {
- if ($line -match '^\s*-\s*hostname:\s*"?([^"]+)"?') { $current = @{ hostname = $Matches[1].Trim(); ip = "" } }
- elseif ($line -match '^\s+management_ip:\s*"?([^"]+)"?' -and $current) { $current.ip = $Matches[1].Trim() }
- if ($current -and $current.ip -and $current.hostname) { $nodes += [PSCustomObject]$current; $current = $null }
-}
-
-foreach ($node in $nodes) {
- Invoke-Command -ComputerName $node.ip -ArgumentList $node.hostname -ScriptBlock {
- param($name)
-
- if ($name -match "_") { throw "Computer name $name contains an underscore, which Azure Local does not support" }
- Rename-Computer -NewName $name -Force
- }
- Restart-Computer -ComputerName $node.ip -Force
- Write-Host "[$($node.ip)] Renamed to $($node.hostname) -- restarting"
-}
-
-Write-Host "Waiting 60s for nodes to come back online..."
-Start-Sleep -Seconds 60
-
-foreach ($node in $nodes) {
- $reported = Invoke-Command -ComputerName $node.ip -ScriptBlock { $env:COMPUTERNAME }
- Write-Host "[$($node.ip)] Online - hostname: $reported"
-}
+.\Invoke-ConfigureHostname-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
+.\Invoke-ConfigureHostname-Orchestrated.ps1
 ```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
-:::
 
 </TabItem>
 </Tabs>
@@ -160,19 +129,15 @@ Invoke-Command -ComputerName <ip> -ScriptBlock { $env:COMPUTERNAME }
 
 - [ ] Each node reports the correct hostname
 - [ ] All nodes accessible after restart
-- [ ] Hostnames match `cluster_nodes[].hostname` in variables.yml
+- [ ] Hostnames match `nodes[].name` in infrastructure.yml
 - [ ] No hostname contains an underscore
 
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| Hostname Pattern | `cluster.nodes[].hostname` | `azlocal-node-01` |
-| Domain Name | `cluster.domain.name` | `iic.local` |
-| OU Path | `cluster.domain.ou_path` | `OU=Servers,DC=iic,DC=local` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -191,12 +156,7 @@ Invoke-Command -ComputerName <ip> -ScriptBlock { $env:COMPUTERNAME }
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

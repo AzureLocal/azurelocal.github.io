@@ -51,17 +51,9 @@ Regular disaster recovery testing validates that replication is working correctl
 | Recovery plan | Multi-VM orchestration plan | Created in Site Recovery |
 | Change window | Approved maintenance window | For production failover tests |
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `AZURE_REGION` | `azure.resource_group.location` | `eastus2` |
-| `RECOVERY_VAULT_NAME` | `dr.recovery_vault_name` | `rsv-azl-dal-dr-01` |
-| `DR_TEST_VNET_NAME` | `dr.test_vnet_name` | `vnet-dr-test-isolated` |
-| `RECOVERY_PLAN_NAME` | `dr.recovery_plan_name` | `RP-CriticalApps-DAL` |
-| `TARGET_RTO` | `dr.target_rto_minutes` | `240` |
-| `TARGET_RPO` | `dr.target_rpo_minutes` | `15` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ## Test Failover Overview
 
@@ -99,13 +91,23 @@ Create a virtual network isolated from production for safe testing:
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: This task is parked and nothing runs it. The scripts below are under `scripts/deferred` and they still read an older configuration layout.
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository.
-:::
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deferred/backup-dr/phase-03-backup-dr/task-03-test-dr-procedures/powershell/Test-DisasterRecovery.ps1` | Tests disaster recovery capabilities for Azure Local. Supports `-WhatIf`. |
+
+Requires: PowerShell 7.
+
+#### Run
+
+```powershell
+.\Test-DisasterRecovery.ps1 -ClusterName "azl-cluster01" -TestType "Failover"
+```
 
 </TabItem>
 </Tabs>
@@ -130,36 +132,6 @@ Test individual VMs before testing recovery plans:
 5. Click **OK** to start test failover
 
 6. Monitor progress in **Site Recovery jobs**
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-# Set vault context
-$vault = Get-AzRecoveryServicesVault `
- -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
- -Name "{{RECOVERY_VAULT_NAME}}"
-Set-AzRecoveryServicesAsrVaultContext -Vault $vault
-
-# Get protected item
-$protectedItem = Get-AzRecoveryServicesAsrReplicationProtectedItem `
- -ProtectionContainer $container `
- -FriendlyName "{{VM_NAME}}"
-
-# Get test network
-$testNetwork = Get-AzVirtualNetwork `
- -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
- -Name "{{DR_TEST_VNET_NAME}}"
-
-# Start test failover
-$job = Start-AzRecoveryServicesAsrTestFailoverJob `
- -ReplicationProtectedItem $protectedItem `
- -Direction PrimaryToRecovery `
- -AzureVMNetworkId $testNetwork.Id
-
-# Monitor job
-Get-AzRecoveryServicesAsrJob -Job $job
-```
 
 </TabItem>
 </Tabs>
@@ -249,23 +221,6 @@ Record test results for compliance and improvement:
 4. Add notes about the test (optional)
 5. Check **Testing is complete. Delete test failover virtual machine(s)**
 6. Click **OK**
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-# Cleanup test failover
-$protectedItem = Get-AzRecoveryServicesAsrReplicationProtectedItem `
- -ProtectionContainer $container `
- -FriendlyName "{{VM_NAME}}"
-
-# Complete test failover cleanup
-$cleanupJob = Start-AzRecoveryServicesAsrTestFailoverCleanupJob `
- -ReplicationProtectedItem $protectedItem `
- -Comment "DR test completed successfully on {{TEST_DATE}}"
-
-Get-AzRecoveryServicesAsrJob -Job $cleanupJob
-```
 
 </TabItem>
 </Tabs>
@@ -479,12 +434,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

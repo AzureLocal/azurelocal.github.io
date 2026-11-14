@@ -37,78 +37,65 @@ This document provides detailed provisioning instructions with **tabbed executio
 
 ## Understanding the Execution Options
 
-Each task page uses tabs so you can switch between methods without scrolling. Not every task supports all options — only genuinely applicable methods are shown.
+Each task page uses tabs so you can switch between methods without scrolling. Not every task supports all options. Only genuinely applicable methods are shown.
 
 | Option | Best For | You Will Need |
 |--------|----------|---------------|
 | **Manual** (Azure Portal, on-site, vendor UI) | Learning, single deployments, visual preference, physical tasks | Web browser / physical access / vendor UI |
-| **Direct Script** (On Node) | Direct console/RDP access to nodes | PowerShell on target nodes, `variables.yml`, helpers |
-| **Orchestrated Script** (Mgmt Server) | Managing from jump box, multiple nodes | Management server, PSRemoting, `variables.yml`, helpers |
-| **Standalone Script** (Copy-Paste) | Sharing externally, demos, one-off runs | PowerShell only — no config file, no helpers needed |
+| **Toolkit script** (PowerShell 7) | Repeatable runs from a management workstation or a pipeline | PowerShell 7, the toolkit, and your `infrastructure.yml` |
 
-> **⚡ Looking for full automation (IaC/CI/CD)?**
+> **Looking for full automation (IaC/CI/CD)?**
 >
 > The fully automated deployment instructions (Terraform, Bicep, Ansible, CI/CD pipelines) are documented separately in the [Automation section](../automation/). Use that guide for pipeline-driven, repeatable deployments.
 
-## Configuration File: variables.yml
+## Configuration File: infrastructure.yml
 
-All scripts and procedures now reference values from a single `variables.yml` configuration file. Before starting:
+The toolkit scripts read one file: `infrastructure.yml` (schema 5). It is the only file you fill in for an environment. The master registry (`config/variables/schema/master-registry.yaml`) defines every key. Before you start:
 
-1. **Copy the template**: `variables.example.yml` → `variables.yml`
-2. **Edit values** to match your environment:
- - Azure tenant and subscription IDs
- - Resource group names
- - Network configuration
- - Tags and naming conventions
-
-3. **Store secrets in Key Vault** (do not put secrets directly in YAML):
+1. **Start from a template.** Copy `config/variables/templates/infrastructure.master.yml` (every key), a scenario template, or the nearest worked example in `config/variables/examples/`. For one tool only, use its template in `config/variables/templates/tools/`.
+2. **Edit the values** to match your environment: the Azure tenant and subscription, the resource groups, the networks, the nodes.
+3. **Never put a secret in the file.** A secret is a reference: `keyvault://<vault>/<secret>` (the default), `env://<VARIABLE>`, `file://<name>` or `command://<name>`. One resolver reads every reference. No script names a vault.
 
 ```yaml
-# Variable placeholder — replace {{platform.kv_platform_name}} with your Key Vault name
-credentials:
- local_admin:
- password: "keyvault://{{platform.kv_platform_name}}/local-admin-password"
-
-# Example: Infinite azurelocal Corp
-credentials:
- local_admin:
- password: "keyvault://kv-iic-platform/local-admin-password"
+# A reference, not a value
+identity:
+  local_admin:
+    username: "iic-admin"
+    password: "keyvault://kv-iic-mgmt-01/local-admin-password"
 ```
 
-> **📋 Configuration Reference**: See Scripting Framework for complete `variables.yml` structure and variable path conventions.
+4. **Check the file.** `./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path ./infrastructure.yml` lists every problem at once.
+
+> **Configuration reference**: see [Variable Management](https://azurelocal.cloud/standards/variables) for how the variables work, and the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md) for every key.
 
 ## Execution Workflow
 
-1. **Review Stage Details** — Understand objectives and tasks
-2. **Select your tab** for each step (Manual, Direct, Orchestrated, or Standalone)
-3. **Complete the step** following that tab's procedure
-4. **Validate** using the verification steps provided
-5. **Proceed to next step**
+1. **Review the stage details.** Understand the objectives and tasks.
+2. **Select your tab** for each step (Manual or Toolkit script).
+3. **Complete the step** following that tab's procedure.
+4. **Validate** using the verification steps provided.
+5. **Proceed to the next step.**
 
-You can **mix options** throughout the runbook (e.g., use Portal for some steps, scripts for others). Your tab selection persists across pages.
+You can **mix options** throughout the runbook (for example, use the portal for some steps and scripts for others). Your tab selection persists across pages.
 
 ## Script Language Support
 
-**Primary Documentation**: PowerShell with Azure PowerShell modules (`Az.*`)
+The toolkit is **PowerShell 7 only**. It has no Bash scripts. Scripts that act on Azure use the Azure PowerShell modules (`Az.*`). A few tasks also have an Azure CLI script, written in PowerShell.
 
-**Alternative Implementations Available**: For each documented script, the following variants exist in the `scripts/` directory:
+| Kind | Naming pattern | Example |
+|------|----------------|---------|
+| PowerShell + Az modules | `Verb-Noun.ps1` | `Deploy-KeyVaults.ps1` |
+| PowerShell + Azure CLI | `az-<verb>-<noun>.ps1` or `<Verb-Noun>.azcli.ps1` | `Register-ResourceProviders.azcli.ps1` |
+| Orchestrated (remote) | `Invoke-<Task>-Orchestrated.ps1` | `Invoke-SSHConnectivity-Orchestrated.ps1` |
 
-| Variant | Naming Pattern | Example | Description |
-|---------|---------------|---------|-------------|
-| **PowerShell + Az Modules** | `Verb-AzResource.ps1` | `New-AzKeyVault.ps1` | Primary. Uses Azure PowerShell modules (`Connect-AzAccount`, `New-AzResourceGroup`, etc.) |
-| **PowerShell + Azure CLI** | `.azcli.ps1` | `Register-ResourceProviders.azcli.ps1` | PowerShell script using Azure CLI commands (`az login`, `az group create`, etc.) |
-| **Bash + Azure CLI** | `az-verb-resource.sh` | `az-create-vnet.sh` | Bash script using Azure CLI commands |
-| **Standalone (no config)** | `Verb-Noun-Standalone.ps1` | `New-AzKeyVault-Standalone.ps1` | Self-contained script with inline variables — no external dependencies |
-| **Orchestrated (remote)** | `Invoke-{VerbNoun}.ps1` | `Invoke-DeployCluster.ps1` | Runs from management server via PSRemoting — reads `variables.yml` |
-
-> **Note**: This runbook documents PowerShell with Azure PowerShell modules as the primary language due to widespread familiarity and cross-platform support (PowerShell 7+). Alternative implementations follow the same logic and variable paths.
+Every script takes its values from `infrastructure.yml`. A test fails the build when a script carries a value that a deployment chooses (an address, a name, an ID, a region). The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit says, for every task folder, whether it has a real script or a placeholder.
 
 ## Authentication
 
 Before running any scripts or accessing Azure resources, you must authenticate to Azure. This runbook assumes manual authentication for each session.
 
 **Authentication Options:**
-- [Authentication Methods](05-authentication.mdx) - Manual authentication scripts for PowerShell, Azure CLI, and Bash.
+- [Authentication Methods](05-authentication.mdx) - Manual authentication for Azure PowerShell and the Azure CLI (in PowerShell).
 - [Appendix C: Authentication & Session Setup](appendices/appendix-c-auth-setup.mdx) - Detailed authentication details and troubleshooting.
 
 ---

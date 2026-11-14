@@ -62,18 +62,15 @@ If you are physically at the data centre, use the **USB Drive (On-Site)** tab. I
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Task 01 Complete | BOSS card virtual disk deleted and recreated | [Task 01](./task-01-delete-and-recreate-virtual-disk-on-dell-boss-card.mdx) |
-| iDRAC Access | Virtual Console and Virtual Media enabled | `variables.yml: nodes.<name>.idrac_ip` |
+| iDRAC Access | Virtual Console and Virtual Media enabled | `infrastructure.yml`: `nodes[].bmc.ip_address` |
 | Gold Image ISO | Dell Azure Stack HCI OS gold image ISO available | Azure Local Cloud build team |
 | Network Share (iDRAC tabs) | SMB/CIFS share accessible from iDRAC OOB network | Network team |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `nodes.<name>.idrac_ip` | string | iDRAC IP address for Virtual Media mount |
-| `nodes.<name>.hostname` | string | Node hostname for tracking |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -100,173 +97,20 @@ Repeat for all nodes, then verify all mounts with the validation checklist below
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Mount ISO to all nodes simultaneously via Redfish API from the management server. Reads iDRAC IPs from `variables.yml`.
+### PowerShell
 
-`scripts/deploy/04-cluster-deployment/phase-02-os-installation/task-01-mount-and-verify-dell-gold-image-iso/powershell/Invoke-MountGoldImageISO.ps1`
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-```powershell
-#Requires -Version 7.0
-# ============================================================================
-# Script: Invoke-MountGoldImageISO.ps1
-# Execution: Run FROM management server — Redfish API to each iDRAC
-# Prerequisites: powershell-yaml, Az module, iDRAC reachable on port 443
-# ============================================================================
+#### Script
 
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath = ".\config\variables.yml",
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-02-os-installation/task-02-mount-and-verify-dell-gold-image-iso/powershell/Invoke-MountGoldImageISO.ps1` | Mount and verify a Dell gold image ISO via iDRAC Virtual Media (Redfish API). Supports `-WhatIf`. |
 
- [Parameter(Mandatory = $true)]
- [string]$ISOPath, # e.g. \\deploy-server\images\Dell-AzureStackHCI-24H2-Gold.iso
-
- [Parameter(Mandatory = $false)]
- [PSCredential]$ShareCredential # Optional: SMB share credentials
-)
-
-Import-Module powershell-yaml -ErrorAction Stop
-Import-Module Az.KeyVault -ErrorAction Stop
-
-$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
-$secrets = Get-AzKeyVaultSecret -VaultName $config.key_vault.name
-
-$iDRACUser = ($secrets | Where-Object { $_.Name -eq "idrac-username" }).SecretValue |
- ConvertFrom-SecureString -AsPlainText
-$iDRACPass = ($secrets | Where-Object { $_.Name -eq "idrac-password" }).SecretValue |
- ConvertFrom-SecureString -AsPlainText
-$credential = [PSCredential]::new($iDRACUser, (ConvertTo-SecureString $iDRACPass -AsPlainText -Force))
-
-$results = @()
-
-foreach ($nodeKey in $config.nodes.Keys) {
- $node = $config.nodes[$nodeKey]
- $ip = $node.idrac_ip
- $baseUri = "https://$ip/redfish/v1"
- $invokeParams = @{ Credential = $credential; SkipCertificateCheck = $true
- Headers = @{ "Content-Type" = "application/json" } }
-
- Write-Host "$($node.hostname) ($ip) — mounting ISO..." -ForegroundColor Yellow
-
- try {
- $cdUri = "$baseUri/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
-
- # Eject if already inserted
- $current = Invoke-RestMethod -Uri $cdUri -Method Get @invokeParams
- if ($current.Inserted) {
- Invoke-RestMethod -Uri "$cdUri/Actions/VirtualMedia.EjectMedia" `
- -Method Post -Body '{}' @invokeParams | Out-Null
- Start-Sleep -Seconds 3
- }
-
- # Build mount payload
- $payload = @{ Image = $ISOPath; Inserted = $true; WriteProtected = $true }
- if ($ShareCredential) {
- $payload.UserName = $ShareCredential.UserName
- $payload.Password = $ShareCredential.GetNetworkCredential().Password
- }
-
- Invoke-RestMethod -Uri "$cdUri/Actions/VirtualMedia.InsertMedia" `
- -Method Post -Body ($payload | ConvertTo-Json) @invokeParams | Out-Null
-
- Start-Sleep -Seconds 3
- $verify = Invoke-RestMethod -Uri $cdUri -Method Get @invokeParams
-
- if ($verify.Inserted) {
- Write-Host " Mounted" -ForegroundColor Green
- $results += [PSCustomObject]@{ Node = $node.hostname; Status = "OK"; Inserted = $true }
- } else {
- throw "Mount reported not inserted after InsertMedia"
- }
- } catch {
- Write-Host " FAILED: $_" -ForegroundColor Red
- $results += [PSCustomObject]@{ Node = $node.hostname; Status = "FAIL"; Error = "$_" }
- }
-}
-
-Write-Host "`nSummary:" -ForegroundColor Cyan
-$results | Format-Table -AutoSize
-
-$failed = $results | Where-Object { $_.Status -eq "FAIL" }
-if ($failed) {
- Write-Host "$($failed.Count) node(s) failed — resolve before proceeding to Task 02" -ForegroundColor Red
- exit 1
-}
-Write-Host "All nodes mounted — proceed to Task 02" -ForegroundColor Green
-```
-
-### Verify Mount Status
-
-```powershell
-# Quick verification — confirms Inserted: true on all nodes
-foreach ($nodeKey in $config.nodes.Keys) {
- $node = $config.nodes[$nodeKey]
- $uri = "https://$($node.idrac_ip)/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
- $vm = Invoke-RestMethod -Uri $uri -Method Get @invokeParams
- $status = if ($vm.Inserted) { "OK" } else { "NOT MOUNTED" }
- Write-Host "$($node.hostname): Inserted=$($vm.Inserted) — $status"
-}
-```
+Requires: PowerShell 7.
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-#Requires -Version 5.1
-# ============================================================================
-# Script: Invoke-MountGoldImageISO-Standalone.ps1
-# Execution: Run FROM any workstation — Redfish API to each iDRAC
-# Prerequisites: iDRAC reachable on port 443, admin credentials
-# ============================================================================
-
-#region CONFIGURATION
-$ISOPath = "\\deploy-server\images\Dell-AzureStackHCI-24H2-Gold.iso"
-
-$iDRACUser = "root"
-$iDRACPassSecure = Read-Host "Enter iDRAC password" -AsSecureString
-$credential = [PSCredential]::new($iDRACUser, $iDRACPassSecure)
-
-# Node iDRAC IP map
-$nodes = @(
- @{ Hostname = "azlocal-node01"; iDRACIP = "10.245.64.11" },
- @{ Hostname = "azlocal-node02"; iDRACIP = "10.245.64.12" },
- @{ Hostname = "azlocal-node03"; iDRACIP = "10.245.64.13" },
- @{ Hostname = "azlocal-node04"; iDRACIP = "10.245.64.14" }
-)
-#endregion
-
-$invokeParams = @{ Credential = $credential; SkipCertificateCheck = $true
- Headers = @{ "Content-Type" = "application/json" } }
-
-foreach ($node in $nodes) {
- $cdUri = "https://$($node.iDRACIP)/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
- Write-Host "$($node.Hostname) ($($node.iDRACIP))..." -ForegroundColor Yellow
-
- try {
- $current = Invoke-RestMethod -Uri $cdUri -Method Get @invokeParams
- if ($current.Inserted) {
- Invoke-RestMethod -Uri "$cdUri/Actions/VirtualMedia.EjectMedia" `
- -Method Post -Body '{}' @invokeParams | Out-Null
- Start-Sleep -Seconds 3
- }
-
- $payload = @{ Image = $ISOPath; Inserted = $true; WriteProtected = $true } | ConvertTo-Json
- Invoke-RestMethod -Uri "$cdUri/Actions/VirtualMedia.InsertMedia" `
- -Method Post -Body $payload @invokeParams | Out-Null
- Start-Sleep -Seconds 3
-
- $verify = Invoke-RestMethod -Uri $cdUri -Method Get @invokeParams
- if ($verify.Inserted) {
- Write-Host " Mounted" -ForegroundColor Green
- } else {
- Write-Host " FAILED: not inserted after mount" -ForegroundColor Red
- }
- } catch {
- Write-Host " ERROR: $_" -ForegroundColor Red
- }
-}
-```
-
-</TabItem>
 </Tabs>
 
 ---
@@ -303,12 +147,7 @@ Do **not** start Task 02 (BOSS virtual disk recreation) until all nodes show `In
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

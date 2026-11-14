@@ -67,12 +67,9 @@ Verify which adapter is your active management connection before running. Disabl
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `cluster_nodes[].management_ip` | string | PSRemoting target IP (orchestrated mode) |
-| `cluster.management_nic_name` | string | Adapter name to preserve (do not disable) |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -99,35 +96,25 @@ Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run from the management server against all nodes.
+### PowerShell
 
-**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-09-disable-unused-network-adapters/powershell/Invoke-DisableAdapters-Orchestrated.ps1`
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-09-disable-unused-network-adapters/powershell/Disable-UnusedAdapters.ps1` | See the comment-based help of the script. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-09-disable-unused-network-adapters/powershell/Invoke-DisableAdapters-Orchestrated.ps1` | Disables unused (disconnected) network adapters on all Azure Local nodes via PSRemoting. |
+
+Requires: PowerShell 7.
+
+#### Run
 
 ```powershell
-# Task 09 - Disable Unused Network Adapters (orchestrated, all nodes)
-# variables.yml variables:
-# cluster_nodes[].management_ip -> $ServerList
-
-$ConfigPath = "$env:USERPROFILE\variables.yml"
-$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
- ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
-
-Invoke-Command ($ServerList) {
- Get-NetAdapter | Where-Object { $_.Status -eq "Disconnected" } | Disable-NetAdapter -Confirm:$false
- Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
-} | Sort -Property PsComputerName
+.\Invoke-DisableAdapters-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
+.\Invoke-DisableAdapters-Orchestrated.ps1
 ```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
-:::
 
 </TabItem>
 </Tabs>
@@ -167,12 +154,7 @@ Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

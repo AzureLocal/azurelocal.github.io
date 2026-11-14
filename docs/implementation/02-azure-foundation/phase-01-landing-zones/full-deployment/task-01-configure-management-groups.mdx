@@ -83,38 +83,44 @@ Tenant Root Group
 
 | Level | Display Name | MG ID (IIC) | Config Path |
 |:-----:|---|---|---|
-| 1 | IIC Root | `cmp-iic-root` | `azure.management_groups.tenant_root.name` |
-| 2 | Platform | `cmp-platform-iic` | `azure.management_groups.platform.name` |
-| 3 | Platform — Identity | `cmp-platform-identity-iic` | `azure.management_groups.platform_identity.name` |
-| 3 | Platform — Management | `cmp-platform-management-iic` | `azure.management_groups.platform_management.name` |
-| 3 | Platform — Connectivity | `cmp-platform-connectivity-iic` | `azure.management_groups.platform_connectivity.name` |
-| 2 | Landing Zones | `cmp-landing-zones-iic` | `azure.management_groups.landing_zone.name` |
-| 3 | Corp Landing Zone | `cmp-lz-corp-iic` | `azure.management_groups.lz_corp.name` |
-| 3 | Online Landing Zone | `cmp-lz-online-iic` | `azure.management_groups.lz_online.name` |
-| 2 | Sandbox | `cmp-sandbox-iic` | `azure.management_groups.sandbox.name` |
-| 2 | Decommissioned | `cmp-decommissioned-iic` | `azure.management_groups.decommissioned.name` |
+| 1 | IIC Root | `cmp-iic-root` | `landing_zone.management_groups[].parent` |
+| 2 | Platform | `cmp-platform-iic` | `landing_zone.management_groups[].name` |
+| 3 | Platform — Identity | `cmp-platform-identity-iic` | `landing_zone.management_groups[].name` |
+| 3 | Platform — Management | `cmp-platform-management-iic` | `landing_zone.management_groups[].name` |
+| 3 | Platform — Connectivity | `cmp-platform-connectivity-iic` | `landing_zone.management_groups[].name` |
+| 2 | Landing Zones | `cmp-landing-zones-iic` | `landing_zone.management_groups[].name` |
+| 3 | Corp Landing Zone | `cmp-lz-corp-iic` | `landing_zone.management_groups[].name` |
+| 3 | Online Landing Zone | `cmp-lz-online-iic` | `landing_zone.management_groups[].name` |
+| 2 | Sandbox | `cmp-sandbox-iic` | `landing_zone.management_groups[].name` |
+| 2 | Decommissioned | `cmp-decommissioned-iic` | `landing_zone.management_groups[].name` |
 
 ## Prerequisites
 
 - **Tenant access** — you must have Owner or User Access Administrator role at the tenant root management group scope (see [Elevate access to manage all Azure subscriptions](https://learn.microsoft.com/en-us/azure/role-based-access-control/elevate-access-global-admin))
 - **Permissions** — Management Group Contributor (or Owner) at the scope where you'll create the hierarchy
 - **Authenticated Azure session** — see [Authentication](../../../05-authentication.mdx)
-- **`variables.yml`** — configured with the full management group hierarchy names and display names
+- **`infrastructure.yml`** — configured with the full management group hierarchy names and display names
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Root MG ID | `azure.management_groups.tenant_root.name` | `cmp-iic-root` |
-| Platform MG ID | `azure.management_groups.platform.name` | `cmp-platform-iic` |
-| Platform Identity MG ID | `azure.management_groups.platform_identity.name` | `cmp-platform-identity-iic` |
-| Platform Management MG ID | `azure.management_groups.platform_management.name` | `cmp-platform-management-iic` |
-| Platform Connectivity MG ID | `azure.management_groups.platform_connectivity.name` | `cmp-platform-connectivity-iic` |
-| Landing Zones MG ID | `azure.management_groups.landing_zone.name` | `cmp-landing-zones-iic` |
-| Corp Landing Zone MG ID | `azure.management_groups.lz_corp.name` | `cmp-lz-corp-iic` |
-| Online Landing Zone MG ID | `azure.management_groups.lz_online.name` | `cmp-lz-online-iic` |
-| Sandbox MG ID | `azure.management_groups.sandbox.name` | `cmp-sandbox-iic` |
-| Decommissioned MG ID | `azure.management_groups.decommissioned.name` | `cmp-decommissioned-iic` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+`Deploy-ManagementGroups.ps1`:
+
+```text
+azure.tenant_id                                 the tenant the sign-in must belong to
+landing_zone.management_groups[].name           the management group id
+landing_zone.management_groups[].display_name   the display name (default: the name)
+landing_zone.management_groups[].parent         the name of the parent entry; empty for the tenant root
+```
+
+`Set-ManagementGroupDisplayNames.ps1`:
+
+```text
+azure.tenant_id                                 the tenant the sign-in must belong to
+landing_zone.management_groups[].name           the management group id (the group must already exist)
+landing_zone.management_groups[].display_name   the display name it must have
+```
 
 ---
 
@@ -131,7 +137,7 @@ Tenant Root Group
 
 1. **Navigate to Management Groups**:
  - In Azure Portal, search for **Management groups**
- - Locate the root management group (`azure.management_groups.tenant_root.name`)
+ - Locate the root management group (`landing_zone.management_groups[].parent`)
 
 2. **Create Platform Management Groups**:
  - Select root MG → **+ Add management group**
@@ -139,16 +145,16 @@ Tenant Root Group
 
  | Field | Value | Config Path |
  |-------|-------|-------------|
- | MG ID | `cmp-platform-iic` | `azure.management_groups.platform.name` |
- | Display Name | `Platform` | `azure.management_groups.platform.display_name` |
+ | MG ID | `cmp-platform-iic` | `landing_zone.management_groups[].name` |
+ | Display Name | `Platform` | `landing_zone.management_groups[].display_name` |
 
  - Select the platform MG → **+ Add management group** for each child:
 
  | MG ID | Display Name | Config Path |
  |-------|---|---|
- | `cmp-platform-identity-iic` | `Platform — Identity` | `azure.management_groups.platform_identity.*` |
- | `cmp-platform-management-iic` | `Platform — Management` | `azure.management_groups.platform_management.*` |
- | `cmp-platform-connectivity-iic` | `Platform — Connectivity` | `azure.management_groups.platform_connectivity.*` |
+ | `cmp-platform-identity-iic` | `Platform — Identity` | `landing_zone.management_groups[]` |
+ | `cmp-platform-management-iic` | `Platform — Management` | `landing_zone.management_groups[]` |
+ | `cmp-platform-connectivity-iic` | `Platform — Connectivity` | `landing_zone.management_groups[]` |
 
 3. **Create Landing Zone Management Groups**:
  - Select root MG → **+ Add management group**
@@ -156,30 +162,30 @@ Tenant Root Group
 
  | Field | Value | Config Path |
  |-------|-------|-------------|
- | MG ID | `cmp-landing-zones-iic` | `azure.management_groups.landing_zone.name` |
- | Display Name | `Landing Zones` | `azure.management_groups.landing_zone.display_name` |
+ | MG ID | `cmp-landing-zones-iic` | `landing_zone.management_groups[].name` |
+ | Display Name | `Landing Zones` | `landing_zone.management_groups[].display_name` |
 
  - Select the landing zones MG → **+ Add management group** for each child:
 
  | MG ID | Display Name | Config Path |
  |-------|---|---|
- | `cmp-lz-corp-iic` | `Corp Landing Zone` | `azure.management_groups.lz_corp.*` |
- | `cmp-lz-online-iic` | `Online Landing Zone` | `azure.management_groups.lz_online.*` |
+ | `cmp-lz-corp-iic` | `Corp Landing Zone` | `landing_zone.management_groups[]` |
+ | `cmp-lz-online-iic` | `Online Landing Zone` | `landing_zone.management_groups[]` |
 
 4. **Create Auxiliary Management Groups**:
  - Select root MG → **+ Add management group** for each:
 
  | MG ID | Display Name | Config Path |
  |-------|---|---|
- | `cmp-sandbox-iic` | `Sandbox` | `azure.management_groups.sandbox.*` |
- | `cmp-decommissioned-iic` | `Decommissioned` | `azure.management_groups.decommissioned.*` |
+ | `cmp-sandbox-iic` | `Sandbox` | `landing_zone.management_groups[]` |
+ | `cmp-decommissioned-iic` | `Decommissioned` | `landing_zone.management_groups[]` |
 
 #### Validation
 
 - [ ] Platform hierarchy complete (platform + identity, management, connectivity)
 - [ ] Landing zones hierarchy complete (landing-zones + corp, online)
 - [ ] Sandbox and Decommissioned MGs created under root
-- [ ] All IDs and display names match `variables.yml`
+- [ ] All IDs and display names match `infrastructure.yml`
 
 #### Links
 
@@ -188,160 +194,26 @@ Tenant Root Group
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted deployment reading values from `variables.yml`
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
 #### Script
 
-**Primary**: `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/powershell/Deploy-ManagementGroups.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/powershell/Deploy-ManagementGroups.ps1` | Creates the Azure management group hierarchy that landing_zone.management_groups of infrastructure.yml lists. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/powershell/Set-ManagementGroupDisplayNames.ps1` | Renames existing management groups: sets the display name infrastructure.yml gives each one. Supports `-WhatIf`. |
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| PowerShell + Azure CLI | `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/azure-cli/Deploy-ManagementGroups.azcli.ps1` |
-| Bash + Azure CLI | `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/bash/az-deploy-management-groups.sh` |
+Requires: PowerShell 7.
 
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Deploy-ManagementGroups.ps1
-# Prerequisites: Az.Resources module, authenticated with MG Contributor on root MG
-# ============================================================================
-
-#Requires -Modules Az.Resources
-
-# Load configuration
-$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
-$mg = $config.azure.management_groups
-
-# Helper: build the parent resource ID from an MG name
-function Get-MgParentId ([string]$Name) {
- "/providers/Microsoft.Management/managementGroups/$Name"
-}
-
-$RootId = $mg.tenant_root.name
-
-Write-Host "Creating Management Group hierarchy under $RootId ..." -ForegroundColor Cyan
-
-# ── Platform ─────────────────────────────────────────────────────────────────
-New-AzManagementGroup -GroupName $mg.platform.name `
- -DisplayName $mg.platform.display_name `
- -ParentId (Get-MgParentId $RootId)
-
-foreach ($child in @('platform_identity', 'platform_management', 'platform_connectivity')) {
- New-AzManagementGroup -GroupName $mg.$child.name `
- -DisplayName $mg.$child.display_name `
- -ParentId (Get-MgParentId $mg.platform.name)
-}
-
-# ── Landing Zones ────────────────────────────────────────────────────────────
-New-AzManagementGroup -GroupName $mg.landing_zone.name `
- -DisplayName $mg.landing_zone.display_name `
- -ParentId (Get-MgParentId $RootId)
-
-foreach ($child in @('lz_corp', 'lz_online')) {
- New-AzManagementGroup -GroupName $mg.$child.name `
- -DisplayName $mg.$child.display_name `
- -ParentId (Get-MgParentId $mg.landing_zone.name)
-}
-
-# ── Auxiliary ────────────────────────────────────────────────────────────────
-foreach ($child in @('sandbox', 'decommissioned')) {
- New-AzManagementGroup -GroupName $mg.$child.name `
- -DisplayName $mg.$child.display_name `
- -ParentId (Get-MgParentId $RootId)
-}
-
-Write-Host "Management Group hierarchy created successfully" -ForegroundColor Green
-```
-
-#### Validation
+#### Run
 
 ```powershell
-Get-AzManagementGroup -GroupName $mg.tenant_root.name -Expand -Recurse |
- Select-Object -ExpandProperty Children |
- Format-Table Name, DisplayName, Type -AutoSize
+./Deploy-ManagementGroups.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Set-ManagementGroupDisplayNames.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
-
-**Validation Script**: `scripts/validation/landing-zones/powershell/Test-ManagementGroups.ps1`
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready script — no config file, no helpers, no dependencies.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: New-ManagementGroups-Standalone.ps1
-# Execution: Run anywhere — fully self-contained, no external dependencies
-# Prerequisites: Az.Resources module, authenticated with MG Contributor on root MG
-# ============================================================================
-
-#Requires -Modules Az.Resources
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-
-$RootMgName = "cmp-iic-root" # Existing root MG — do NOT create this
-
-# Level 2 — direct children of root
-$Platform = @{ Name = "cmp-platform-iic"; Display = "Platform" }
-$LandingZones = @{ Name = "cmp-landing-zones-iic"; Display = "Landing Zones" }
-$Sandbox = @{ Name = "cmp-sandbox-iic"; Display = "Sandbox" }
-$Decommissioned = @{ Name = "cmp-decommissioned-iic"; Display = "Decommissioned" }
-
-# Level 3 — children of Platform
-$PlatformIdentity = @{ Name = "cmp-platform-identity-iic"; Display = "Platform - Identity" }
-$PlatformManagement = @{ Name = "cmp-platform-management-iic"; Display = "Platform - Management" }
-$PlatformConnectivity = @{ Name = "cmp-platform-connectivity-iic"; Display = "Platform - Connectivity" }
-
-# Level 3 — children of Landing Zones
-$LzCorp = @{ Name = "cmp-lz-corp-iic"; Display = "Corp Landing Zone" }
-$LzOnline = @{ Name = "cmp-lz-online-iic"; Display = "Online Landing Zone" }
-
-#endregion CONFIGURATION
-
-function Get-MgParentId ([string]$Name) {
- "/providers/Microsoft.Management/managementGroups/$Name"
-}
-
-Write-Host "Creating Management Group hierarchy under $RootMgName ..." -ForegroundColor Cyan
-
-# Level 2
-foreach ($mg in @($Platform, $LandingZones, $Sandbox, $Decommissioned)) {
- New-AzManagementGroup -GroupName $mg.Name -DisplayName $mg.Display `
- -ParentId (Get-MgParentId $RootMgName)
-}
-
-# Level 3 — Platform children
-foreach ($mg in @($PlatformIdentity, $PlatformManagement, $PlatformConnectivity)) {
- New-AzManagementGroup -GroupName $mg.Name -DisplayName $mg.Display `
- -ParentId (Get-MgParentId $Platform.Name)
-}
-
-# Level 3 — Landing Zone children
-foreach ($mg in @($LzCorp, $LzOnline)) {
- New-AzManagementGroup -GroupName $mg.Name -DisplayName $mg.Display `
- -ParentId (Get-MgParentId $LandingZones.Name)
-}
-
-Write-Host "Management Group hierarchy created successfully" -ForegroundColor Green
-
-# Verify
-Get-AzManagementGroup -GroupName $RootMgName -Expand -Recurse |
- Select-Object -ExpandProperty Children |
- Format-Table Name, DisplayName, Type -AutoSize
-```
-
-:::info No External Dependencies
-This script is completely self-contained. All values are defined in the `#region CONFIGURATION` block above. Edit those values and run — no `variables.yml`, no config-loader, no helpers required.
-:::
 
 </TabItem>
 </Tabs>
@@ -376,12 +248,7 @@ Proceed to [Task 02: Create Subscriptions](./task-02-create-subscriptions)
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

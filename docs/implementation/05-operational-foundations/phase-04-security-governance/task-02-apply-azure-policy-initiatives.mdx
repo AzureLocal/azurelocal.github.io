@@ -58,13 +58,15 @@ Azure Policy enforces organizational standards and assesses compliance at scale.
 - Management groups configured (if applying at MG scope)
 - Log Analytics workspace for compliance data
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `AZURE_REGION` | `azure.resource_group.location` | `eastus2` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id                          the tenant; also the id of the tenant root management group
+landing_zone.policy.required_tags        the tag names to require (no default: the names follow your tagging standard)
+landing_zone.policy.management_group     optional; the management group to assign at
+```
 
 ## Procedure
 
@@ -124,82 +126,28 @@ Azure Policy enforces organizational standards and assesses compliance at scale.
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-# Variables
-$subscriptionId = "<your-subscription-id>"
-$location = "eastus2"
-
-# Connect and set context
-Connect-AzAccount
-Set-AzContext -SubscriptionId $subscriptionId
-
-# Get Azure Security Benchmark initiative
-$securityBenchmark = Get-AzPolicySetDefinition | Where-Object {
- $_.Properties.DisplayName -like "*Azure Security Benchmark*"
-} | Select-Object -First 1
-
-if ($securityBenchmark) {
- # Assign Azure Security Benchmark
- $assignmentParams = @{
- Name = "AzureSecurityBenchmark"
- DisplayName = "Azure Security Benchmark - Azure Local"
- PolicySetDefinition = $securityBenchmark
- Scope = "/subscriptions/$subscriptionId"
- EnforcementMode = "Default"
- }
- 
- New-AzPolicyAssignment @assignmentParams
- Write-Host "✅ Azure Security Benchmark assigned" -ForegroundColor Green
-} else {
- Write-Host "⚠️ Azure Security Benchmark initiative not found" -ForegroundColor Yellow
-}
-
-# Assign tag enforcement policy
-$tagPolicy = Get-AzPolicyDefinition -Id "/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99"
-
-$tagParams = @{
- Name = "RequireEnvironmentTag"
- DisplayName = "Require Environment Tag"
- PolicyDefinition = $tagPolicy
- Scope = "/subscriptions/$subscriptionId"
- PolicyParameterObject = @{
- tagName = "Environment"
- }
-}
-
-New-AzPolicyAssignment @tagParams
-Write-Host "✅ Tag enforcement policy assigned" -ForegroundColor Green
-
-# Assign Guest Configuration prerequisites (with managed identity)
-$guestConfigPolicy = Get-AzPolicyDefinition -Id "/providers/Microsoft.Authorization/policyDefinitions/12794019-7a00-42cf-95c2-882ebb9fa717"
-
-$guestConfigParams = @{
- Name = "DeployGuestConfigPrereqs"
- DisplayName = "Deploy Guest Configuration Prerequisites"
- PolicyDefinition = $guestConfigPolicy
- Scope = "/subscriptions/$subscriptionId"
- Location = $location
- IdentityType = "SystemAssigned"
-}
-
-New-AzPolicyAssignment @guestConfigParams
-Write-Host "✅ Guest Configuration prerequisites assigned" -ForegroundColor Green
-
-Write-Host "`n✅ Policy initiatives assigned successfully" -ForegroundColor Green
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
-:::
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/powershell/Invoke-AzurePolicyTier1-Orchestrated.ps1` | Assigns the Tier 1 tag policy at one management group, in audit mode, from infrastructure.yml. Supports `-WhatIf`. |
+| `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/powershell/Set-AzurePolicyConfiguration.ps1` | Configures Azure Policy for Azure Local resources. Supports `-WhatIf`. |
+
+Requires: PowerShell 7; modules Az.Accounts, Az.Resources.
+
+#### Run
+
+```powershell
+./Invoke-AzurePolicyTier1-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+.\Set-AzurePolicyConfiguration.ps1 -ResourceGroupName "rg-azurelocal-prod"
+```
 
 </TabItem>
 </Tabs>
@@ -270,12 +218,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

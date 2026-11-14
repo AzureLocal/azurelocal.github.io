@@ -93,12 +93,12 @@ Learn's step is registering the vendor with MSDSM (`New-MSDSMSupportedHW`). On a
 
 ---
 
-## Variables from variables.yml
+## Variables from infrastructure.yml
 
 | Path | Type | Description |
 |------|------|-------------|
-| `cluster_nodes[].management_ip` | string | PSRemoting target IP |
-| `storage.san_array_vendor` | string | SAN array vendor name for documentation |
+| `nodes[].network_adapters[].ip_address` | string | PSRemoting target IP |
+| `storage.san.array.vendor` | string | SAN array vendor name for documentation |
 
 ---
 
@@ -109,7 +109,7 @@ Learn's step is registering the vendor with MSDSM (`New-MSDSMSupportedHW`). On a
 
 Run on each node individually via console, KVM, or RDP.
 
-**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional/powershell/Enable-MPIO-Direct.ps1`
+**Toolkit script:** none for this step. The run does this in its **Mpio** step: the MultipathIO feature, the array's MSDSM hardware ID, the MPIO claim and the load balance policy. It needs `storage.san.array.vendor` and `storage.san.array.model`.
 
 ```powershell
 # Task 13 - Step 1: Verify MPIO (run on each node)
@@ -129,16 +129,13 @@ If you had to enable MPIO, or `RestartNeeded` is `True`, restart the node (rolli
 
 Run from the management server against all nodes.
 
-**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-configure-mpio-and-vendor-msdsm-conditional/powershell/Enable-MPIO-Orchestrated.ps1`
+**Toolkit script:** none for this step. The run does this in its **Mpio** step: the MultipathIO feature, the array's MSDSM hardware ID, the MPIO claim and the load balance policy. It needs `storage.san.array.vendor` and `storage.san.array.model`.
 
 ```powershell
 # Task 13 - Step 1: Verify MPIO (orchestrated)
-# variables.yml variables:
-# cluster_nodes[].management_ip -> $ServerList
 
-$ConfigPath = "$env:USERPROFILE\variables.yml"
-$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
-    ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+# The management addresses of the nodes: the management port of each entry of nodes[] in infrastructure.yml
+$ServerList = @('<node-1-management-ip>', '<node-2-management-ip>')
 
 # Report the state on every node. 2604 and later enable MPIO by default.
 Invoke-Command -ComputerName $ServerList -ScriptBlock {
@@ -153,17 +150,6 @@ Invoke-Command -ComputerName $ServerList -ScriptBlock {
 
 :::warning Restart only if required
 Restart a node only if you enabled MPIO on it or `RestartNeeded` is `True`. Wait for the node to return online before proceeding to Step 2.
-:::
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
-
-:::note Content Pending
-See toolkit repository for standalone implementation.
 :::
 
 </TabItem>

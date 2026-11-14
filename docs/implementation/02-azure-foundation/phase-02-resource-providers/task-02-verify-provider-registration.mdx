@@ -52,13 +52,11 @@ Some providers may still be in "Registering" state after Task 01. Wait 2–5 min
 | **Task 01** | [Register Resource Providers](./task-01-register-resource-providers) completed |
 | **Permissions** | Contributor or Owner role at subscription level |
 | **Authenticated Azure session** | See [Authentication](../../05-authentication.mdx) |
-| **`variables.yml`** | Configured with target subscription ID |
+| **`infrastructure.yml`** | Configured with target subscription ID |
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Subscription ID | `azure.subscriptions.lab.id` | *(per environment)* |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -75,7 +73,7 @@ Some providers may still be in "Registering" state after Task 01. Wait 2–5 min
 
 1. **Navigate to Resource Providers**:
  - In Azure Portal, search for **Subscriptions**
- - Select your target subscription (`variables.yml → azure.subscriptions.lab.id`)
+ - Select your target subscription (`infrastructure.yml`: `azure.subscription_id`)
  - In the left menu under **Settings**, click **Resource providers**
 
 2. **Verify each provider**:
@@ -109,150 +107,23 @@ Some providers may still be in "Registering" state after Task 01. Wait 2–5 min
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted verification reading values from `variables.yml`
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
 #### Script
 
-**Primary**: `scripts/deploy/02-azure-foundation/phase-02-resource-providers/task-02-verify-provider-registration/powershell/Test-ResourceProviders.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-02-resource-providers/task-02-verify-provider-registration/powershell/Test-ResourceProviders.ps1` | Verifies Azure resource provider registration status. |
 
-#### Code
+Requires: modules Az.Resources.
 
-```powershell
-# ============================================================================
-# Script: Test-ResourceProviders.ps1
-# Prerequisites: Az.Resources module, authenticated with Contributor on subscription
-# ============================================================================
-
-#Requires -Modules Az.Resources
-
-# Load configuration
-$config = Get-Content "./config/variables.yml" | ConvertFrom-Yaml
-
-# Extract subscription
-$SubscriptionId = $config.azure.subscriptions.lab.id
-
-# Set subscription context
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-# Define required providers
-$providers = @(
- 'Microsoft.HybridCompute',
- 'Microsoft.GuestConfiguration',
- 'Microsoft.HybridConnectivity',
- 'Microsoft.AzureStackHCI',
- 'Microsoft.Kubernetes',
- 'Microsoft.KubernetesConfiguration',
- 'Microsoft.ExtendedLocation',
- 'Microsoft.ResourceConnector',
- 'Microsoft.HybridContainerService',
- 'Microsoft.Attestation',
- 'Microsoft.Storage',
- 'Microsoft.Insights',
- 'Microsoft.KeyVault'
-)
-
-# Check registration status
-$results = foreach ($provider in $providers) {
- $state = (Get-AzResourceProvider -ProviderNamespace $provider).RegistrationState
- [PSCustomObject]@{
- Provider = $provider
- RegistrationState = $state
- IsRegistered = ($state -eq 'Registered')
- }
-}
-
-# Display results
-$results | Format-Table -AutoSize
-
-# Summary
-$notRegistered = $results | Where-Object { -not $_.IsRegistered }
-if ($notRegistered) {
- Write-Warning "FAILED: $($notRegistered.Count) provider(s) not registered:"
- $notRegistered | ForEach-Object { Write-Warning " - $($_.Provider): $($_.RegistrationState)" }
- exit 1
-} else {
- Write-Host "`nPASSED: All 13 providers registered successfully" -ForegroundColor Green
- exit 0
-}
-```
-
-#### Validation
-
-**Success criteria**:
-- Script exits with code `0`
-- All 13 providers show `IsRegistered = True`
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready script — no config file, no helpers, no dependencies.
-
-#### Code
+#### Run
 
 ```powershell
-# ============================================================================
-# Script: Test-ResourceProviders-Standalone.ps1
-# Execution: Run anywhere — fully self-contained, no external dependencies
-# Prerequisites: Az.Resources module, authenticated with Contributor on subscription
-# ============================================================================
-
-#Requires -Modules Az.Resources
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Your subscription ID
-#endregion CONFIGURATION
-
-# Set subscription context
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-# Define required providers
-$providers = @(
- 'Microsoft.HybridCompute',
- 'Microsoft.GuestConfiguration',
- 'Microsoft.HybridConnectivity',
- 'Microsoft.AzureStackHCI',
- 'Microsoft.Kubernetes',
- 'Microsoft.KubernetesConfiguration',
- 'Microsoft.ExtendedLocation',
- 'Microsoft.ResourceConnector',
- 'Microsoft.HybridContainerService',
- 'Microsoft.Attestation',
- 'Microsoft.Storage',
- 'Microsoft.Insights',
- 'Microsoft.KeyVault'
-)
-
-# Check registration status
-$results = foreach ($provider in $providers) {
- $state = (Get-AzResourceProvider -ProviderNamespace $provider).RegistrationState
- [PSCustomObject]@{
- Provider = $provider
- RegistrationState = $state
- IsRegistered = ($state -eq 'Registered')
- }
-}
-
-# Display results
-$results | Format-Table -AutoSize
-
-# Summary
-$notRegistered = $results | Where-Object { -not $_.IsRegistered }
-if ($notRegistered) {
- Write-Warning "FAILED: $($notRegistered.Count) provider(s) not registered:"
- $notRegistered | ForEach-Object { Write-Warning " - $($_.Provider): $($_.RegistrationState)" }
-} else {
- Write-Host "`nPASSED: All 13 providers registered successfully" -ForegroundColor Green
-}
+.\Test-ResourceProviders.ps1
 ```
-
-:::info No External Dependencies
-This script is completely self-contained. Edit the `$SubscriptionId` in the `#region CONFIGURATION` block and run — no `variables.yml`, no config-loader, no helpers required.
-:::
 
 </TabItem>
 </Tabs>
@@ -292,12 +163,7 @@ Phase 02 is complete. Proceed to [Phase 03: RBAC & Permissions](../phase-03-rbac
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

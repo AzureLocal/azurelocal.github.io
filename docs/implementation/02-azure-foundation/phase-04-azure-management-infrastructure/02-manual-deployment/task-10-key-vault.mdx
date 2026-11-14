@@ -42,11 +42,11 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-This task creates the management Key Vault used to store deployment secrets (VPN shared keys, domain admin passwords, service account credentials) and certificates. All scripts that reference `keyvault://` URIs in `variables.yml` resolve secrets from this vault.
+This task creates the management Key Vault used to store deployment secrets (VPN shared keys, domain admin passwords, service account credentials) and certificates. All scripts that reference `keyvault://` URIs in `infrastructure.yml` resolve secrets from this vault.
 
 :::info Task Classification
 **Execution Target**: Azure-Only (control-plane API operation) 
-**Tab Profile**: 3 tabs — Azure Portal · Azure CLI / PowerShell · Standalone Script
+**Tab Profile**: 2 tabs — Azure Portal · Azure CLI / PowerShell
 :::
 
 :::info Terraform Reference
@@ -65,7 +65,7 @@ This task creates the management Key Vault used to store deployment secrets (VPN
 
 | Setting | Value | Source |
 |---------|-------|--------|
-| Name | Per config | `azure_infrastructure.key_vaults.management.name` |
+| Name | Per config | `key_vaults[].name` |
 | SKU | Standard | Default |
 | Soft Delete | 7 days retention | Security best practice |
 | Purge Protection | Enabled | Production requirement |
@@ -77,9 +77,9 @@ This task creates the management Key Vault used to store deployment secrets (VPN
 
 | Secret Name | Purpose | Config Path |
 |-------------|---------|-------------|
-| `azlocal-admin-password` | Azure Local node admin | `azure_infrastructure.key_vaults.management.secrets.azlocal_admin_password` |
-| `recovery-admin-password` | Recovery admin | `azure_infrastructure.key_vaults.management.secrets.recovery_admin_password` |
-| `vpn-shared-key` | S2S VPN PSK | `azure_infrastructure.key_vaults.management.secrets.vpn_shared_key` |
+| `azlocal-admin-password` | Azure Local node admin | a `keyvault://` reference in the key that needs the secret |
+| `recovery-admin-password` | Recovery admin | a `keyvault://` reference in the key that needs the secret |
+| `vpn-shared-key` | S2S VPN PSK | a `keyvault://` reference in the key that needs the secret |
 
 ## Prerequisites
 
@@ -87,16 +87,15 @@ This task creates the management Key Vault used to store deployment secrets (VPN
 - [ ] Key Vault Administrator or Contributor role
 - [ ] Secrets values prepared (do NOT store in YAML — use Key Vault only)
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Subscription ID | `azure.subscriptions.<name>.id` | *(per environment)* |
-| Resource Group | `azure_infrastructure.key_vaults.management.resource_group` | `rg-azrlmgmt-azl-eus-01` |
-| Key Vault Name | `azure_infrastructure.key_vaults.management.name` | `kv-iic-platform` |
-| Admin Password Secret | `azure_infrastructure.key_vaults.management.secrets.azlocal_admin_password` | `azlocal-admin-password` |
-| Recovery Password Secret | `azure_infrastructure.key_vaults.management.secrets.recovery_admin_password` | `recovery-admin-password` |
-| VPN Shared Key Secret | `azure_infrastructure.key_vaults.management.secrets.vpn_shared_key` | `vpn-shared-key` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.location, tags, scenario.environment_class
+key_vaults[].name, .subscription_id, .resource_group, .purpose
+every keyvault://<vault>/<secret> reference anywhere in the file (names only; no value is read)
+```
 
 ---
 
@@ -106,9 +105,9 @@ This task creates the management Key Vault used to store deployment secrets (VPN
 
 | Field | Value | Config Path |
 |-------|-------|-------------|
-| Subscription | Customer subscription | `azure.subscriptions.<name>.id` |
-| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.key_vaults.management.resource_group` |
-| Key Vault Name | Per config | `azure_infrastructure.key_vaults.management.name` |
+| Subscription | Customer subscription | `landing_zone.subscriptions[].id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `key_vaults[].resource_group` |
+| Key Vault Name | Per config | `key_vaults[].name` |
 
 ### Execution Options
 
@@ -125,10 +124,10 @@ This task creates the management Key Vault used to store deployment secrets (VPN
  - Search for **Key vaults** → **+ Create**
  | Field | Value | Source |
  |-------|-------|--------|
- | Name | Per config | `azure_infrastructure.key_vaults.management.name` |
- | Subscription | Target subscription | `azure.subscriptions.<name>.id` |
- | Resource Group | Management RG | `azure_infrastructure.key_vaults.management.resource_group` |
- | Region | Your region | `azure.region` |
+ | Name | Per config | `key_vaults[].name` |
+ | Subscription | Target subscription | `landing_zone.subscriptions[].id` |
+ | Resource Group | Management RG | `key_vaults[].resource_group` |
+ | Region | Your region | `azure.location` |
  | Pricing tier | Standard | — |
 
 2. **Access Configuration**:
@@ -164,120 +163,23 @@ This task creates the management Key Vault used to store deployment secrets (VPN
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-> **When to use**: Scripted Azure operations from management workstation or pipeline — config-driven via `variables.yml`
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
 #### Script
 
-**Primary**: `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-10-key-vault/powershell/New-KeyVault.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1` | Creates the Key Vaults that infrastructure.yml lists, and checks that the secrets the file refers to are there. Supports `-WhatIf`. |
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| PowerShell + Azure CLI | `task-10-key-vault/azure-cli/New-KeyVault.azcli.ps1` |
-| Bash + Azure CLI | `task-10-key-vault/bash/invoke-key-vault.sh` |
+Requires: PowerShell 7.
 
-#### Code
+#### Run
 
 ```powershell
-# ============================================================================
-# Script: New-KeyVault.ps1
-# Execution: Run from management workstation — reads variables.yml
-# Prerequisites: Az.KeyVault module, authenticated to Azure
-# NOTE: Secrets must be set manually or via separate secret-seeding script
-# ============================================================================
-
-#Requires -Modules Az.KeyVault, Az.Resources
-
-param(
- [Parameter(Mandatory = $false)]
- [ValidateScript({Test-Path $_})]
- [string]$ConfigPath = "config/variables.yml"
-)
-
-$ErrorActionPreference = "Stop"
-$scriptRoot = $PSScriptRoot
-
-. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
-. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
-
-$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
-
-$SubscriptionId = $config.azure.subscriptions.($config.azure_infrastructure.key_vaults.management.subscription).id
-$ResourceGroup = $config.azure_infrastructure.key_vaults.management.resource_group
-$VaultName = $config.azure_infrastructure.key_vaults.management.name
-$Location = $config.network.azure_vnets.management.location
-$TenantId = $config.azure.tenant.id
-
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-Write-LogInfo "Creating Key Vault: $VaultName"
-$vault = New-AzKeyVault `
- -Name $VaultName `
- -ResourceGroupName $ResourceGroup `
- -Location $Location `
- -Sku Standard `
- -EnableRbacAuthorization `
- -EnabledForDeployment `
- -EnabledForTemplateDeployment `
- -SoftDeleteRetentionInDays 7 `
- -EnablePurgeProtection
-
-Write-LogSuccess "Key Vault created: $($vault.VaultName)"
-Write-LogInfo "Vault URI: $($vault.VaultUri)"
-Write-LogWarning "Populate secrets manually or via secret-seeding script"
-$vault
+./Deploy-KeyVaults.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
-
-#### Validation
-
-```powershell
-Get-AzKeyVault -VaultName $VaultName -ResourceGroupName $ResourceGroup | Format-List VaultName, EnableRbacAuthorization, EnableSoftDelete, ProvisioningState
-```
-
-**Validation Script**: `scripts/validation/02-azure-foundation/phase-04/Test-KeyVault.ps1`
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Copy-paste ready script — no config file, no helpers needed.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: New-KeyVault-Standalone.ps1
-# Execution: Run anywhere — fully self-contained
-# Prerequisites: Az.KeyVault module, authenticated to Azure
-# ============================================================================
-
-#Requires -Modules Az.KeyVault, Az.Resources
-
-#region CONFIGURATION
-$SubscriptionId = "00000000-0000-0000-0000-000000000000"
-$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
-$VaultName = "kv-demos-platform"
-$Location = "eastus"
-#endregion CONFIGURATION
-
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-Write-Host "Creating Key Vault: $VaultName" -ForegroundColor Cyan
-$vault = New-AzKeyVault -Name $VaultName -ResourceGroupName $ResourceGroup `
- -Location $Location -Sku Standard -EnableRbacAuthorization `
- -EnabledForDeployment -EnabledForTemplateDeployment `
- -SoftDeleteRetentionInDays 7 -EnablePurgeProtection
-
-Write-Host "Key Vault '$VaultName' created — URI: $($vault.VaultUri)" -ForegroundColor Green
-Write-Host "NOTE: Populate secrets manually" -ForegroundColor Yellow
-```
-
-:::info No External Dependencies
-Self-contained. Edit the `#region CONFIGURATION` block and run. Secrets must be populated separately.
-:::
 
 </TabItem>
 </Tabs>
@@ -299,9 +201,9 @@ In the CAF/WAF model, the management Key Vault is deployed in the **Management s
 
 | Field | Value | Config Path |
 |-------|-------|-------------|
-| Subscription | **Management** subscription | `azure.subscriptions.management.id` |
-| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `azure_infrastructure.key_vaults.management.resource_group` |
-| Key Vault Name | Per config | `azure_infrastructure.key_vaults.management.name` |
+| Subscription | **Management** subscription | `landing_zone.subscriptions[].id` |
+| Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `key_vaults[].resource_group` |
+| Key Vault Name | Per config | `key_vaults[].name` |
 
 :::tip Cluster Key Vault
 A separate cluster Key Vault exists in the **Cluster** resource group for cluster-specific secrets. That is part of Stage 14-15 (Cluster Deployment), not this task.
@@ -324,26 +226,22 @@ Follow the same procedure as [Single Subscription → Azure Portal](#azure-porta
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Azure CLI / PowerShell
+### PowerShell
 
-:::tip Same Script — Different Config
-The orchestrated script is identical. `variables.yml` references the correct Management subscription for CAF/WAF.
-:::
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+#### Script
 
-### Standalone Script
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1` | Creates the Key Vaults that infrastructure.yml lists, and checks that the secrets the file refers to are there. Supports `-WhatIf`. |
 
-Update `#region CONFIGURATION` for Management subscription:
+Requires: PowerShell 7.
+
+#### Run
 
 ```powershell
-#region CONFIGURATION
-$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Management subscription
-$ResourceGroup = "rg-azrlmgmt-azl-eus-01"
-$VaultName = "kv-demos-platform"
-# ...
-#endregion CONFIGURATION
+./Deploy-KeyVaults.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
 
 </TabItem>
@@ -373,12 +271,7 @@ $VaultName = "kv-demos-platform"
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

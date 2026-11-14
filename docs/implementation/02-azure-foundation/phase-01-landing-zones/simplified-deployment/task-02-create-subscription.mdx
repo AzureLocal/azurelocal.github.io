@@ -77,9 +77,9 @@ How you create subscriptions depends on your organization's billing arrangement:
 
 | Attribute | Value | Config Path |
 |-----------|-------|-------------|
-| **Subscription Name** | Per config | `variables.yml → azure.subscriptions.lab.name` |
-| **Subscription ID** | Per config | `variables.yml → azure.subscriptions.lab.id` |
-| **Landing Zone MG** | Per config | `variables.yml → azure.management_groups.landing_zone.name` |
+| **Subscription Name** | Per config | `infrastructure.yml`: `landing_zone.subscriptions[].name` |
+| **Subscription ID** | Per config | `infrastructure.yml`: `azure.subscription_id` |
+| **Landing Zone MG** | Per config | `infrastructure.yml`: `landing_zone.management_groups[].name` |
 | **Purpose** | All Azure Local resources | — |
 
 ### IIC Example Values
@@ -106,13 +106,9 @@ iic-lz-azurelocal-001                    ← subscription
 The single resource group is created in [Task 03: Create Resource Groups](./task-03-create-resource-groups). This task only covers the subscription itself.
 :::
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Subscription Name | `azure.subscriptions.lab.name` | `iic-lz-azurelocal-001` |
-| Subscription ID | `azure.subscriptions.lab.id` | *(per environment)* |
-| Landing Zone MG | `azure.management_groups.landing_zone.name` | `cmp-landing-zones-iic` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -132,7 +128,7 @@ The single resource group is created in [Task 03: Create Resource Groups](./task
    - Click **+ Add**
 
 2. **Create the subscription**:
-   - **Subscription name**: `iic-lz-azurelocal-001` (or your value from `variables.yml`)
+   - **Subscription name**: `iic-lz-azurelocal-001` (or your value from `infrastructure.yml`)
    - **Billing**: Select your billing account / enrollment
    - **Management group**: Select the landing zone management group (`cmp-landing-zones-iic`)
    - Click **Create**
@@ -141,7 +137,7 @@ The single resource group is created in [Task 03: Create Resource Groups](./task
 
 #### Validation
 
-- [ ] Subscription created with name matching `variables.yml`
+- [ ] Subscription created with name matching `infrastructure.yml`
 - [ ] Subscription is under the landing zone management group
 - [ ] You have Owner access to the subscription
 
@@ -152,27 +148,12 @@ The single resource group is created in [Task 03: Create Resource Groups](./task
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
-
-:::note Content Pending
-Orchestrated script content references the toolkit repository.
-:::
+> **No script yet.** The task folder holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. A simplified landing zone uses the script of the full deployment: `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions/powershell/Deploy-Subscriptions.ps1` reads `landing_zone.subscriptions[]`, and a file with one entry gives the same result. Or follow the steps in the other tab of this page.
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository.
-:::
-
-</TabItem>
 </Tabs>
 
 ---
@@ -207,7 +188,7 @@ cmp-iic-root                              ← organization root MG (already exis
 
 ## Validation
 
-- [ ] Subscription exists with the name from `variables.yml`
+- [ ] Subscription exists with the name from `infrastructure.yml`
 - [ ] Subscription is associated with the **landing zone** management group (not root)
 - [ ] Subscription is visible under the landing zone MG in the Azure Portal
 - [ ] You have Owner or Contributor access to the subscription
@@ -252,12 +233,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

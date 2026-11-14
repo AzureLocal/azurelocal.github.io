@@ -58,13 +58,15 @@ Addressing security recommendations **before** deploying Arc-enabled servers and
 - Azure Policy initiatives assigned (Step 3)
 - Security Administrator role or equivalent
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `AZURE_KEYVAULT_NAME` | `azure.keyvault.name` | `kv-azl-dal-prod-01` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+security.baseline_settings[]: type, name, value, acknowledge_weaker_security
+nodes[].name, nodes[].management.ip_address            the machine to connect to (unless -ComputerName is given)
+identity.local_admin.username, identity.local_admin.password
+```
 
 ## Procedure
 
@@ -137,81 +139,25 @@ Addressing security recommendations **before** deploying Arc-enabled servers and
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-# Variables
-$subscriptionId = "<your-subscription-id>"
-$resourceGroup = "rg-management-prod-eastus2"
-$keyVaultName = "kv-azlmgmt-prod-eus2"
-
-# Connect and set context
-Connect-AzAccount
-Set-AzContext -SubscriptionId $subscriptionId
-
-# Get security assessments (recommendations)
-$assessments = Get-AzSecurityAssessment
-
-# Filter unhealthy (non-compliant) assessments
-$unhealthyAssessments = $assessments | Where-Object { 
- $_.Status.Code -eq "Unhealthy" 
-}
-
-Write-Host "Security Recommendations Requiring Attention:" -ForegroundColor Cyan
-Write-Host "=============================================" -ForegroundColor Cyan
-
-# Group by severity
-$grouped = $unhealthyAssessments | Group-Object { $_.Metadata.Severity }
-
-foreach ($group in $grouped) {
- $color = switch ($group.Name) {
- "High" { "Red" }
- "Medium" { "Yellow" }
- "Low" { "White" }
- default { "Gray" }
- }
- Write-Host "`n$($group.Name) Severity ($($group.Count) items):" -ForegroundColor $color
- 
- $group.Group | ForEach-Object {
- Write-Host " • $($_.DisplayName)" -ForegroundColor $color
- }
-}
-
-# Remediation: Enable purge protection on Key Vault
-Write-Host "`nApplying Key Vault security baseline..." -ForegroundColor Cyan
-
-$keyVault = Get-AzKeyVault -VaultName $keyVaultName -ResourceGroupName $resourceGroup
-
-if (-not $keyVault.EnablePurgeProtection) {
- Update-AzKeyVault `
- -VaultName $keyVaultName `
- -ResourceGroupName $resourceGroup `
- -EnablePurgeProtection
- Write-Host "✅ Purge protection enabled on Key Vault" -ForegroundColor Green
-} else {
- Write-Host "✓ Purge protection already enabled" -ForegroundColor Green
-}
-
-# Verify Key Vault uses RBAC
-if ($keyVault.EnableRbacAuthorization) {
- Write-Host "✓ RBAC authorization enabled on Key Vault" -ForegroundColor Green
-} else {
- Write-Host "⚠️ Key Vault using Access Policies - consider migrating to RBAC" -ForegroundColor Yellow
-}
-
-Write-Host "`n✅ Security baseline review complete" -ForegroundColor Green
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
-:::
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1` | Changes the individual security baseline settings that security.baseline_settings of infrastructure.yml lists, with Set-AzsSecurity. Supports `-WhatIf`. |
+
+Requires: PowerShell 7.
+
+#### Run
+
+```powershell
+./Set-SecurityBaselines.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
 
 </TabItem>
 </Tabs>
@@ -291,12 +237,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

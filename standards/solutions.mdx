@@ -46,17 +46,17 @@ Each tool must declare which deployment phases it supports:
 
 ## Parameter File Derivation
 
-All tool-specific parameter files MUST be derivable from `config/variables/variables.yml`:
+All tool-specific parameter files MUST be derivable from `infrastructure.yml` (schema 5):
 
 | Tool | Parameter File | Derivation |
 |------|---------------|------------|
-| Terraform | `src/terraform/terraform.tfvars` | Map YAML sections to HCL variables |
-| Bicep | `src/bicep/main.bicepparam` | Map YAML sections to Bicep parameters |
-| ARM | `src/arm/azuredeploy.parameters.json` | Map YAML sections to ARM parameter schema |
-| PowerShell | *(reads config directly)* | `ConvertFrom-Yaml` from config file |
-| Ansible | `src/ansible/inventory/hosts.yml` | Map YAML sections to `group_vars` |
+| Terraform | `terraform.tfvars.json` and `backend.hcl` | Written by `config/variables/scripts/New-IacVariableFiles.ps1` |
+| Bicep | `main.bicepparam` | Map the keys of the file to Bicep parameters |
+| ARM | `azuredeploy.parameters.json` | Written by `New-AzureLocalArmParameters.ps1` |
+| PowerShell | *(reads the file directly)* | `Import-AzlInfrastructure` |
+| Ansible | `inventory/hosts.yml`, `group_vars/all.yml`, `host_vars/<node>.yml` | Written by `New-IacVariableFiles.ps1` |
 
-The central config is the **single source of truth**. Tool-specific files are convenience copies that should be regenerable.
+The master registry defines every variable and `infrastructure.yml` is the **single source of truth**. Tool-specific files are generated copies that can be regenerated.
 
 ---
 
@@ -77,7 +77,7 @@ All tools must produce **identical infrastructure** when given the same configur
 ## Multi-Tool Parity
 
 - Every supported tool must cover the same set of resources
-- Tool-specific parameter files are derived from `config/variables/variables.yml`
+- Tool-specific parameter files are derived from `infrastructure.yml`
 - CI tests validate that each tool's output matches the expected state
 - New resources added to one tool must be added to all supported tools
 

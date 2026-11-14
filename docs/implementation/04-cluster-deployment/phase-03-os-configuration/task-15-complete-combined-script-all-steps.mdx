@@ -61,22 +61,13 @@ Task 01 (Enable WinRM) must be completed on each node **before** running the orc
 | Requirement | Details |
 |---|---|
 | Task 01 complete on all nodes | WinRM enabled via console/SConfig |
-| `variables.yml` populated | All node IPs, hostnames, network values set |
+| `infrastructure.yml` populated | All node IPs, hostnames, network values set |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `cluster_nodes[].management_ip` | string | Static IP per node |
-| `cluster_nodes[].hostname` | string | Target hostname per node |
-| `network.management.gateway` | string | Default gateway |
-| `network.management.prefix_length` | integer | Subnet prefix |
-| `dns.primary` | string | Primary DNS server |
-| `dns.secondary` | string | Secondary DNS server |
-| `cluster.management_nic_name` | string | Management adapter name |
-| `active_directory.ntp_servers` | array | NTP server addresses |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -89,13 +80,13 @@ Run locally on each node. Set all `REPLACE_` variables before running.
 # Task 15 - Complete Combined Script (direct, run on each node)
 # Set all REPLACE_ variables before running
 
-$StaticIP = "REPLACE_WITH_STATIC_IP" # cluster_nodes[].management_ip
-$Gateway = "REPLACE_WITH_GATEWAY" # network.management.gateway
+$StaticIP = "REPLACE_WITH_STATIC_IP" # nodes[].network_adapters[].ip_address
+$Gateway = "REPLACE_WITH_GATEWAY" # networking.management.gateway
 $PrefixLength = 24 # network.management.prefix
-$DNSPrimary = "REPLACE_WITH_DNS_PRIMARY" # dns.primary
-$DNSSecondary = "REPLACE_WITH_DNS_SECONDARY" # dns.secondary
+$DNSPrimary = "REPLACE_WITH_DNS_PRIMARY" # networking.management.dns_servers
+$DNSSecondary = "REPLACE_WITH_DNS_SECONDARY" # networking.management.dns_servers
 $NTPServer = "REPLACE_WITH_NTP_SERVER" # ntp.server
-$NewHostname = "REPLACE_WITH_HOSTNAME" # cluster_nodes[].hostname
+$NewHostname = "REPLACE_WITH_HOSTNAME" # nodes[].name
 
 if ($StaticIP -match "^REPLACE_" -or $NewHostname -match "^REPLACE_") {
  Write-Host "Set all REPLACE_ variables before running" -ForegroundColor Red; exit 1
@@ -136,97 +127,31 @@ Write-Host -NoNewline "Restart now? [Y/N]: "; if ((Read-Host) -match "^[Yy]") { 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run from the management server. Reads all values from `variables.yml`.
+### PowerShell
+
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-12-complete-combined-script-all-steps/powershell/Invoke-Phase03OsConfiguration-Orchestrated.ps1` | Runs all Phase 03 OS configuration tasks (02-10) against every Azure Local node from the management server in a single execution. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-12-complete-combined-script-all-steps/powershell/Start-Phase03OsConfiguration.ps1` | Runs all Phase 03 OS configuration steps (Tasks 02-10) locally on a single node. |
+
+Requires: PowerShell 7; PowerShell 5.1.
+
+#### Run
 
 ```powershell
-# Task 15 - Complete Combined Script (orchestrated, all nodes)
-# variables.yml variables:
-# cluster_nodes[].management_ip -> connection IP per node
-# cluster_nodes[].hostname -> target hostname per node
-# network.management.gateway -> $Gateway
-# network.management.prefix -> $PrefixLength
-# dns.primary -> $DNSPrimary
-# dns.secondary -> $DNSSecondary
-# ntp.server -> $NTPServer
+.\Invoke-Phase03OsConfiguration-Orchestrated.ps1
 
-$ConfigPath = "$env:USERPROFILE\variables.yml"
-$lines = Get-Content $ConfigPath
-
-# Parse per-node values
-$nodes = @()
-$current = $null
-foreach ($line in $lines) {
- if ($line -match '^\s*-\s*hostname:\s*"?([^"]+)"?') { $current = @{ hostname = $Matches[1].Trim(); ip = "" } }
- elseif ($line -match '^\s+management_ip:\s*"?([^"'' ]+)"?' -and $current) { $current.ip = $Matches[1].Trim() }
- if ($current -and $current.ip -and $current.hostname) { $nodes += [PSCustomObject]$current; $current = $null }
-}
-
-# Parse shared network values
-$Gateway = ($lines | Select-String 'gateway:\s+"?([^"'' ]+)').Matches[0].Groups[1].Value.Trim()
-$PrefixLength = [int]($lines | Select-String 'prefix:\s+(\d+)').Matches[0].Groups[1].Value.Trim()
-$DNSPrimary = ($lines | Select-String 'primary:\s+"?([^"'' ]+)').Matches[0].Groups[1].Value.Trim()
-$DNSSecondary = ($lines | Select-String 'secondary:\s+"?([^"'' ]+)').Matches[0].Groups[1].Value.Trim()
-$NTPServer = ($lines | Select-String 'server:\s+"?([^"'' ]+)').Matches[0].Groups[1].Value.Trim()
-
-foreach ($node in $nodes) {
- Invoke-Command -ComputerName $node.ip -ArgumentList $node.ip, $node.hostname, $Gateway, $PrefixLength, $DNSPrimary, $DNSSecondary, $NTPServer -ScriptBlock {
- param($ip, $hostname, $gateway, $prefix, $dns1, $dns2, $ntp)
-
- # Task 02 - RDP
- Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
- Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-
- # Tasks 03-05 - Static IP / DHCP / DNS
- $adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
- Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -Dhcp Disabled
- Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false
- New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress $ip -PrefixLength $prefix -DefaultGateway $gateway
- Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses @($dns1, $dns2)
-
- # Task 07 - NTP
- w32tm /config /manualpeerlist:$ntp /syncfromflags:manual /update | Out-Null
- Restart-Service w32time
- w32tm /resync | Out-Null
-
- # Task 08 - ICMP
- Enable-NetFirewallRule -DisplayName "File and Printer Sharing (Echo Request - ICMPv4-In)"
-
- # Task 09 - Disable unused adapters
- Get-NetAdapter | Where-Object { $_.Status -eq "Disconnected" } | Disable-NetAdapter -Confirm:$false
- Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
-
- # Task 10 - Hostname
- Rename-Computer -NewName $hostname -Force
- }
- Restart-Computer -ComputerName $node.ip -Force
- Write-Host "[$($node.ip)] Restarting -> $($node.hostname)"
-}
-
-Write-Host "Waiting 60s for nodes to come back online..."
-Start-Sleep -Seconds 60
-
-foreach ($node in $nodes) {
- Invoke-Command -ComputerName $node.ip -ScriptBlock {
- [PSCustomObject]@{
- Hostname = $env:COMPUTERNAME
- IP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^169\.' -and $_.IPAddress -ne '127.0.0.1' }).IPAddress
- DNS = (Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object ServerAddresses).ServerAddresses -join ", "
- NTP = (w32tm /query /source)
- }
- }
-} | Sort -Property PsComputerName | Format-Table -AutoSize
+.\Start-Phase03OsConfiguration.ps1 `
+    -StaticIP "192.0.2.11" `
+    -Gateway "192.0.2.1" `
+    -DNSPrimary "10.250.1.36" `
+    -DNSSecondary "10.250.1.37" `
+    -NewHostname "iic-azl-n01"
 ```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
-:::
 
 </TabItem>
 </Tabs>
@@ -236,7 +161,7 @@ Standalone script content references the toolkit repository. See the Orchestrate
 ## Validation Checklist
 
 - [ ] All nodes restarted successfully
-- [ ] Hostnames match `variables.yml`
+- [ ] Hostnames match `infrastructure.yml`
 - [ ] Static IPs set and DHCP disabled
 - [ ] DNS resolves correctly
 - [ ] NTP synchronized
@@ -251,7 +176,7 @@ Standalone script content references the toolkit repository. See the Orchestrate
 | Script fails on one node but succeeds on others | WinRM connectivity issue or credential mismatch | Verify `Enter-PSSession -ComputerName <node>` works; re-run `Enable-PSRemoting -Force` on the failing node |
 | Hostname not changed after reboot | `Rename-Computer` requires a restart to take effect | Confirm the script includes `-Restart` flag; manually reboot if needed: `Restart-Computer -Force` |
 | Static IP not applied | DHCP still enabled on the management adapter | Run `Set-NetIPInterface -InterfaceAlias "Management" -Dhcp Disabled` before assigning the static IP |
-| DNS resolution fails after configuration | DNS server addresses not set or wrong order | Verify with `Get-DnsClientServerAddress`; re-run the DNS configuration step with correct IPs from `variables.yml` |
+| DNS resolution fails after configuration | DNS server addresses not set or wrong order | Verify with `Get-DnsClientServerAddress`; re-run the DNS configuration step with correct IPs from `infrastructure.yml` |
 
 ---
 
@@ -260,12 +185,7 @@ Standalone script content references the toolkit repository. See the Orchestrate
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

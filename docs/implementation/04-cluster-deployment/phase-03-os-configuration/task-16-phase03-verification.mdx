@@ -55,13 +55,13 @@ This script makes **no changes** to any node. It only reads and reports state.
 |------|-------|----------------|
 | **01** | WinRM | Service running, HTTP listener active |
 | **02** | RDP | Registry value = 0, firewall rule enabled |
-| **03/04** | Static IP + DHCP disabled | IP matches `variables.yml`, DHCP = Disabled |
-| **05** | DNS servers | Primary and secondary match `variables.yml` |
+| **03/04** | Static IP + DHCP disabled | IP matches `infrastructure.yml`, DHCP = Disabled |
+| **05** | DNS servers | Primary and secondary match `infrastructure.yml` |
 | **06** | DNS resolution | Successful DNS lookup |
 | **07** | NTP | Stratum < 15, source is not `Local CMOS Clock` or `Free-running` |
 | **08** | ICMP | ICMPv4 Echo Request firewall rule enabled |
 | **09** | Unused adapters | No disconnected adapters still enabled |
-| **10** | Hostname | `COMPUTERNAME` matches `variables.yml` hostname |
+| **10** | Hostname | `COMPUTERNAME` matches `infrastructure.yml` hostname |
 | **11** | Storage | No non-primordial pools, no virtual disks, all non-boot **local** disks online (SAN LUNs on Fibre Channel or iSCSI are excluded and must stay RAW) |
 | **Drivers** | NIC drivers (all) | No physical adapter reports `DriverProvider = Microsoft`: Learn says inbox drivers are not supported for Azure Local |
 | **12** | FC HBA Drivers (disaggregated SAN only) | FC initiator ports visible via `Get-InitiatorPort`; iSCSI adapters not on inbox drivers |
@@ -76,40 +76,36 @@ This script makes **no changes** to any node. It only reads and reports state.
 | Requirement | Details |
 |---|---|
 | Phase 03 Tasks 01–15 complete | All OS configuration tasks run |
-| `variables.yml` populated | All node IPs, hostnames, network values set |
+| `infrastructure.yml` populated | All node IPs, hostnames, network values set |
 | WinRM accessible from management server | Required for remote checks |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `cluster_nodes[].management_ip` | string | Expected static IP per node |
-| `cluster_nodes[].hostname` | string | Expected hostname per node |
-| `dns.primary` | string | Expected primary DNS |
-| `dns.secondary` | string | Expected secondary DNS |
-| `active_directory.ntp_servers` | array | Expected NTP source |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
 <Tabs groupId="deployment-method">
 <TabItem value="orchestrated" label="Orchestrated Script" default>
 
-Run from the management server. Reads all expected values from `variables.yml` and verifies each node remotely.
+### PowerShell
+
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-phase03-verification/powershell/Invoke-Phase03Verification-Orchestrated.ps1` | Verifies all Phase 03 OS Configuration tasks (01-11) across cluster nodes. |
+
+Requires: PowerShell 7.
+
+#### Run
 
 ```powershell
-# Task 16 - Phase 03 Verification (all nodes)
-.\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-16-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
- -ConfigPath .\config\variables.yml
-```
-
-**Verify a single node:**
-
-```powershell
-.\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\task-16-phase03-verification\powershell\Invoke-Phase03Verification-Orchestrated.ps1 `
- -ConfigPath .\config\variables.yml `
- -TargetNode azl-lab-01-n02
+.\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
 ```
 
 </TabItem>
@@ -121,10 +117,10 @@ Run locally on each node to verify its own configuration. Set all `REPLACE_` var
 # Task 16 - Phase 03 Verification (direct, run on each node)
 # Set all REPLACE_ variables before running
 
-$ExpectedIP = "REPLACE_WITH_STATIC_IP" # cluster_nodes[].management_ip
-$ExpectedHostname = "REPLACE_WITH_HOSTNAME" # cluster_nodes[].hostname
-$ExpectedDNS1 = "REPLACE_WITH_DNS_PRIMARY" # dns.primary
-$ExpectedDNS2 = "REPLACE_WITH_DNS_SECONDARY" # dns.secondary
+$ExpectedIP = "REPLACE_WITH_STATIC_IP" # nodes[].network_adapters[].ip_address
+$ExpectedHostname = "REPLACE_WITH_HOSTNAME" # nodes[].name
+$ExpectedDNS1 = "REPLACE_WITH_DNS_PRIMARY" # networking.management.dns_servers
+$ExpectedDNS2 = "REPLACE_WITH_DNS_SECONDARY" # networking.management.dns_servers
 $ExpectedNTP = "REPLACE_WITH_NTP_SERVER" # ntp.server
 
 $results = [ordered]@{}
@@ -196,17 +192,6 @@ $results.GetEnumerator() | ForEach-Object {
 ```
 
 </TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
-:::
-
-</TabItem>
 </Tabs>
 
 ---
@@ -262,14 +247,14 @@ A passing run produces a result like:
 
 | Parameter | Required | Description |
 |---|---|---|
-| `-ConfigPath` | Recommended | Path to `variables.yml`. Auto-detects if omitted |
+| `-ConfigPath` | Recommended | Path to `infrastructure.yml`. Auto-detects if omitted |
 | `-Credential` | No | PSCredential. Resolved from Key Vault if omitted |
 | `-TargetNode` | No | Filter to specific node(s) by hostname or IP |
 
 **Script location:**
 ```
 scripts/deploy/04-cluster-deployment/phase-03-os-configuration/
- task-16-phase03-verification/powershell/
+ task-13-phase03-verification/powershell/
  Invoke-Phase03Verification-Orchestrated.ps1
 ```
 
@@ -290,12 +275,7 @@ scripts/deploy/04-cluster-deployment/phase-03-os-configuration/
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

@@ -52,7 +52,7 @@ During discovery, deployment teams establish naming standards that will be used 
 - Align with Azure Local Cloud Variable Management Standard
 - Cover on-premises infrastructure (cluster nodes, management servers)
 - Cover Azure resources (resource groups, virtual networks, storage accounts)
-- Support automation via variable substitution (`variables.yml`)
+- Support automation via variable substitution (`infrastructure.yml`)
 - Ensure technical compliance with platform limits (NetBIOS 15-char, Azure resource limits, etc.)
 
 :::tip Microsoft CAF Reference
@@ -128,17 +128,7 @@ Windows Server Failover Cluster Name Object (CNO) is limited to 15 characters du
 - WAC Gateway: `nyc-wac-01` (10 chars)
 - Tools/Jumpbox Server: `nyc-tools` (9 chars)
 
-**Variable Mapping**:
-```yaml
-azure_vms:
- domain_controllers:
- - hostname: "{{site_code}}-DC-01"
- - hostname: "{{site_code}}-DC-02"
- jumpbox:
- hostname: "{{site_code}}-TOOLS"
- wac:
- hostname: "{{site_code}}-WAC-01"
-```
+**Variable Mapping:** The name is `landing_zone.virtual_machines[].name` and the host name is `landing_zone.virtual_machines[].hostname` in `infrastructure.yml`.
 
 :::warning Windows Server Naming
 All Windows servers that will be domain-joined must follow the 15-character NetBIOS limit. Keep site codes short (2-5 chars) to accommodate role identifiers.
@@ -231,11 +221,7 @@ These are Azure resources that are specific to Azure Local cluster management.
 - `cl-azlocal-prod-eus-001` (Production custom location)
 - `cl-azlocal-dev-eus-001` (Development custom location)
 
-**Variable Mapping**:
-```yaml
-azure_arc:
- custom_location_name: "cl-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** The name is `azure.custom_location` in `infrastructure.yml`.
 
 :::info Arc Custom Location
 The Arc Custom Location is a key Azure resource that maps your Azure Local cluster to Azure Arc, enabling Azure management of on-premises resources. The Arc Resource Bridge (`arb-*`) is created during deployment, but the Custom Location name should follow your naming standards.
@@ -251,14 +237,7 @@ The Arc Custom Location is a key Azure resource that maps your Azure Local clust
 - `lnet-storage-prod-eus` (Storage logical network)
 - `lnet-vmworkload-prod-eus` (VM workload logical network)
 
-**Variable Mapping**:
-```yaml
-logical_networks:
- management: "lnet-management-{{environment}}-{{region}}"
- compute: "lnet-compute-{{environment}}-{{region}}"
- storage: "lnet-storage-{{environment}}-{{region}}"
- vmworkload: "lnet-vmworkload-{{environment}}-{{region}}"
-```
+**Variable Mapping:** The name is `networking.logical_networks[].name` in `infrastructure.yml`.
 
 :::info Logical Networks
 Logical networks in Azure Local define the network configuration for VMs and services. They map to physical network infrastructure (VLANs, subnets) and are created during cluster deployment.
@@ -274,13 +253,7 @@ Logical networks in Azure Local define the network configuration for VMs and ser
 - `img-ubuntu2204-lts-prod` (Ubuntu 22.04 LTS, Production)
 - `img-ws2022-dc-dev` (Windows Server 2022 Datacenter, Development)
 
-**Variable Mapping**:
-```yaml
-vm_images:
- windows_server_2022: "img-ws2022-dc-{{environment}}"
- windows_server_2025: "img-ws2025-dc-{{environment}}"
- ubuntu_2204: "img-ubuntu2204-lts-{{environment}}"
-```
+**Variable Mapping:** The name is `storage.vm_images[].name` in `infrastructure.yml`.
 
 :::info Azure Local VM Images
 VM images are stored in the Azure Local cluster gallery and used for VM provisioning. Images can be downloaded from Azure Marketplace or uploaded from custom sources.
@@ -298,11 +271,7 @@ VM images are stored in the Azure Local cluster gallery and used for VM provisio
 - `nyc-01-n03-i` (Node 3 iDRAC)
 - `nyc-01-n04-i` (Node 4 iDRAC)
 
-**Variable Mapping**:
-```yaml
-hardware:
- node_idrac: "{{node_hostname}}-i"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 :::info BMC/iDRAC Naming
 The `-i` suffix indicates the iDRAC/BMC interface for out-of-band management. This allows easy correlation between the node hostname and its management interface.
@@ -317,11 +286,7 @@ The `-i` suffix indicates the iDRAC/BMC interface for out-of-band management. Th
 - `nyc-sw-02` (Rack switch 2)
 - `sea-sw-01` (Seattle site switch 1)
 
-**Variable Mapping**:
-```yaml
-network_devices:
- tor_switch: "{{site_code}}-sw-{{instance}}"
-```
+**Variable Mapping:** The host name is `network_devices[].hostname` in `infrastructure.yml`.
 
 #### Firewalls
 
@@ -332,11 +297,7 @@ network_devices:
 - `nyc-fw-02` (Secondary firewall)
 - `sea-fw-01` (Seattle site firewall)
 
-**Variable Mapping**:
-```yaml
-network_devices:
- firewall: "{{site_code}}-fw-{{instance}}"
-```
+**Variable Mapping:** The host name is `network_devices[].hostname` in `infrastructure.yml`.
 
 #### Opengear Console Servers
 
@@ -347,11 +308,7 @@ network_devices:
 - `nyc-og-02` (Opengear console server 2)
 - `sea-og-01` (Seattle site Opengear)
 
-**Variable Mapping**:
-```yaml
-network_devices:
- opengear: "{{site_code}}-og-{{instance}}"
-```
+**Variable Mapping:** The host name is `network_devices[].hostname` in `infrastructure.yml`.
 
 #### PDUs (Power Distribution Units)
 
@@ -363,11 +320,7 @@ network_devices:
 - `nyc-pdu-03` (PDU 3)
 - `nyc-pdu-04` (PDU 4)
 
-**Variable Mapping**:
-```yaml
-hardware:
- pdu: "{{site_code}}-pdu-{{instance}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 :::info Hardware Naming
 All hardware devices follow a consistent pattern: `<site>-<type>-<##>`. This ensures easy identification and correlation across physical infrastructure.
@@ -513,32 +466,7 @@ Tenant Root Group
 
 ---
 
-##### Variable Mapping
-
-```yaml
-management_groups:
- # Management Group IDs (immutable - set at creation)
- mgtgrp_root_id: "{{org_prefix}}-{{tenant}}-root"
- mgtgrp_platform_id: "{{org_prefix}}-platform-{{tenant}}"
- mgtgrp_platform_identity_id: "{{org_prefix}}-platform-identity-{{tenant}}"
- mgtgrp_platform_security_id: "{{org_prefix}}-platform-security-{{tenant}}"
- mgtgrp_platform_connectivity_id: "{{org_prefix}}-platform-connectivity-{{tenant}}"
- mgtgrp_platform_management_id: "{{org_prefix}}-platform-management-{{tenant}}"
- mgtgrp_landing_zones_id: "{{org_prefix}}-landing-zones-{{tenant}}"
- mgtgrp_sandbox_id: "{{org_prefix}}-sandbox-{{tenant}}"
- mgtgrp_decommissioned_id: "{{org_prefix}}-decommissioned-{{tenant}}"
- 
- # Display Names (human-readable, editable)
- mgtgrp_root_display: "{{organization}} Root"
- mgtgrp_platform_display: "{{organization}} Platform"
- mgtgrp_platform_identity_display: "{{organization}} Platform - Identity"
- mgtgrp_platform_security_display: "{{organization}} Platform - Security"
- mgtgrp_platform_connectivity_display: "{{organization}} Platform - Connectivity"
- mgtgrp_platform_management_display: "{{organization}} Platform - Management"
- mgtgrp_landing_zones_display: "{{organization}} Landing Zones"
- mgtgrp_sandbox_display: "{{organization}} Sandbox"
- mgtgrp_decommissioned_display: "{{organization}} Decommissioned"
-```
+**Variable Mapping:** The ID is `landing_zone.management_groups[].name`, the display name is `landing_zone.management_groups[].display_name` and the parent is `landing_zone.management_groups[].parent` in `infrastructure.yml`.
 
 ---
 
@@ -583,23 +511,7 @@ Subscriptions organize Azure resources for billing, governance, and access contr
 | Azure Local | `sub-<org>-azurelocal-<site>` | `sub-iic-azurelocal-nyc` | `sub_azure_local_name` |
 | Workloads | `sub-<org>-workloads-<env>` | `sub-iic-workloads-prod` | `sub_workloads_name` |
 
-**Variable Mapping** (from `config/variables.yml`):
-```yaml
-subscriptions:
- sub_bootstrap_id: "00000000-1111-2222-3333-444444444444"
- sub_bootstrap_name: "sub-iic-bootstrap"
- sub_connectivity_id: "12345678-1234-1234-1234-123456789015"
- sub_connectivity_name: "sub-iic-connectivity"
- sub_management_id: "12345678-1234-1234-1234-123456789016"
- sub_security_id: "12345678-1234-1234-1234-123456789017"
- sub_security_name: "sub-iic-security"
- sub_identity_id: "12345678-1234-1234-1234-123456789018"
- sub_identity_name: "sub-iic-identity"
- sub_azure_local_id: "00000000-1111-2222-3333-444444444444"
- sub_azure_local_name: "sub-iic-azurelocal-nyc"
- sub_workloads_id: "12345678-1234-1234-1234-123456789019"
- sub_workloads_name: "sub-iic-workloads-prod"
-```
+**Variable Mapping:** The name is `landing_zone.subscriptions[].name` and the ID is `landing_zone.subscriptions[].id` in `infrastructure.yml`.
 
 **CAF Enterprise-Scale Subscription Alignment**:
 
@@ -634,11 +546,7 @@ subscriptions:
 - `rg-azlocal-prod-eus-network` (Networking resources)
 - `rg-azlocal-prod-eus-security` (Security resources)
 
-**Variable Mapping**:
-```yaml
-azure_resources:
- resource_group_name: "rg-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** The name is `landing_zone.resource_groups[].name` (or `azure.resource_group` for the instance) in `infrastructure.yml`.
 
 :::note Workload Naming
 - Use `azurelocal` for full product name compliance
@@ -659,12 +567,7 @@ azure_resources:
 - `snet-gateway-prod` (Gateway subnet)
 - `AzureBastionSubnet` (Azure Bastion subnet - must use exact name)
 
-**Variable Mapping**:
-```yaml
-networking:
- vnet_name: "vnet-{{workload}}-{{environment}}-{{region}}-{{purpose}}"
- subnet_name: "snet-{{purpose}}-{{environment}}"
-```
+**Variable Mapping:** The names are `landing_zone.networks[].name` and `landing_zone.networks[].subnets[].name` in `infrastructure.yml`.
 
 :::warning Bastion Subnet Name
 Azure Bastion subnet **must** be named exactly `AzureBastionSubnet` - no flexibility allowed.
@@ -678,11 +581,7 @@ Azure Bastion subnet **must** be named exactly `AzureBastionSubnet` - no flexibi
 - `erc-azlocal-prod-eus-001` (Production ExpressRoute circuit)
 - `erc-azlocal-dr-wus-001` (DR site ExpressRoute circuit)
 
-**Variable Mapping**:
-```yaml
-expressroute:
- circuit_name: "erc-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 #### VPN Gateway
 
@@ -703,14 +602,7 @@ VPN Gateways provide site-to-site (S2S) VPN connectivity between Azure and on-pr
 | VPN Connection | `vcn-<source>-to-<destination>-<environment>` | `vcn-azure-to-nyc-prod` |
 | Public IP (VPN) | `pip-vgw-<environment>-<instance>` | `pip-vgw-prod-001` |
 
-**Variable Mapping**:
-```yaml
-vpn:
- vgw_name: "vgw-{{workload}}-{{environment}}-{{region}}-{{instance}}"
- lgw_name: "lgw-{{site_code}}-{{environment}}-{{region}}"
- connection_name: "vcn-azure-to-{{site_code}}-{{environment}}"
- pip_name: "pip-vgw-{{environment}}-{{instance}}"
-```
+**Variable Mapping:** The names are `landing_zone.connectivity.vpn_gateway.name`, `landing_zone.connectivity.vpn_gateway.site_to_site[].local_gateway_name` and `landing_zone.connectivity.vpn_gateway.site_to_site[].connection_name` in `infrastructure.yml`.
 
 :::tip VPN vs ExpressRoute
 - **VPN Gateway**: Site-to-site VPN over public internet (backup connectivity)
@@ -736,13 +628,7 @@ Azure Bastion provides secure RDP/SSH access to Azure VMs without public IP addr
 | Bastion Subnet | `AzureBastionSubnet` | `AzureBastionSubnet` (exact name required) |
 | Public IP (Bastion) | `pip-bas-<environment>-<instance>` | `pip-bas-prod-001` |
 
-**Variable Mapping**:
-```yaml
-bastion:
- bastion_name: "bas-{{workload}}-{{environment}}-{{region}}-{{instance}}"
- subnet_name: "AzureBastionSubnet"
- pip_name: "pip-bas-{{environment}}-{{instance}}"
-```
+**Variable Mapping:** The name is `landing_zone.connectivity.bastion.name` in `infrastructure.yml`.
 
 :::warning Bastion Subnet Requirement
 Azure Bastion subnet **must** be named exactly `AzureBastionSubnet`. This is a Microsoft requirement with no flexibility. Minimum subnet size is /26.
@@ -767,14 +653,7 @@ Azure Firewall provides centralized network security and traffic filtering for h
 | Firewall Subnet | `AzureFirewallSubnet` | `AzureFirewallSubnet` (exact name required) |
 | Public IP (Firewall) | `pip-afw-<environment>-<instance>` | `pip-afw-prod-001` |
 
-**Variable Mapping**:
-```yaml
-azure_firewall:
- firewall_name: "afw-{{workload}}-{{environment}}-{{region}}-{{instance}}"
- policy_name: "afwp-{{workload}}-{{environment}}-{{region}}"
- subnet_name: "AzureFirewallSubnet"
- pip_name: "pip-afw-{{environment}}-{{instance}}"
-```
+**Variable Mapping:** The name is `landing_zone.connectivity.firewall.name` in `infrastructure.yml`.
 
 :::warning Azure Firewall Subnet Requirement
 Azure Firewall subnet **must** be named exactly `AzureFirewallSubnet`. Minimum subnet size is /26.
@@ -792,14 +671,7 @@ NSGs control inbound and outbound network traffic for subnets and network interf
 - `nsg-iic-avd` (AVD session host NSG)
 - `nsg-iic-sql` (Database server NSG)
 
-**Variable Mapping**:
-```yaml
-networking:
-  nsgs:
-    management: "nsg-{{site_code}}-management"
-    production: "nsg-{{site_code}}-production"
-    avd: "nsg-{{site_code}}-avd"
-```
+**Variable Mapping:** The names are `landing_zone.networks[].name` and `landing_zone.networks[].subnets[].name` in `infrastructure.yml`.
 
 :::tip NSG Best Practices
 - Apply NSGs to subnets (not individual NICs) for easier management
@@ -817,13 +689,7 @@ networking:
 - `rt-spoke-prod-eus` (Spoke network route table)
 - `rt-azlocal-prod-eus` (Azure Local network route table)
 
-**Variable Mapping**:
-```yaml
-route_tables:
- hub: "rt-hub-{{environment}}-{{region}}"
- spoke: "rt-spoke-{{environment}}-{{region}}"
- azlocal: "rt-azlocal-{{environment}}-{{region}}"
-```
+**Variable Mapping:** The name is `landing_zone.networks[].subnets[].route_table` in `infrastructure.yml`.
 
 #### User Defined Routes (UDR)
 
@@ -834,12 +700,7 @@ route_tables:
 - `udr-onprem-prod` (On-premises route)
 - `udr-azlocal-prod` (Azure Local route)
 
-**Variable Mapping**:
-```yaml
-user_defined_routes:
- internet: "udr-internet-{{environment}}"
- onprem: "udr-onprem-{{environment}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 #### Private Endpoints
 
@@ -850,12 +711,7 @@ user_defined_routes:
 - `pe-storage-prod-eus` (Storage account private endpoint)
 - `pe-sqldb-prod-eus` (SQL Database private endpoint)
 
-**Variable Mapping**:
-```yaml
-private_endpoints:
- keyvault: "pe-keyvault-{{environment}}-{{region}}"
- storage: "pe-storage-{{environment}}-{{region}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 #### Private DNS Zones
 
@@ -867,14 +723,7 @@ private_endpoints:
 - `privatelink.database.windows.net` (SQL Database)
 - `privatelink.file.core.windows.net` (File storage)
 
-**Variable Mapping**:
-```yaml
-private_dns_zones:
- blob: "privatelink.blob.core.windows.net"
- keyvault: "privatelink.vaultcore.azure.net"
- sql: "privatelink.database.windows.net"
- file: "privatelink.file.core.windows.net"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 :::info Private DNS Zones
 Private DNS zones enable name resolution for Azure Private Endpoints. These zones follow Microsoft's standard naming convention and cannot be customized.
@@ -882,7 +731,7 @@ Private DNS zones enable name resolution for Azure Private Endpoints. These zone
 
 #### VLANs
 
-**Standard VLAN Allocation** (from `config/variables.yml`):
+**Standard VLAN Allocation** (from `infrastructure.yml`):
 
 | **VLAN ID** | **Purpose** | **Variable Name** | **Notes** |
 | ----------- | --------------- | ------------------------ | ------------------------- |
@@ -892,16 +741,7 @@ Private DNS zones enable name resolution for Azure Private Endpoints. These zone
 | 200-299 | VM Networks | `vlan_vm_*` | Application workloads |
 | 300-399 | Backup | `vlan_backup` | Optional, if segregated |
 
-**Variable Mapping**:
-```yaml
-vlans:
- management: 100
- storage_1: 711
- storage_2: 712
- vm_production: 200
- vm_development: 201
- backup: 300
-```
+**Variable Mapping:** The VLAN IDs are `networking.management.vlan_id`, `networking.oob.vlan_id`, `networking.storage.networks[].vlan_id` and `networking.vlans[].id` in `infrastructure.yml`.
 
 #### IP Address Allocation
 
@@ -1015,19 +855,7 @@ resource "azurerm_linux_virtual_machine_scale_set" "cicd" {
 }
 ```
 
-**Variable Mapping**:
-```yaml
-azure_vms:
- domain_controllers:
- - vm_name: "vm-{{workload}}-{{environment}}-{{region}}-dc-{{instance}}"
- computer_name: "{{site_code}}-dc-{{instance}}" # Windows hostname (15 chars max)
- jumpbox:
- - vm_name: "vm-{{workload}}-{{environment}}-{{region}}-jmp-{{instance}}"
- computer_name: "{{site_code}}-jmp-{{instance}}"
- wac:
- - vm_name: "vm-{{workload}}-{{environment}}-{{region}}-wac-{{instance}}"
- computer_name: "{{site_code}}-wac-{{instance}}"
-```
+**Variable Mapping:** The name is `landing_zone.virtual_machines[].name` and the host name is `landing_zone.virtual_machines[].hostname` in `infrastructure.yml`.
 
 :::warning NetBIOS 15-Character Limit
 Windows computer names (hostnames) are limited to **15 characters** due to the NetBIOS protocol used by Active Directory. This applies to all domain-joined Windows VMs. Keep site codes short (2-5 chars) and role codes short (2-4 chars) to stay within the limit.
@@ -1047,11 +875,7 @@ Windows computer names (hostnames) are limited to **15 characters** due to the N
 - `stazldevwus001` (Azure Local dev storage - 15 chars)
 - `stazltestcus001` (Azure Local test storage - 16 chars)
 
-**Variable Mapping**:
-```yaml
-storage:
- storage_account_name: "st{{workload_abbr}}{{environment_abbr}}{{region}}{{instance}}"
-```
+**Variable Mapping:** The name is `landing_zone.storage_accounts[].name`, `cluster.witness.storage_account` or `cluster.diagnostics.storage_account` in `infrastructure.yml`.
 
 **Abbreviations**:
 - Workload: `azl` (Azure Local)
@@ -1077,11 +901,7 @@ storage:
 - `kv-azl-mgmt-eus-001` (Management Key Vault - 19 chars)
 - `kv-azl-dev-eus-001` (Development Key Vault - 18 chars)
 
-**Variable Mapping**:
-```yaml
-keyvault:
- platform_keyvault_name: "kv-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** The name is `key_vaults[].name` (or `cluster.key_vault.name` for the cluster Key Vault) in `infrastructure.yml`.
 
 :::warning Key Vault Naming
 - Must be globally unique across all of Azure
@@ -1139,23 +959,7 @@ Privileged Identity Management (PIM) eligible groups enable just-in-time (JIT) a
 - All PIM activations are logged in Entra ID audit logs
 :::
 
-**Variable Mapping**:
-```yaml
-entra_groups:
- # Standard groups
- platform_admins: "grp-platform-admins-{{environment}}"
- azlocal_admins: "grp-azlocal-admins-{{environment}}"
- azlocal_operators: "grp-azlocal-operators-{{environment}}"
- azlocal_readers: "grp-azlocal-readers-{{environment}}"
- keyvault_admins: "grp-keyvault-admins-{{environment}}"
- security_admins: "grp-security-admins-{{environment}}"
- 
- # PIM-eligible groups
- pim_owner: "grp-pim-owner-{{environment}}"
- pim_contributor: "grp-pim-contributor-{{environment}}"
- pim_security_admin: "grp-pim-security-admin-{{environment}}"
- pim_keyvault_admin: "grp-pim-keyvault-admin-{{environment}}"
-```
+**Variable Mapping:** The name is `identity.entra.groups[].name` in `infrastructure.yml`.
 
 #### Service Principals
 
@@ -1167,13 +971,7 @@ entra_groups:
 - `sp-cicd-iic-prod` (IIC production CI/CD)
 - `sp-backup-prod-recovery` (Backup and recovery automation)
 
-**Variable Mapping**:
-```yaml
-service_principals:
- deployment: "sp-{{workload}}-{{environment}}-deployment"
- monitoring: "sp-{{workload}}-{{environment}}-monitoring"
- cicd: "sp-cicd-{{org_prefix}}-{{environment}}"
-```
+**Variable Mapping:** The name is `azure.automation_identity.name` in `infrastructure.yml`.
 
 #### Managed Identities
 
@@ -1184,12 +982,7 @@ service_principals:
 - `id-azlocal-prod-eus-backup` (Backup service identity)
 - `id-azlocal-prod-eus-monitoring` (Monitoring identity)
 
-**Variable Mapping**:
-```yaml
-managed_identities:
- primary: "id-{{workload}}-{{environment}}-{{region}}-{{instance}}"
- backup: "id-{{workload}}-{{environment}}-{{region}}-backup"
-```
+**Variable Mapping:** The name is `azure.automation_identity.name` in `infrastructure.yml`.
 
 #### Azure Policy
 
@@ -1215,13 +1008,7 @@ managed_identities:
 | Deny public IP | `assign-deny-publicip-sub-azlocal` | Subscription |
 | Enable Defender | `assign-enable-defender-sub-azlocal` | Subscription |
 
-**Variable Mapping**:
-```yaml
-azure_policy:
- require_tags_assignment: "assign-require-tags-sub-{{workload}}"
- allowed_regions_assignment: "assign-allowed-regions-mg-{{management_group}}"
- security_initiative: "initiative-{{workload}}-security"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 :::tip Policy Governance
 - Use initiatives (policy sets) to group related policies
@@ -1243,12 +1030,7 @@ Log Analytics Workspaces are the central repository for all Azure monitoring dat
 - `law-azlocal-dev-eus-001` (Development Log Analytics workspace)
 - `law-security-prod-eus-001` (Security-focused workspace)
 
-**Variable Mapping**:
-```yaml
-monitoring:
- law_name: "law-{{workload}}-{{environment}}-{{region}}-{{instance}}"
- law_id: "/subscriptions/{{subscription_id}}/resourceGroups/{{rg_name}}/providers/Microsoft.OperationalInsights/workspaces/{{law_name}}"
-```
+**Variable Mapping:** The workspace is `operations.monitoring.log_analytics_workspace` in `infrastructure.yml`.
 
 :::tip Workspace Strategy
 - Use a centralized workspace for Azure Local infrastructure monitoring
@@ -1267,11 +1049,7 @@ Application Insights provides application performance monitoring (APM) for workl
 - `appi-azlocal-dev-eus-001` (Development Application Insights)
 - `appi-webapp-prod-eus-001` (Web application monitoring)
 
-**Variable Mapping**:
-```yaml
-monitoring:
- appi_name: "appi-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** The workspace is `operations.monitoring.log_analytics_workspace` in `infrastructure.yml`.
 
 #### Azure Monitor Action Groups
 
@@ -1281,11 +1059,7 @@ monitoring:
 - `ag-azlocal-prod-eus-001` (Production alerts)
 - `ag-azlocal-dev-eus-001` (Development alerts)
 
-**Variable Mapping**:
-```yaml
-azure_monitor:
- action_group_name: "ag-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** The action group is `operations.monitoring.action_group` in `infrastructure.yml`.
 
 #### Data Collection Rules
 
@@ -1296,12 +1070,7 @@ azure_monitor:
 - `dcr-azlocal-prod-eus-security` (Security-focused collection)
 - `dcr-azlocal-prod-eus-performance` (Performance metrics collection)
 
-**Variable Mapping**:
-```yaml
-data_collection:
- rule_name: "dcr-{{workload}}-{{environment}}-{{region}}-{{instance}}"
- security_rule: "dcr-{{workload}}-{{environment}}-{{region}}-security"
-```
+**Variable Mapping:** The data collection endpoint is `operations.monitoring.data_collection_endpoint` and the data collection rule is `operations.monitoring.data_collection_rule` in `infrastructure.yml`.
 
 #### Data Collection Endpoints
 
@@ -1311,11 +1080,7 @@ data_collection:
 - `dce-azlocal-prod-eus-001` (Production data collection endpoint)
 - `dce-azlocal-dev-eus-001` (Development data collection endpoint)
 
-**Variable Mapping**:
-```yaml
-data_collection:
- endpoint_name: "dce-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** The data collection endpoint is `operations.monitoring.data_collection_endpoint` and the data collection rule is `operations.monitoring.data_collection_rule` in `infrastructure.yml`.
 
 #### Alerts
 
@@ -1326,13 +1091,7 @@ data_collection:
 - `alert-disk-low-prod-eus` (Low disk space alert)
 - `alert-cluster-health-prod-eus` (Cluster health alert)
 
-**Variable Mapping**:
-```yaml
-alerts:
- cpu_high: "alert-cpu-high-{{environment}}-{{region}}"
- disk_low: "alert-disk-low-{{environment}}-{{region}}"
- cluster_health: "alert-cluster-health-{{environment}}-{{region}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 #### Azure Update Manager
 
@@ -1342,11 +1101,7 @@ alerts:
 - `aum-azlocal-prod-eus-001` (Production update management)
 - `aum-azlocal-dev-eus-001` (Development update management)
 
-**Variable Mapping**:
-```yaml
-azure_update_manager:
- maintenance_config_name: "aum-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 #### Microsoft Defender for Cloud
 
@@ -1356,11 +1111,7 @@ azure_update_manager:
 - `mdc-azlocal-prod-eus-001` (Production security center)
 - `mdc-azlocal-dev-eus-001` (Development security center)
 
-**Variable Mapping**:
-```yaml
-defender_for_cloud:
- security_center_name: "mdc-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 ### 2.7 Automation
 
@@ -1372,11 +1123,7 @@ defender_for_cloud:
 - `aa-azlocal-prod-eus-001` (Production automation account)
 - `aa-azlocal-dev-eus-001` (Development automation account)
 
-**Variable Mapping**:
-```yaml
-automation:
- account_name: "aa-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 #### Runbooks
 
@@ -1387,12 +1134,7 @@ automation:
 - `rb-backup-prod` (Backup automation runbook)
 - `rb-scaling-prod` (Auto-scaling runbook)
 
-**Variable Mapping**:
-```yaml
-runbooks:
- patching: "rb-patching-{{environment}}"
- backup: "rb-backup-{{environment}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 ### 2.8 Arc Resources
 
@@ -1404,11 +1146,7 @@ runbooks:
 - `arcgw-azlocal-prod-eus-001` (Production Arc gateway)
 - `arcgw-azlocal-dev-eus-001` (Development Arc gateway)
 
-**Variable Mapping**:
-```yaml
-azure_arc:
- gateway_name: "arcgw-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** The name is `azure.custom_location` in `infrastructure.yml`.
 
 ### 2.9 Backup & Disaster Recovery
 
@@ -1423,11 +1161,7 @@ azure_arc:
 - `stwitnessclus01eus01` (Cluster 01 cloud witness - 20 chars)
 - `stwitnessnyceus01` (NYC site cloud witness - 17 chars)
 
-**Variable Mapping**:
-```yaml
-witness:
- cloud_witness_storage: "stwitness{{cluster}}{{region}}{{instance}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 :::warning Cloud Witness Naming
 - Must be globally unique across all of Azure
@@ -1443,11 +1177,7 @@ witness:
 - `fswit-clus01-01` (Cluster 01 file share witness)
 - `fswit-nyc-01` (NYC site file share witness)
 
-**Variable Mapping**:
-```yaml
-witness:
- file_share_witness: "fswit-{{cluster}}-{{instance}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 #### Azure Site Recovery
 
@@ -1457,11 +1187,7 @@ witness:
 - `asr-azlocal-prod-eus-001` (Production site recovery vault)
 - `asr-azlocal-dr-wus-001` (DR region site recovery vault)
 
-**Variable Mapping**:
-```yaml
-site_recovery:
- vault_name: "asr-{{workload}}-{{environment}}-{{region}}-{{instance}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 #### Backup Policies
 
@@ -1473,13 +1199,7 @@ site_recovery:
 - `bkpol-monthly-prod` (Monthly backup policy)
 - `bkpol-vm-prod` (VM backup policy)
 
-**Variable Mapping**:
-```yaml
-backup_policies:
- daily: "bkpol-daily-{{environment}}"
- weekly: "bkpol-weekly-{{environment}}"
- vm: "bkpol-vm-{{environment}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 ---
 
@@ -1496,11 +1216,7 @@ This section covers operational resources for deployment automation and GitLab i
 - `globaltech-azurelocal` (GlobalTech)
 - `enterprise-solutions-azurelocal` (Enterprise Solutions)
 
-**Variable Mapping**:
-```yaml
-project:
-  project_name: "{{customer_name}}-azurelocal"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 ### 3.2 CI/CD Environments
 
@@ -1511,13 +1227,7 @@ project:
 - `azr-validate-eus` (Validation stage - East US)
 - `azr-production-eus` (Production stage - East US)
 
-**Variable Mapping**:
-```yaml
-cicd:
-  environment_deploy: "azr-deploy-{{region}}"
-  environment_validate: "azr-validate-{{region}}"
-  environment_production: "azr-production-{{region}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 ### 3.3 CI/CD Service Principal
 
@@ -1528,11 +1238,7 @@ cicd:
 - `sp-cicd-iic-dev` (IIC development CI/CD)
 - `sp-cicd-internal-dev` (Internal development CI/CD)
 
-**Variable Mapping**:
-```yaml
-cicd:
- service_principal: "sp-cicd-{{org_prefix}}-{{environment}}"
-```
+**Variable Mapping:** No key of `infrastructure.yml` holds this name. Apply the pattern when you name the resource.
 
 ---
 
@@ -1621,7 +1327,7 @@ See [Microsoft CAF: Abbreviation Examples for Azure Resources](https://learn.mic
 
 ### 4.3 Variable Substitution Reference
 
-For automation via `variables.yml`, use these variable patterns:
+For automation via `infrastructure.yml`, use these variable patterns:
 
 #### Common Variables
 
@@ -1646,7 +1352,7 @@ For automation via `variables.yml`, use these variable patterns:
 | South Central US | `southcentralus` | `scus` |
 
 :::tip Automation Integration
-All variables shown in `{{curly braces}}` are defined in the **Variable Schema** and can be populated from `config/variables.yml` using automation scripts. See [Key Inputs and Variables](../implementation/03-key-inputs-and-variables.mdx) for complete variable reference.
+All variables shown in `{{curly braces}}` are defined in the **Variable Schema** and can be populated from `infrastructure.yml` using automation scripts. See [Key Inputs and Variables](../implementation/03-key-inputs-and-variables.mdx) for complete variable reference.
 :::
 
 ---
@@ -1658,13 +1364,13 @@ All variables shown in `{{curly braces}}` are defined in the **Variable Schema**
 Before finalizing naming standards, validate alignment with both CAF and Azure Local Cloud standards:
 
 - [ ] **CAF Compliance**: All Azure resource names follow CAF patterns
-- [ ] **Variable Schema Alignment**: Names map to `config/schema/variables.schema.json` definitions
+- [ ] **Variable Schema Alignment**: Names map to `config/variables/schema/infrastructure.schema.json` definitions
 - [ ] **Uniqueness**: No conflicts with existing infrastructure
 - [ ] **Azure Compliance**: All names meet Azure-specific requirements and constraints
 - [ ] **DNS Compatibility**: Names are valid for DNS records (lowercase recommended)
 - [ ] **Length Constraints**: Names fit within service-specific character limits
 - [ ] **Consistency**: Patterns are applied uniformly across all resources
-- [ ] **Documentation**: All naming conventions documented in `variables.yml`
+- [ ] **Documentation**: All naming conventions documented in `infrastructure.yml`
 - [ ] **Automation Ready**: Naming patterns support `{{variable}}` substitution
 - [ ] **Stakeholder Approval**: Naming standards reviewed and approved by stakeholders
 

@@ -59,19 +59,13 @@ Azure and Dell endpoint connectivity testing occurs in **Phase 03 Step 4** after
 |-------------|-------------|
 | Validation workstation | Windows machine on management VLAN |
 | PowerShell | Version 5.1 or later |
-| Discovery data | DNS server IPs, NTP server, AD domain from variables.yml |
+| Discovery data | DNS server IPs, NTP server, AD domain from infrastructure.yml |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable Path | Type | Description |
-|---|---|---|
-| `cluster_arm_deployment.dns_servers` | Array | DNS server IP addresses for resolution tests |
-| `cluster_arm_deployment.domain_fqdn` | String | Active Directory domain FQDN |
-| `compute.nodes[]` | Array | Node details for connectivity testing |
-| `networking.network_devices.opengear` | Object | OpenGear console server IP for OOB verification |
-| `networking.onprem.vlans.management.gateway` | String | Management VLAN gateway IP for routing tests |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -89,154 +83,20 @@ Azure and Dell endpoint connectivity testing occurs in **Phase 03 Step 4** after
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Managing from a domain-joined management server — config-driven via variables.yml
+### PowerShell
+
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
 #### Script
 
-**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/powershell/Test-NetworkServices.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/powershell/Set-InfrastructurePrep.ps1` | Prepares on-premises infrastructure for Azure Local deployment. |
 
-**Alternatives**:
-| Variant | Path |
-|---------|------|
-| Azure CLI | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/azure-cli/Test-NetworkServices.ps1` |
-| Bash | `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/bash/test-network-services.sh` |
-
-#### Code
+#### Run
 
 ```powershell
-# ============================================================================
-# Script: Test-NetworkServices.ps1
-# Execution: Run FROM management server — reads variables.yml
-# Prerequisites: powershell-yaml module, management VLAN access
-# ============================================================================
-
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath
-)
-
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if ($ConfigPath) {
- $ConfigFile = $ConfigPath
-} else {
- $ConfigFile = Join-Path $ScriptDir "..\\..\\..\\..\\configs\\variables.yml"
-}
-if (!(Test-Path $ConfigFile)) { throw "variables.yml not found at $ConfigFile" }
-
-Import-Module powershell-yaml -ErrorAction Stop
-
-$config = ConvertFrom-Yaml (Get-Content -Path $ConfigFile -Raw) -Ordered
-$dnsServers = $config["cluster_arm_deployment"]["dns_servers"]
-$domainFqdn = $config["cluster_arm_deployment"]["domain_fqdn"]
-$nodes = $config["nodes"]
-$ogIp = $config["network_devices"]["opengear"]["ip"]
-$ogHost = $config["network_devices"]["opengear"]["hostname"]
-$gwIp = $config["vlans"]["management"]["gateway"]
-
-# --- DNS Resolution Tests ---
-Write-Host "[1/4] DNS Resolution: Domain Controllers" -ForegroundColor Cyan
-foreach ($dns in $dnsServers) {
- try {
- $result = Resolve-DnsName -Name $domainFqdn -Server $dns -ErrorAction Stop
- Write-Host " [PASS] DNS server $dns resolves $domainFqdn" -ForegroundColor Green
- } catch {
- Write-Host " [FAIL] DNS server $dns cannot resolve $domainFqdn" -ForegroundColor Red
- }
-}
-
-Write-Host "\n[2/4] DNS Resolution: Planned Node FQDNs" -ForegroundColor Cyan
-foreach ($key in $nodes.Keys) {
- $fqdn = $nodes[$key]["fqdn"]
- try {
- $result = Resolve-DnsName -Name $fqdn -ErrorAction Stop
- Write-Host " [PASS] $fqdn -> $($result.IPAddress)" -ForegroundColor Green
- } catch {
- Write-Host " [WARN] $fqdn not pre-created (will be created during deployment)" -ForegroundColor Yellow
- }
-}
-
-# --- NTP Tests ---
-Write-Host "\n[3/4] NTP Time Synchronization" -ForegroundColor Cyan
-Write-Host " Current time source:" -ForegroundColor Yellow
-w32tm /query /source
-Write-Host " Sync status:" -ForegroundColor Yellow
-w32tm /query /status
-
-# --- Infrastructure Ping Tests ---
-Write-Host "\n[4/4] Infrastructure Connectivity" -ForegroundColor Cyan
-$targets = @(
- @{ Name = "OpenGear ($ogHost)"; IP = $ogIp },
- @{ Name = "Default Gateway"; IP = $gwIp }
-)
-foreach ($t in $targets) {
- $ping = Test-Connection -ComputerName $t.IP -Count 2 -Quiet -ErrorAction SilentlyContinue
- $status = if ($ping) { "[PASS] Reachable" } else { "[FAIL] UNREACHABLE" }
- $color = if ($ping) { "Green" } else { "Red" }
- Write-Host " $($t.Name) ($($t.IP)): $status" -ForegroundColor $color
-}
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Quick verification without variables.yml — manually set variables in the configuration block.
-
-#### Script
-
-**Primary**: `scripts/validation/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/powershell/Test-NetworkServices-Standalone.ps1`
-
-#### Code
-
-```powershell
-#region CONFIGURATION
-$DnsServers = @("10.250.1.36", "10.250.1.37")
-$DomainFqdn = "azrl.mgmt"
-$PlannedNodeFqdns = @(
- "node01.azrl.mgmt",
- "node02.azrl.mgmt"
-)
-$NtpServer = "10.250.1.36"
-$OpenGearIP = "10.245.64.5"
-$DefaultGateway = "192.168.203.1"
-#endregion
-
-# --- DNS Resolution ---
-Write-Host "=== DNS Resolution: Domain ===" -ForegroundColor Cyan
-foreach ($dns in $DnsServers) {
- try {
- Resolve-DnsName -Name $DomainFqdn -Server $dns -ErrorAction Stop | Out-Null
- Write-Host " [PASS] $dns resolves $DomainFqdn" -ForegroundColor Green
- } catch {
- Write-Host " [FAIL] $dns cannot resolve $DomainFqdn" -ForegroundColor Red
- }
-}
-
-Write-Host "\n=== DNS Resolution: Planned Nodes ===" -ForegroundColor Cyan
-foreach ($fqdn in $PlannedNodeFqdns) {
- try {
- $r = Resolve-DnsName -Name $fqdn -ErrorAction Stop
- Write-Host " [PASS] $fqdn -> $($r.IPAddress)" -ForegroundColor Green
- } catch {
- Write-Host " [WARN] $fqdn not pre-created" -ForegroundColor Yellow
- }
-}
-
-# --- NTP ---
-Write-Host "\n=== NTP Synchronization ===" -ForegroundColor Cyan
-w32tm /query /source
-w32tm /stripchart /computer:$NtpServer /samples:3 /dataonly
-
-# --- Connectivity ---
-Write-Host "\n=== Infrastructure Ping ===" -ForegroundColor Cyan
-@(
- @{ Name = "OpenGear"; IP = $OpenGearIP },
- @{ Name = "Default Gateway"; IP = $DefaultGateway }
-) | ForEach-Object {
- $ping = Test-Connection -ComputerName $_.IP -Count 2 -Quiet -EA SilentlyContinue
- $status = if ($ping) { "[PASS]" } else { "[FAIL]" }
- $color = if ($ping) { "Green" } else { "Red" }
- Write-Host " $status $($_.Name) ($($_.IP))" -ForegroundColor $color
-}
+.\Set-InfrastructurePrep.ps1 -NodeNames @("node-01","node-02") -InstallFeatures
 ```
 
 </TabItem>
@@ -301,12 +161,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

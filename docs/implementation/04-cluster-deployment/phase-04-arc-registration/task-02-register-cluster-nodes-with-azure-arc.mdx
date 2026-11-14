@@ -82,18 +82,9 @@ See: [Handle preinstalled or outdated OS images during Azure Arc registration](h
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `azure_platform.tenant.id` | string | Azure Tenant ID |
-| `azure_platform.subscriptions.lab.id` | string | Azure Subscription ID |
-| `compute.azure_local.arc_resource_group` | string | Resource group for Arc resources |
-| `azure_platform.region` | string | Azure region |
-| `compute.azure_local.arc_gateway_id` | string | Arc Gateway resource ID |
-| `identity.service_principal.client_id` | string | SPN Application ID |
-| `compute.cluster_nodes[].management_ip` | string | Node management IPs |
-| `security.keyvault.kv_azl.kv_azl_name` | string | Key Vault name |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -184,84 +175,26 @@ Invoke-AzStackHciArcInitialization `
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run from management server against all nodes via PowerShell remoting.
+### PowerShell
 
-:::tip Standards-Compliant Script
-For production deployments, use **`Invoke-ArcRegistration-Orchestrated.ps1`** from the `azl-toolkit` repo. Defaults to SPN authentication (secret resolved from Key Vault), but supports bypassing SPN via `-SpnAppId` / `-SpnSecret` overrides or by pre-authenticating with `Connect-AzAccount` before running. Also supports `-WhatIf` and `-TargetNode`.
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-The script uses a synchronous `Invoke-Command -ComputerName ($ServerList)` call that fans out to all nodes in parallel. Each PSRemoting session stays alive through OEM reboots — the cmdlet manages the full update + reboot + resume cycle internally. Run **Task 03** in a separate window to monitor OEM update progress, or use the [wrapper script](#combined-registration--monitor-wrapper-script) to launch both together.
-:::
+#### Script
 
-:::warning Inline Code — Reference Only
-The inline code below uses `Select-String` regex to extract values from YAML, which is fragile and may match incorrect values in a deeply nested YAML structure. The `Invoke-` script above uses `powershell-yaml` for proper config parsing.
-:::
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/azurecli/Register-AzureLocalArc.ps1` | See the comment-based help of the script. |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1` | Registers Azure Local cluster nodes with Azure Arc. |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-AzureLocalArc-Remote.ps1` | See the comment-based help of the script. |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-NodesWithArc.ps1` | See the comment-based help of the script. |
+
+Requires: PowerShell 7.
+
+#### Run
 
 ```powershell
-# Task 02 - Register Nodes with Azure Arc (orchestrated, all nodes)
-# variables.yml variables (schema v4.0.0):
-# azure_platform.tenant.id -> $TenantId
-# azure_platform.subscriptions.lab.id -> $SubscriptionId
-# compute.azure_local.arc_resource_group -> $ResourceGroup
-# azure_platform.region -> $Region
-# compute.azure_local.arc_gateway_id -> $ArcGatewayId
-# identity.service_principal.client_id -> $SpnId
-# compute.cluster_nodes[].management_ip -> $ServerList
-
-$ConfigPath = ".\config\variables.yml"
-$cfg = Get-Content $ConfigPath
-
-$TenantId = ($cfg | Select-String 'tenant_id:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$SubscriptionId = ($cfg | Select-String 'subscription_id:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$ResourceGroup = ($cfg | Select-String 'resource_group:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$Region = ($cfg | Select-String 'region:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$ArcGatewayId = ($cfg | Select-String 'arc_gateway_id:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$SpnId = ($cfg | Select-String 'spn_id:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$ServerList = ($cfg | Select-String 'management_ip:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
-
-$Cloud = "AzureCloud"
-
-# SPN secret — resolved from Key Vault (not stored in YAML)
-$VaultName = ($cfg | Select-String 'key_vault_name:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$SecretName = ($cfg | Select-String 'spn_secret_name:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$SpnSecret = (Get-AzKeyVaultSecret -VaultName $VaultName -Name $SecretName -AsPlainText)
-
-# Authenticate with service principal
-$SecurePassword = ConvertTo-SecureString $SpnSecret -AsPlainText -Force
-$SpnCredential = New-Object System.Management.Automation.PSCredential($SpnId, $SecurePassword)
-Connect-AzAccount -ServicePrincipal -TenantId $TenantId -Credential $SpnCredential -SubscriptionId $SubscriptionId
-
-$ArmToken = (Get-AzAccessToken).Token
-$AccountId = $SpnId
-
-# Register each node
-$TargetSolutionVersion = "12.2610.1004.50" # pin the 2610 build; remove to be prompted on each machine
-
-Invoke-Command ($ServerList) {
- param($Sub, $RG, $Tenant, $Reg, $Cld, $Token, $Acct, $GwId, $TargetVer)
- Invoke-AzStackHciArcInitialization `
- -SubscriptionID $Sub `
- -ResourceGroup $RG `
- -TenantID $Tenant `
- -Region $Reg `
- -Cloud $Cld `
- -ArmAccessToken $Token `
- -AccountID $Acct `
- -ArcGatewayID $GwId `
- -TargetSolutionVersion $TargetVer
-} -ArgumentList $SubscriptionId, $ResourceGroup, $TenantId, $Region, $Cloud, $ArmToken, $AccountId, $ArcGatewayId, $TargetSolutionVersion |
- Sort -Property PsComputerName
+.\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
 ```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [`azurelocal-toolkit`](https://github.com/AzureLocal/azurelocal-toolkit) → `scripts/deploy/` for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository. See the Orchestrated Script tab for the primary implementation.
-:::
 
 </TabItem>
 </Tabs>
@@ -275,11 +208,11 @@ Microsoft provides a GUI wizard — the **Azure Stack HCI Configurator App** —
 | Setting | Value | Source |
 |---|---|---|
 | Authentication | Interactive or Service Principal | User preference |
-| Tenant ID | From `variables.yml` | `azure_platform.tenant.id` |
-| Subscription ID | From `variables.yml` | `azure_platform.subscriptions.lab.id` |
-| Resource Group | From `variables.yml` | `compute.azure_local.arc_resource_group` |
-| Region | From `variables.yml` | `azure_platform.region` |
-| Arc Gateway | Enabled | `compute.azure_local.arc_gateway_id` |
+| Tenant ID | From `infrastructure.yml` | `azure.tenant_id` |
+| Subscription ID | From `infrastructure.yml` | `azure.subscription_id` |
+| Resource Group | From `infrastructure.yml` | `azure.resource_group` |
+| Region | From `infrastructure.yml` | `azure.location` |
+| Arc Gateway | Enabled | `networking.outbound.arc_gateway.name` |
 
 1. Download from [aka.ms/ashciconfigurator](https://aka.ms/ashciconfigurator)
 2. Launch → **Register with Azure Arc**
@@ -291,34 +224,18 @@ Microsoft provides a GUI wizard — the **Azure Stack HCI Configurator App** —
 
 ---
 
-## Combined Registration + Monitor (Wrapper Script)
+## Watch the Registration
 
-For OEM image scenarios where nodes will reboot during registration, use the **wrapper script** to launch both registration and monitoring together:
+For OEM image scenarios the nodes can reboot during registration while they install OEM updates. Do not restart the registration script when a node reboots: the bootstrap service resumes by itself.
 
-```powershell title="Start-ArcRegistrationWithMonitor.ps1 — Combined execution"
-# Launch monitor in a new window + run registration in current window
-.\scripts\deploy\04-cluster-deployment\phase-04-arc-registration\task-02-register-cluster-nodes-with-azure-arc\powershell\Start-ArcRegistrationWithMonitor.ps1 `
- -ConfigPath .\configs\infrastructure-azl-lab.yml
+The toolkit has no monitoring script for this. **Watch the registration and the bootstrap with [Azure Local Sonar](https://azurelocal.cloud/azurelocal-sonar/).** Start it in a second window before you register:
+
+```powershell
+Connect-AzAccount
+./Start-AzlSonar.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
-The wrapper:
-1. Launches `Invoke-BootstrapMonitor-Orchestrated.ps1` in a **new PowerShell window** (background)
-2. Runs `Invoke-ArcRegistration-Orchestrated.ps1` in the **current window** (foreground)
-3. The monitor tracks all OEM update phases while registration runs synchronously
-
-| Parameter | Default | Description |
-|---|---|---|
-| `-ConfigPath` | *(required)* | Path to variables.yml |
-| `-TargetNode` | all nodes | Target specific node(s) — passed to both scripts |
-| `-WhatIf` | — | Dry-run registration only, no monitor window |
-| `-PollIntervalSeconds` | 60 | Monitor poll interval (passed to monitor) |
-| `-NoMonitor` | — | Skip launching the monitor window |
-| `-SpnSecret` | — | SPN secret override (passed to registration) |
-| `-NoArcGateway` | — | Skip Arc Gateway requirement (registration without gateway) |
-
-:::tip When to Use the Wrapper
-Use `Start-ArcRegistrationWithMonitor.ps1` when deploying nodes with **OEM images** that may trigger automatic OS updates and reboots. For fresh installs or nodes already at baseline OS version, `Invoke-ArcRegistration-Orchestrated.ps1` alone is sufficient.
-:::
+Sonar reads the nodes and the Azure targets from the same `infrastructure.yml`. It only reads. Task 03 shows the status commands you can run on a node.
 
 ---
 
@@ -359,12 +276,7 @@ Get-Service himds | Select-Object Name, Status
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

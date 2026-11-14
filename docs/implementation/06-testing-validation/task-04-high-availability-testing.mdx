@@ -51,13 +51,9 @@ Some HA tests (node failure simulation) will temporarily reduce cluster capacity
 - [ ] Maintenance window scheduled
 - [ ] Windows Server 2022 and Ubuntu 22.04 images available
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable Path | Type | Description |
-|---|---|---|
-| `platform.cluster_name` | String | Cluster name for failover group identification |
-| `compute.nodes[].name` | String | Node hostnames for drain/failover targeting |
-| `networking.management.subnet` | String | Management subnet for VM network assignment |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ## Report Output
 
@@ -635,24 +631,23 @@ See procedure steps above for manual execution guidance.
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository.
-:::
+#### Script
 
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+| Script | What it does |
+|---|---|
+| `scripts/deploy/06-testing-validation/task-04-high-availability-testing/powershell/Test-HighAvailability.ps1` | Validates high availability, live migration, and failover capabilities. Supports `-WhatIf`. |
 
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
+Requires: PowerShell 7.
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
+#### Run
 
-:::note Content Pending
-Standalone script content references the toolkit repository.
-:::
+```powershell
+.\Test-HighAvailability.ps1 -ClusterName "azl-cluster-01"
+```
 
 </TabItem>
 </Tabs>
@@ -666,12 +661,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

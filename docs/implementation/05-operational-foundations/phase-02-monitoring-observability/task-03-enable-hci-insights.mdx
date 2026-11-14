@@ -46,17 +46,16 @@ Azure Local Insights provides a rich, pre-built Azure Monitor Workbook that visu
 | Arc-Enabled Cluster | Azure Local cluster registered | Portal shows cluster resource |
 | RBAC Permissions | Monitoring Contributor | Role assignment verified |
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
-| `AZURE_SUBSCRIPTION_NAME` | `azure.subscription.name` | `Azure Local Production` |
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `CLUSTER_NAME` | `cluster.name` | `azl-dal-cl01` |
-| `LOG_ANALYTICS_WORKSPACE_NAME` | `monitoring.log_analytics.workspace_name` | `law-azl-DAL-prod-01` |
-| `SITE_CODE` | `site.code` | `DAL` |
-| `CLUSTER_NODE_01_NAME` | `nodes[0].name` | `azl-dal-node-01` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.subscription_id, azure.resource_group, cluster.name, nodes[] (name, arc_machine_name)
+operations.monitoring.enabled                               false means: do nothing
+operations.monitoring.workspace_resource_group              the resource group of the rule
+operations.monitoring.data_collection_rule                  the name of the existing rule
+```
 
 ## Overview
 
@@ -112,75 +111,22 @@ When you configure Insights, Azure Monitor Agent is automatically installed on a
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-For organizations with multiple Azure Local clusters, use Azure Policy to enable Insights at scale:
+### PowerShell
 
-#### Step 3.1: Assign Built-in Policy
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-1. Navigate to **Azure Policy** → **Definitions**
-2. Search for "Azure Local" or "HCI Insights"
-3. Select **Configure Azure Local machines to be associated with a Data Collection Rule**
-4. Click **Assign**
+#### Script
 
-#### Step 3.2: Configure Policy Parameters
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Enable-HciInsights.ps1` | Enables Insights for Azure Local: associates the Insights data collection rule with the Arc machine of every node. Supports `-WhatIf`. |
 
-| Parameter | Value |
-|-----------|-------|
-| **Scope** | Management group or subscription containing clusters |
-| **Data Collection Rule Resource ID** | Resource ID of your DCR |
-| **Data Collection Endpoint Resource ID** | Resource ID of your DCE |
+Requires: PowerShell 7.
 
-5. Click **Review + create** → **Create**
-
-#### Step 3.3: Trigger Remediation
-
-1. Navigate to **Policy** → **Compliance**
-2. Find the assigned policy
-3. Click **Create Remediation Task** to apply to existing clusters
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+#### Run
 
 ```powershell
-#Requires -Modules Az.Monitor, Az.StackHCI
-
-# Variables
-$SubscriptionId = "{{AZURE_SUBSCRIPTION_ID}}"
-$ResourceGroup = "{{AZURE_RESOURCE_GROUP}}"
-$ClusterName = "{{CLUSTER_NAME}}"
-$WorkspaceName = "{{LOG_ANALYTICS_WORKSPACE_NAME}}"
-$SiteCode = "{{SITE_CODE}}"
-
-# Connect to Azure
-Connect-AzAccount -Subscription $SubscriptionId
-
-# Get cluster resource
-$cluster = Get-AzStackHciCluster `
- -ResourceGroupName $ResourceGroup `
- -ClusterName $ClusterName
-
-# Get workspace
-$workspace = Get-AzOperationalInsightsWorkspace `
- -ResourceGroupName $ResourceGroup `
- -Name $WorkspaceName
-
-# Enable Insights by creating the required DCR
-# Note: For Azure Local 23H2+, Insights is enabled through the portal
-# This script prepares the DCR that Insights will use
-
-$dcrName = "AzureStackHCI-$ClusterName-dcr"
-
-Write-Host "To enable Insights:" -ForegroundColor Cyan
-Write-Host "1. Navigate to Azure Portal → Azure Local → $ClusterName"
-Write-Host "2. Click on Insights tile under Capabilities"
-Write-Host "3. Select or create DCR: $dcrName"
-Write-Host "4. Workspace: $WorkspaceName"
-
-# Verify cluster is ready for Insights
-$arcServers = Get-AzConnectedMachine -ResourceGroupName $ResourceGroup | 
- Where-Object { $_.Name -like "*$ClusterName*" -or $_.Name -like "{{CLUSTER_NODE_01_NAME}}*" }
-
-Write-Host "`nCluster nodes registered with Arc:" -ForegroundColor Yellow
-$arcServers | ForEach-Object { Write-Host " - $($_.Name): $($_.Status)" }
+./Enable-HciInsights.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
 
 </TabItem>
@@ -217,12 +163,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation Tabs
 

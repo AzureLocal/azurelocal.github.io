@@ -49,7 +49,7 @@ This task is deferred. The toolkit does not run it, and its scripts are parked i
 Windows Admin Center (WAC) provides a web-based management interface for Azure Local clusters. WAC runs on its own dedicated management server and is used for cluster health monitoring, VM management, storage operations, and Azure hybrid integration.
 
 :::info WAC Has Its Own Server
-WAC runs on a **dedicated management server** (`compute.vms.management.wac`), not on the jumpbox. This is intentional — WAC has specific port and TLS requirements that are cleanest on a standalone host. The jumpbox is a separate server used for RDP/SSH access and admin tooling.
+WAC runs on a **dedicated management server** (`landing_zone.virtual_machines[]`), not on the jumpbox. This is intentional — WAC has specific port and TLS requirements that are cleanest on a standalone host. The jumpbox is a separate server used for RDP/SSH access and admin tooling.
 :::
 
 ---
@@ -73,7 +73,7 @@ The jumpbox server is deployment-agnostic. Set `jumpbox_deployment_target` in yo
 | Network access | Line-of-sight to WAC server and Azure Local cluster nodes |
 | Deployment target | `azure` \| `azurelocal` \| `onprem` |
 
-**Capture jumpbox details in `config/variables.yml`:**
+**Capture jumpbox details in `infrastructure.yml`:**
 
 ```yaml
 compute:
@@ -109,7 +109,7 @@ The WAC server is deployment-agnostic. Set `wac_deployment_target` in your varia
 | Network access | Line-of-sight to Azure Local cluster nodes |
 | Deployment target | `azure` \| `azurelocal` \| `onprem` |
 
-**Capture WAC server details in `config/variables.yml`:**
+**Capture WAC server details in `infrastructure.yml`:**
 
 ```yaml
       wac:
@@ -126,10 +126,10 @@ The WAC server is deployment-agnostic. Set `wac_deployment_target` in your varia
 
 | Setting | Value | Variable |
 |---------|-------|----------|
-| WAC Server | Dedicated management host | `compute.vms.management.wac.wac_hostname` |
-| WAC IP | WAC server IP | `compute.vms.management.wac.wac_ip` |
-| WAC URL | `https://<wac_fqdn>` | `compute.vms.management.wac.wac_fqdn` |
-| WAC Port | 443 (HTTPS) | `compute.vms.management.wac.wac_port` |
+| WAC Server | Dedicated management host | `landing_zone.virtual_machines[]` |
+| WAC IP | WAC server IP | `landing_zone.virtual_machines[]` |
+| WAC URL | `https://<wac_fqdn>` | `landing_zone.virtual_machines[]` |
+| WAC Port | 443 (HTTPS) | `landing_zone.virtual_machines[]` |
 | Certificate | Self-signed (initial) | Auto-generated |
 | Version | Latest stable | Microsoft Download Center |
 
@@ -150,21 +150,15 @@ The WAC server is deployment-agnostic. Set `wac_deployment_target` in your varia
 
 - [ ] WAC server provisioned and accessible (see [Server Requirements](#wac-server) above)
 - [ ] Jumpbox provisioned and accessible (see [Server Requirements](#jumpbox--utility-server) above)
-- [ ] Variables captured in `config/variables.yml` (`compute.vms.management.wac.*`)
+- [ ] Variables captured in `infrastructure.yml` (`landing_zone.virtual_machines[]`)
 - [ ] Internet access from WAC server (for MSI download and Azure registration)
 - [ ] Domain admin credentials available
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| WAC Hostname | `compute.vms.management.wac.wac_hostname` | `iic-wac01` |
-| WAC IP | `compute.vms.management.wac.wac_ip` | `10.20.1.21` |
-| WAC FQDN | `compute.vms.management.wac.wac_fqdn` | `iic-wac01.iic.corp` |
-| WAC Port | `compute.vms.management.wac.wac_port` | `443` |
-| Cluster Name | `cluster.deployment.cluster_name` | `azl-demo-clus01` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -203,7 +197,7 @@ The WAC server is deployment-agnostic. Set `wac_deployment_target` in your varia
 
 6. **Add Cluster Connection**:
    - Click **Add** → **Server clusters**
-   - Cluster name: from `cluster.deployment.cluster_name`
+   - Cluster name: from `cluster.name`
    - Credentials: Use domain admin
 
 7. **Install Extensions**:
@@ -220,7 +214,7 @@ The WAC server is deployment-agnostic. Set `wac_deployment_target` in your varia
 
 9. **Enable Azure Monitor**:
    - Cluster → **Azure Monitor** → Enable
-   - Select Log Analytics workspace (from `azure_infrastructure.log_analytics.workspace_name`)
+   - Select Log Analytics workspace (from `landing_zone.log_analytics.name`)
 
 #### Validation
 
@@ -234,133 +228,17 @@ The WAC server is deployment-agnostic. Set `wac_deployment_target` in your varia
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-### Orchestrated Script (From Jumpbox via PSRemoting)
+### PowerShell
 
-> **When to use**: Run from the jumpbox via PSRemoting — reads `variables.yml`
+> **When to use**: This task is parked and nothing runs it. The scripts below are under `scripts/deferred` and they still read an older configuration layout.
 
-#### Script Path
+#### Script
 
-`scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-wac/powershell/Deploy-WindowsAdminCenter.ps1`
+| Script | What it does |
+|---|---|
+| `scripts/deferred/windows-admin-center/phase-02-monitoring-observability/task-05-deploy-wac/powershell/Deploy-WindowsAdminCenter.ps1` | Deploy Windows Admin Center (WAC) to the management server via PSRemoting. Supports `-WhatIf`. |
 
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Deploy-WindowsAdminCenter.ps1
-# Execution: Run from jumpbox via PSRemoting to WAC server
-# Prerequisites: WinRM/PSRemoting enabled on WAC server
-# ============================================================================
-
-#Requires -Modules Az.KeyVault
-
-param(
-    [Parameter(Mandatory = $false)]
-    [ValidateScript({Test-Path $_})]
-    [string]$ConfigPath = "config/variables.yml"
-)
-
-$ErrorActionPreference = "Stop"
-$scriptRoot = $PSScriptRoot
-
-. "$scriptRoot/../../../../../common/utilities/helpers/config-loader.ps1"
-. "$scriptRoot/../../../../../common/utilities/helpers/logging.ps1"
-. "$scriptRoot/../../../../../common/utilities/helpers/keyvault-helper.ps1"
-
-$config = Get-InfrastructureConfig -ConfigPath $ConfigPath
-
-$WacIp    = $config.compute.vms.management.wac.wac_ip
-$WacFqdn  = $config.compute.vms.management.wac.wac_fqdn
-$WacPort  = $config.compute.vms.management.wac.wac_port
-$NetBios  = $config.active_directory.ad_netbios_name
-$KvName   = $config.azure_infrastructure.key_vaults.management.name
-
-$DomainPwd  = Get-KeyVaultSecret -SecretUri "keyvault://$KvName/domain-admin-password"
-$SecDomPwd  = ConvertTo-SecureString $DomainPwd -AsPlainText -Force
-$domainCred = New-Object PSCredential("$NetBios\Administrator", $SecDomPwd)
-
-Write-LogInfo "Installing WAC on $WacFqdn ($WacIp)"
-
-Invoke-Command -ComputerName $WacIp -Credential $domainCred -ScriptBlock {
-    param($WacPort)
-    $ErrorActionPreference = "Stop"
-
-    if (!(Test-Path "C:\Temp")) { New-Item -Path "C:\Temp" -ItemType Directory -Force }
-
-    $ProgressPreference = 'SilentlyContinue'
-    Invoke-WebRequest -Uri "https://aka.ms/wacdownload" -OutFile "C:\Temp\WindowsAdminCenter.msi"
-
-    $msiArgs = @("/i","C:\Temp\WindowsAdminCenter.msi","/qn","/L*v","C:\Temp\wac-install.log","SME_PORT=$WacPort","SSL_CERTIFICATE_OPTION=generate")
-    Start-Process msiexec.exe -ArgumentList $msiArgs -Wait
-
-    $svc = Get-Service -Name "ServerManagementGateway" -ErrorAction SilentlyContinue
-    if ($svc -and $svc.Status -eq "Running") {
-        Write-Output "WAC service running on port $WacPort"
-    } else {
-        throw "WAC service failed to start — check C:\Temp\wac-install.log"
-    }
-
-    Remove-Item "C:\Temp\WindowsAdminCenter.msi" -Force -ErrorAction SilentlyContinue
-} -ArgumentList $WacPort
-
-Write-LogSuccess "WAC installed on $WacFqdn — access at https://$WacFqdn"
-Write-LogInfo "Complete Azure registration and extension setup via the WAC Web UI"
-```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-### Standalone Script
-
-> **When to use**: Self-contained, copy-paste ready. Run from a machine with PSRemoting to the WAC server.
-
-#### Code
-
-```powershell
-# ============================================================================
-# Script: Configure-WAC-Standalone.ps1
-# Execution: Self-contained — run from any machine with PSRemoting to the WAC server
-# ============================================================================
-
-#region CONFIGURATION
-$WacIp    = "10.20.1.21"           # compute.vms.management.wac.wac_ip
-$WacPort  = 443
-$AdminUser = "CORP\Administrator"   # Domain admin — update for your environment
-$AdminPwd  = Read-Host -AsSecureString "Domain admin password"
-#endregion CONFIGURATION
-
-$cred = New-Object PSCredential($AdminUser, $AdminPwd)
-
-Write-Host "Installing WAC on $WacIp..." -ForegroundColor Cyan
-
-Invoke-Command -ComputerName $WacIp -Credential $cred -ScriptBlock {
-    param($Port)
-
-    if (!(Test-Path "C:\Temp")) { New-Item -Path "C:\Temp" -ItemType Directory -Force }
-
-    Write-Host "Downloading WAC..."
-    $ProgressPreference = 'SilentlyContinue'
-    Invoke-WebRequest -Uri "https://aka.ms/wacdownload" -OutFile "C:\Temp\WindowsAdminCenter.msi"
-
-    Write-Host "Installing..."
-    $args = @("/i","C:\Temp\WindowsAdminCenter.msi","/qn","/L*v","C:\Temp\wac-install.log","SME_PORT=$Port","SSL_CERTIFICATE_OPTION=generate")
-    Start-Process msiexec.exe -ArgumentList $args -Wait
-
-    $svc = Get-Service ServerManagementGateway -ErrorAction SilentlyContinue
-    if ($svc.Status -eq "Running") {
-        Write-Host "WAC running on port $Port" -ForegroundColor Green
-    } else {
-        Write-Host "WAC failed to start — check C:\Temp\wac-install.log" -ForegroundColor Red
-    }
-
-    Remove-Item "C:\Temp\WindowsAdminCenter.msi" -Force -ErrorAction SilentlyContinue
-} -ArgumentList $WacPort
-
-Write-Host "WAC installed — complete setup at https://$WacIp" -ForegroundColor Green
-```
-
-:::info No External Dependencies
-Self-contained. Edit `#region CONFIGURATION` (set `$WacIp` and `$AdminUser`) and run from any machine with PSRemoting access to the WAC server.
-:::
+Requires: PowerShell 7.
 
 </TabItem>
 </Tabs>
@@ -396,12 +274,7 @@ Self-contained. Edit `#region CONFIGURATION` (set `$WacIp` and `$AdminUser`) and
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Version Control
 

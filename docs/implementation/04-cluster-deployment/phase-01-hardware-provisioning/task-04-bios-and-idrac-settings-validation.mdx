@@ -49,7 +49,7 @@ import TabItem from '@theme/TabItem';
 
 Validate current BIOS and iDRAC settings against the Dell Azure Local validated baseline and Azure Local Cloud enterprise operational standards using configuration data collected in Task 02. Generates a per-node compliance report identifying any settings that require remediation in Task 05.
 
-The orchestrated and standalone script paths **read from Task 02 discovery JSON files — no live iDRAC connection is required** for script-based validation. The Dell iDRAC UI option requires direct access to each node's iDRAC interface.
+The toolkit script **reads the Task 02 discovery JSON files — no live iDRAC connection is required** for script-based validation. The Dell iDRAC UI option requires direct access to each node's iDRAC interface.
 
 ---
 
@@ -58,19 +58,14 @@ The orchestrated and standalone script paths **read from Task 02 discovery JSON 
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Task 02 Complete | BIOS and iDRAC configuration collected in `configs/network-devices/bmc/<service-tag>.json` | Task 02 hardware discovery |
-| iDRAC Access (UI only) | iDRAC web interface reachable (UI tab only) | `variables.yml: nodes.<name>.idrac_ip` |
+| iDRAC Access (UI only) | iDRAC web interface reachable (UI tab only) | `infrastructure.yml`: `nodes[].bmc.ip_address` |
 | Dell Documentation | Azure Local Validated Node Configuration Guide | [Dell Support](https://www.dell.com/support) |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `nodes.<name>.idrac_ip` | string | iDRAC IP address (UI validation access) |
-| `nodes.<name>.service_tag` | string | Service tag to match discovery JSON files |
-| `nodes.<name>.hostname` | string | Node hostname for report labeling |
-| `nodes.<name>.model` | string | Platform model to determine required settings tier |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -192,163 +187,22 @@ Document any non-compliant settings for remediation in Task 05.
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Validate using the Redfish-collected JSON files from Task 02. **No iDRAC connection required** — all configuration data was captured in Task 02.
+### PowerShell
 
-`scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-04-bios-and-idrac-settings-validation/powershell/Invoke-BIOSComplianceValidation.ps1`
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-```powershell
-#Requires -Version 7.0
-# ============================================================================
-# Script: Invoke-BIOSComplianceValidation.ps1
-# Execution: Run FROM management server — reads Task 02 discovery JSON files
-# Prerequisites: powershell-yaml, Task 02 JSON files in configs/network-devices/bmc/
-# No iDRAC connection required
-# ============================================================================
+#### Script
 
-param(
- [Parameter(Mandatory = $false)]
- [string]$ConfigPath = ".\config\variables.yml",
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-04-bios-and-idrac-settings-validation/powershell/Test-BiosIdracSettings.ps1` | Validates BIOS and iDRAC settings against desired configuration baseline. |
 
- [Parameter(Mandatory = $false)]
- [string]$InventoryPath = ".\configs\network-devices\bmc\*.json",
+Requires: PowerShell 7.
 
- [Parameter(Mandatory = $false)]
- [string]$ReportPath = ".\configs\network-devices\bmc\bios-compliance-report.json"
-)
-
-Import-Module powershell-yaml -ErrorAction Stop
-$config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
-
-$inventoryFiles = Get-ChildItem $InventoryPath -ErrorAction Stop
-$allResults = @()
-
-Write-Host "Validating BIOS/iDRAC compliance from Task 02 discovery files..." -ForegroundColor Cyan
-
-foreach ($file in $inventoryFiles) {
- $inventory = Get-Content $file.FullName | ConvertFrom-Json
- $serviceTag = $file.BaseName
-
- Write-Host " Validating: $serviceTag" -ForegroundColor Yellow
-
- # Invoke-BIOSComplianceValidation.ps1 processes and compares each JSON
- # against the required baseline for the node's detected platform generation
- $result = & ".\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-04-bios-and-idrac-settings-validation\powershell\Invoke-BIOSComplianceValidation.ps1" `
- -InventoryObject $inventory
-
- $allResults += $result
- $status = if ($result.Status -eq "PASS") { "Green" } else { "Red" }
- Write-Host " $($result.Status) — $($result.FailedChecks) failed / $($result.TotalChecks) total" -ForegroundColor $status
-}
-
-$allResults | ConvertTo-Json -Depth 10 | Set-Content $ReportPath -Encoding UTF8
-Write-Host "`nCompliance report: $ReportPath" -ForegroundColor Cyan
-
-$failCount = ($allResults | Where-Object { $_.Status -eq "FAIL" }).Count
-if ($failCount -gt 0) {
- Write-Host "$failCount node(s) require remediation — proceed to Task 05" -ForegroundColor Yellow
-} else {
- Write-Host "All nodes PASS — no remediation required" -ForegroundColor Green
-}
-```
-
-**Script validates:**
-- ✅ Core virtualization settings (SR-IOV, VT-x, VT-d, Hyperthreading)
-- ✅ Boot and security settings (UEFI, Secure Boot, TPM, System Profile)
-- ✅ Power management (AC Recovery, AC Recovery Delay)
-- ✅ Platform-specific enhanced security (Kernel DMA, TPM PPI, TXT/DRTM) — AX-650+
-- ✅ Advanced security (SMM mitigation) — AX-760+
-- ✅ iDRAC network, power redundancy, session timeout, Redfish API
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
+#### Run
 
 ```powershell
-#Requires -Version 5.1
-# ============================================================================
-# Script: Invoke-BIOSComplianceValidation-Standalone.ps1
-# Execution: Run FROM any workstation — reads Task 02 discovery JSON files
-# Prerequisites: Task 02 JSON files present, no iDRAC connection required
-# ============================================================================
-
-#region CONFIGURATION
-$InventoryPath = ".\configs\network-devices\bmc\*.json"
-$ReportPath = ".\configs\network-devices\bmc\bios-compliance-report.json"
-
-# Required BIOS settings baseline (all AX platforms)
-$requiredBIOS = @{
- SriovGlobalEnable = "Enabled"
- VirtualizationTechnology = "Enabled"
- VtForDirectedIo = "Enabled"
- LogicalProcessor = "Enabled"
- BootMode = "Uefi"
- SecureBoot = "Enabled"
- TpmSecurity = "On"
- SysProfile = "PerfOptimized"
- AcPwrRcvry = "On"
- AcPwrRcvryDelay = "Random"
-}
-
-# Required iDRAC settings baseline
-$requirediDRAC = @{
- NicSelection = "Dedicated"
- NicEnable = "Enabled"
- PowerRedundancy = "InputPowerRedundant"
- HotSpare = "Disabled"
- PrimaryPSU = "PSU1"
- WebSessionTimeout = 1800
- RedfishEnabled = "Enabled"
-}
-#endregion
-
-$inventoryFiles = Get-ChildItem $InventoryPath
-$allResults = @()
-
-foreach ($file in $inventoryFiles) {
- $inv = Get-Content $file.FullName | ConvertFrom-Json
- $failures = @()
-
- # Validate BIOS
- foreach ($key in $requiredBIOS.Keys) {
- $actual = $inv.BIOS.$key
- if ($actual -ne $requiredBIOS[$key]) {
- $failures += [PSCustomObject]@{
- Setting = $key
- Expected = $requiredBIOS[$key]
- Actual = $actual
- Category = "BIOS"
- }
- }
- }
-
- # Validate iDRAC
- foreach ($key in $requirediDRAC.Keys) {
- $actual = $inv.iDRAC.$key
- if ($actual -ne $requirediDRAC[$key]) {
- $failures += [PSCustomObject]@{
- Setting = $key
- Expected = $requirediDRAC[$key]
- Actual = $actual
- Category = "iDRAC"
- }
- }
- }
-
- $result = [PSCustomObject]@{
- ServiceTag = $file.BaseName
- TotalChecks = $requiredBIOS.Count + $requirediDRAC.Count
- FailedChecks = $failures.Count
- PassedChecks = ($requiredBIOS.Count + $requirediDRAC.Count) - $failures.Count
- Status = if ($failures.Count -eq 0) { "PASS" } else { "FAIL" }
- FailedSettings = $failures
- }
-
- $allResults += $result
- $color = if ($result.Status -eq "PASS") { "Green" } else { "Red" }
- Write-Host "$($result.ServiceTag): $($result.Status) ($($result.FailedChecks) failed)" -ForegroundColor $color
-}
-
-$allResults | ConvertTo-Json -Depth 10 | Set-Content $ReportPath -Encoding UTF8
-Write-Host "`nReport saved: $ReportPath" -ForegroundColor Cyan
+.\Test-BiosIdracSettings.ps1 -ConfigPath ".\configs\infrastructure.yml"
 ```
 
 </TabItem>
@@ -411,12 +265,7 @@ Write-Host "`nReport saved: $ReportPath" -ForegroundColor Cyan
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

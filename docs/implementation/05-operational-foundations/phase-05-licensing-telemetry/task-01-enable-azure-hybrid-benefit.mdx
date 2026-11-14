@@ -75,13 +75,15 @@ Azure Hybrid Benefit provides:
 - [ ] Azure Local cluster registered with Azure Arc
 - [ ] Owner or Contributor role on the cluster resource
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `CLUSTER_NAME` | `cluster.name` | `azl-dal-cl01` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.subscription_id, azure.resource_group, cluster.name
+scenario.storage_architecture, scenario.connectivity
+operations.licensing.azure_hybrid_benefit
+```
 
 ---
 
@@ -109,128 +111,23 @@ Azure Hybrid Benefit provides:
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-Run this script from the management server to configure Azure Hybrid Benefit remotely.
+### PowerShell
 
-```powershell title="Enable-AzureHybridBenefit-Orchestrated.ps1 (Run FROM Management Server)"
-#Requires -Modules Az.Accounts, Az.Resources, Az.StackHCI
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-<#
-.SYNOPSIS
- Enables Azure Hybrid Benefit on an Azure Local cluster from a management server.
-.DESCRIPTION
- This script connects to Azure and enables Azure Hybrid Benefit on the specified
- Azure Local cluster resource.
-.PARAMETER ClusterResourceId
- The Azure Resource ID of the Azure Local cluster.
-.PARAMETER SubscriptionId
- The Azure subscription ID containing the cluster.
-.PARAMETER ResourceGroupName
- The resource group containing the cluster.
-.PARAMETER ClusterName
- The name of the Azure Local cluster resource.
-#>
+#### Script
 
-[CmdletBinding()]
-param(
- [Parameter(Mandatory = $false)]
- [string]$ClusterResourceId,
- 
- [Parameter(Mandatory = $false)]
- [string]$SubscriptionId,
- 
- [Parameter(Mandatory = $false)]
- [string]$ResourceGroupName,
- 
- [Parameter(Mandatory = $false)]
- [string]$ClusterName
-)
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Enable-AzureHybridBenefit.ps1` | Activates Azure Hybrid Benefit for the Azure Local instance when operations.licensing.azure_hybrid_benefit of infrastructure.yml is true. Supports `-WhatIf`. |
 
-$ErrorActionPreference = 'Stop'
+Requires: PowerShell 7.
 
-# Connect to Azure if not already connected
-$context = Get-AzContext
-if (-not $context) {
- Write-Host "Connecting to Azure..." -ForegroundColor Yellow
- Connect-AzAccount
-}
+#### Run
 
-# Build resource ID if not provided
-if (-not $ClusterResourceId) {
- if (-not $SubscriptionId -or -not $ResourceGroupName -or -not $ClusterName) {
- throw "Either ClusterResourceId or (SubscriptionId, ResourceGroupName, ClusterName) must be provided"
- }
- $ClusterResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.AzureStackHCI/clusters/$ClusterName"
-}
-
-Write-Host "Enabling Azure Hybrid Benefit for: $ClusterResourceId" -ForegroundColor Cyan
-
-# Get current cluster configuration
-$cluster = Get-AzResource -ResourceId $ClusterResourceId
-
-# Update with Azure Hybrid Benefit enabled
-$cluster.Properties.softwareAssuranceProperties = @{
- softwareAssuranceStatus = "Enabled"
- softwareAssuranceIntent = "Enable"
-}
-
-$cluster | Set-AzResource -Force
-
-Write-Host "Azure Hybrid Benefit enabled successfully" -ForegroundColor Green
-
-# Verify
-$updatedCluster = Get-AzResource -ResourceId $ClusterResourceId
-Write-Host "Software Assurance Status: $($updatedCluster.Properties.softwareAssuranceProperties.softwareAssuranceStatus)" -ForegroundColor Cyan
+```powershell
+./Enable-AzureHybridBenefit.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
-
-</TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-Copy-paste ready script to enable Azure Hybrid Benefit — no config file, no helpers.
-
-```powershell title="Enable-AzureHybridBenefit-Standalone.ps1"
-# ============================================================================
-# Script: Enable-AzureHybridBenefit-Standalone.ps1
-# Execution: Run anywhere with Az modules — fully self-contained
-# Prerequisites: Az.Accounts, Az.Resources modules; authenticated to Azure
-# ============================================================================
-
-#Requires -Modules Az.Accounts, Az.Resources
-
-#region CONFIGURATION
-# ── Edit these values to match your environment ──────────────────────────────
-$SubscriptionId = "00000000-0000-0000-0000-000000000000" # Azure subscription ID
-$ResourceGroupName = "rg-azurelocal-prod" # Resource group with cluster
-$ClusterName = "azl-cluster-01" # Azure Local cluster name
-#endregion CONFIGURATION
-
-$ErrorActionPreference = 'Stop'
-
-# Connect to Azure
-$ctx = Get-AzContext
-if (-not $ctx) { Connect-AzAccount }
-Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-
-$ClusterResourceId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.AzureStackHCI/clusters/$ClusterName"
-
-Write-Host "Enabling Azure Hybrid Benefit for: $ClusterName" -ForegroundColor Cyan
-
-$cluster = Get-AzResource -ResourceId $ClusterResourceId
-$cluster.Properties.softwareAssuranceProperties = @{
- softwareAssuranceStatus = "Enabled"
- softwareAssuranceIntent = "Enable"
-}
-$cluster | Set-AzResource -Force
-
-Write-Host "✅ Azure Hybrid Benefit enabled" -ForegroundColor Green
-
-# Verify
-$updated = Get-AzResource -ResourceId $ClusterResourceId
-Write-Host "Software Assurance Status: $($updated.Properties.softwareAssuranceProperties.softwareAssuranceStatus)" -ForegroundColor Cyan
-```
-
-:::info No External Dependencies
-This script is completely self-contained. Edit the values in the `#region CONFIGURATION` block and run. No `variables.yml`, no config-loader, no helpers required.
-:::
 
 </TabItem>
 </Tabs>
@@ -274,12 +171,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

@@ -58,18 +58,14 @@ Once complete on all nodes, all subsequent Phase 03 tasks can be executed remote
 | Requirement | Description | Source |
 |-------------|-------------|--------|
 | Phase 02 Complete | Azure Stack HCI OS installed and verified on all nodes | [Phase 02](../phase-02-os-installation/index.mdx) |
-| iDRAC console access | Virtual Console accessible for each node | `variables.yml: nodes.<name>.idrac_ip` |
+| iDRAC console access | Virtual Console accessible for each node | `infrastructure.yml`: `nodes[].bmc.ip_address` |
 | Administrator credentials | Local admin password set during OS installation | Key Vault: `node-<hostname>-local-admin` |
 
 ---
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Path | Type | Description |
-|------|------|-------------|
-| `nodes.<name>.idrac_ip` | string | iDRAC IP for console access if WinRM fails |
-| `nodes.<name>.management_ip` | string | Management IP for TrustedHosts configuration |
-| `network.management_subnet` | string | Management subnet for TrustedHosts wildcard pattern |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ---
 
@@ -85,8 +81,8 @@ The script defaults to `10.245.64.*` as a placeholder. You **must** update this 
 
 | Network | Source | Example |
 |---------|--------|---------|
-| Management server subnet | `variables.yml: network.management_subnet` | `10.245.64.*` |
-| Point-to-site VPN client pool | `variables.yml: p2s_client_address_pool` | `172.16.0.0/24` |
+| Management server subnet | `infrastructure.yml`: `networking.management.subnet` | `10.245.64.*` |
+| Point-to-site VPN client pool | `infrastructure.yml`: `p2s_client_address_pool` | `172.16.0.0/24` |
 | Delivery engineer working network | Laptop/jumpbox subnet during the engagement | `192.168.1.*` |
 
 Include all networks from which you or the management server will connect to the nodes. If you are working from a P2S VPN connection, your VPN-assigned address will come from the `p2s_client_address_pool` range — this must be in TrustedHosts or your remote sessions will be rejected.
@@ -147,74 +143,25 @@ Test-WSMan -ComputerName localhost
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying across multiple nodes from a management server using `variables.yml`.
+### PowerShell
 
-**Script**: See [zurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) -> `scripts/deploy/` for the orchestrated script for this task.
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
-:::
+#### Script
 
-</TabItem>
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-01-enable-winrm-for-remote-management/powershell/Enable-WinRmConfiguration.ps1` | Enables and configures WinRM on the local Azure Local node. |
 
-
-<TabItem value="standalone" label="Standalone Script">
-
-Paste this script on each node via iDRAC Virtual Console clipboard paste. Update the `#region CONFIGURATION` block before running.
+#### Run
 
 ```powershell
-<#
-.SYNOPSIS
- Enables and configures WinRM on the local Azure Local node.
-
-.DESCRIPTION
- Bootstrap script that must be run directly on each node via iDRAC Virtual Console.
- WinRM cannot be enabled remotely — this script runs locally.
-
- Performs the following:
- - Enables WinRM via winrm quickconfig
- - Sets network profile to Private
- - Enables WinRM firewall rules
- - Configures TrustedHosts
- - Verifies WinRM service status
-
-.NOTES
- Author: Azure Local Cloud Azure Local Cloud
- Version: 2.0.0
- Phase: 03-os-configuration
- Task: task-01-enable-winrm-for-remote-management
- Run on each node locally via iDRAC Virtual Console.
-#>
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
-
-#region CONFIGURATION
-# Update TrustedHosts to include all networks from which you will manage nodes:
-# - Management server subnet (variables.yml: network.management_subnet)
-# - P2S VPN client pool (variables.yml: p2s_client_address_pool)
-# - Delivery engineer working network (laptop/jumpbox subnet for this engagement)
-$TrustedHosts = "10.245.64.*,172.16.0.*"
-#endregion CONFIGURATION
-
-# Enable WinRM
-winrm quickconfig -q
-
-# Set network profile to Private (required for WinRM)
-Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private
-
-# Enable WinRM firewall rules
-Enable-NetFirewallRule -DisplayGroup "Windows Remote Management"
-
-# Configure TrustedHosts
-Set-Item WSMan:\localhost\Client\TrustedHosts -Value $TrustedHosts -Force
-
-# Verify
-Get-Service WinRM | Select-Object Name, Status, StartType
-Test-WSMan -ComputerName localhost
+.\Enable-WinRmConfiguration.ps1
 ```
 
 </TabItem>
+
+
 </Tabs>
 
 ---
@@ -246,12 +193,7 @@ Test-WSMan -ComputerName localhost
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

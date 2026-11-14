@@ -53,25 +53,9 @@ Azure Site Recovery (ASR) provides disaster recovery capabilities by replicating
 | Hyper-V Integration | Integration components on all VMs | Current version |
 | Cluster Nodes | Windows Server 2019 or later | Domain-joined |
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_NAME` | `azure.subscription.name` | `Azure Local Production` |
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `AZURE_REGION` | `azure.resource_group.location` | `eastus2` |
-| `RECOVERY_VAULT_NAME` | `dr.recovery_vault_name` | `rsv-azl-dal-dr-01` |
-| `DR_STORAGE_ACCOUNT` | `dr.storage_account` | `stazldaldr01` |
-| `DR_VNET_NAME` | `dr.vnet_name` | `vnet-dr-dal-prod` |
-| `DR_VNET_CIDR` | `dr.vnet_cidr` | `10.100.0.0/16` |
-| `DR_SUBNET_NAME` | `dr.subnet_name` | `snet-dr-workloads` |
-| `DR_SUBNET_CIDR` | `dr.subnet_cidr` | `10.100.1.0/24` |
-| `HYPERV_SITE_NAME` | `dr.hyperv_site_name` | `AzureLocal-DAL-Site` |
-| `REPLICATION_POLICY_NAME` | `dr.replication_policy_name` | `rep-policy-dal-24hr` |
-| `DR_RESOURCE_GROUP` | `dr.resource_group` | `rg-dr-dal-prod-eus2` |
-| `MANAGEMENT_NETWORK_NAME` | `networking.management.network_name` | `mgmt-vlan100` |
-| `RECOVERY_PLAN_NAME` | `dr.recovery_plan_name` | `RP-CriticalApps-DAL` |
-| `DR_NOTIFICATION_EMAIL` | `dr.notification_email` | `dr-team@iic.com` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ## Architecture Overview
 
@@ -109,33 +93,26 @@ System Center VMM is optional. Azure Local clusters can be registered directly a
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-# Create Recovery Services vault
-New-AzRecoveryServicesVault `
- -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
- -Name "{{RECOVERY_VAULT_NAME}}" `
- -Location "{{AZURE_REGION}}"
-
-# Set vault context
-$vault = Get-AzRecoveryServicesVault `
- -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
- -Name "{{RECOVERY_VAULT_NAME}}"
-Set-AzRecoveryServicesAsrVaultContext -Vault $vault
-```
-
-</TabItem>
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: This task is parked and nothing runs it. The scripts below are under `scripts/deferred` and they still read an older configuration layout.
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository.
-:::
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deferred/backup-dr/phase-03-backup-dr/task-02-configure-site-recovery/powershell/Set-SiteRecoveryConfiguration.ps1` | Configures Azure Site Recovery for Azure Local VMs. Supports `-WhatIf`. |
+
+Requires: PowerShell 7; modules Az.Accounts, Az.RecoveryServices.
+
+#### Run
+
+```powershell
+.\Set-SiteRecoveryConfiguration.ps1 -VaultName "rsv-azurelocal-prod" -ResourceGroupName "rg-azurelocal-prod"
+```
 
 </TabItem>
 </Tabs>
@@ -300,23 +277,6 @@ Recovery plans orchestrate failover of multiple VMs:
  - RPO: Within policy threshold
 
 </TabItem>
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-# Get replication status
-$vault = Get-AzRecoveryServicesVault `
- -ResourceGroupName "{{AZURE_RESOURCE_GROUP}}" `
- -Name "{{RECOVERY_VAULT_NAME}}"
-
-Set-AzRecoveryServicesAsrVaultContext -Vault $vault
-
-# List protected items
-Get-AzRecoveryServicesAsrReplicationProtectedItem | 
- Select-Object FriendlyName, ProtectionState, ReplicationHealth, LastHeartbeat |
- Format-Table
-```
-
-</TabItem>
 </Tabs>
 
 ### Check Initial Replication
@@ -418,12 +378,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

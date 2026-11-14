@@ -57,14 +57,9 @@ Azure Monitor Agent (AMA) is the recommended agent for log collection, replacing
 - Azure Monitor Agent deployed (or will deploy via DCR)
 - Arc-enabled servers registered (or will be during cluster deployment)
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example |
-|----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_ID` | `azure.subscription.id` | `00000000-0000-0000-0000-000000000000` |
-| `AZURE_RESOURCE_GROUP` | `azure.resource_group.name` | `rg-azurelocal-prod-eus2` |
-| `AZURE_REGION` | `azure.resource_group.location` | `eastus2` |
-| `LOG_ANALYTICS_WORKSPACE_NAME` | `monitoring.log_analytics.workspace_name` | `law-azl-DAL-prod-01` |
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ## Security Event Tiers
 
@@ -142,127 +137,25 @@ Azure Monitor Agent (AMA) is the recommended agent for log collection, replacing
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-```powershell
-# Variables
-$subscriptionId = "<your-subscription-id>"
-$resourceGroup = "rg-management-prod-eastus2"
-$location = "eastus2"
-$workspaceName = "law-azlmgmt-prod-eus2"
-$dcrName = "dcr-security-events-prod-eus2"
-
-# Connect and set context
-Connect-AzAccount
-Set-AzContext -SubscriptionId $subscriptionId
-
-# Get Log Analytics workspace
-$workspace = Get-AzOperationalInsightsWorkspace `
- -ResourceGroupName $resourceGroup `
- -Name $workspaceName
-
-# Define Windows Security Event XPath queries (Common tier)
-$securityXPathQueries = @(
- # Logon events
- "Security!*[System[(EventID=4624)]]", # Successful logon
- "Security!*[System[(EventID=4625)]]", # Failed logon
- "Security!*[System[(EventID=4648)]]", # Explicit credentials
- "Security!*[System[(EventID=4672)]]", # Special privileges
- # Account management
- "Security!*[System[(EventID=4720)]]", # Account created
- "Security!*[System[(EventID=4722)]]", # Account enabled
- "Security!*[System[(EventID=4725)]]", # Account disabled
- "Security!*[System[(EventID=4726)]]", # Account deleted
- "Security!*[System[(EventID=4738)]]", # Account changed
- # Group management
- "Security!*[System[(EventID=4728)]]", # Member added to security group
- "Security!*[System[(EventID=4732)]]", # Member added to local group
- "Security!*[System[(EventID=4756)]]", # Member added to universal group
- # Authentication
- "Security!*[System[(EventID=4768)]]", # Kerberos TGT request
- "Security!*[System[(EventID=4769)]]", # Kerberos service ticket
- "Security!*[System[(EventID=4776)]]", # NTLM authentication
- # Policy changes
- "Security!*[System[(EventID=4719)]]" # Audit policy changed
-)
-
-# Create Data Collection Rule using ARM template
-$dcrTemplate = @{
- '$schema' = "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"
- contentVersion = "1.0.0.0"
- resources = @(
- @{
- type = "Microsoft.Insights/dataCollectionRules"
- apiVersion = "2022-06-01"
- name = $dcrName
- location = $location
- properties = @{
- description = "Security event collection for Azure Local infrastructure"
- dataSources = @{
- windowsEventLogs = @(
- @{
- name = "SecurityEventDataSource"
- streams = @("Microsoft-SecurityEvent")
- xPathQueries = $securityXPathQueries
- }
- @{
- name = "SystemEventDataSource"
- streams = @("Microsoft-Event")
- xPathQueries = @(
- "System!*[System[(Level=1 or Level=2 or Level=3)]]"
- "Application!*[System[(Level=1 or Level=2)]]"
- )
- }
- )
- }
- destinations = @{
- logAnalytics = @(
- @{
- workspaceResourceId = $workspace.ResourceId
- name = "LogAnalyticsDestination"
- }
- )
- }
- dataFlows = @(
- @{
- streams = @("Microsoft-SecurityEvent")
- destinations = @("LogAnalyticsDestination")
- }
- @{
- streams = @("Microsoft-Event")
- destinations = @("LogAnalyticsDestination")
- }
- )
- }
- }
- )
-}
-
-# Convert to JSON and deploy
-$templatePath = Join-Path $env:TEMP "dcr-template.json"
-$dcrTemplate | ConvertTo-Json -Depth 20 | Out-File $templatePath -Encoding UTF8
-
-New-AzResourceGroupDeployment `
- -ResourceGroupName $resourceGroup `
- -TemplateFile $templatePath `
- -Name "DCR-SecurityEvents-Deployment"
-
-Write-Host "✅ Data Collection Rule created: $dcrName" -ForegroundColor Green
-
-# Clean up
-Remove-Item $templatePath
-```
-
-</TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying across multiple nodes from a management server using ariables.yml.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository. See the Standalone Script tab for a self-contained implementation.
-:::
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/powershell/Set-SecurityLogging.ps1` | Configures security logging and audit policies for Azure Local. Supports `-WhatIf`. |
+
+Requires: PowerShell 7; modules Az.Accounts, Az.Monitor.
+
+#### Run
+
+```powershell
+.\Set-SecurityLogging.ps1 -ResourceGroupName "rg-azurelocal-prod"
+```
 
 </TabItem>
 </Tabs>
@@ -369,12 +262,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 

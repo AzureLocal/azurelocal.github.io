@@ -79,11 +79,11 @@ Each leaf-level management group hosts a dedicated subscription:
 
 | Management Group | Subscription Name | Config Path | Purpose |
 |---|---|---|---|
-| `cmp-platform-identity-iic` | `iic-platform-identity-001` | `azure.subscriptions.platform_identity.name` | Entra ID Connect, identity services |
-| `cmp-platform-management-iic` | `iic-platform-management-001` | `azure.subscriptions.platform_management.name` | Azure Monitor, Log Analytics, Automation |
-| `cmp-platform-connectivity-iic` | `iic-platform-connectivity-001` | `azure.subscriptions.platform_connectivity.name` | Hub VNet, VPN, ExpressRoute |
-| `cmp-lz-corp-iic` | `iic-lz-azurelocal-corp-001` | `azure.subscriptions.lz_corp.name` | Azure Local clusters (corporate) |
-| `cmp-lz-online-iic` | `iic-lz-azurelocal-online-001` | `azure.subscriptions.lz_online.name` | Internet-facing workloads |
+| `cmp-platform-identity-iic` | `iic-platform-identity-001` | `landing_zone.subscriptions[].name` | Entra ID Connect, identity services |
+| `cmp-platform-management-iic` | `iic-platform-management-001` | `landing_zone.subscriptions[].name` | Azure Monitor, Log Analytics, Automation |
+| `cmp-platform-connectivity-iic` | `iic-platform-connectivity-001` | `landing_zone.subscriptions[].name` | Hub VNet, VPN, ExpressRoute |
+| `cmp-lz-corp-iic` | `iic-lz-azurelocal-corp-001` | `landing_zone.subscriptions[].name` | Azure Local clusters (corporate) |
+| `cmp-lz-online-iic` | `iic-lz-azurelocal-online-001` | `landing_zone.subscriptions[].name` | Internet-facing workloads |
 
 ### Target Structure
 
@@ -105,15 +105,30 @@ cmp-iic-root                              ← organization root MG
 └── cmp-decommissioned-iic (no subscription yet)
 ```
 
-## Variables from variables.yml
+## Values from infrastructure.yml
 
-| Variable | Config Path | Example (IIC) |
-|----------|-------------|---------------|
-| Platform Identity Sub | `azure.subscriptions.platform_identity.name` | `iic-platform-identity-001` |
-| Platform Management Sub | `azure.subscriptions.platform_management.name` | `iic-platform-management-001` |
-| Platform Connectivity Sub | `azure.subscriptions.platform_connectivity.name` | `iic-platform-connectivity-001` |
-| Corp Landing Zone Sub | `azure.subscriptions.lz_corp.name` | `iic-lz-azurelocal-corp-001` |
-| Online Landing Zone Sub | `azure.subscriptions.lz_online.name` | `iic-lz-azurelocal-online-001` |
+The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+`Deploy-Subscriptions.ps1`:
+
+```text
+azure.tenant_id                                  the tenant the sign-in must belong to
+tags                                             tags for the subscriptions created (optional)
+landing_zone.subscriptions[].name                the alias and the display name of the subscription
+landing_zone.subscriptions[].id                  when set (and not all zeros) the entry is an existing subscription and is skipped
+landing_zone.subscriptions[].billing_scope       the billing scope the subscription is created under
+landing_zone.subscriptions[].workload            Production (default) or DevTest
+landing_zone.subscriptions[].management_group    the management group the subscription is created under (optional)
+```
+
+`Invoke-SubscriptionMove-Orchestrated.ps1`:
+
+```text
+azure.tenant_id                                  the tenant the sign-in must belong to
+landing_zone.subscriptions[].name                the label used in messages
+landing_zone.subscriptions[].id                  the subscription to move
+landing_zone.subscriptions[].management_group    the management group it belongs under
+```
 
 ---
 
@@ -146,7 +161,7 @@ Work through the mapping table top-to-bottom, creating all Platform subscription
 
 #### Validation
 
-- [ ] All 5 subscriptions created with names matching `variables.yml`
+- [ ] All 5 subscriptions created with names matching `infrastructure.yml`
 - [ ] Each subscription is under the correct management group
 - [ ] You have Owner access to all subscriptions
 
@@ -157,27 +172,29 @@ Work through the mapping table top-to-bottom, creating all Platform subscription
 
 <TabItem value="orchestrated" label="Orchestrated Script">
 
-> **When to use**: Use this option when deploying from a management server using `variables.yml`.
+### PowerShell
 
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the orchestrated script for this task.
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
 
-:::note Content Pending
-Orchestrated script content references the toolkit repository.
-:::
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions/powershell/Deploy-Subscriptions.ps1` | Creates the Azure subscriptions that landing_zone.subscriptions of infrastructure.yml lists without an id, under the management group the entry names. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions/powershell/Invoke-SubscriptionMove-Orchestrated.ps1` | Moves existing subscriptions under the management groups infrastructure.yml names for them. Supports `-WhatIf`. |
+
+Requires: PowerShell 7.
+
+#### Run
+
+```powershell
+./Deploy-Subscriptions.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Invoke-SubscriptionMove-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
 
 </TabItem>
 
-<TabItem value="standalone" label="Standalone Script">
-
-> **When to use**: Use this option for a self-contained deployment without a shared configuration file.
-
-**Script**: See [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) for the standalone script for this task.
-
-:::note Content Pending
-Standalone script content references the toolkit repository.
-:::
-
-</TabItem>
 </Tabs>
 
 ---
@@ -210,7 +227,7 @@ Moving a subscription to a different management group changes which Azure Polici
 
 ## Validation
 
-- [ ] All subscriptions exist with names from `variables.yml`
+- [ ] All subscriptions exist with names from `infrastructure.yml`
 - [ ] Each subscription is associated with the correct management group per the mapping table
 - [ ] Subscriptions are visible under their respective MGs in the Azure Portal
 - [ ] You have Owner or Contributor access to all subscriptions
@@ -265,12 +282,7 @@ Scripts for this task are located in the [azurelocal-toolkit](https://github.com
 
 ## Alternatives
 
-The procedures in this task use the scripted methods shown in the tabs above. Additional deployment methods including Azure CLI and Bash scripts are available in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/.
-
-| Method | Description |
-|--------|-------------|
-| Azure CLI | PowerShell-based Azure CLI scripts for Azure resource operations |
-| Bash | Linux/macOS compatible shell scripts for pipeline environments |
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
 
 ## Navigation
 
