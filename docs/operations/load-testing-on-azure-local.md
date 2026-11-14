@@ -43,7 +43,7 @@ The toolkit gives Azure Local operators a repeatable, evidence-based methodology
 ## Deployment Notes
 
 - Tests run on Azure Local cluster nodes via deployed test VMs
-- Config-driven: all parameters in `config/variables.yml`
+- Config-driven: all parameters in the loadtools repository's own `config/variables/variables.yml` (copied from `variables.example.yml`), not in the toolkit's `infrastructure.yml`
 - Requires PowerShell 7+ and appropriate tool binaries on test VMs
 - Refer to the [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools) repo for full setup
 

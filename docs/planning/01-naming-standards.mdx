@@ -733,13 +733,13 @@ Private DNS zones enable name resolution for Azure Private Endpoints. These zone
 
 **Standard VLAN Allocation** (from `infrastructure.yml`):
 
-| **VLAN ID** | **Purpose** | **Variable Name** | **Notes** |
+| **VLAN ID** | **Purpose** | **Key in infrastructure.yml** | **Notes** |
 | ----------- | --------------- | ------------------------ | ------------------------- |
-| 100-199 | Management | `vlan_management` | Site preference |
-| 711 | Storage 1 | `vlan_storage_1` | RDMA network 1 |
-| 712 | Storage 2 | `vlan_storage_2` | RDMA network 2 |
-| 200-299 | VM Networks | `vlan_vm_*` | Application workloads |
-| 300-399 | Backup | `vlan_backup` | Optional, if segregated |
+| 100-199 | Management | `networking.management.vlan_id` | Site preference |
+| 711 | Storage 1 | `networking.storage.networks[0].vlan_id` | RDMA network 1 |
+| 712 | Storage 2 | `networking.storage.networks[1].vlan_id` | RDMA network 2 |
+| 200-299 | VM Networks | `networking.vlans[].id` | Application workloads |
+| 300-399 | Backup | `networking.vlans[].id` | Optional, if segregated |
 
 **Variable Mapping:** The VLAN IDs are `networking.management.vlan_id`, `networking.oob.vlan_id`, `networking.storage.networks[].vlan_id` and `networking.vlans[].id` in `infrastructure.yml`.
 
@@ -747,18 +747,20 @@ Private DNS zones enable name resolution for Azure Private Endpoints. These zone
 
 **Management Network Example** (10.x.x.x/24):
 
-| **Device/Service** | **Hostname** | **IP Pattern** | **Variable** |
+| **Device/Service** | **Hostname** | **IP Pattern** | **Key in infrastructure.yml** |
 | ------------------ | ------------- | --------------------- | ---------------------- |
-| Cluster IP | nyc-clus01 | mgmt_network.10 | cluster_ip |
-| Node 1 | nyc-01-n01 | mgmt_network.11 | node_01_ip |
-| Node 2 | nyc-01-n02 | mgmt_network.12 | node_02_ip |
-| Node 3 | nyc-01-n03 | mgmt_network.13 | node_03_ip |
-| Node 4 | nyc-01-n04 | mgmt_network.14 | node_04_ip |
+| Cluster IP | nyc-clus01 | mgmt_network.10 | No key: with static node addresses the deployment takes it from `networking.management.infrastructure_pool` |
+| Node 1 | nyc-01-n01 | mgmt_network.11 | `nodes[0].management.ip_address` |
+| Node 2 | nyc-01-n02 | mgmt_network.12 | `nodes[1].management.ip_address` |
+| Node 3 | nyc-01-n03 | mgmt_network.13 | `nodes[2].management.ip_address` |
+| Node 4 | nyc-01-n04 | mgmt_network.14 | `nodes[3].management.ip_address` |
 | Reserved | - | mgmt_network.15-20 | (Future expansion) |
-| iDRAC Node 1 | nyc-01-n01-i | oob_network.11 | node_01_idrac_ip |
-| iDRAC Node 2 | nyc-01-n02-i | oob_network.12 | node_02_idrac_ip |
-| iDRAC Node 3 | nyc-01-n03-i | oob_network.13 | node_03_idrac_ip |
-| iDRAC Node 4 | nyc-01-n04-i | oob_network.14 | node_04_idrac_ip |
+| iDRAC Node 1 | nyc-01-n01-i | oob_network.11 | `nodes[0].bmc.ip_address` |
+| iDRAC Node 2 | nyc-01-n02-i | oob_network.12 | `nodes[1].bmc.ip_address` |
+| iDRAC Node 3 | nyc-01-n03-i | oob_network.13 | `nodes[2].bmc.ip_address` |
+| iDRAC Node 4 | nyc-01-n04-i | oob_network.14 | `nodes[3].bmc.ip_address` |
+
+The node names are `nodes[].name`. The BMC login for every node is `hardware.bmc.username` and `hardware.bmc.password` (secret references), unless a node sets its own under `nodes[].bmc`.
 
 ### 2.3 Compute
 

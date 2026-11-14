@@ -19,9 +19,7 @@ import TabItem from '@theme/TabItem';
 > **MASTER REFERENCE**: [Microsoft Learn - Local Identity with Key Vault ARM template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault-template?view=azloc-2610)
 
 :::info Script Options in This Document
-This runbook uses **Option 2 — Azure PowerShell** (config-driven, reads `infrastructure.yml`) as the primary automated path alongside **Option 1 — Manual** steps.
-
-Alternative script options (Option 3: Azure CLI PowerShell, Option 4: Azure CLI Bash, Option 5: Standalone) are available in the Reference section below.
+Each task has two paths: **Manual** steps, and the toolkit's PowerShell scripts, which read `infrastructure.yml`.
 :::
 
 **Status**: Active
@@ -51,7 +49,7 @@ Authentication uses the local administrator account (not the built-in `Administr
 The template folder name ends in `public-preview` on Microsoft Learn 2610, and Learn does not state an API version or a total parameter count for it. This runbook therefore does not quote either. Treat the exact `apiVersion` and parameter count as **lab-verified only**: diff your parameter file against the current `azuredeploy.parameters.json` in the quickstart template before each deployment. Learn also notes that every parameter must be filled in, including array placeholders such as `[""]`, or validation fails.
 :::
 
-The Azure Local Cloud toolkit provides parameter template files and a generation script that populate the parameter file from `infrastructure.yml`. Confirm that the generator's `-AuthType LocalIdentity` output matches the parameter set above (it must emit `identityProvider`, `dnsServerConfig` and `dnsZones`, and must not emit the Active Directory or LCM parameters) before you use it. See the [Reference](#reference) section for the parameter reference.
+The Azure Local Cloud toolkit provides parameter template files and a generator that fills the parameter file from `infrastructure.yml`. With `scenario.identity: local_identity` the generator picks this template, sets `identityProvider`, `dnsServerConfig` and `dnsZones` from `identity.local_identity` (`dns_server_config`, `dns_zone`, `dns_forwarders`), and passes none of the Active Directory or LCM parameters. See the [Reference](#reference) section for the parameter reference.
 
 ---
 
@@ -73,15 +71,15 @@ The Azure Local Cloud toolkit provides parameter template files and a generation
 
 Before starting the deployment procedure, confirm each item:
 
-1. **`infrastructure.yml` fully populated** — all 13 sections complete, including `cluster_arm_deployment`, `accounts`, `network_intents`, and `compute.cluster_nodes`
+1. **`infrastructure.yml` complete for this design** — the master file (schema 5) with `scenario.identity: local_identity`, `cluster.*`, `nodes[]`, `networking.management`, `networking.intents[]`, `identity.local_admin` and `identity.local_identity.*`. The optional `deployment` block holds the run settings of the toolkit script. Check the file with `./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path ./infrastructure.yml`
 2. **Authenticated to Azure** — run `Connect-AzAccount` (PowerShell) or `az login` (CLI) on the machine where you will execute commands
-3. **`powershell-yaml` module installed** — required by the generation script: `Install-Module powershell-yaml -Scope CurrentUser`
-4. **Arc nodes registered** — Phase 04 complete; `arc_node_resource_ids` populated in `infrastructure.yml`
-5. **Platform Key Vault secret stored** — the `local-admin-password` secret exists in the platform Key Vault (from prior phases). Local identity has no LCM deployment account, so no `lcm-deployment-password` secret is needed for this template
+3. **PowerShell modules installed** — the toolkit scripts need PowerShell 7 with `powershell-yaml`, `Az.Accounts` and `Az.KeyVault`
+4. **Arc machines registered** — Phase 04 complete. The toolkit takes the Arc machine resource IDs from the ZTP handoff (`-HandoffFile`). Without a handoff it uses `nodes[].arc_machine_name` (default: `nodes[].name`) in `azure.resource_group`
+5. **Secret stored** — the secret that `identity.local_admin.password` references (`keyvault://<vault>/<secret>`) exists in the platform Key Vault (from prior phases). Local identity has no LCM deployment account, so no LCM password secret is needed for this template
 6. **Nodes in a workgroup** — local identity deployments do not use Active Directory: Learn tells you to skip the AD prerequisites and verifies after deployment that the nodes report `WORKGROUP`. Do not domain join the nodes (the domain-join-before-deployment option in Learn is described for Active Directory deployments). Each node has the same custom local administrator account (not the built-in `Administrator`), static IP addressing (DHCP is not supported for local identity nodes) and SSH enabled, per Microsoft Learn
 
 :::info Where to Run From
-All commands in this runbook run from the **azurelocal-toolkit repository root** on a management/jump box authenticated to Azure. The toolkit scripts expect `infrastructure.yml` at `infrastructure.yml` relative to the repo root.
+All commands in this runbook run on a management or jump box that is signed in to Azure, with a clone of azurelocal-toolkit. Every toolkit script takes the master file as `-InfrastructureFile` (mandatory). There is no default path.
 :::
 
 :::info Key Vault Architecture
@@ -154,7 +152,7 @@ Create the deployment-ready JSON parameter file for the `create-adless-cluster-e
 
 **When to use**: You want to build the parameter file by hand or use a pre-built example as a starting point.
 
-1. Copy the template: `configs/azure/arm-templates/04-cluster-deployment/azuredeploy.parameters.local-identity.json`
+1. Copy the template: `config/azure/arm-templates/cluster-deployment/azuredeploy.parameters.local-identity.json` in azurelocal-toolkit
 2. Replace all `{{VARIABLE}}` placeholders with values from your `infrastructure.yml`
 
 **Key placeholders to replace** (most common errors come from these):
@@ -162,14 +160,18 @@ Create the deployment-ready JSON parameter file for the `create-adless-cluster-e
 | Placeholder | YAML Source Path | Description |
 |-------------|-----------------|-------------|
 | `{{CLUSTER_NAME}}` | `cluster.name` | Cluster resource name |
-| `{{RESOURCE_GROUP}}` | `azure.resource_group` | Target resource group |
-| `{{LOCATION}}` | `azure.location` | Azure region |
-| `{{KEY_VAULT_NAME}}` | `cluster.key_vault.name` | Cluster KV (created by ARM) |
-| `{{DIAGNOSTIC_STORAGE}}` | `cluster.diagnostics.storage_account` | KV diagnostics storage |
-| `{{WITNESS_STORAGE}}` | `cluster.witness.storage_account` | Cloud witness storage |
-| `{{LOCAL_ADMIN_USER}}` | `identity.local_admin.username` | Local admin on all nodes |
-| `{{HCI_RP_OBJECT_ID}}` | `azure.hci_resource_provider_object_id` | From Task 1 |
+| `{{CLUSTER_RESOURCE_GROUP}}` | `azure.resource_group` | Target resource group |
+| `{{SUBSCRIPTION_ID}}` | `azure.subscription_id` | Subscription |
+| `{{AZURE_REGION}}` | `azure.location` | Azure region |
+| `{{TENANT_ID}}` | `azure.tenant_id` | Entra ID tenant |
+| `{{CLUSTER_KEYVAULT_NAME}}` | `cluster.key_vault.name` | Cluster KV (created by ARM) |
+| `{{DIAGNOSTIC_STORAGE_ACCOUNT_NAME}}` | `cluster.diagnostics.storage_account` | KV diagnostics storage |
+| `{{CLUSTER_WITNESS_STORAGE_NAME}}` | `cluster.witness.storage_account` | Cloud witness storage |
+| `{{LOCAL_ADMIN_USERNAME}}` | `identity.local_admin.username` | Local admin on all nodes |
+| `{{HCI_RESOURCE_PROVIDER_OBJECT_ID}}` | `azure.hci_resource_provider_object_id` | From Task 1 |
 | `{{NAMING_PREFIX}}` | `cluster.naming_prefix` | Resource prefix |
+| `{{NODE_01_NAME}}`, `{{NODE_01_IP}}` | `nodes[].name`, `nodes[].management.ip_address` | One pair per machine |
+| `{{INTENT_LIST}}` | `networking.intents[]` | Network intents (`name`, `traffic`, `adapters`) |
 
 For Local Identity, **omit** `domainFqdn`, `adouPath`, `AzureStackLCMAdminUsername` and `AzureStackLCMAdminPassword`: they are not parameters of the local identity template. Instead set:
 
@@ -285,23 +287,23 @@ If validation fails, check the error output against the [Troubleshooting](#troub
 
 ### PowerShell
 
-> **When to use**: Submit the ARM template in Validate mode. Without `-Execute` the script only plans: it writes the parameter file and prints what it would submit.
+> **When to use**: Check the preconditions, then submit the ARM template in Validate mode. `-Mode Plan` (the default) changes nothing.
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalClusterDeployment.ps1` | ARM Validate, then Deploy, of an Azure Local instance from `infrastructure.yml` (schema 5). |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1` | Checks the preconditions (read only), generates the ARM parameters from `infrastructure.yml` (schema 5), runs Validate, then Deploy, and writes a report. See [ARM Validate and Deploy automation](../../../../../../automation/03-automation-guides/arm-validate-deploy.mdx). |
 
-Requires PowerShell 7.
+Requires PowerShell 7 and an Azure sign-in. The script does not sign in.
 
 ```powershell
-# Plan: writes the parameter file and prints what it would submit. Nothing is created.
-./Invoke-AzureLocalClusterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath ./osconfig-report.json
+# Plan: checks the preconditions and writes the parameter file. Nothing is submitted.
+./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -HandoffFile ./ztp-handoff.json -Mode Plan -ReportDirectory ./arm-plan
 
-# Validate: submits deploymentMode Validate, waits about 10 to 30 minutes and reports every validation step.
-./Invoke-AzureLocalClusterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath ./osconfig-report.json -Mode Validate -Execute
+# Validate: submits deploymentMode Validate and waits, about 10 to 30 minutes.
+./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -HandoffFile ./ztp-handoff.json -Mode Validate -ReportDirectory ./arm-validate
 ```
 
-The script refuses a second Validate when the instance is in a failed deployment state, because Microsoft says a second Validate resets the system properties. The same job, with preconditions, an approval step and a report, is done by `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1` (use `-Mode Plan`, then `-Mode Validate`).
+Add `-WhatIf` to do everything except submit. Validate and Deploy go ahead only after the [pre-cluster verification](../../../../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate) passed for the same file. A Validate that already passed with the same parameters is not submitted again. The script refuses a second Validate when the instance is in a failed deployment state, because Microsoft says a second Validate resets the system properties.
 
 </TabItem>
 </Tabs>
@@ -362,13 +364,15 @@ The `New-AzResourceGroupDeployment` command blocks until deployment completes (1
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalClusterDeployment.ps1` | ARM Validate, then Deploy, of an Azure Local instance from `infrastructure.yml` (schema 5). |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1` | Checks the preconditions again, checks that these parameters were validated, then submits the Deploy and writes a report. |
 
 ```powershell
-./Invoke-AzureLocalClusterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath ./osconfig-report.json -Mode Deploy -Execute
+./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -HandoffFile ./ztp-handoff.json -Mode Deploy -ReportDirectory ./arm-deploy
 ```
 
-The deployment takes about 2.5 to 3 hours. The secrets (the local administrator and the LCM user, as `keyvault://` references) are read from Key Vault into memory and sent as secure parameters. They are never written to the parameter file or to the result. To watch the steps while it runs, use [Azure Local Sonar](../../../deployment-monitoring/index.mdx).
+The deployment takes about 2.5 to 3 hours. A running deployment is attached to. A failed one is submitted again only with `-Resume`. To run Validate and Deploy in one run, use `-Mode ValidateAndDeploy` with `-ApprovalMode stop` (the default: the run ends after a good Validate; run `-Mode Deploy` after the approval) or `-ApprovalMode none` (it continues at once). The same setting is `deployment.approval` in the file. Nothing asks on the console.
+
+The local administrator's password (a `keyvault://` reference) is read from Key Vault into memory and sent as a secure parameter. It is never written to the parameter file or to the report. To watch the steps while it runs, use [Azure Local Sonar](../../../deployment-monitoring/index.mdx).
 
 </TabItem>
 </Tabs>
@@ -479,7 +483,7 @@ The login is `-Credential`, else the local administrator of `identity.local_admi
 | `networkingPattern` error | Intent layout doesn't match pattern | Verify intent count and traffic types match pattern |
 | Deployment timeout | Network or Azure service issue | Check node Azure endpoint connectivity |
 | Arc extension failed | Node not reachable from Azure | Verify WinRM/HTTPS and Arc agent status |
-| `deploymentMode` stuck on `Validate` | Forgot to switch mode | Re-run the script with `-DeploymentMode Deploy` or edit the JSON |
+| `deploymentMode` stuck on `Validate` | Forgot to switch mode | Run `Invoke-AzureLocalArmDeployment.ps1 -Mode Deploy`, or set `deploymentMode` to `Deploy` in the JSON |
 | Parameter file has `{{` placeholders | Incomplete placeholder replacement | Search file for `{{` and replace all remaining |
 | `domainFqdn`, `adouPath` or LCM parameters in the parameter file | Active Directory parameter file or wrong template used | Use the `create-adless-cluster-external-dns-public-preview` template and remove those parameters; set `identityProvider` to `LocalIdentity` |
 | `dnsZones` or `dnsServerConfig` validation error | Missing or placeholder values | Provide `dnsServerConfig = UseDnsServer` and a real `dnsZones` array (`dnsZoneName`, `dnsForwarder`) |

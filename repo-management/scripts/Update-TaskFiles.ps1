@@ -169,7 +169,7 @@ function New-OrchTabItem {
     $lines += ""
     $lines += "### Orchestrated Script"
     $lines += ""
-    $lines += "> **When to use**: Deploy from management server — reads configuration from ``variables.yml``."
+    $lines += "> **When to use**: Deploy from management server — reads the master ``infrastructure.yml`` passed with ``-InfrastructureFile``."
     $lines += ""
     $lines += $rb
     $lines += "${fences}powershell"

@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Task 01: Create DHCP Reservations for iDRAC Interfaces"
 sidebar_label: "Task 01: iDRAC DHCP Reservations"
 sidebar_position: 1
@@ -63,7 +63,7 @@ This task may be skipped if iDRACs have already been assigned static IP addresse
 |-------------|-------------|--------|
 | DHCP Server Access | FortiGate admin rights, Windows DHCP admin, or customer DHCP contact | Network team |
 | OOB Network Subnet | Out-of-band VLAN and DHCP scope configured | `infrastructure.yml`: `networking.oob.subnet` |
-| Node MAC Addresses | iDRAC MAC addresses from Dell order documentation | `infrastructure.yml`: the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`) |
+| Node MAC Addresses | iDRAC MAC addresses from Dell order documentation | Order documentation or the iDRAC (not a key of `infrastructure.yml`) |
 | Planned iDRAC IPs | Assigned iDRAC IP per node | `infrastructure.yml`: `nodes[].bmc.ip_address` |
 
 ---
@@ -97,7 +97,7 @@ Select the tab matching your DHCP infrastructure:
 3. Select the DHCP server for the OOB management network and click **Edit**
 4. In the **Reserved Addresses** section, click **Create New** for each node:
  - **IP Address**: `nodes[].bmc.ip_address` from `infrastructure.yml`
- - **MAC Address**: the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`) from `infrastructure.yml`
+ - **MAC Address**: the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`)
  - **Description**: `<hostname>-iDRAC (Service Tag: <service-tag>)`
 5. Click **OK** to save
 
@@ -118,7 +118,7 @@ config system dhcp server
  edit "<OOB-DHCP-Server-Name>"
  config reserved-address
  edit "<hostname>-iDRAC"
- set ip <nodes.<name>.idrac_ip>
+ set ip <nodes[].bmc.ip_address>
  set mac <idrac-mac-address>
  set description "iDRAC for <hostname> (ST: <service_tag>)"
  next
@@ -152,7 +152,7 @@ show system dhcp server | grep -A5 "iDRAC"
 4. Right-click **Reservations** → **New Reservation** for each node:
  - **Reservation name**: `<hostname>-iDRAC`
  - **IP address**: `nodes[].bmc.ip_address` from `infrastructure.yml`
- - **MAC address**: the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`) from `infrastructure.yml`
+ - **MAC address**: the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`)
  - **Description**: `iDRAC for <hostname> (Service Tag: <service-tag>)`
  - Click **Add**
 
@@ -172,10 +172,10 @@ Extract and provide the following from `infrastructure.yml`:
 | Field | infrastructure.yml Path | Example |
 |-------|------------------------|---------|
 | iDRAC MAC address | the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`) | `00:00:5E:00:53:11` |
-| Planned iDRAC IP | `nodes[].bmc.ip_address` | `10.100.64.11` |
-| Reservation name | Derived: `<hostname>-iDRAC` | `azlocal-node01-iDRAC` |
-| Description | Derived | `iDRAC for azlocal-node01 (ST: ABCDE01)` |
-| DHCP scope | `networking.oob.subnet` | `10.100.64.0/24` |
+| Planned iDRAC IP | `nodes[].bmc.ip_address` | `198.51.100.11` |
+| Reservation name | Derived: `<hostname>-iDRAC` | `iic-azl-n01-iDRAC` |
+| Description | Derived | `iDRAC for iic-azl-n01 (ST: SERIAL01)` |
+| DHCP scope | `networking.oob.subnet` | `198.51.100.0/24` |
 
 ### Coordination Steps
 
@@ -189,7 +189,7 @@ Extract and provide the following from `infrastructure.yml`:
 
 - [ ] Customer confirms all reservations created
 - [ ] IP addresses match `infrastructure.yml`: `nodes[].bmc.ip_address`
-- [ ] MAC addresses match `infrastructure.yml`: the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`)
+- [ ] MAC addresses match the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`)
 - [ ] Reservation names follow convention: `<hostname>-iDRAC`
 
 </TabItem>
@@ -201,7 +201,7 @@ Extract and provide the following from `infrastructure.yml`:
 
 - [ ] DHCP reservation created for every node (one per node)
 - [ ] IP addresses match `nodes[].bmc.ip_address` in `infrastructure.yml`
-- [ ] MAC addresses match the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`) in `infrastructure.yml`
+- [ ] MAC addresses match the iDRAC MAC address from the order documentation (it is not a key of `infrastructure.yml`)
 - [ ] Reservation names follow convention: `<hostname>-iDRAC`
 - [ ] Reservation descriptions include hostname and service tag
 - [ ] All reservations in the correct OOB DHCP scope

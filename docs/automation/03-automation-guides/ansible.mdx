@@ -156,15 +156,20 @@ ansible-galaxy collection install -r src/ansible/collections/requirements.yml
 
 ## Inventory
 
-Three host groups are required:
+Three host groups are required. `New-IacVariableFiles.ps1` (see [Variables](#variables)) writes them from `infrastructure.yml`:
 
 ```yaml
 all:
   children:
-    domain_controllers:   # DCs (for AD prep and DC promotion)
-    management:           # Jumpbox, WAC, Syslog VMs
-    cluster_nodes:        # Physical Azure Local nodes
+    domain_controllers:   # landing_zone.virtual_machines[] with role domain_controller
+    management:           # the other landing_zone.virtual_machines[]
+    cluster_nodes:        # nodes[]: host name nodes[].name
+      hosts:
+        iic-azl-n01:
+          ansible_host: 192.0.2.11   # nodes[].management.ip_address
 ```
+
+`cluster_nodes` is the name of the Ansible host group. It is not a key of `infrastructure.yml`: the machines are listed in `nodes[]`. The `os-configuration` role sets each machine's host name from its inventory name.
 
 ## Variables
 
@@ -174,13 +179,15 @@ Variables are generated from the master `infrastructure.yml`:
 ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac -Target Ansible
 ```
 
-This writes `inventory/hosts.yml`, `group_vars/all.yml` and `host_vars/<node>.yml`. A secret is never written to these files.
+This writes `inventory/hosts.yml`, `group_vars/all.yml` and `host_vars/<node>.yml` (one per machine in `nodes[]`). A secret is never written to these files.
 
-Sensitive values should use Ansible Vault:
+Pass the secrets at run time with Ansible Vault:
 
 ```bash
-ansible-vault create inventory/group_vars/vault.yml
-# Required: domain_admin_password, spn_client_secret
+ansible-vault create vault.yml
+# domain_admin_password: the value behind identity.active_directory.domain_join_account.password (or lcm_user.password)
+# spn_client_secret: the value behind devops.authentication.client_secret
+ansible-playbook -i inventory/hosts.yml playbooks/site.yml -e @vault.yml
 ```
 
 ## Repository

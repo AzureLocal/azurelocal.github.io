@@ -2,7 +2,7 @@
 title: "Data Consolidation"
 sidebar_label: "Data Consolidation"
 sidebar_position: 5
-description: "Discovery data consolidation and infrastructure.yaml generation"
+description: "Discovery data consolidation into the master infrastructure.yml"
 ---
 
 # Discovery Data Consolidation
@@ -19,74 +19,102 @@ description: "Discovery data consolidation and infrastructure.yaml generation"
 
 ---
 
-After completing all discovery sessions and workload assessments, consolidate findings into master configuration documents that will guide implementation.
+After completing all discovery sessions and workload assessments, consolidate the findings into the master `infrastructure.yml` (schema 5). Every Azure Local tool reads this one file, so the discovery answers go straight into its keys. Names follow the [naming standards](../01-naming-standards.mdx).
 
-## Configuration Summary Document
+## The master file
 
-### Azure Local Deployment Configuration Summary
+The excerpt below shows where the main discovery answers go. The values are the toolkit's example customer (IIC) and documentation address ranges. The full example, with every section, is `config/variables/examples/infrastructure.example.yml` in azurelocal-toolkit.
 
 ```yaml
-# Azure Local - Deployment Configuration
-# Organization: Example Corporation
-# Date: 2025-08-07
-# Version: 1.0
+_metadata:
+  schema_version: "5.6.0"
 
-## Naming Standards
-cluster_nodes:
- pattern: "{CUSTOMER}AX{NN}"
- examples: ["CONAX01", "CONAX02", "CONAX03", "CONAX04"]
+scenario:
+  identity: active_directory # active_directory | local_identity
+  storage_architecture: s2d # s2d | san | hybrid
+  storage_connectivity: switched # switched | switchless
 
-azure_resources:
- resource_group: "rg-con-azlocal-prod-eus"
- vnet: "vnet-con-prod-eus"
- key_vault: "kv-con-prod-eus"
- storage_account: "stconazlprodeus"
+site:
+  code: "IIC"
+  customer: "Infinite Improbability Corp"
 
-## Network Configuration
-vlans:
- management: 100
- storage_1: 711
- storage_2: 712
- production_vms: 200
- development_vms: 201
- backup: 300
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  location: "eastus"
+  resource_group: "rg-iic-azl-01"
+  custom_location: "cl-iic-azl-01"
 
-ip_ranges:
- management: "10.10.100.0/24"
- production: "10.10.200.0/24"
- development: "10.10.201.0/24"
- backup: "10.10.300.0/24"
+key_vaults:
+  - name: "kv-iic-mgmt-01"
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    resource_group: "rg-iic-mgmt-01"
+    purpose: "management"
 
-## Active Directory
-domain: "azurelocal.mgmt"
-cluster_ou: "OU=CONCLUS01,OU=AzureLocal,OU=Clusters,OU=Servers,OU=MGMT,DC=azurelocal,DC=mgmt"
-service_account: "svc.azurelocal"
+cluster:
+  name: "iic-azl-01"
+  witness:
+    type: cloud
+    storage_account: "stiicazl01wit"
 
-## Hardware Configuration
 nodes:
- - name: "CONAX01"
- model: "Dell AX-760"
- ip: "10.10.100.11"
- idrac: "10.10.100.21"
- - name: "CONAX02"
- model: "Dell AX-760"
- ip: "10.10.100.12"
- idrac: "10.10.100.22"
- - name: "CONAX03"
- model: "Dell AX-760"
- ip: "10.10.100.13"
- idrac: "10.10.100.23"
- - name: "CONAX04"
- model: "Dell AX-760"
- ip: "10.10.100.14"
- idrac: "10.10.100.24"
+  - name: "iic-azl-n01"
+    management:
+      ip_address: "192.0.2.11"
+      mac_address: "00:00:5E:00:53:11"
+    serial_number: "SERIAL01"
+    bmc:
+      ip_address: "198.51.100.11"
+      type: idrac
+  - name: "iic-azl-n02"
+    management:
+      ip_address: "192.0.2.12"
+      mac_address: "00:00:5E:00:53:12"
+    serial_number: "SERIAL02"
+    bmc:
+      ip_address: "198.51.100.12"
+      type: idrac
 
-## Azure Configuration
-subscription_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-region: "eastus"
-cluster_name: "CONCLUS01"
-custom_location: "CON-AzureLocal-CustomLocation"
+hardware:
+  vendor: "Dell"
+  model: "AX-760"
+
+networking:
+  management:
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    vlan_id: 0 # 0 means untagged
+    dns_servers: ["192.0.2.4", "192.0.2.5"]
+  oob:
+    subnet: "198.51.100.0/24"
+    gateway: "198.51.100.1"
+  intents:
+    - name: "management"
+      traffic: [management]
+      adapters: ["Port1", "Port2"]
+    - name: "compute_storage"
+      traffic: [compute, storage]
+      adapters: ["Port3", "Port4"]
+  storage:
+    networks:
+      - { name: "StorageNetwork1", adapter: "Port3", vlan_id: 711 }
+      - { name: "StorageNetwork2", adapter: "Port4", vlan_id: 712 }
+  vlans:
+    - { name: "workloads", id: 2204, subnet: "203.0.113.0/24" }
+
+identity:
+  local_admin:
+    username: "azl-admin"
+    password: "keyvault://kv-iic-mgmt-01/local-admin-password"
+  active_directory:
+    domain_fqdn: "improbability.cloud"
+    ou_path: "OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud"
+    lcm_user:
+      username: "lcm-iic-azl-01"
+      password: "keyvault://kv-iic-mgmt-01/lcm-password"
 ```
+
+Secrets are never values in the file: each one is a `keyvault://<vault>/<secret>` reference to a vault listed in `key_vaults`. Check the file with `./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path ./infrastructure.yml`. It lists every problem at once.
 
 ## Implementation Readiness Checklist
 
