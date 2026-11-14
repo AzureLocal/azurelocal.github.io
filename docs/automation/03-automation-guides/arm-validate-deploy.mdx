@@ -143,7 +143,7 @@ $common = @{ InfrastructureFile = './infrastructure.yml'; OsConfigurationReport 
 | `-ReportDirectory` | Where the events, report, summary and parameter files go. Not for a repository |
 | `-Resume` | Resubmit a failed Deploy (and attach to a running one) |
 | `-AcknowledgeKnownIssues` | Known issue ids you accept, for example `arc-device-id-name` |
-| `-Settings`, `-ConfigPath` | Run settings as a hashtable or JSON file; they win over the master file's `deployment` block |
+| `-Settings`, `-SettingsFile` | Run settings as a hashtable or a JSON file; they win over the master file's `deployment` block |
 | `-AllowRevalidate` | Validate an instance in a failed deployment state. Microsoft says not to; support-guided recovery only |
 | `-RegisterResourceProviders` | Opt in: register the mandatory resource providers that are not registered and wait until they are `Registered` (Validate and Deploy only). Without it the run never changes Azure |
 | `-TemplateFile` | A local copy of the quickstart template instead of the download |
@@ -157,9 +157,11 @@ Copy the file for your platform. Each runs the same script: **preconditions** (P
 
 | Platform | File in the toolkit | Jobs or stages | Approval | Sign-in |
 |----------|---------------------|----------------|----------|---------|
-| GitHub Actions | `pipelines/github-actions/arm-deployment.yml` (copy to `.github/workflows/`) | `preconditions`, `validate`, `deploy` | Environment `azure-local-deploy` with required reviewers | `azure/login`, OIDC |
-| GitLab CI | `pipelines/gitlab/stages/arm-deployment.yml` (declares its own stages, include it from a pipeline of its own) | `arm-preconditions`, `arm-validate`, `arm-deploy` | `arm-deploy` is a manual job in the protected environment `azure-local-deploy` | `id_tokens` and a federated token, or a managed identity |
-| Azure DevOps | `pipelines/azure-devops/arm-deployment.yml` | Stages `Preconditions`, `Validate`, `Deploy` | Approvals check on the environment `azure-local-deploy` | A service connection with workload identity federation |
+| GitHub Actions | `pipelines/github-actions/arm-deployment.yml` (copy to `.github/workflows/`) | `preconditions`, `validate`, `deploy` | The environment of `devops.pipelines.environments.arm_deployment`, with required reviewers | `azure/login`, OIDC |
+| GitLab CI | `pipelines/gitlab/stages/arm-deployment.yml` (declares its own stages, include it from a pipeline of its own) | `arm-preconditions`, `arm-validate`, `arm-deploy` | `arm-deploy` is a manual job in the protected environment of `devops.pipelines.environments.arm_deployment` | `id_tokens` and a federated token, or a managed identity |
+| Azure DevOps | `pipelines/azure-devops/arm-deployment.yml` | Stages `Preconditions`, `Validate`, `Deploy` | Approvals check on the environment you enter as a run parameter (the value of `devops.pipelines.environments.arm_deployment`) | A service connection with workload identity federation |
+
+The pipeline files name no runner label, agent pool or environment. On GitHub and GitLab they read `AZL_RUNNER_LABEL` and `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, which task 05 of the CI/CD setup sets from `devops.pipelines.runner_label` and `devops.pipelines.environments.arm_deployment` ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). On Azure DevOps the pool and the environment are run parameters with no default.
 
 Pipeline inputs: the mode (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), the path of `infrastructure.yml`, the OS configuration report (the artifact of the OS configuration pipeline, or a repository path), the optional ZTP handoff, `resume`, and the known issue ids to acknowledge.
 
@@ -203,6 +205,15 @@ The 13 providers are the list in Microsoft Learn, [Assign required permissions f
 ### Passing the Solution Builder Extension to the deployment is opt-in
 
 The SBE package must be downloaded and available on the share (see [the SBE package checks](#the-sbe-package-checks)); what is optional is handing an SBE to the ARM deployment and side-loading it at build time. A deployment without an SBE is a normal deployment. When `hardware.sbe` is absent, or has no `version`, the run passes none of the seven SBE parameters of Microsoft's template (`sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource`, `sbeManifestCreationDate`, `partnerProperties`, `partnerCredentiallist`). An SBE is passed only when `hardware.sbe.version` is set. If Azure still names an SBE problem in a run without an SBE (the nodes carry a package in `C:\SBE`), the known issue `sbe-referenced-but-not-configured` says so and offers both ways out.
+
+Two keys (schema 5.6.24) fill `partnerProperties` and `partnerCredentiallist` when an SBE is passed. Leave both out unless the vendor's SBE documentation names a property or a credential; the deployment then sends empty lists.
+
+| Key | What it is |
+|-----|------------|
+| `hardware.sbe.partner_properties[]` (`name`, `value`) | Properties the hardware vendor's SBE asks for, as name and value pairs (ARM `partnerProperties`). Copy the pairs as the vendor's SBE documentation gives them. Not a secret: a secret goes in `partner_credentials`. |
+| `hardware.sbe.partner_credentials[]` (`secret_name`, `secret`) | The secrets the vendor's SBE needs while the deployment runs, for example the login of its download connector (ARM `partnerCredentiallist`). `secret_name` is the name the secret gets in the cluster's own Key Vault (`cluster.key_vault.name`) and the name the SBE looks for. `secret` is required with every entry: a secret reference (`keyvault://`, `env://`, `file://` or `command://`), never the value. |
+
+The toolkit reads each `secret` on this machine, in memory, when it submits the deployment, and sends it as `secretValue`. Microsoft's template writes the value into the cluster's Key Vault. The template declares `partnerCredentiallist` as a plain array, so the value is visible in the deployment's input parameters in Azure. Set it only when the vendor's SBE requires it. The parameter file holds `null` for it (`-SecretMode Placeholder`); `-SecretMode KeyVaultReference` refuses when an entry exists.
 
 ---
 

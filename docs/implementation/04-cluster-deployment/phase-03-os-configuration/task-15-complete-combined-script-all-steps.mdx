@@ -51,7 +51,7 @@ Tasks 11–14 are not included in this combined script — they are conditional 
 :::
 
 :::warning WinRM Prerequisite
-Task 01 (Enable WinRM) must be completed on each node **before** running the orchestrated script. Run it manually via console or SConfig first.
+The OS configuration reaches the nodes over WinRM. Complete Task 01 (Enable WinRM) on each node first, by console or SConfig, unless `os_configuration.remoting.bootstrap_transport` lets the run reach a node that does not answer over WinRM yet.
 :::
 
 ---
@@ -120,8 +120,7 @@ Get-NetAdapter | Format-Table Name, Status, LinkSpeed -AutoSize
 # Task 10 - Hostname
 Rename-Computer -NewName $NewHostname -Force
 
-Write-Host "Restart required to apply hostname change."
-Write-Host -NoNewline "Restart now? [Y/N]: "; if ((Read-Host) -match "^[Yy]") { Restart-Computer -Force }
+Write-Host "Restart required to apply the hostname change. Run Restart-Computer -Force when you are ready."
 ```
 
 </TabItem>
@@ -129,29 +128,29 @@ Write-Host -NoNewline "Restart now? [Y/N]: "; if ((Read-Host) -match "^[Yy]") { 
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **One script for every step.** The earlier combined scripts of the task folder (`Invoke-Phase03OsConfiguration-Orchestrated.ps1` and `Start-Phase03OsConfiguration.ps1`) are removed. The OS configuration replaces them.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-12-complete-combined-script-all-steps/powershell/Invoke-Phase03OsConfiguration-Orchestrated.ps1` | Runs all Phase 03 OS configuration tasks (02-10) against every Azure Local node from the management server in a single execution. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-12-complete-combined-script-all-steps/powershell/Start-Phase03OsConfiguration.ps1` | Runs all Phase 03 OS configuration steps (Tasks 02-10) locally on a single node. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | OS configuration for a whole Azure Local instance in one run: every node, plan, apply, verify, one report. It runs `Set-AzureLocalNodeConfiguration.ps1` for each node, which reads the node, changes only what differs from `infrastructure.yml`, and reports. |
 
-Requires: PowerShell 7; PowerShell 5.1.
+The steps are `RemoteManagement`, `Sbe`, `Drivers`, `NicNames`, `Network`, `Dns`, `Time`, `Hostname`, `UnusedAdapters`, `DomainJoin`, `LocalAdmin`, `Mpio`, `SanVerify`, `ClearStorage` and `ArcRegistration`. Without `-Step` the run does the steps of each node's method.
+
+The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run
 
 ```powershell
-.\Invoke-Phase03OsConfiguration-Orchestrated.ps1
+# Plan (the default): read every node and list what would change
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -ReportDirectory ./out
 
-.\Start-Phase03OsConfiguration.ps1 `
-    -StaticIP "192.0.2.11" `
-    -Gateway "192.0.2.1" `
-    -DNSPrimary "10.250.1.36" `
-    -DNSSecondary "10.250.1.37" `
-    -NewHostname "iic-azl-n01"
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Mode Apply -ReportDirectory ./out
 ```
+
+Exit codes: 0 every node converged; 1 a node failed, is blocked or did not converge; 2 bad input or nothing reachable. See [how the run works](./how-the-run-works.mdx).
 
 </TabItem>
 </Tabs>

@@ -40,7 +40,7 @@ status: "approved"
 Azure Local deployments use one configuration system:
 
 1. **The master registry**: `config/variables/schema/master-registry.yaml` defines every variable. It is the only master.
-2. **`infrastructure.yml`**: one file per environment (schema 5, current version 5.6.21). It holds your values. It is never committed to a public repository, and it never holds a secret value.
+2. **`infrastructure.yml`**: one file per environment (schema 5, current version 5.6.26). It holds your values. It is never committed to a public repository, and it never holds a secret value.
 3. **The generated schema and templates**: `config/variables/schema/infrastructure.schema.json` validates the file. `config/variables/templates/infrastructure.master.yml` has every key, and `config/variables/templates/tools/<tool>.yml` has one template per tool.
 
 Every tool reads the same file: the toolkit scripts, azurelocal-ztp, azurelocal-sonar, Trailwright, the ARM deployment, Terraform and Ansible.
@@ -105,6 +105,8 @@ $gateway  = $infra.networking.management.gateway
 
 The script help lists the keys the script reads. The same script runs for every environment. Only the values in `infrastructure.yml` differ.
 
+`-InfrastructureFile` is mandatory. No script takes `-ConfigPath` or `-ConfigFile`, and no script prompts. A credential comes from a `-Credential` parameter or from a secret reference in the file. Without one, the script stops with exit code 2.
+
 ### Secrets
 
 A key that needs a secret holds a reference: `keyvault://<vault>/<secret>` (the default), `env://<VARIABLE>`, `file://<name>` or `command://<name>`. One resolver reads every reference. No script names a vault.
@@ -119,7 +121,7 @@ Start from `config/variables/templates/infrastructure.master.yml`, a scenario te
 
 ```yaml
 _metadata:
-  schema_version: 5.6.21
+  schema_version: 5.6.26
 
 scenario:
   identity: active_directory
@@ -180,12 +182,12 @@ Each top-level section of `infrastructure.yml` holds one kind of input. Every ke
 | `landing_zone` | Management groups, subscriptions, resource groups, networks, network security groups, the VPN gateway, Bastion, NAT gateway, management VMs and the Log Analytics workspace |
 | `networking` | The management network, intents, storage networks, VLANs, logical networks, outbound path (proxy, Arc gateway) and NTP |
 | `nodes[]` | Each machine: name, serial number, BMC, network adapters with MAC addresses, SAN host bus adapters |
-| `hardware` | Drives, network cards, BIOS settings and the Solution Builder Extension (SBE) package |
+| `hardware` | Drives, network cards, BIOS settings and the Solution Builder Extension (SBE) package, with the partner properties and credentials the vendor's SBE asks for |
 | `storage` | The pool, the volumes, the storage paths, the VM images and the SAN |
 | `cluster` | The cluster name, deployment mode, witness, cluster Key Vault and diagnostics |
 | `security`, `operations` | The security baseline, Defender for Cloud (free level), monitoring (Azure Local Insights and the Log Analytics workspace), updates and licensing |
 | `sdn` | SDN enabled by Azure Arc |
-| `devops` | The CI/CD platform, project, repository, environments, runners and Terraform state |
+| `devops` | The CI/CD platform, project, repository, environments, runners, Terraform state, and the runner label and approval environments of the toolkit's pipelines |
 | `secrets` | The settings of the secret providers (`file` and `command`) |
 | `extensions` | Your own keys. Tools ignore what they do not own |
 

@@ -68,17 +68,15 @@ Create the foundational OU structure in Active Directory and the Azure Local dep
 
 ### Task 2: Security Groups
 
-Create 7 security groups for role-based access control of Azure Local operations. Group names follow the convention `SG-{org_prefix}-{cluster_id}-AZL-{role}`, driven by `active_directory.security_groups.org_prefix` and `cluster_id` in `infrastructure.yml`.
+Create the security groups for role-based access control of Azure Local operations. Each group is an entry of `identity.active_directory.security_groups[]` in `infrastructure.yml`: `name`, `purpose`, `members` and `local_groups`. You choose the names. A typical set:
 
-| YAML Key | Example Name | Node Assignment |
+| Example `name` | `local_groups` on every node | Purpose |
 |---|---|---|
-| `azure_local_admins` | `SG-IIC-clus01-AZL-Administrators` | `Administrators` |
-| `operations` | `SG-IIC-clus01-AZL-Operations` | `Remote Management Users`, `Remote Desktop Users` |
-| `read_only` | `SG-IIC-clus01-AZL-ReadOnly` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` |
-| `wac_admins` | `SG-IIC-clus01-AZL-WAC-Administrators` | WAC server only |
-| `wac_users` | `SG-IIC-clus01-AZL-WAC-Users` | WAC server only |
-| `hyperv_admins` | `SG-IIC-clus01-AZL-HyperV-Administrators` | `Hyper-V Administrators`, `Remote Management Users` |
-| `storage_admins` | `SG-IIC-clus01-AZL-Storage-Administrators` | `Administrators` |
+| `sg-iic-azl-01-admins` | `Administrators` | Full admin access to cluster nodes |
+| `sg-iic-azl-01-operations` | `Remote Management Users`, `Remote Desktop Users` | PowerShell remoting and RDP; no full admin |
+| `sg-iic-azl-01-readonly` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` | View only; cannot change configuration |
+| `sg-iic-azl-01-hyperv-admins` | `Hyper-V Administrators`, `Remote Management Users` | VM management through PowerShell remoting |
+| `sg-iic-azl-01-storage-admins` | `Administrators` | CSV and Storage Spaces Direct management |
 
 [View Step 2 Details](./task-02-security-groups)
 

@@ -74,7 +74,7 @@ Arc agent version **≥ 1.31** is required. Check with `azcmagent version` on ea
 | Azure permissions | **Contributor** or **Owner** on the subscription (register RP + create endpoints) |
 | Arc extension deploy | `microsoft.hybridcompute/machines/extensions/write` on each Arc machine resource |
 | Azure CLI (scripts) | `az` CLI logged in (`az account show`); `az extension add --name ssh` |
-| YAML key (orchestrated) | `nodes[].arc_machine_name` populated per node |
+| YAML key (toolkit script) | `nodes[].arc_machine_name` per node (default: `nodes[].name`) |
 
 :::warning RBAC for ongoing SSH access
 After this task, operators connecting via `az ssh arc` need the
@@ -186,15 +186,18 @@ az ssh arc `
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Enable-SshConfiguration.ps1` | Configures SSH access for Azure Local nodes. Supports `-WhatIf`. |
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1` | Deploys the WindowsOpenSSH Arc extension and configures HybridConnectivity SSH access on all Azure Local cluster nodes. |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1` | Deploys the WindowsOpenSSH Arc extension and configures HybridConnectivity SSH access on all Azure Local cluster nodes. It reads `nodes[]` and `nodes[].arc_machine_name`. |
+
+The earlier `Enable-SshConfiguration.ps1` is removed. The Azure CLI `az-configure-ssh.ps1` in the task folder is a placeholder (exit code 3). The script never prompts.
 
 Requires: PowerShell 7.
 
 #### Run
 
 ```powershell
-.\Enable-SshConfiguration.ps1 -NodeNames @("node01", "node02")
+./Invoke-SSHConnectivity-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-SSHConnectivity-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+./Invoke-SSHConnectivity-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
 ```
 
 </TabItem>

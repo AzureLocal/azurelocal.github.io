@@ -191,15 +191,14 @@ Invoke-RestMethod -Uri "https://10.10.10.11/redfish/v1/" -SkipCertificateCheck
 ```powershell
 cd C:\git\azurelocal-toolkit
 
-# Prompt for the iDRAC credentials once
-$cred = Get-Credential -Message "Enter iDRAC Administrator credentials"
-
-.\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-02-hardware-discovery-via-dell-redfish-api\powershell\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml -Credential $cred
+# The BMC login comes from hardware.bmc (or nodes[].bmc) of infrastructure.yml. The password is a secret reference.
+# The script never prompts. To use another login, pass -Credential.
+.\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-02-hardware-discovery-via-dell-redfish-api\powershell\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
 ```
 
 **One server:**
 ```powershell
-.\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-02-hardware-discovery-via-dell-redfish-api\powershell\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml -Credential $cred -TargetNode "<node-name>"
+.\scripts\deploy\04-cluster-deployment\phase-01-hardware-provisioning\task-02-hardware-discovery-via-dell-redfish-api\powershell\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -TargetNode "<node-name>"
 ```
 
 The script reads each BMC through the standard Redfish API (read only) and writes one JSON file per server, so you can keep the files of each run to track firmware changes.

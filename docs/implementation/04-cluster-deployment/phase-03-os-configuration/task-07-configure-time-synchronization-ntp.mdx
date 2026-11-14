@@ -57,10 +57,9 @@ registration. Kerberos authentication fails when clock skew exceeds five minutes
 configures the Windows Time service (`w32tm`) on each node, restarts the service, forces an
 immediate resync, and validates the resulting stratum.
 
-**What the scripts do:**
+**What the steps do:**
 
-1. Hard-fail on any `REPLACE` placeholder remaining in `#region CONFIGURATION`
-2. Configure w32tm with the NTP server from `networking.ntp_servers`
+1. Configure w32tm with the NTP servers from `networking.ntp_servers`
 3. Restart the Windows Time service
 4. Force an immediate resync (`w32tm /resync /force`)
 5. Verify the resulting sync status and stratum — warn if stratum 16 (unsynchronized)
@@ -81,13 +80,13 @@ immediate resync, and validates the resulting stratum.
 
 | `infrastructure.yml` path | Script variable | Example |
 |----------------------------|----------------|---------|
-| `networking.ntp_servers` | `$NTPServer` | `10.100.10.1` |
-| `nodes[].network_adapters[].ip_address` | PSRemoting target (orchestrated only) | `10.100.200.11` |
-| `nodes[].name` | Node display name (orchestrated only) | `azlocal-node01` |
+| `networking.ntp_servers` | `$NTPServer` (Direct tab), the NTP peers of the **Time** step | `192.0.2.4` |
+| `nodes[].management.ip_address` | The address the OS configuration connects to | `192.0.2.11` |
+| `nodes[].name` | The node | `iic-azl-n01` |
 
 :::info infrastructure.yml — NTP server list
-`networking.ntp_servers` is a YAML list. The direct script uses the primary (first) entry.
-The orchestrated script joins all entries as a space-separated `manualpeerlist`, with the `0x8` flag on each peer.
+`networking.ntp_servers` is a YAML list. The script on the Direct tab uses the primary (first) entry.
+The **Time** step of the OS configuration sets all entries as the NTP peers of each node.
 :::
 
 :::info What Microsoft Learn specifies (Azure Local 2610)
@@ -97,7 +96,7 @@ From [Install the Azure Local operating system](https://learn.microsoft.com/en-u
 w32tm /config /manualpeerlist:"ntpserver.contoso.com,0x8" /syncfromflags:manual /update
 ```
 
-The `0x8` flag tells Windows Time Service to send NTP requests as a client. Learn's command does not include `/reliable:YES`, which would mark every node as a reliable time source, so the scripts below no longer set it. Learn gives the single-peer form only; for several peers the scripts put `,0x8` on each peer in the space-separated list (standard `w32tm` syntax). "Once the machine is domain joined, it synchronizes its time from the PDC emulator." If you domain join the nodes before deployment (supported from 2604; see [Task 03: Manual OS installation](../phase-02-os-installation/manual-installation/task-03-manual-os-installation.mdx#optional-domain-join-before-deployment)), the node follows the domain hierarchy once joined; the manual peer still matters while the node is in a workgroup.
+The `0x8` flag tells Windows Time Service to send NTP requests as a client. Learn's command does not include `/reliable:YES`, which would mark every node as a reliable time source, so the commands on this page and the OS configuration do not set it. Learn gives the single-peer form only; for several peers the OS configuration puts `,0x8` on each peer in the space-separated list (standard `w32tm` syntax). "Once the machine is domain joined, it synchronizes its time from the PDC emulator." If you domain join the nodes before deployment (supported from 2604; see [Task 03: Manual OS installation](../phase-02-os-installation/manual-installation/task-03-manual-os-installation.mdx#optional-domain-join-before-deployment)), the node follows the domain hierarchy once joined; the manual peer still matters while the node is in a workgroup.
 :::
 
 ---
@@ -109,11 +108,11 @@ The `0x8` flag tells Windows Time Service to send NTP requests as a client. Lear
 
 Run on each node individually — via RDP, console, or KVM.
 
-**Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Set-NTPConfiguration.ps1`
+The commands below are an example to run by hand. The earlier toolkit script `Set-NTPConfiguration.ps1` is removed; the OS configuration does this task in its **Time** step.
 
 Set `$NTPServer` to the first entry from `networking.ntp_servers` in `infrastructure.yml`.
 
-```powershell title="Set-NTPConfiguration.ps1"
+```powershell title="Configure NTP on the node"
 # -- Edit before running -------------------------------------------------
 $NTPServer = "REPLACE_WITH_NTP_SERVER" # networking.ntp_servers
 # ------------------------------------------------------------------------
@@ -134,22 +133,27 @@ if ((w32tm /query /status | Out-String) -match 'Local CMOS Clock') { Write-Host 
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp` holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Set-NTPConfiguration.ps1` is removed. The OS configuration does this task in its **Time** step.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Invoke-ConfigureNTP-Orchestrated.ps1` | Configures NTP on all Azure Local nodes via PSRemoting. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Set-NTPConfiguration.ps1` | Configures the NTP time source on the local Azure Local node. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The one entry point of the OS configuration. It runs `Set-AzureLocalNodeConfiguration.ps1` for each node: it reads the node, changes only what differs from `infrastructure.yml`, and reports. `-Step` limits the run to one step. |
 
-Requires: PowerShell 7.
+The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run
 
 ```powershell
-.\Set-NTPConfiguration.ps1
+# Plan (the default): read every node and list what would change
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Time
+
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Time -Mode Apply
 ```
+
+See [how the run works](./how-the-run-works.mdx).
 
 </TabItem>
 </Tabs>
@@ -177,11 +181,11 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 | Issue | Root Cause | Remediation |
 |-------|------------|-------------|
-| Script hard-fails on startup | `REPLACE` placeholder value remains | Edit `#region CONFIGURATION` with the NTP server from `infrastructure.yml` |
+| The example stops at once | `$NTPServer` still holds `REPLACE_WITH_NTP_SERVER` | Set it to the first entry of `networking.ntp_servers` |
 | Stratum 16 after resync | NTP server unreachable or DNS not resolving | Verify NTP server IP; confirm Task 06 (DNS) passed; check firewall rules |
 | `w32tm /resync` exits non-zero | Time service not yet fully started | Wait 10 seconds and re-run `w32tm /resync /force` manually |
-| Orchestrated: `ntp_servers not found` | Key missing or wrong path in `infrastructure.yml` | Confirm `active_directory.ntp_servers:` list exists in yml |
-| Orchestrated: node unreachable | WinRM not enabled or firewall blocking | Verify WinRM configured (Task 01); check firewall allows port 5985/5986 |
+| OS configuration: the node is Blocked in the plan | `networking.ntp_servers` is missing | Add the list to `infrastructure.yml`, then run the plan again |
+| OS configuration: node unreachable | WinRM not enabled or firewall blocking | Verify WinRM configured (Task 01); check firewall allows port 5985/5986 |
 | Time keeps drifting back | VM host overriding guest time | Disable Hyper-V Time Synchronization integration service if applicable |
 
 ---

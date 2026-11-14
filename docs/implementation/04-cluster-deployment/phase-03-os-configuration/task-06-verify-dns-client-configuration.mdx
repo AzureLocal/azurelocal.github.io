@@ -60,13 +60,11 @@ This task does **not** change any configuration — it is a read-only validation
 The servers verified here become the permanent DNS servers of the instance. Before you pass this task, confirm they are the same on all nodes, that at least one runs outside the instance, that none is a public resolver such as 8.8.8.8, and that none is in the Azure Resource Bridge ranges (see the list in [Task 05](./task-05-configure-dns-servers.mdx)).
 :::
 
-**What the scripts do:**
+**What the checks do:**
 
-1. Hard-fail on any `REPLACE` placeholder remaining in `#region CONFIGURATION`
-2. Find the management adapter by **exact name** — exit and list adapters if not found
-3. Read the configured DNS servers and compare against expected values from `infrastructure.yml`
-4. Test resolution of five critical Azure endpoints
-5. Report pass/fail per server and per endpoint; exit with code 1 on any failure
+1. Read the configured DNS servers of each node and compare them with `networking.management.dns_servers`
+2. Test that each node resolves the domain and the Azure endpoints
+3. Report the result per node
 
 ---
 
@@ -85,10 +83,10 @@ The servers verified here become the permanent DNS servers of the instance. Befo
 
 | `infrastructure.yml` path | Script variable | Example |
 |----------------------------|----------------|---------|
-| `nodes[].network_adapters[].name` | `$ManagementNIC` | `Embedded NIC 1` |
-| `networking.management.dns_servers` | `$ExpectedDNSPrimary` | `10.100.10.2` |
-| `networking.management.dns_servers` | `$ExpectedDNSSecondary` | `10.100.10.3` |
-| `nodes[].network_adapters[].ip_address` | PSRemoting target (orchestrated only) | `10.100.200.11` |
+| `nodes[].network_adapters[].name` | The management adapter | `Embedded NIC 1` |
+| `networking.management.dns_servers` | Primary DNS server | `192.0.2.4` |
+| `networking.management.dns_servers` | Secondary DNS server | `192.0.2.5` |
+| `nodes[].management.ip_address` | The address the OS configuration connects to | `192.0.2.11` |
 
 ---
 
@@ -97,48 +95,54 @@ The servers verified here become the permanent DNS servers of the instance. Befo
 <Tabs groupId="deployment-method">
 <TabItem value="direct" label="Direct Script (On Node)" default>
 
-Run the check from a host that can reach the nodes.
+Run the check on each node (console, KVM or RDP). The earlier toolkit script `Test-DnsConfiguration.ps1` is removed.
 
-**Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-06-verify-dns-client-configuration/powershell/Test-DnsConfiguration.ps1`
-
-Verifies the DNS configuration of Azure Local nodes. Parameters: `-NodeNames`, `-DnsServers`, `-DomainName`.
-
-| Parameter | `infrastructure.yml` key |
-|-----------|----------------------------|
-| `-DnsServers` | `networking.management.dns_servers` |
-| `-NodeNames` | `nodes[].name` |
-| `-DomainName` | `identity.active_directory.domain_fqdn` |
+| Value | `infrastructure.yml` key |
+|-------|----------------------------|
+| The expected DNS servers | `networking.management.dns_servers` |
+| The domain | `identity.active_directory.domain_fqdn` |
 
 ```powershell
-./Test-DnsConfiguration.ps1 -NodeNames @("node-01", "node-02") -DnsServers @("192.0.2.10", "192.0.2.11") -DomainName "example.com"
+# The DNS servers of every adapter that has one. Compare them with networking.management.dns_servers.
+Get-DnsClientServerAddress -AddressFamily IPv4 |
+    Where-Object { $_.ServerAddresses.Count -gt 0 } |
+    Select-Object InterfaceAlias, ServerAddresses
+
+# The domain and an Azure endpoint must resolve
+Resolve-DnsName improbability.cloud
+Resolve-DnsName management.azure.com
 ```
 
-The check exits with a failure when a node has other DNS servers than you expect or cannot resolve the domain.
+The check fails when a node has other DNS servers than the file or cannot resolve a name.
 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-06-verify-dns-client-configuration` holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Test-DnsConfiguration.ps1` is removed. The OS configuration does this task in its **Dns** step.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-06-verify-dns-client-configuration/powershell/Invoke-VerifyDNS-Orchestrated.ps1` | Verifies DNS client configuration on all Azure Local nodes via PSRemoting. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-06-verify-dns-client-configuration/powershell/Test-DnsConfiguration.ps1` | Verifies DNS configuration for Azure Local nodes. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The one entry point of the OS configuration. It runs `Set-AzureLocalNodeConfiguration.ps1` for each node: it reads the node, changes only what differs from `infrastructure.yml`, and reports. `-Step` limits the run to one step. |
 
-Requires: PowerShell 7.
+The Plan mode is read only: it reads the DNS servers back and lists any difference. The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate) checks them again before the deployment (check `ND-006`).
+
+The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run
 
 ```powershell
-.\Invoke-VerifyDNS-Orchestrated.ps1
-.\Invoke-VerifyDNS-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure.yml"
+# Plan (the default): read every node and list what would change
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Dns
 
-.\Test-DnsConfiguration.ps1 -NodeNames @("node01", "node02") -DomainName "improbability.cloud"
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Dns -Mode Apply
 ```
+
+See [how the run works](./how-the-run-works.mdx).
 
 </TabItem>
 </Tabs>
@@ -169,13 +173,11 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 | Issue | Root Cause | Remediation |
 |-------|------------|-------------|
-| Script hard-fails on startup | `REPLACE` placeholder values remain | Edit `#region CONFIGURATION` with real values from `infrastructure.yml` |
 | `Adapter not found` error | NIC name in config doesn't match | Run `Get-NetAdapter` on the node; update `nodes[].network_adapters[].name` in `infrastructure.yml` |
 | DNS mismatch — wrong IPs returned | Task 05 not completed or used incorrect values | Re-run Task 05 with correct values from `infrastructure.yml` |
 | Azure endpoints fail to resolve | DNS servers unreachable or missing forwarders | Verify DNS servers are online; check forwarder configuration on DNS server |
 | Endpoints resolve internally but not externally | DNS forwarder not configured for internet | Add an internet forwarder on the customer DNS server. The forwarder belongs on the DNS server; do not configure a public resolver such as `8.8.8.8` as one of the DNS servers of the nodes (not supported) |
-| Orchestrated script: `cluster.management_nic_name not found` | Key missing from `infrastructure.yml` | Add `management_nic_name` to the `cluster:` block in yml |
-| Orchestrated script: `dns.primary not found` | Key missing from `infrastructure.yml` | Add `networking.management.dns_servers` to the `dns:` block in yml |
+| OS configuration: the node is Blocked in the plan | `networking.management.dns_servers` is missing | Add the DNS servers to `infrastructure.yml`, then run the plan again |
 | Node unreachable via PSRemoting | WinRM not configured or firewall blocking | Verify Task 01 (WinRM) completed; check firewall rules |
 
 ---

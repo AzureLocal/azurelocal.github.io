@@ -54,20 +54,18 @@ This task is **optional but strongly recommended** for production environments. 
 
 ## Security Group Requirements
 
-The following groups must exist in Active Directory before running this task (created in [Phase 01 Task 02](../../03-onprem-readiness/phase-01-active-directory/task-02-security-groups.mdx)). Groups are sourced from `identity.active_directory.security_groups[].name` in `infrastructure.yml`. Only the 5 groups with non-empty `local_groups` arrays are applied to cluster nodes — WAC groups are applied on the WAC server only.
+The following groups must exist in Active Directory before running this task (created in [Phase 01 Task 02](../../03-onprem-readiness/phase-01-active-directory/task-02-security-groups.mdx)). Groups are the entries of `identity.active_directory.security_groups[]` in `infrastructure.yml`. Each entry's `local_groups` lists the local groups of every node it goes into. An entry with no `local_groups` is not applied to the nodes. For example:
 
-| YAML Key | Example AD Group | Local Group(s) Assigned | Access Level |
-|---|---|---|---|
-| `azure_local_admins` | `SG-IIC-clus01-AZL-Administrators` | `Administrators` | Full node admin |
-| `operations` | `SG-IIC-clus01-AZL-Operations` | `Remote Management Users`, `Remote Desktop Users` | PSRemoting + RDP |
-| `read_only` | `SG-IIC-clus01-AZL-ReadOnly` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` | View-only |
-| `hyperv_admins` | `SG-IIC-clus01-AZL-HyperV-Administrators` | `Hyper-V Administrators`, `Remote Management Users` | VM management |
-| `storage_admins` | `SG-IIC-clus01-AZL-Storage-Administrators` | `Administrators` | Storage + CSV |
-| `wac_admins` | `SG-IIC-clus01-AZL-WAC-Administrators` | _(WAC server only — `local_groups: []`)_ | WAC full admin |
-| `wac_users` | `SG-IIC-clus01-AZL-WAC-Users` | _(WAC server only — `local_groups: []`)_ | WAC standard |
+| Example `name` | `local_groups` on every node | Purpose |
+|---|---|---|
+| `sg-iic-azl-01-admins` | `Administrators` | Full admin access to cluster nodes |
+| `sg-iic-azl-01-operations` | `Remote Management Users`, `Remote Desktop Users` | PowerShell remoting and RDP; no full admin |
+| `sg-iic-azl-01-readonly` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` | View only; cannot change configuration |
+| `sg-iic-azl-01-hyperv-admins` | `Hyper-V Administrators`, `Remote Management Users` | VM management through PowerShell remoting |
+| `sg-iic-azl-01-storage-admins` | `Administrators` | CSV and Storage Spaces Direct management |
 
 :::tip Idempotent Operation
-Both scripts handle the "already a member" condition gracefully — re-running on a node where groups are already applied is safe and will not produce errors.
+The script handles the "already a member" condition gracefully — re-running on a node where groups are already applied is safe and will not produce errors.
 :::
 
 ---
@@ -102,15 +100,15 @@ Repeat the following steps on **every cluster node**:
  - Press `Win + R`, type `lusrmgr.msc`, press **Enter**
  - Navigate to **Groups**
 
-3. **For each of the 5 node-applied groups, add the AD group to the corresponding local group**:
+3. **For each group that has `local_groups`, add the AD group to the corresponding local group**:
 
- | AD Group _(from `identity.active_directory.security_groups[].name`)_ | Local Group |
+ | AD Group (`identity.active_directory.security_groups[].name`) | Local Group (`local_groups`) |
  |---|---|
- | `identity.active_directory.security_groups[].local_groups` | `Administrators` |
- | `identity.active_directory.security_groups[].local_groups` | `Remote Management Users`, `Remote Desktop Users` |
- | `identity.active_directory.security_groups[].local_groups` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` |
- | `identity.active_directory.security_groups[].local_groups` | `Hyper-V Administrators`, `Remote Management Users` |
- | `identity.active_directory.security_groups[].local_groups` | `Administrators` |
+ | `sg-iic-azl-01-admins` | `Administrators` |
+ | `sg-iic-azl-01-operations` | `Remote Management Users`, `Remote Desktop Users` |
+ | `sg-iic-azl-01-readonly` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` |
+ | `sg-iic-azl-01-hyperv-admins` | `Hyper-V Administrators`, `Remote Management Users` |
+ | `sg-iic-azl-01-storage-admins` | `Administrators` |
 
  For each entry: double-click the local group → **Add...** → enter `<domain-netbios>\<AD group name>` → **Check Names** → **OK**
 
@@ -118,9 +116,9 @@ Repeat the following steps on **every cluster node**:
 
 #### Validation
 
-- [ ] All 5 AD groups are present in their respective local groups on every node
-- [ ] PSRemoting works for an `operations` group member: `Enter-PSSession -ComputerName <node>`
-- [ ] RDP works for a `read_only` group member
+- [ ] Every AD group with `local_groups` is present in its local groups on every node
+- [ ] PSRemoting works for a member of a group in `Remote Management Users`: `Enter-PSSession -ComputerName <node>`
+- [ ] RDP works for a member of a group in `Remote Desktop Users`
 
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
@@ -133,9 +131,18 @@ Repeat the following steps on **every cluster node**:
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-03-security-groups-applied-to-nodes/powershell/Invoke-ApplySecurityGroups-Orchestrated.ps1` | Add AD security groups to local groups on every cluster node, driven by identity.active_directory.security_groups[].local_groups in infrastructure.yml. Skips entries where local_groups is empty (wac_admins, wac_users , those are applied on the WAC server only). |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-03-security-groups-applied-to-nodes/powershell/Invoke-ApplySecurityGroups-Orchestrated.ps1` | Adds the AD security groups to the local groups of every cluster node, from `identity.active_directory.security_groups[].local_groups` of `infrastructure.yml`. Skips entries with no `local_groups`. |
+
+The login is `-Credential`, else the LCM account of the file (`identity.active_directory.lcm_user`, the password a secret reference). The script never prompts: with neither, or without the domain or the LCM user name, it stops with exit code 2.
 
 Requires: PowerShell 7.
+
+#### Run
+
+```powershell
+./Invoke-ApplySecurityGroups-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-ApplySecurityGroups-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+```
 
 </TabItem>
 </Tabs>
@@ -146,10 +153,10 @@ Requires: PowerShell 7.
 
 | Check | Command | Expected Result |
 |-------|---------|----------------|
-| `Administrators` membership | `Get-LocalGroupMember -Group 'Administrators' \| Where-Object ObjectClass -eq 'Group'` | `azure_local_admins` and `storage_admins` groups listed on every node |
-| `Remote Management Users` | `Get-LocalGroupMember -Group 'Remote Management Users' \| Where-Object ObjectClass -eq 'Group'` | `operations` and `hyperv_admins` groups listed on every node |
-| `Remote Desktop Users` | `Get-LocalGroupMember -Group 'Remote Desktop Users' \| Where-Object ObjectClass -eq 'Group'` | `operations` and `read_only` groups listed on every node |
-| `Hyper-V Administrators` | `Get-LocalGroupMember -Group 'Hyper-V Administrators' \| Where-Object ObjectClass -eq 'Group'` | `hyperv_admins` group listed on every node |
+| `Administrators` membership | `Get-LocalGroupMember -Group 'Administrators' \| Where-Object ObjectClass -eq 'Group'` | The groups whose `local_groups` name `Administrators` (for example `sg-iic-azl-01-admins`) listed on every node |
+| `Remote Management Users` | `Get-LocalGroupMember -Group 'Remote Management Users' \| Where-Object ObjectClass -eq 'Group'` | The groups whose `local_groups` name it (for example `sg-iic-azl-01-operations`, `sg-iic-azl-01-hyperv-admins`) listed on every node |
+| `Remote Desktop Users` | `Get-LocalGroupMember -Group 'Remote Desktop Users' \| Where-Object ObjectClass -eq 'Group'` | The groups whose `local_groups` name it (for example `sg-iic-azl-01-operations`, `sg-iic-azl-01-readonly`) listed on every node |
+| `Hyper-V Administrators` | `Get-LocalGroupMember -Group 'Hyper-V Administrators' \| Where-Object ObjectClass -eq 'Group'` | The groups whose `local_groups` name it (for example `sg-iic-azl-01-hyperv-admins`) listed on every node |
 | PSRemoting test | `Enter-PSSession -ComputerName <node> -Credential <ops-user>` | Session opens without error |
 
 ---

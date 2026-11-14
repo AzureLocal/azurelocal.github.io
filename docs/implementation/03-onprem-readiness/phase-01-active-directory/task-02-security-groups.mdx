@@ -68,17 +68,26 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 ## Security Group Model
 
-Group names follow the convention `SG-{org_prefix}-{cluster_id}-AZL-{role}`, built dynamically from two fields in `identity.active_directory.security_groups[].name` in `infrastructure.yml`. The `cluster_id` suffix makes groups unique per cluster in the same domain.
+Each group is an entry of `identity.active_directory.security_groups[]` in `infrastructure.yml`: `name`, `purpose`, `members` (filled in [Task 05](./task-05-group-assignments.mdx)) and `local_groups` (applied to the nodes after the deployment). You choose the names; put the cluster in the name so groups stay unique per cluster in the same domain. The earlier object-by-role form (`security_groups_by_role`, with `org_prefix` and `cluster_id`) is removed from the registry.
 
-| YAML Key | Role Suffix | Local Group Assignments | Purpose |
-|---|---|---|---|
-| `azure_local_admins` | `AZL-Administrators` | `Administrators` | Full admin access to cluster nodes |
-| `operations` | `AZL-Operations` | `Remote Management Users`, `Remote Desktop Users` | PSRemoting + RDP; no full admin |
-| `read_only` | `AZL-ReadOnly` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` | View-only; cannot change config |
-| `wac_admins` | `AZL-WAC-Administrators` | _(WAC server only)_ | WAC full admin; not applied to cluster nodes |
-| `wac_users` | `AZL-WAC-Users` | _(WAC server only)_ | WAC standard users; not applied to cluster nodes |
-| `hyperv_admins` | `AZL-HyperV-Administrators` | `Hyper-V Administrators`, `Remote Management Users` | VM management via PSRemoting |
-| `storage_admins` | `AZL-Storage-Administrators` | `Administrators` | CSV and S2D management |
+| Example `name` | `local_groups` on every node | Purpose |
+|---|---|---|
+| `sg-iic-azl-01-admins` | `Administrators` | Full admin access to cluster nodes |
+| `sg-iic-azl-01-operations` | `Remote Management Users`, `Remote Desktop Users` | PowerShell remoting and RDP; no full admin |
+| `sg-iic-azl-01-readonly` | `Remote Desktop Users`, `Performance Monitor Users`, `Event Log Readers` | View only; cannot change configuration |
+| `sg-iic-azl-01-hyperv-admins` | `Hyper-V Administrators`, `Remote Management Users` | VM management through PowerShell remoting |
+| `sg-iic-azl-01-storage-admins` | `Administrators` | CSV and Storage Spaces Direct management |
+
+```yaml
+identity:
+  active_directory:
+    security_groups:
+      - { name: "sg-iic-azl-01-admins",         purpose: "Administrators of the instance", local_groups: ["Administrators"] }
+      - { name: "sg-iic-azl-01-operations",     purpose: "PowerShell remoting and RDP",    local_groups: ["Remote Management Users", "Remote Desktop Users"] }
+      - { name: "sg-iic-azl-01-readonly",       purpose: "View only",                      local_groups: ["Remote Desktop Users", "Performance Monitor Users", "Event Log Readers"] }
+      - { name: "sg-iic-azl-01-hyperv-admins",  purpose: "VM management",                  local_groups: ["Hyper-V Administrators", "Remote Management Users"] }
+      - { name: "sg-iic-azl-01-storage-admins", purpose: "Storage and CSV management",     local_groups: ["Administrators"] }
+```
 
 ## Security Group Creation
 
@@ -88,16 +97,14 @@ Core Azure Local instance security groups in the enterprise Security Groups OU (
 <TabItem value="manual" label="Active Directory Users and Computers" default>
 
 1. Open **Active Directory Users and Computers**.
-2. Navigate to the enterprise Security Groups OU (for example, `OU=Security Groups,OU=IAM,DC=azurelocal,DC=cloud`).
+2. Navigate to the OU for the groups (the toolkit script uses the dedicated OU of the instance, `identity.active_directory.ou_path`, for example `OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud`).
 3. Right‑click OU → New → Group.
-4. Create each group (Global / Security) — replace `IIC` with your `org_prefix` and `azurelocal-clus01` with your `cluster_id`:
- - `SG-IIC-azurelocal-clus01-AZL-Administrators`
- - `SG-IIC-azurelocal-clus01-AZL-Operations`
- - `SG-IIC-azurelocal-clus01-AZL-ReadOnly`
- - `SG-IIC-azurelocal-clus01-AZL-WAC-Administrators`
- - `SG-IIC-azurelocal-clus01-AZL-WAC-Users`
- - `SG-IIC-azurelocal-clus01-AZL-HyperV-Administrators`
- - `SG-IIC-azurelocal-clus01-AZL-Storage-Administrators`
+4. Create each group of `identity.active_directory.security_groups[]` (Global / Security), with its `name`, for example:
+ - `sg-iic-azl-01-admins`
+ - `sg-iic-azl-01-operations`
+ - `sg-iic-azl-01-readonly`
+ - `sg-iic-azl-01-hyperv-admins`
+ - `sg-iic-azl-01-storage-admins`
 5. For each group: Properties → Protection: enable "Protect object from accidental deletion".
 6. Document intended membership policy (who owns adds/removals).
 
@@ -112,14 +119,18 @@ Core Azure Local instance security groups in the enterprise Security Groups OU (
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-02-security-groups/powershell/New-ADSecurityGroups.ps1` | Creates Active Directory security groups for Azure Local cluster management. Supports `-WhatIf`. |
+| `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-02-security-groups/powershell/New-ADSecurityGroups.ps1` | Creates the Active Directory security groups that `identity.active_directory.security_groups[]` of `infrastructure.yml` lists: a global security group per entry, in `identity.active_directory.ou_path`, with the `purpose` as its description. Idempotent; never deletes a group or changes a membership. Supports `-WhatIf`. |
+
+Parameters: `-InfrastructureFile` (mandatory), `-Credential` (without it, the account that runs the script), `-LogPath`. The script asks nothing. Run task 01 (`Set-ADConfiguration.ps1`) first: it creates the OU.
 
 Requires: PowerShell 7; modules ActiveDirectory.
 
 #### Run
 
 ```powershell
-.\New-ADSecurityGroups.ps1 -DomainController "dc01.improbability.cloud" -ClusterName "azl-cluster-01"
+./New-ADSecurityGroups.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./New-ADSecurityGroups.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>
@@ -128,8 +139,9 @@ Requires: PowerShell 7; modules ActiveDirectory.
 ## Verification
 
 ```powershell
-# Replace IIC / azurelocal-clus01 with your org_prefix / cluster_id
-Get-ADGroup -LDAPFilter "(cn=SG-IIC-azurelocal-clus01-AZL-*)" -SearchBase $GroupsOuDn | Select-Object Name
+# The OU of identity.active_directory.ou_path; the names of identity.active_directory.security_groups[]
+$GroupsOuDn = "OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud"
+Get-ADGroup -LDAPFilter "(cn=sg-iic-azl-01-*)" -SearchBase $GroupsOuDn | Select-Object Name
 ```
 
 ## Validation Checklist

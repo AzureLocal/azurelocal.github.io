@@ -161,20 +161,18 @@ if ($aces.Count -gt 0 -and -not $missing) {
 
 ### PowerShell
 
-> **When to use**: Check Active Directory from the management host before you deploy: domain connectivity, the OU and the delegation of the LCM account.
+> **When to use**: Check Active Directory from the management host before you deploy. `Invoke-VerifyADPrerequisites-Orchestrated.ps1` in the task folder is a placeholder (it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3). The pre-cluster verification does the checks.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template/powershell/Invoke-VerifyADPrerequisites-Orchestrated.ps1` | Verifies Active Directory prerequisites on cluster nodes before ARM template deployment. |
-
-Requires: PowerShell 7.
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Its `identity` category checks the OU, the LCM user and its rights (for example `ID-AD-003`, `ID-AD-004`, `ID-AD-007`, `ID-AD-010`). |
 
 #### Run
 
 ```powershell
-.\Invoke-VerifyADPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category identity
 ```
 
 </TabItem>
@@ -205,7 +203,7 @@ az ad sp list --filter "appId eq '1412d89f-b8a8-4111-b4fd-e82905cbd85d'" --query
 
 The application ID `1412d89f-b8a8-4111-b4fd-e82905cbd85d` is the Azure Local resource provider application ID published on Microsoft Learn; looking it up by application ID is the documented method.
 
-**Expected output**: A single GUID, e.g. `ab12cd34-ef56-7890-ab12-cd34ef567890`
+**Expected output**: A single GUID, e.g. `00000000-0000-0000-0000-000000000000`
 
 **Next**: Open `infrastructure.yml`, find `azure.hci_resource_provider_object_id`, and paste the GUID as the value.
 
@@ -214,19 +212,7 @@ The application ID `1412d89f-b8a8-4111-b4fd-e82905cbd85d` is the Azure Local res
 
 ### PowerShell
 
-> **When to use**: Look up the tenant specific Object ID of the `Microsoft.AzureStackHCI` resource provider. With `-UpdateConfig` the script writes it to `azure.hci_resource_provider_object_id` of the file.
-
-#### Script
-
-| Script | What it does |
-|---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template/powershell/Get-HciResourceProviderObjectId.ps1` | Retrieves the Microsoft.AzureStackHCI resource provider service principal Object ID and updates infrastructure.yml with the value. |
-
-#### Run
-
-```powershell
-.\Get-HciResourceProviderObjectId.ps1 -ConfigPath .\configs\infrastructure.yml
-```
+> **No separate script.** The earlier `Get-HciResourceProviderObjectId.ps1` is removed. Set `azure.hci_resource_provider_object_id` with the lookup in the other tab, or leave it empty: `Invoke-AzureLocalArmDeployment.ps1` then looks the object ID up in the directory when it runs (it needs permission to read the Azure Local resource provider's service principal). `New-AzureLocalArmParameters.ps1` also takes it as `-HciResourceProviderObjectId`.
 
 </TabItem>
 </Tabs>
@@ -527,19 +513,18 @@ Invoke-Command -ComputerName $nodeIP -Credential $cred -ScriptBlock {
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyADDomainStatus-Orchestrated.ps1` | Orchestrated wrapper , verifies AD domain join status across all cluster nodes. Supports `-WhatIf`. |
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1` | Orchestrated cluster health verification for Azure Local deployments. Supports `-WhatIf`. |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Verifies the deployed instance against `infrastructure.yml`. Read only. It checks, in order: every node is a cluster node and Up; the identity (with Active Directory every node is joined to `identity.active_directory.domain_fqdn` and its secure channel works; with local identity every node is in a workgroup); the quorum; the security groups; SSH; storage; the VM images and the logical networks in Azure. Supports `-WhatIf`. |
 
-Requires: PowerShell 7.
+The earlier verification scripts of this task folder (`Test-ClusterHealth.ps1`, `Invoke-VerifyClusterHealth-Orchestrated.ps1` and the `-Standalone` copies) are removed. The other scripts in the folder are placeholders: they print `NOT IMPLEMENTED`, change nothing and exit with code 3. See [Task 09: Post-deployment verification](../../../../phase-06-post-deployment/task-09-post-deployment-verification.mdx).
+
+The login is `-Credential`, else the account the file names: the LCM user (`identity.active_directory.lcm_user`) with Active Directory, the local administrator (`identity.local_admin`) with local identity. The password is a secret reference. The script never prompts: with neither it stops with exit code 2.
 
 #### Run
 
 ```powershell
-.\Invoke-VerifyADDomainStatus-Orchestrated.ps1
-
-.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml
-.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -TargetNode iic-01-n01
-.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
 ```
 
 </TabItem>

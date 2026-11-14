@@ -74,20 +74,23 @@ Walk the data center and verify each checklist item below. Take photos of:
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Test-HardwareInspection.ps1` is removed. Two schema 5 scripts do the work.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/powershell/Test-HardwareInspection.ps1` | Performs hardware inspection and validation for Azure Local nodes. |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Get-HardwareInventory.ps1` | Reads the hardware of every node from its BMC over the standard Redfish API and writes one inventory file: model, serial, CPU, memory, drives, network ports with MAC addresses, GPU, TPM, BIOS, firmware and BMC version. Read only. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Check `ND-008` covers processors and memory; `ND-011` covers Secure Boot, TPM 2.0 and the same BIOS version on all nodes. |
 
-Requires: PowerShell 7.
+The BMC login comes from `hardware.bmc` (or `nodes[].bmc`) in `infrastructure.yml`; the password is a secret reference. No script prompts.
 
 #### Run
 
 ```powershell
-.\Test-HardwareInspection.ps1 -NodeNames @("node01-idrac", "node02-idrac")
+./Get-HardwareInventory.ps1 -InfrastructureFile ./infrastructure.yml
+
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category nodes
 ```
 
 </TabItem>

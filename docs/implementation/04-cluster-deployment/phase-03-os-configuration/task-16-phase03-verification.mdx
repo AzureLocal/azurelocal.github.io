@@ -92,20 +92,21 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-phase03-verification` holds only placeholders (`Invoke-Phase03Verification-Orchestrated.ps1`, `Test-Phase03Verification.ps1`). A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. Two schema 5 scripts verify the phase.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-phase03-verification/powershell/Invoke-Phase03Verification-Orchestrated.ps1` | Verifies all Phase 03 OS Configuration tasks (01-11) across cluster nodes. |
-
-Requires: PowerShell 7.
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | In Plan mode (the default) it reads every node and lists what still differs from `infrastructure.yml`. It changes nothing. `-FailOnPendingChanges` makes it exit 1 when any change is still pending. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Checks `ND-001` to `ND-012` cover the nodes after this phase. |
 
 #### Run
 
 ```powershell
-.\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -FailOnPendingChanges -ReportDirectory ./out
+
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category nodes
 ```
 
 </TabItem>
@@ -198,24 +199,24 @@ $results.GetEnumerator() | ForEach-Object {
 
 ## Expected Output
 
-A passing run produces a result like:
+A passing run of the script on the Direct tab produces a result like:
 
 ```
 [2026-03-07 14:30:00] [----] ================================================================
 [2026-03-07 14:30:00] [----] Phase 03 OS Configuration — Verification (Tasks 01–11)
 [2026-03-07 14:30:00] [----] ================================================================
 ...
-[2026-03-07 14:30:05] [----] NODE: azl-lab-01-n01 (192.168.211.11)
+[2026-03-07 14:30:05] [----] NODE: iic-azl-n01 (192.0.2.11)
 [2026-03-07 14:30:05] [----] ================================================================
  [PASS] Task01_WinRM PASS (Service=Running, Listener=Active)
  [PASS] Task02_RDP PASS (Reg=0, FWRules=3)
- [PASS] Task0304_StaticIP PASS (IP=192.168.211.11 DHCP=Disabled)
- [PASS] Task05_DNS PASS (10.250.1.36, 10.250.1.37)
+ [PASS] Task0304_StaticIP PASS (IP=192.0.2.11 DHCP=Disabled)
+ [PASS] Task05_DNS PASS (192.0.2.4, 192.0.2.5)
  [PASS] Task06_DNSResolve PASS
- [PASS] Task07_NTP PASS (Stratum=4 Source=10.250.1.36)
+ [PASS] Task07_NTP PASS (Stratum=4 Source=192.0.2.4)
  [PASS] Task08_ICMP PASS (2 rule(s) enabled)
  [PASS] Task09_Adapters PASS (No disconnected adapters still enabled)
- [PASS] Task10_Hostname PASS (azl-lab-01-N01)
+ [PASS] Task10_Hostname PASS (iic-azl-n01)
  [PASS] Task11_Storage PASS (4 non-boot disk(s) clean and online)
 ...
 [2026-03-07 14:31:50] [PASS] All 4 node(s) passed Phase 03 verification.
@@ -247,15 +248,15 @@ A passing run produces a result like:
 
 | Parameter | Required | Description |
 |---|---|---|
-| `-ConfigPath` | Recommended | Path to `infrastructure.yml`. Auto-detects if omitted |
-| `-Credential` | No | PSCredential. Resolved from Key Vault if omitted |
-| `-TargetNode` | No | Filter to specific node(s) by hostname or IP |
+| `-InfrastructureFile` | Yes | Path to `infrastructure.yml` |
+| `-Credential` | No | The nodes' local administrator. Default: `identity.local_admin` of the file, the password read through its secret reference |
+| `-Node` | No | Limit the run to these nodes |
+| `-FailOnPendingChanges` | No | Plan mode only: exit 1 when any change is still pending |
 
-**Script location:**
+These are parameters of `Invoke-AzureLocalOsConfiguration.ps1`:
+
 ```
-scripts/deploy/04-cluster-deployment/phase-03-os-configuration/
- task-13-phase03-verification/powershell/
- Invoke-Phase03Verification-Orchestrated.ps1
+scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1
 ```
 
 ---

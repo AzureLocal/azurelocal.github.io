@@ -105,20 +105,28 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **When to use**: Turn on the Windows Server subscription add-on of the instance from a management workstation, when `operations.licensing.windows_server_subscription` is `true`.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Enable-WindowsServerSubscription.ps1` | Activates Windows Server subscription on Azure Local nodes. Supports `-WhatIf`. |
+| `scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Enable-WindowsServerSubscription.ps1` | Turns on the Windows Server subscription add-on of the Azure Local instance when `operations.licensing.windows_server_subscription` is `true`. Reads the instance with `Get-AzStackHciCluster`, does nothing when the add-on is already Enabled, otherwise runs `Update-AzStackHciCluster -DesiredPropertyWindowsServerSubscription Enabled` and reads the instance again. Supports `-WhatIf`. |
+
+When the key is `false` or missing, the script does nothing and says so. It never turns the add-on off. It refuses `scenario.connectivity` `disconnected` (exit 2).
+
+The script reads `azure.tenant_id`, `azure.subscription_id`, `azure.resource_group`, `cluster.name`, `scenario.connectivity` and `operations.licensing.windows_server_subscription`. It does not sign in and asks nothing: run `Connect-AzAccount` to the tenant of `azure.tenant_id` first, with Contributor or Owner on the instance. Exit codes: 0 Enabled (or not asked for); 1 an Azure call or a precondition failed; 2 a value in the file is missing or not usable.
+
+`Invoke-WindowsServerSubscription-Orchestrated.ps1` and the Azure CLI `az-enable-windows-server-subscription.ps1` in the task folder are placeholders (exit code 3).
 
 Requires: PowerShell 7; modules Az.Accounts, Az.StackHCI.
 
 #### Run
 
 ```powershell
-.\Enable-WindowsServerSubscription.ps1 -ClusterName "azl-cluster01"
+Connect-AzAccount -Tenant 00000000-0000-0000-0000-000000000000
+./Enable-WindowsServerSubscription.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Enable-WindowsServerSubscription.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

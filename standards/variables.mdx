@@ -11,7 +11,7 @@
 One master, one file, one template per tool.
 
 - **The registry is the only master.** `config/variables/schema/master-registry.yaml` defines every variable: the keys of `infrastructure.yml`, the parameters and settings of each tool, the secret names and the environment variables. Nothing else defines a variable. A variable that exists only in a script, a file, a hand-edited schema or a document is drift, and the tests fail on it.
-- **One `infrastructure.yml` feeds every tool.** It describes one Azure Local instance. It follows schema 5 (the current version is 5.6.21). The toolkit scripts, azurelocal-ztp, azurelocal-sonar, Trailwright, the ARM deployment, Terraform and Ansible all read this file.
+- **One `infrastructure.yml` feeds every tool.** It describes one Azure Local instance. It follows schema 5 (the current version is 5.6.26). The toolkit scripts, azurelocal-ztp, azurelocal-sonar, Trailwright, the ARM deployment, Terraform and Ansible all read this file.
 - **One generated template per tool.** Each tool gets a template with only the keys it reads, under `config/variables/templates/tools`.
 - **Secrets are references, never values.** One resolver reads them, through four providers (Azure Key Vault is the default). No script names a vault.
 - **Every script parameter is registered.** A generator reads each script and writes its parameters into the registry.
@@ -69,7 +69,7 @@ Every script takes the file as a parameter, for example `-InfrastructureFile ./i
 azurelocal-toolkit/config/variables/schema/master-registry.yaml
 ```
 
-For every variable the registry holds the type, the description, the default, the allowed values, an example, the schema version that added it (`since`) and the tools that read it (`used_by`). The registry version is 5.0.48 and it follows infrastructure schema 5.6.21.
+For every variable the registry holds the type, the description, the default, the allowed values, an example, the schema version that added it (`since`) and the tools that read it (`used_by`). The registry version is 5.0.58 and it follows infrastructure schema 5.6.26.
 
 ### Layout
 
@@ -122,6 +122,8 @@ From the registry the generator writes one master file (`templates/infrastructur
 | `discovery` | Hardware discovery (toolkit) | `templates/tools/discovery.yml` |
 | `trailwright` | azurelocal-trailwright, which writes the file | `templates/tools/trailwright.yml` |
 | `ranger` | azurelocal-ranger, design comparison | `templates/tools/ranger.yml` |
+| `terraform` | Terraform (toolkit), the other route for the Azure foundation and the CI/CD runners | `templates/tools/terraform.yml` |
+| `ansible` | Ansible (toolkit), the other route for the on-premises steps | `templates/tools/ansible.yml` |
 
 To give a tool its input from your master file, cut the file:
 
@@ -205,7 +207,7 @@ $value = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'provisioning.s
 
 Without `-Path`, `Import-AzlInfrastructure` looks for `$env:AZL_INFRASTRUCTURE_FILE`, then `./infrastructure.yml`, then `./config/infrastructure.yml`.
 
-A script that a person calls takes `-InfrastructureFile`. It never asks for a value: no `Read-Host`, and no `Get-Credential` where the file can answer.
+A script that a person calls takes `-InfrastructureFile`, and the parameter is mandatory. It never asks for a value: no `Read-Host` and no `Get-Credential`. A credential comes from a `-Credential` parameter or from a secret reference in `infrastructure.yml`. When neither gives one, the script stops with exit code 2.
 
 ---
 
@@ -255,7 +257,7 @@ Run these from the toolkit root. All must pass.
 
 ```powershell
 ./config/variables/scripts/validate-registry.ps1                      # structure of the registry
-./config/variables/scripts/validate-variables.ps1 -StrictUnknown     # every path in the registry
+./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path ./config/variables/examples/infrastructure.example.yml   # the example against the schema and the rules
 ./config/variables/scripts/New-InfrastructureArtifacts.ps1 -Check    # generated files are current
 ./config/variables/scripts/New-ScriptParameterRegistry.ps1 -Check    # every script parameter is registered
 Invoke-Pester ./tests/variables, ./tests/infrastructure
@@ -274,7 +276,14 @@ The variable map (`config/variables/docs/VARIABLE-MAP.md`) answers "what variabl
 
 ## The Earlier Layout (Retired)
 
-The earlier toolkit layout was a nested `variables.yml` (registry 4.0.0) read by loader helpers. Schema 5 replaces it, together with the environment file of azurelocal-ztp and the export of Trailwright 1.x. New scripts do not use the earlier layout or its loaders. [MIGRATION.md](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/MIGRATION.md) says where every old key went. Older scripts that are not migrated yet are listed in the enforcement baseline and are moved to schema 5 one task at a time.
+The earlier toolkit layout was a nested `variables.yml` (registry 4.0.0) read by loader helpers. Schema 5 replaces it, together with the environment file of azurelocal-ztp and the export of Trailwright 1.x. The earlier layout is gone from the toolkit (registry 5.0.58, schema 5.6.26):
+
+- `config/variables/variables.example.yml`, `variables.schema.json`, `validate-variables.ps1`, `Test-VariablesFile.ps1` and `Test-VariableConfig.ps1` are removed. Use `config/variables/examples/infrastructure.example.yml` and `Test-InfrastructureFile.ps1`.
+- `config-loader.ps1` and `keyvault-helper.ps1` are removed. Scripts use `Import-AzlInfrastructure` and `AzlSecret.psm1`.
+- No script takes `-ConfigPath` or `-ConfigFile`. Every script takes `-InfrastructureFile`.
+- The registry-only keys `environment.env_name`, `env_type`, `env_owner`, `env_description`, `site.env_name` and `identity.active_directory.security_groups_by_role` are removed. Use `environment.name`, `type`, `owner`, `description`, `site.name` and `identity.active_directory.security_groups[]`.
+
+[MIGRATION.md](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/MIGRATION.md) says where every old key and every removed script went.
 
 ---
 

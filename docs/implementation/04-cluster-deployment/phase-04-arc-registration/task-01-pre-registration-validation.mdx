@@ -85,7 +85,7 @@ Learn 2610 says the person who registers the machines must be the resource group
 1. **SPN exists** in Entra ID with the configured App ID
 2. **RBAC roles** — SPN has required permissions on the Arc resource group
 3. **Key Vault** — SPN secret is stored and accessible
-4. **Arc Gateway** — Gateway resource exists and is provisioned (skip with `-NoArcGateway`)
+4. **Arc Gateway** — Gateway resource exists and is provisioned (only when the outbound path uses an Arc gateway)
 :::
 
 <Tabs groupId="deployment-method">
@@ -155,23 +155,21 @@ if ($secret -and $secret.Enabled) {
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder holds only placeholders (`Invoke-ArcPrerequisites-Orchestrated.ps1` and the Azure CLI `az-test-arc-prerequisites.ps1`). A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Test-ArcPrerequisites.ps1` and `Test-ArcPrerequisites-Orchestrated.ps1` are removed. The pre-cluster verification checks the Azure side.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1` | Validates Azure Arc registration prerequisites across all cluster nodes. |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Test-ArcPrerequisites-Orchestrated.ps1` | See the comment-based help of the script. |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Test-ArcPrerequisites.ps1` | See the comment-based help of the script. |
-
-Requires: PowerShell 7.
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Its `azure` category checks the subscription, the resource group, the resource providers, the Key Vault references and the Arc endpoints. |
 
 #### Run
 
 ```powershell
-.\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category azure
 ```
+
+A run with `-Category` is partial: it ends with exit code 3 when nothing blocks, and it never passes the ARM precondition.
 
 </TabItem>
 
@@ -194,22 +192,12 @@ OS configuration is now complete on the cluster nodes. Running Environment Check
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
-
-#### Script
-
-| Script | What it does |
-|---|---|
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1` | Validates Azure Arc registration prerequisites across all cluster nodes. |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Test-ArcPrerequisites-Orchestrated.ps1` | See the comment-based help of the script. |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Test-ArcPrerequisites.ps1` | See the comment-based help of the script. |
-
-Requires: PowerShell 7.
+> **No script in this task folder.** The pre-cluster verification probes the endpoints from each node: check `AZ-023` (the Azure Arc endpoints on 443) and check `NW-005` (the documented outbound endpoints, directly or through the proxy).
 
 #### Run
 
 ```powershell
-.\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category azure,network
 ```
 
 </TabItem>

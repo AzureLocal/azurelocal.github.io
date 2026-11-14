@@ -91,23 +91,27 @@ Repeat on each node.
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname` holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Set-NodeHostname.ps1` is removed. The OS configuration does this task in its **Hostname** step.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname/powershell/Invoke-ConfigureHostname-Orchestrated.ps1` | Configures hostnames on all Azure Local nodes via PSRemoting. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname/powershell/Set-NodeHostname.ps1` | See the comment-based help of the script. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The one entry point of the OS configuration. It runs `Set-AzureLocalNodeConfiguration.ps1` for each node: it reads the node, changes only what differs from `infrastructure.yml`, and reports. `-Step` limits the run to one step. |
 
-Requires: PowerShell 7.
+The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run
 
 ```powershell
-.\Invoke-ConfigureHostname-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
-.\Invoke-ConfigureHostname-Orchestrated.ps1
+# Plan (the default): read every node and list what would change
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Hostname
+
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Hostname -Mode Apply
 ```
+
+See [how the run works](./how-the-run-works.mdx).
 
 </TabItem>
 </Tabs>

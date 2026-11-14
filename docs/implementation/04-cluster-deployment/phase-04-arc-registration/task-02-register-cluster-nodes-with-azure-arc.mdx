@@ -177,23 +177,26 @@ Invoke-AzStackHciArcInitialization `
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder holds only placeholders (`Invoke-ArcRegistration-Orchestrated.ps1` and the Azure CLI `Register-AzureLocalArc.ps1`). A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Register-NodesWithArc.ps1` and `Register-AzureLocalArc-Remote.ps1` are removed. The OS configuration registers a machine that was installed from an ISO in its **ArcRegistration** step. A machine that ZTP provisioned is already registered.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/azurecli/Register-AzureLocalArc.ps1` | See the comment-based help of the script. |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1` | Registers Azure Local cluster nodes with Azure Arc. |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-AzureLocalArc-Remote.ps1` | See the comment-based help of the script. |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-NodesWithArc.ps1` | See the comment-based help of the script. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The **ArcRegistration** step looks the Arc machine up in Azure. When it is missing or not Connected, it runs `Invoke-AzStackHciArcInitialization` on the node over WinRM, with an ARM token from the run's own Azure sign-in. |
 
-Requires: PowerShell 7.
+The step reads `azure.subscription_id`, `azure.resource_group`, `deployment.solution_version` (passed as `TargetSolutionVersion`, so the cmdlet never asks), and the proxy and bypass list of the outbound path (`networking.outbound.proxy` or `networking.outbound.private_path`). When the path needs a value the file does not give, the node is Blocked in the plan. The nodes' local administrator comes from `identity.local_admin` (a secret reference) or `-Credential`. The script never prompts.
 
 #### Run
 
 ```powershell
-.\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
+Connect-AzAccount   # the run uses this sign-in for the ARM token
+
+# Plan (the default): which machines would be registered
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ArcRegistration
+
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ArcRegistration -Mode Apply
 ```
 
 </TabItem>
@@ -264,7 +267,7 @@ Get-Service himds | Select-Object Name, Status
 | SPN auth fails | Verify App ID/Secret and that the identity has `Azure Connected Machine Onboarding` and `Azure Connected Machine Resource Administrator` on the Arc resource group |
 | Prompted to choose a solution version | `TargetSolutionVersion` not supplied; pass it (for example `12.2610.1004.50`) for unattended, reproducible runs |
 | Token expired mid-run | Re-run `Connect-AzAccount` and get a fresh token |
-| WinRM denied (orchestrated) | Confirm WinRM enabled from Phase 03 and session context (domain trust) is valid — use `-Credential` override if needed |
+| WinRM denied (OS configuration) | Confirm WinRM is enabled from Phase 03 and that `identity.local_admin` holds the local administrator. Pass `-Credential` to use another account |
 | Arc init timeout | Check node internet connectivity (Task 01) |
 | Bootstrap reports InProgress | OEM updates or registration still running — run Task 03 to monitor |
 | Bootstrap reports Failed (401) | SPN token expired or session lost — re-run registration with fresh auth |

@@ -36,7 +36,7 @@ validate → plan → deploy-foundation → configure-onprem → deploy-cluster 
 | **deploy-foundation** | Terraform apply, output export | Cloud (shared) | Manual approval |
 | **configure-onprem** | Ansible playbooks (AD, OS, Arc) | Self-hosted | Manual approval |
 | **deploy-cluster** | Azure CLI (ARM) | Cloud (shared) | Manual approval |
-| **configure-operations** | Ansible playbooks (monitoring, WAC, syslog) | Self-hosted | Manual approval |
+| **configure-operations** | Ansible playbooks (monitoring, management VMs) | Self-hosted | Manual approval |
 | **validate-deployment** | Connectivity tests, compliance checks | Self-hosted | Manual |
 
 ## Pipeline Structure
@@ -49,7 +49,7 @@ pipelines/gitlab/
 │   ├── deploy-foundation.yml   # Terraform apply
 │   ├── configure-onprem.yml    # AD prep, OS config, Arc registration
 │   ├── deploy-cluster.yml      # ARM cluster deployment
-│   ├── configure-operations.yml # Monitoring, WAC, Syslog
+│   ├── configure-operations.yml # Monitoring, management VMs
 │   └── validate-deployment.yml # Post-deployment tests
 └── templates/
     ├── terraform-plan-apply.yml # Reusable TF plan/apply template
@@ -77,14 +77,14 @@ The **configure-onprem** and **configure-operations** stages require a self-host
 
 - **Network access**: WinRM (5986), LDAP (389), Kerberos (88) to on-premises infrastructure
 - **Software**: Python 3.10+, Ansible >= 2.15, PowerShell >= 7.0, Azure CLI
-- **Tags**: `azurelocal`, `self-hosted`
+- **Tags**: the tag in the CI/CD variable `AZL_RUNNER_LABEL` (`devops.pipelines.runner_label`). Task 05 of the CI/CD setup sets `AZL_RUNNER_LABEL` and `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` from `infrastructure.yml` as project variables ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). The pipeline files hold no runner tag and no environment name.
 
 ### Stage Details
 
 #### Validate Stage
 - `terraform:validate` — `terraform init -backend=false && terraform validate && terraform fmt -check`
 - `ansible:lint` — `ansible-lint playbooks/ roles/` and `ansible-playbook --syntax-check`
-- `config:validate` — Load and verify `variables.yml` via PowerShell helper
+- `config:validate` — Checks `infrastructure.yml` with `scripts/common/infrastructure/Test-InfrastructureFile.ps1` (the path is the variable `INFRASTRUCTURE_FILE`)
 
 #### Plan Stage
 - `terraform:plan` — Generates a plan artifact passed to the apply job
@@ -159,7 +159,7 @@ Sign-in is `AZURE_AUTH` = `oidc` (a federated app registration, through `id_toke
 |---|---|---|
 | `arm-preconditions` | `arm-plan` | Read only. Parameters and every precondition. Always runs |
 | `arm-validate` | `arm-validate` | Runs when `ARM_MODE` is `Validate` or `ValidateAndDeploy` |
-| `arm-deploy` | `arm-deploy` | **Manual** job in the protected environment `azure-local-deploy`. It re-checks every precondition and that these parameters validated. `ARM_RESUME=true` resubmits a failed Deploy |
+| `arm-deploy` | `arm-deploy` | **Manual** job in the protected environment in `AZL_ENVIRONMENT_ARM_DEPLOYMENT` (`devops.pipelines.environments.arm_deployment`). It re-checks every precondition and that these parameters validated. `ARM_RESUME=true` resubmits a failed Deploy |
 
 CI/CD variables: `ARM_MODE`, `AZURE_AUTH`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `INFRASTRUCTURE_FILE`, `OS_CONFIGURATION_REPORT`, `HANDOFF_FILE`, `ARM_ACKNOWLEDGE`. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 

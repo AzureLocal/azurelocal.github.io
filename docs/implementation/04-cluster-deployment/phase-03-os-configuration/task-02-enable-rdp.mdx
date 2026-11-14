@@ -59,7 +59,7 @@ WinRM is already enabled from [Task 01](./task-01-enable-winrm-for-remote-manage
 |-------------|-------------|--------|
 | Task 01 Complete | WinRM enabled on all nodes | [Task 01: Enable WinRM](./task-01-enable-winrm-for-remote-management.mdx) |
 | iDRAC console access | Virtual Console accessible for each node (if using SConfig or Direct tab) | `infrastructure.yml`: `nodes[].bmc.ip_address` |
-| Administrator credentials | Local admin password set during OS installation | Key Vault: `node-<hostname>-local-admin` |
+| Administrator credentials | Local admin password set during OS installation | `infrastructure.yml`: `identity.local_admin.password` (a secret reference) |
 
 ---
 
@@ -91,24 +91,27 @@ Run on each node via iDRAC Virtual Console.
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-02-enable-rdp` holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Enable-RDP.ps1` is removed. The OS configuration does this task in its **RemoteManagement** step.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-02-enable-rdp/powershell/Enable-RDP.ps1` | Enables Remote Desktop Protocol on the local Azure Local node. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-02-enable-rdp/powershell/Invoke-EnableRdp-Orchestrated.ps1` | Enables RDP on all Azure Local nodes from the management server. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The one entry point of the OS configuration. It runs `Set-AzureLocalNodeConfiguration.ps1` for each node: it reads the node, changes only what differs from `infrastructure.yml`, and reports. `-Step` limits the run to one step. |
 
-Requires: PowerShell 5.1; PowerShell 7.
+The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run
 
 ```powershell
-.\Enable-RDP.ps1
+# Plan (the default): read every node and list what would change
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step RemoteManagement
 
-.\Invoke-EnableRdp-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step RemoteManagement -Mode Apply
 ```
+
+See [how the run works](./how-the-run-works.mdx).
 
 </TabItem>
 </Tabs>

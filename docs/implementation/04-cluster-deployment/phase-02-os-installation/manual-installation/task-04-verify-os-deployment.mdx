@@ -68,7 +68,7 @@ This task confirms Task 03 produced a healthy installation on every node.
 |-------------|-------------|--------|
 | Task 03 Complete | OS installation finished on all nodes | [Task 03](./task-03-manual-os-installation.mdx) |
 | iDRAC console access | Virtual Console accessible for each node | `infrastructure.yml`: `nodes[].bmc.ip_address` |
-| Administrator credentials | Local admin password set during Task 03 | Key Vault: `node-<hostname>-local-admin` |
+| Administrator credentials | Local admin password set during Task 03 | `infrastructure.yml`: `identity.local_admin.password` (a secret reference) |
 
 ---
 
@@ -161,22 +161,19 @@ Perform Steps 1–5 for each remaining node before proceeding.
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Test-OsDeployment.ps1` is removed. The pre-cluster verification checks the installed OS from the management host.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-02-os-installation/task-04-verify-os-deployment/powershell/Test-OsDeployment.ps1` | Verifies OS deployment on Azure Local nodes. |
-
-Requires: PowerShell 7.
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Checks `ND-001` (every node answers over WinRM), `ND-003` (all nodes run the same OS build), `ND-004` (the build is the one the target solution version ships with) and `ND-009` (the boot disk is at least the minimum size). |
 
 #### Run
 
 ```powershell
-.\Test-OsDeployment.ps1 -NodeNames @("node01", "node02")
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category nodes
 ```
-
 </TabItem>
 </Tabs>
 

@@ -38,10 +38,10 @@ Every script reads its values from `infrastructure.yml` (schema 5). A script car
 
 ### Config-Driven Rules
 
-- Take the file as `-InfrastructureFile` (older scripts that are not migrated yet take `-ConfigPath`).
+- Take the file as `-InfrastructureFile`, a mandatory parameter. No script takes `-ConfigPath` or `-ConfigFile`. A run settings file (OS configuration, ARM deployment, pre-cluster verification) is `-SettingsFile`.
 - Read it with `Import-AzlInfrastructure` from `scripts/common/infrastructure/AzlInfrastructure.psm1`. Read only the keys the script needs, and list them in the help.
 - Never hard-code a value that a deployment chooses (an address, a name, an ID, a region). The enforcement test `tests/variables/Enforcement.Tests.ps1` fails the build on it.
-- Never ask for a value with `Read-Host` or `Get-Credential` when the file can answer.
+- Never ask for a value. No `Read-Host` and no `Get-Credential`: a credential comes from `-Credential` or from a secret reference in the file.
 - Register every parameter in the master registry. `./config/variables/scripts/New-ScriptParameterRegistry.ps1` does it from the `param()` block. A parameter that is not registered fails a test.
 - A new key goes into the registry first. See [Variable Management](variables).
 
@@ -71,7 +71,7 @@ A password in the file is a secret reference (`keyvault://<vault>/<secret>`, `en
 
 1. **`-Credential` parameter**: if passed, use it.
 2. **The reference in the file**: resolved by the resolver, in memory only.
-3. If neither works, the script exits with an error. It does not prompt.
+3. If neither works, the script stops with exit code 2. It does not prompt.
 
 ### Exit Codes
 

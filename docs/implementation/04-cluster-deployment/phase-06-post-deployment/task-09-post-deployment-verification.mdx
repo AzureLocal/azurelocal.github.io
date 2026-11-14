@@ -55,8 +55,6 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 | Task | Check | Expected |
 |------|-------|----------|
-| 01 | WAC gateway service running | `Running` |
-| 01 | WAC port 443 reachable | `TcpTestSucceeded : True` |
 | 02 | Quorum type configured | `CloudWitness` or `FileShareWitness` |
 | 02 | Quorum state | `Normal` |
 | 03 | Admin AD group in `Administrators` on all nodes | Present |
@@ -85,19 +83,13 @@ individual tasks after they complete or when CLI/PSRemoting access is unavailabl
 
 ---
 
-#### Task 01 — Windows Admin Center
-
-1. RDP or console into the WAC server (`iic-wac01.azurelocal.cloud`)
-2. Run `Get-Service ServerManagementGateway` — expected: `Status = Running`
-3. Browse to `https://iic-wac01.azurelocal.cloud:443`
-4. Navigate to **Settings** → **Extensions** → **Installed extensions**
-5. Confirm **Dell EMC OpenManage Integration** is listed
-
 #### Task 02 — Cluster Quorum
 
-1. In WAC, connect to cluster `iic-clus01`
-2. Navigate to **Settings** → **Witness**
-3. Confirm quorum type is set (`CloudWitness` or `FileShareWitness`) and state is `Normal`
+On a cluster node, run:
+```powershell
+Get-ClusterQuorum | Format-List Cluster, QuorumResource, QuorumType
+```
+Confirm a witness is set (`CloudWitness` or `FileShareWitness`). The script on the other tab also checks that the quorum state is `Normal`.
 
 #### Task 03 — Security Groups
 
@@ -121,7 +113,7 @@ Expected: `TcpTestSucceeded : True` for all nodes.
 
 **S2D deployments:**
 
-1. In WAC → `iic-clus01` → **Storage** → **Volumes** — confirm all CSV volumes are **Healthy** and **Online**
+1. On a cluster node, run `Get-ClusterSharedVolume` and `Get-VirtualDisk` — confirm all CSV volumes are **Online** and **Healthy**
 2. In Azure Portal → **Azure Local** → `iic-clus01` → **Storage paths** — confirm all show **Succeeded**
 
 **SAN deployments:**
@@ -146,21 +138,37 @@ logical networks show provisioning state **Succeeded** and VLAN IDs match the si
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **When to use**: Verify the deployed instance from a management workstation. The script is read only.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Orchestrated: verifies all Phase 06 post-deployment tasks against infrastructure.yml. |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Verifies a deployed Azure Local instance against `infrastructure.yml`. Read only. Supports `-WhatIf` (lists the checks and runs none). |
 
-Requires: PowerShell 7.
+It checks, in this order:
+
+1. **Cluster nodes**: every node of `nodes[]` is a cluster node and its state is Up.
+2. **Identity**: with `scenario.identity` `active_directory`, every node is joined to `identity.active_directory.domain_fqdn` and its secure channel works. With `local_identity`, every node is in a workgroup and the cluster name resource has `ADAware` 2.
+3. **Quorum**: a quorum type is set and the quorum state is Normal. The deployment creates the witness from `cluster.witness`.
+4. **Security groups**: each node has at least one group in Administrators and in Remote Management Users (from `identity.active_directory.security_groups[].local_groups`). Active Directory only.
+5. **SSH**: sshd runs on each node and TCP 22 answers.
+6. **Storage**: a non-primordial storage pool is healthy, at least one cluster shared volume exists and every one is Online.
+7. **VM images in Azure**: the number of images that Succeeded is not below the number in `storage.vm_images[]`.
+8. **Logical networks in Azure**: the number that Succeeded is not below the number in `networking.logical_networks[]`.
+
+The login is `-Credential`, else the account the file names: the LCM user (`identity.active_directory.lcm_user`) with Active Directory, the local administrator (`identity.local_admin`) with local identity. The password is a secret reference. The script never prompts: with neither it stops with exit code 2. Exit codes: 0 every check passed; 1 a check failed; 2 a value in the file is missing or there is no login.
+
+`Invoke-PostDeploymentVerification-Orchestrated.ps1` and the Azure CLI `az-verify-post-deployment.ps1` in the task folder are placeholders (exit code 3).
+
+Requires: PowerShell 7; modules FailoverClusters, Storage; the Azure CLI, signed in, for checks 7 and 8.
 
 #### Run
 
 ```powershell
-# Dry-run (logs planned checks, no execution):
-.\Invoke-VerifyPostDeployment.ps1 -WhatIf
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
 ```
 
 </TabItem>
@@ -172,7 +180,6 @@ Requires: PowerShell 7.
 
 All of the following must be true before proceeding to Phase 17:
 
-- [ ] WAC accessible and gateway service (`ServerManagementGateway`) running
 - [ ] Cluster quorum configured and state is `Normal`
 - [ ] Security groups applied to all cluster nodes (`Administrators` + `Remote Management Users`)
 - [ ] SSH running on all cluster nodes, port 22 reachable

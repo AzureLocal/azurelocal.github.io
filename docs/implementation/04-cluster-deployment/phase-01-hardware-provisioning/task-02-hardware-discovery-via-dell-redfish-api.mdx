@@ -140,6 +140,8 @@ All subsequent tasks depend on these values. Do not proceed to Task 03 until `in
 | `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1` | Phase 01, Task 02: hardware discovery of every node through the Redfish API of its BMC (read only). This version: Dell iDRAC. |
 | `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Update-InfrastructureYml-FromDiscovery.ps1` | Writes the serial numbers and port MACs found by hardware discovery into infrastructure.yml. Supports `-WhatIf`. |
 
+The BMC login comes from `hardware.bmc` (a node's `nodes[].bmc` wins) in `infrastructure.yml`. The password is a secret reference. `-Credential` overrides it. The script never prompts: without either, it stops with exit code 2.
+
 Requires: PowerShell 7.
 
 #### Run
@@ -147,9 +149,9 @@ Requires: PowerShell 7.
 ```powershell
 ./Get-HardwareInventory.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-.\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml
+.\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
 
-.\Update-InfrastructureYml-FromDiscovery.ps1 -ConfigPath .\infrastructure.yml
+.\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
 ```
 
 </TabItem>

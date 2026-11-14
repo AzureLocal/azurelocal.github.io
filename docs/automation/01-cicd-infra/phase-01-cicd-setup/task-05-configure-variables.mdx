@@ -55,7 +55,26 @@ Configure CI/CD pipeline environment variables for each target Azure subscriptio
 
 ## Values from infrastructure.yml
 
-The script reads `azure.tenant_id`, `azure.subscription_id` and `devops.state` (the Terraform backend: subscription, resource group, storage account, container, key) of `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+The script reads `azure.tenant_id`, `azure.subscription_id`, `devops.state` (the Terraform backend: subscription, resource group, storage account, container, key) and `devops.pipelines` of `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+### The runner label and the approval environments of the pipelines
+
+From schema 5.6.25 the toolkit's pipeline files hold no runner label, agent pool or environment name. These keys give them:
+
+| Key | What it is |
+|-----|------------|
+| `devops.pipelines.runner_label` | The one label by which the pipelines choose the general runner: `runs-on` on GitHub (after `self-hosted` and `linux`) and `tags` on GitLab. It must be an entry of `devops.runners[].labels` of the general runner, and a label no other runner of the repository has. Azure DevOps chooses the runner by its pool, `devops.runners[].pool`, and ignores this key. |
+| `devops.pipelines.environments.os_configuration` | The environment that gates the Apply job of the OS configuration pipelines. |
+| `devops.pipelines.environments.os_configuration_clear_storage` | The environment of the second approval in front of a storage wipe (stage `ConfirmStorageWipe` of the Azure DevOps OS configuration pipeline). Use other approvers than for `os_configuration` where you can. |
+| `devops.pipelines.environments.arm_deployment` | The environment that gates the Deploy job of the ARM deployment pipelines. |
+| `devops.pipelines.environments.cicd_infra` | The environment that gates the Apply job of the CI/CD infrastructure pipelines (the runners). |
+| `devops.pipelines.environments.terraform_deployment` | The environment that gates the Terraform apply and the on-premises Ansible jobs of the Terraform and Ansible sample pipelines. |
+
+Each environment value is the name of an entry of `devops.environments[]` that has `approval_required: true`. Two pipelines may use the same entry.
+
+The script sets them as GitHub repository variables or GitLab project CI/CD variables: `AZL_RUNNER_LABEL` and one `AZL_ENVIRONMENT_...` variable per pipeline. Azure DevOps reads the pool and the environment of a job before any variable exists, so there they are run parameters with no default. The script prints the values to enter.
+
+Create the variables (or run this task) before the first pipeline run. With `AZL_RUNNER_LABEL` empty, a job has no label to select a runner by. On GitLab, for the first run of the CI/CD infrastructure stage, before the runners exist, give `AZL_RUNNER_LABEL` a shared runner tag when you run the pipeline.
 
 ---
 
@@ -220,15 +239,13 @@ variables:
 
 
 :::info Toolkit script
-The toolkit scripts for this task are PowerShell 7. They read `infrastructure.yml`. Run them with `-WhatIf` first: the script reads what exists and lists what it would do.
+The toolkit script for this task is PowerShell 7. It reads `infrastructure.yml` through the mandatory `-InfrastructureFile` parameter and never prompts. It ends with exit code 0, 1 or 2. Run it with `-WhatIf` first: the script reads what exists and lists what it would do.
 :::
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables/azurecli/az-configure-cicd-variables.ps1` | Task 05. Sets ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_CLIENT_ID and the backend variables per environment. Azure CLI variant. Supports `-WhatIf`. |
-| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables/powershell/Invoke-CicdVariables-Orchestrated.ps1` | Task 05. Sets ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_CLIENT_ID and the backend variables per environment. Orchestrated variant: reads the one infrastructure file. Supports `-WhatIf`. |
 | `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables/powershell/Set-CicdVariables.ps1` | Task 05. Sets ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_CLIENT_ID and the backend variables per environment. Supports `-WhatIf`. |
 
 Requires: PowerShell 7.
@@ -236,8 +253,6 @@ Requires: PowerShell 7.
 #### Run
 
 ```powershell
-./Invoke-CicdVariables-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
-
 ./Set-CicdVariables.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
 

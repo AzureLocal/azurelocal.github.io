@@ -95,7 +95,7 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 Run on each node individually via console, KVM, or RDP.
 
-**Toolkit script:** `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional/powershell/Clear-StorageConfiguration-Direct.ps1`
+Run the commands below by hand. The toolkit no longer ships them as a script; the OS configuration does this task in its **ClearStorage** step.
 
 ```powershell
 # Task 11 - Clear Previous Storage Configuration (run locally on target node)
@@ -120,25 +120,26 @@ Get-Disk | Where Number -Ne $Null | Where IsBoot -Ne $True | Where IsSystem -Ne 
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional` holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Clear-StorageConfiguration.ps1` and `Clear-StorageConfiguration-Direct.ps1` are removed. The OS configuration does this task in its **ClearStorage** step.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional/powershell/Clear-StorageConfiguration-Direct.ps1` | See the comment-based help of the script. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional/powershell/Clear-StorageConfiguration.ps1` | Clears and prepares storage for Azure Local deployment. Supports `-WhatIf`. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional/powershell/Invoke-ClearStorage-Orchestrated.ps1` | Runs Clear-StorageConfiguration on each node via PSRemoting from the management server. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The one entry point of the OS configuration. It runs `Set-AzureLocalNodeConfiguration.ps1` for each node: it reads the node, changes only what differs from `infrastructure.yml`, and reports. `-Step` limits the run to one step. |
 
-Requires: PowerShell 7.
+The wipe runs only in Apply mode and only when `os_configuration.clear_storage` is `true` (or `-ClearStorage` is given). The Plan mode writes `wipe-list.json`; the Apply run needs it as `-ApprovedWipeList` and wipes nothing else. Boot, system, SAN and USB disks are never touched.
+
+The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run
 
 ```powershell
-.\Clear-StorageConfiguration.ps1 -NodeNames @("node01", "node02") -Force
-
-.\Invoke-ClearStorage-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -Force
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ClearStorage -Mode Plan -ReportDirectory ./out
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ClearStorage -Mode Apply -ApprovedWipeList ./out/wipe-list.json -ReportDirectory ./out
 ```
+
+See [how the run works](./how-the-run-works.mdx).
 
 </TabItem>
 </Tabs>

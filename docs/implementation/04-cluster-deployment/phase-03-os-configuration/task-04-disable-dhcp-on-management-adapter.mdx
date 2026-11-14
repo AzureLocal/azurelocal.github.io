@@ -58,7 +58,7 @@ Task 03 must be complete and the management static IP verified on every node bef
 this task. If DHCP is disabled before static IP is set, the node will lose connectivity.
 :::
 
-**What the scripts do:**
+**What the script on the Direct tab does:**
 
 1. Enumerate all `NetAdapter` entries on the node
 2. **Skip** adapters whose `InterfaceDescription` matches the exclusion pattern
@@ -97,19 +97,15 @@ after cluster deployment.
 |-------------|-------------|--------|
 | Task 03 complete | Static IP configured and verified on all nodes | [Task 03: Configure Static IP](./task-03-configure-static-ip-address.mdx) |
 | Node accessible | Reachable via static management IP | Network validation |
-| Admin credentials | Local admin (direct) or domain admin (orchestrated) | Deployment credentials |
+| Admin credentials | The nodes' local administrator | `infrastructure.yml`: `identity.local_admin` (the password is a secret reference) |
 
 ---
 
 ## Configuration Reference
 
-The `infrastructure.yml` path used by the orchestrated script:
+The OS configuration reads the ports of each node from `nodes[].network_adapters[]` of `infrastructure.yml`. On every port the file lists with `ip_assignment: none`, its **Network** step removes DHCP, the address and the default gateway, so only the management port (`nodes[].management.ip_address`, for example `192.0.2.11`) has an address.
 
-| yml Path | Used for | Example |
-|----------|----------|---------|
-| `nodes[].network_adapters[].ip_address` | PSRemoting target IP (management NIC static) | `10.100.200.11` |
-
-The exclusion pattern is defined in `#region CONFIGURATION` of both scripts. No other values are read from `infrastructure.yml` — this task does not modify networking parameters, only disables DHCP.
+The script on the Direct tab reads nothing from `infrastructure.yml`. Its exclusion pattern is defined in its `#region CONFIGURATION`.
 
 ---
 
@@ -120,7 +116,7 @@ The exclusion pattern is defined in `#region CONFIGURATION` of both scripts. No 
 
 Run on each node individually — via RDP, console, or KVM.
 
-**Toolkit script**: `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter/powershell/Disable-DHCPOnAllAdapters.ps1`
+**Example script**: run it on the node by hand. The toolkit no longer ships it (the earlier `Disable-DHCPOnAllAdapters.ps1` is removed); the OS configuration does this task in its **Network** step.
 
 **Configuration block** (edit before running):
 
@@ -354,25 +350,27 @@ Ethernet Remote NDIS Compatible Device Up Skipped (excluded) Skipped
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter` holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Disable-DHCPOnAllAdapters.ps1` is removed. The OS configuration does this task in its **Network** step.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter/powershell/Disable-DHCPOnAllAdapters.ps1` | Disables DHCP on all network adapters except virtual/management adapters. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter/powershell/Invoke-DisableDHCP-Orchestrated.ps1` | Disables DHCP on all physical adapters on every Azure Local node using PSRemoting. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The one entry point of the OS configuration. It runs `Set-AzureLocalNodeConfiguration.ps1` for each node: it reads the node, changes only what differs from `infrastructure.yml`, and reports. `-Step` limits the run to one step. |
 
-Requires: PowerShell 5.1; PowerShell 7.
+The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run
 
 ```powershell
-.\Disable-DHCPOnAllAdapters.ps1
+# Plan (the default): read every node and list what would change
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Network
 
-.\Invoke-DisableDHCP-Orchestrated.ps1
-.\Invoke-DisableDHCP-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure.yml"
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Network -Mode Apply
 ```
+
+See [how the run works](./how-the-run-works.mdx).
 
 </TabItem>
 </Tabs>
@@ -428,8 +426,8 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 | Adapter still showing `Enabled` after script | Script exited with non-zero | Review output log; rerun script and check for errors |
 | Connectivity lost after running | Script disabled DHCP on management NIC before static IP was set | Re-run Task 03 first; boot node via console or iDRAC |
 | `Set-NetIPInterface` access denied | Script not run as local admin | Relaunch PowerShell as Administrator |
-| Orchestrated script: `No infrastructure*.yml found` | Config file not in search path | Pass `-ConfigPath` explicitly: `.\Invoke-DisableDHCP-Orchestrated.ps1 -ConfigPath C:\path\to\infrastructure.yml` |
-| Orchestrated script: `management_ip not found` | Node entry missing `management_ip` in yml | Verify `nodes[].network_adapters[].ip_address` is populated in `infrastructure.yml` |
+| OS configuration: exit code 2 | The file was not given or cannot be read | Pass `-InfrastructureFile` (mandatory) with the path of `infrastructure.yml` |
+| OS configuration: the node is Blocked in the plan | The management address or a port is missing in the file | Check `nodes[].management.ip_address` and `nodes[].network_adapters[]` in `infrastructure.yml` |
 | Node cannot be reached via PSRemoting | WinRM not configured | Run `Enable-PSRemoting -Force` on the node (Task 02 enables RDP — verify WinRM separately) |
 
 ---

@@ -85,18 +85,19 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Set-InfrastructurePrep.ps1` is removed. The OS configuration sets the Windows features and the time source, and the pre-cluster verification checks the node services.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification/powershell/Set-InfrastructurePrep.ps1` | Prepares on-premises infrastructure for Azure Local deployment. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The [OS configuration](../../04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx). It runs `Set-AzureLocalNodeConfiguration.ps1` on each node: it reads each node, changes only what differs from `infrastructure.yml` (for example the `Time` and `Dns` steps), and reports. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Checks `ND-001` to `ND-012` cover the nodes: WinRM, name, OS build, NTP source, DNS servers, pending restart, processors and memory, boot disk, Windows features, Secure Boot and TPM, and cluster membership. |
 
 #### Run
 
 ```powershell
-.\Set-InfrastructurePrep.ps1 -NodeNames @("node-01","node-02") -InstallFeatures
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category nodes
 ```
 
 </TabItem>

@@ -167,12 +167,10 @@ Do NOT set the same password as the built-in `Administrator` account, and do NOT
 
 Run this script directly on each node via RDP or console session. All variables are defined inline — no `infrastructure.yml` or toolkit access required on the node.
 
-**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Deploy-CreateLocalAdmin.ps1`
-
-```powershell title="Deploy-CreateLocalAdmin.ps1 — run on each node directly"
+```powershell title="Create the local administrator — run on each node directly"
 #region CONFIGURATION
-$Username = "REPLACE_LOCAL_ADMIN_USERNAME" # identity.accounts.account_local_admin_username — must be identical on all nodes
-$Password = "REPLACE_LOCAL_ADMIN_PASSWORD" # identity.accounts.account_local_admin_password — minimum 14 characters
+$Username = "REPLACE_LOCAL_ADMIN_USERNAME" # identity.local_admin.username — must be identical on all nodes
+$Password = "REPLACE_LOCAL_ADMIN_PASSWORD" # the value behind identity.local_admin.password — minimum 14 characters
 #endregion CONFIGURATION
 
 if ($Username -match '^REPLACE_') { throw 'Edit the REPLACE_ variables in #region CONFIGURATION before running.' }
@@ -207,24 +205,24 @@ Repeat on every cluster node. Verify the account exists with identical credentia
 
 ### PowerShell
 
-> **When to use**: Create the local accounts on every node before the portal deployment, from the management host.
+> **When to use**: Create the local account on every node before the portal deployment, from the management host.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Deploy-CreateLocalAdmin.ps1` | Creates the required non-built-in local administrator account directly on this node. |
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1` | Creates the required non-built-in local administrator account on all Azure Local nodes via PSRemoting. Mandatory pre-deployment step for Local Identity authentication. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | Its **LocalAdmin** step makes sure the local administrator of `identity.local_admin` (a name other than `Administrator`) exists on every node, is in the Administrators group and has the password of its secret reference. |
 
-Requires: PowerShell 7.
+The earlier `Deploy-CreateLocalAdmin.ps1` is removed. `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1` in the task folder is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The script never prompts.
 
 #### Run
 
 ```powershell
-# Run on each cluster node via RDP or console
-.\Deploy-CreateLocalAdmin.ps1
+# Plan (the default): read every node and list what would change
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step LocalAdmin
 
-.\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step LocalAdmin -Mode Apply
 ```
 
 </TabItem>
@@ -490,9 +488,7 @@ After clicking Create, watch the deployment with [Azure Local Sonar](../../../de
 
 Run directly on a cluster node via RDP or console session.
 
-**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Test-ClusterHealth.ps1`
-
-```powershell title="Test-ClusterHealth.ps1 — run directly on node"
+```powershell title="Cluster health — run directly on node"
 Write-Host "`n=== Cluster Health Verification — $env:COMPUTERNAME ===" -ForegroundColor Cyan
 
 Write-Host "`n--- Cluster Status ---" -ForegroundColor Cyan
@@ -538,16 +534,18 @@ Write-Host "`n[DONE] Cluster health check complete on $env:COMPUTERNAME" -Foregr
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1` | Orchestrated cluster health verification for Azure Local deployments. Supports `-WhatIf`. |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Verifies the deployed instance against `infrastructure.yml`. Read only. It checks, in order: every node is a cluster node and Up; the identity (with local identity every node is in a workgroup and the cluster name resource has `ADAware` 2); the quorum; SSH; storage; the VM images and the logical networks in Azure. Supports `-WhatIf`. |
 
-Requires: PowerShell 7.
+The earlier verification scripts of this task folder (`Test-ClusterHealth.ps1`, `Test-LocalIdentityConfig.ps1`, `Invoke-VerifyClusterHealth-Orchestrated.ps1` and the `-Standalone` copies) are removed. `Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. See [Task 09: Post-deployment verification](../../../../phase-06-post-deployment/task-09-post-deployment-verification.mdx).
+
+The login is `-Credential`, else the local administrator of `identity.local_admin` (the password is a secret reference). The script never prompts: with neither it stops with exit code 2.
 
 #### Run
 
 ```powershell
-.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml
-.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -TargetNode iic-01-n01
-.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
 ```
 
 </TabItem>
@@ -566,9 +564,7 @@ Run these MS-required checks to confirm the cluster deployed in AD-less mode.
 
 Run directly on a cluster node via RDP or console session.
 
-**Script:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Test-LocalIdentityConfig.ps1`
-
-```powershell title="Test-LocalIdentityConfig.ps1 — run directly on node"
+```powershell title="Local identity checks — run directly on node"
 # Check 1: Node must NOT be domain-joined — expected result: WORKGROUP
 $domain = (Get-WmiObject Win32_ComputerSystem).Domain
 Write-Host "Domain membership: $domain" -ForegroundColor $(if ($domain -eq 'WORKGROUP') { 'Green' } else { 'Red' })
@@ -591,21 +587,7 @@ if ($adAware.Value -ne 2) {
 
 > **When to use**: Verify the local identity set-up on all nodes after the deployment.
 
-#### Script
-
-| Script | What it does |
-|---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1` | Orchestrated Local Identity configuration verification for Azure Local deployments. Supports `-WhatIf`. |
-
-Requires: PowerShell 7.
-
-#### Run
-
-```powershell
-.\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath ./infrastructure.yml
-.\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -TargetNode iic-01-n01,iic-01-n02
-.\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
-```
+`Invoke-VerifyPostDeployment.ps1` checks it in its identity part: every node is in a workgroup and the cluster name resource has `ADAware` 2. Run it as shown in [Verify Cluster Health](#verify-cluster-health) above.
 
 </TabItem>
 </Tabs>

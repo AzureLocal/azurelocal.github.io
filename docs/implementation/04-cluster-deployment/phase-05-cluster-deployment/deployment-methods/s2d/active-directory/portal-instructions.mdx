@@ -406,19 +406,18 @@ Get-Volume |
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyADDomainStatus-Orchestrated.ps1` | Orchestrated wrapper , verifies AD domain join status across all cluster nodes. Supports `-WhatIf`. |
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1` | Orchestrated cluster health verification for Azure Local deployments. Supports `-WhatIf`. |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Verifies the deployed instance against `infrastructure.yml`. Read only. It checks, in order: every node is a cluster node and Up; the identity (with Active Directory every node is joined to `identity.active_directory.domain_fqdn` and its secure channel works; with local identity every node is in a workgroup); the quorum; the security groups; SSH; storage; the VM images and the logical networks in Azure. Supports `-WhatIf`. |
 
-Requires: PowerShell 7.
+The earlier verification scripts of this task folder (`Test-ClusterHealth.ps1`, `Invoke-VerifyClusterHealth-Orchestrated.ps1` and the `-Standalone` copies) are removed. The other scripts in the folder are placeholders: they print `NOT IMPLEMENTED`, change nothing and exit with code 3. See [Task 09: Post-deployment verification](../../../../phase-06-post-deployment/task-09-post-deployment-verification.mdx).
+
+The login is `-Credential`, else the account the file names: the LCM user (`identity.active_directory.lcm_user`) with Active Directory, the local administrator (`identity.local_admin`) with local identity. The password is a secret reference. The script never prompts: with neither it stops with exit code 2.
 
 #### Run
 
 ```powershell
-.\Invoke-VerifyADDomainStatus-Orchestrated.ps1
-
-.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml
-.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -TargetNode iic-01-n01
-.\Invoke-VerifyClusterHealth-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
 ```
 
 </TabItem>

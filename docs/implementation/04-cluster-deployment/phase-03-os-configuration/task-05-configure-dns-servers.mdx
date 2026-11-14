@@ -68,16 +68,15 @@ Once the deployment completes, it isn't supported to change the DNS server IPs, 
 5. For Active Directory deployments the DNS server must resolve the Active Directory domain and the public internet endpoints.
 6. The DNS server IPs must not fall in the Azure Resource Bridge ranges (`10.96.0.0/24` for deployments created from 2610, `10.96.0.0/12` for earlier deployments, and `10.244.0.0/16` for all). Use the wider `10.96.0.0/12` as the planning rule unless you are sure the instance is new on 2610. If AKS uses these DNS servers, also avoid its service and pod ranges.
 7. Learn recommends assigning only one management IP for the default gateway and for the configured DNS servers across the physical network adapters of the node, so it doesn't change once the management intent is created. Network validation fails when it finds more than one physical adapter with a default gateway.
-8. In an ARM template, write multiple DNS servers as quoted strings separated by commas, for example `"dnsServers": ["10.250.16.124", "10.250.17.232"]`.
+8. In an ARM template, write multiple DNS servers as quoted strings separated by commas, for example `"dnsServers": ["192.0.2.4", "192.0.2.5"]`.
 :::
 
-**What the scripts do:**
+**What the Dns step of the OS configuration does:**
 
-1. Hard-fail on any `REPLACE` placeholder value remaining in `#region CONFIGURATION`
-2. Find the management adapter by **exact name** — exit and list adapters if not found
-3. Check idempotency — exit clean if DNS is already set to the target values
-4. Call `Set-DnsClientServerAddress` with the two explicit DNS IPs
-5. Read back and validate the DNS configuration
+1. Reads the DNS servers of the management port on each node
+2. Changes nothing when they already equal `networking.management.dns_servers`
+3. Otherwise sets them with `Set-DnsClientServerAddress`
+4. Reads them back at the end of the run and compares them with the file
 
 ---
 
@@ -95,10 +94,10 @@ Once the deployment completes, it isn't supported to change the DNS server IPs, 
 
 | `infrastructure.yml` path | Script variable | Example |
 |--------------------------|----------------|---------|
-| `nodes[].network_adapters[].name` | `$ManagementNIC` | `Embedded NIC 1` |
-| `networking.management.dns_servers` | `$DNSPrimary` | `10.100.10.2` |
-| `networking.management.dns_servers` | `$DNSSecondary` | `10.100.10.3` |
-| `nodes[].network_adapters[].ip_address` | PSRemoting target (orchestrated only) | `10.100.200.11` |
+| `nodes[].network_adapters[].name` | The management adapter | `Embedded NIC 1` |
+| `networking.management.dns_servers` | Primary DNS server | `192.0.2.4` |
+| `networking.management.dns_servers` | Secondary DNS server | `192.0.2.5` |
+| `nodes[].management.ip_address` | The address the OS configuration connects to | `192.0.2.11` |
 
 ---
 
@@ -109,9 +108,9 @@ Once the deployment completes, it isn't supported to change the DNS server IPs, 
 
 Configure DNS interactively on each node via console, KVM, or RDP.
 
-:::note Use the Direct Script tab when running multiple nodes
+:::note Use the Orchestrated Script tab when running multiple nodes
 SConfig requires repeating these steps on every node individually. For multi-node deployments,
-the Direct or Orchestrated tab is faster and less error-prone.
+the Orchestrated Script tab (the OS configuration) is faster and less error-prone.
 :::
 
 **Steps — for each node:**
@@ -145,25 +144,27 @@ Get-DnsClientServerAddress -AddressFamily IPv4 |
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-05-configure-dns-servers` holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Set-DnsServers.ps1` is removed. The OS configuration does this task in its **Dns** step.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-05-configure-dns-servers/powershell/Invoke-ConfigureDNS-Orchestrated.ps1` | Configures DNS servers on the management NIC of every Azure Local node using PSRemoting. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-05-configure-dns-servers/powershell/Set-DnsServers.ps1` | Configures primary and secondary DNS servers on the management NIC. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The one entry point of the OS configuration. It runs `Set-AzureLocalNodeConfiguration.ps1` for each node: it reads the node, changes only what differs from `infrastructure.yml`, and reports. `-Step` limits the run to one step. |
 
-Requires: PowerShell 7; PowerShell 5.1.
+The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run
 
 ```powershell
-.\Invoke-ConfigureDNS-Orchestrated.ps1
-.\Invoke-ConfigureDNS-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure.yml"
+# Plan (the default): read every node and list what would change
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Dns
 
-.\Set-DnsServers.ps1
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step Dns -Mode Apply
 ```
+
+See [how the run works](./how-the-run-works.mdx).
 
 </TabItem>
 </Tabs>
@@ -208,12 +209,10 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 | Issue | Root Cause | Remediation |
 |-------|------------|-------------|
-| Script hard-fails on startup | `REPLACE` placeholder values remain | Edit `#region CONFIGURATION` with real values from `infrastructure.yml` |
 | `Adapter not found` error | NIC name in config doesn't match | Run `Get-NetAdapter` on the node; update `nodes[].network_adapters[].name` in `infrastructure.yml` |
 | DNS validation fails (post-set mismatch) | Transient WMI delay | Wait 5 seconds and re-run the validation query manually |
 | DNS not resolving names (verified in Task 06) | DNS servers unreachable | Verify DNS server IPs are reachable from node; check routing and firewall |
-| Orchestrated script: `cluster.management_nic_name not found` | Key missing from `infrastructure.yml` | Add `nodes[].network_adapters[].name` to the `cluster:` block in yml |
-| Orchestrated script: `dns.primary not found` | Key missing from `infrastructure.yml` | Add `networking.management.dns_servers` to the `dns:` block in yml |
+| OS configuration: the node is Blocked in the plan | `networking.management.dns_servers` is missing | Add the DNS servers to `infrastructure.yml`, then run the plan again |
 | Node unreachable via PSRemoting | WinRM not configured or firewall blocking | Verify Task 01 (WinRM) completed; check firewall rules |
 
 ---

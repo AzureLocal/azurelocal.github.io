@@ -47,7 +47,7 @@ The [automated OS configuration run](./automated-os-configuration.mdx) covers th
 > **MASTER REFERENCE**: [Phase 03: OS Configuration](./index.mdx)
 
 **Status**: Active 
-**Estimated Time**: 2 minutes per node / 5 minutes orchestrated (all nodes)
+**Estimated Time**: 2 minutes per node / 5 minutes with the OS configuration (all nodes)
 
 ---
 
@@ -57,7 +57,7 @@ Windows Server blocks ICMP by default. Enabling the ICMPv4-In and ICMPv6-In fire
 ping-based connectivity validation from the management server and between nodes — required for
 cluster health checks, network diagnostics, and Azure Local validation tooling.
 
-**What the scripts do:**
+**What the steps do:**
 
 1. Enable `File and Printer Sharing (Echo Request - ICMPv4-In)`
 2. Enable `File and Printer Sharing (Echo Request - ICMPv6-In)`
@@ -95,7 +95,7 @@ Navigate the menu:
 4. Select **`4`** → Back to main menu
 
 :::note IPv6
-SConfig only configures ICMPv4. If ICMPv6 is also required, run the direct script or use the Orchestrated tab to enable both rules.
+SConfig only configures ICMPv4. If ICMPv6 is also required, enable the ICMPv6 rule by hand with `Enable-NetFirewallRule`, or use the Orchestrated tab.
 :::
 
 </TabItem>
@@ -104,25 +104,27 @@ SConfig only configures ICMPv4. If ICMPv6 is also required, run the direct scrip
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-08-enable-icmp-ping` holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Enable-ICMPFirewallRule.ps1` is removed. The OS configuration does this task in its **RemoteManagement** step.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-08-enable-icmp-ping/powershell/Enable-ICMPFirewallRule.ps1` | Enables ICMP (ping) firewall rules on the local Azure Local node. |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-08-enable-icmp-ping/powershell/Invoke-EnableICMP-Orchestrated.ps1` | Enables ICMP (ping) firewall rules on all Azure Local nodes via PSRemoting. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The one entry point of the OS configuration. It runs `Set-AzureLocalNodeConfiguration.ps1` for each node: it reads the node, changes only what differs from `infrastructure.yml`, and reports. `-Step` limits the run to one step. |
 
-Requires: PowerShell 7.
+The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run
 
 ```powershell
-.\Enable-ICMPFirewallRule.ps1
+# Plan (the default): read every node and list what would change
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step RemoteManagement
 
-.\Invoke-EnableICMP-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
-.\Invoke-EnableICMP-Orchestrated.ps1
+# Apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step RemoteManagement -Mode Apply
 ```
+
+See [how the run works](./how-the-run-works.mdx).
 
 </TabItem>
 </Tabs>
@@ -150,7 +152,7 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 |-------|------------|-------------|
 | Rule not found | Rule name differs (GPO rename or locale) | Run `Get-NetFirewallRule | Where-Object Protocol -eq 'ICMPv4'` to find actual name |
 | Rule found but still not enabled | Group Policy overriding local rule | Check GPO firewall policy; may need to configure via GPO |
-| Orchestrated: node unreachable | WinRM not enabled or firewall blocking | Verify WinRM configured (Task 01); check firewall allows port 5985/5986 |
+| OS configuration: node unreachable | WinRM not enabled or firewall blocking | Verify WinRM configured (Task 01); check firewall allows port 5985/5986 |
 | Ping still failing after enable | Layer-3 routing or switch ACL | Verify network path; check switch ACLs and VLAN routing |
 
 ---

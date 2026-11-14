@@ -236,7 +236,7 @@ const resources = [
   {
     category: 'Reference',
     title: 'Variable Management Standard',
-    desc: 'Organisation-wide standard for config/variables.yml structure, naming conventions, and schema validation across all repos.',
+    desc: 'The standard for the master registry and the one infrastructure.yml per environment: naming, secret references and validation.',
     link: '/docs/implementation/04-variable-management-standard',
     linkLabel: 'Read the standard →',
   },

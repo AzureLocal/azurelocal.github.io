@@ -36,7 +36,7 @@ import TabItem from '@theme/TabItem';
 
 **Status**: Active
 
-Configure cluster quorum for high availability and split-brain prevention. Cloud Witness is the recommended type for all cluster scenarios — the orchestrated and standalone scripts validate the witness storage account in Azure and create it automatically when missing before configuring quorum.
+Configure cluster quorum for high availability and split-brain prevention. Cloud Witness is the recommended type for all cluster scenarios. The deployment creates the witness from `cluster.witness` of `infrastructure.yml`; use this task to check it, or to change it after the deployment.
 
 ---
 
@@ -49,7 +49,7 @@ Configure cluster quorum for high availability and split-brain prevention. Cloud
 | **Disk Witness** | Legacy WSFC/SAN only | Shared disk visible to all nodes; incompatible with S2D and Azure Local |
 
 :::tip Recommended Configuration
-**Cloud Witness** is the recommended quorum type for all cluster scenarios. It requires an Azure Storage Account — the scripts below validate the account exists and create it automatically if missing before setting quorum.
+**Cloud Witness** is the recommended quorum type for all cluster scenarios. It requires an Azure Storage Account (`cluster.witness.storage_account`). The deployment creates the witness; the steps below check it or change it.
 :::
 
 ---
@@ -124,22 +124,18 @@ Before configuring quorum, ensure the storage account exists in Azure.
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** `Invoke-ConfigureClusterQuorum-Orchestrated.ps1` and the Azure CLI `az-configure-cluster-quorum.ps1` are placeholders. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The deployment creates the witness from `cluster.witness` of `infrastructure.yml`. Use the steps in the other tab when you change the witness after the deployment.
 
-#### Script
+#### Check
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1` | Validates or creates the cloud witness storage account, then configures cluster quorum (Cloud Witness / File Share Witness). |
-
-Requires: PowerShell 7.
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Read only. Its quorum check: a quorum type is set and the quorum state is Normal. See [Task 09](./task-09-post-deployment-verification.mdx). |
 
 #### Run
 
 ```powershell
-.\Invoke-ConfigureClusterQuorum-Orchestrated.ps1 -ConfigPath "configs\infrastructure.yml"
-.\Invoke-ConfigureClusterQuorum-Orchestrated.ps1 -ConfigPath "configs\infrastructure.yml" -WhatIf
-.\Invoke-ConfigureClusterQuorum-Orchestrated.ps1 -ConfigPath "configs\infrastructure.yml" -WitnessType cloud_witness
+./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

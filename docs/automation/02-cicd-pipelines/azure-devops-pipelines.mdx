@@ -33,18 +33,16 @@ Azure DevOps Pipelines configuration for Azure Local deployments. This is a samp
 |---|---|---|---|
 | `Validate` | `ubuntu-latest` | None | Terraform validate + Ansible lint |
 | `Plan` | `ubuntu-latest` | None | Terraform plan with artifact |
-| `DeployFoundation` | `ubuntu-latest` | `production` environment | Terraform apply |
-| `ConfigureOnPrem` | `AzureLocal-SelfHosted` | `production` environment | Ansible site.yml |
-| `ConfigureOperations` | `AzureLocal-SelfHosted` | `production` environment | Monitoring + management playbooks |
+| `DeployFoundation` | `ubuntu-latest` | The `approvalEnvironment` parameter | Terraform apply |
+| `ConfigureOnPrem` | The `agentPool` parameter | The `approvalEnvironment` parameter | Ansible site.yml |
+| `ConfigureOperations` | The `agentPool` parameter | The `approvalEnvironment` parameter | Monitoring + management playbooks |
+
+The file names no pool and no environment. Start it by hand (`trigger: none`) and enter both as run parameters: `agentPool` is `devops.runners[].pool` of the general runner, and `approvalEnvironment` is `devops.pipelines.environments.terraform_deployment`. Azure DevOps reads the pool and the environment of a job before any variable exists, so they have no default.
 
 ### Triggers
 
 ```yaml
-trigger:
-  branches:
-    include: [main]
-  paths:
-    include: ['src/terraform/**', 'src/ansible/**', 'config/variables/**']
+trigger: none
 ```
 
 ## Setup
@@ -77,17 +75,19 @@ Create a variable group named `azurelocal-secrets`:
 
 ### 3. Environment
 
-Create a `production` environment with approval checks:
+Create the environment that `devops.pipelines.environments.terraform_deployment` names (an entry of `devops.environments[]` with `approval_required: true`), with approval checks:
 
-1. Pipelines → Environments → New environment → `production`
+1. Pipelines → Environments → New environment → the name from the file
 2. Add approval check with required reviewers
+
+Task 04 of the CI/CD setup creates the environments of `devops.environments[]`.
 
 ### 4. Self-Hosted Agent Pool
 
-Create an agent pool named `AzureLocal-SelfHosted`:
+Create the agent pool that `devops.runners[].pool` names (required on Azure DevOps; there is no default pool):
 
 1. Organization Settings → Agent pools → Add pool
-2. Pool type: Self-hosted, Name: `AzureLocal-SelfHosted`
+2. Pool type: Self-hosted, Name: the pool name from the file
 3. Register an agent with on-premises network access
 
 ### 5. Terraform Extension
@@ -112,8 +112,8 @@ Install the Terraform extension from the marketplace:
 | Stage | Description |
 |---|---|
 | `Plan` | Read only. Publishes the plan report and the wipe list as the build artifact `os-configuration-plan` |
-| `ConfirmStorageWipe` | Exists only when the mode is Apply **and** `clear_storage` is true: a second, separate approval (environment `azure-local-os-configuration-clear-storage`) after reading the wipe list |
-| `Apply` | Runs for mode Apply, after a reviewer of the environment `azure-local-os-configuration` approves |
+| `ConfirmStorageWipe` | Exists only when the mode is Apply **and** `clear_storage` is true: a second, separate approval (the `clear_storage_approval_environment` parameter: `devops.pipelines.environments.os_configuration_clear_storage`) after reading the wipe list |
+| `Apply` | Runs for mode Apply, after a reviewer of the `approval_environment` parameter approves (`devops.pipelines.environments.os_configuration`) |
 
 Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVault` and a route to the nodes' management subnet; an Azure Resource Manager service connection with workload identity federation; and add Approvals (and an Exclusive lock) to the environments. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
@@ -125,9 +125,9 @@ Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVaul
 |---|---|
 | `Preconditions` | Read only. Parameters and every precondition. Always runs |
 | `Validate` | Runs for mode Validate and ValidateAndDeploy |
-| `Deploy` | A deployment job in the environment `azure-local-deploy`; add an Approvals check to that environment (Pipelines, Environments, Approvals and checks). It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
+| `Deploy` | A deployment job in the environment of the `approvalEnvironment` parameter (`devops.pipelines.environments.arm_deployment`); add an Approvals check to that environment (Pipelines, Environments, Approvals and checks). It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
 
-Parameters: `mode`, `infrastructureFile`, `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`, `azureServiceConnection` (workload identity federation, no client secret) and `agentPool`. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+Parameters: `mode`, `infrastructureFile`, `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`, `azureServiceConnection` (workload identity federation, no client secret), `agentPool` and `approvalEnvironment`. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
 ## Repository
 

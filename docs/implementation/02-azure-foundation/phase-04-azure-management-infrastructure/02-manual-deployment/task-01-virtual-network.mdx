@@ -91,6 +91,27 @@ azure.tenant_id, azure.location, tags
 landing_zone.subscriptions[].name, .id                                 the subscription of each network
 landing_zone.networks[].name, .subscription, .resource_group, .location, .address_space, .dns_servers, .peer_with
 landing_zone.networks[].subnets[].name, .prefix, .network_security_group, .route_table
+landing_zone.networks[].allow_forwarded_traffic, .allow_gateway_transit, .use_remote_gateways   the peering options (schema 5.6.23)
+```
+
+### Peering options
+
+`Deploy-VirtualNetworks.ps1` peers each network with the networks of its `peer_with`. A peering is made in both directions, and each direction uses the options of the network it starts in (Microsoft Learn: Virtual network peering).
+
+| Key | Default | What it is |
+|-----|---------|------------|
+| `landing_zone.networks[].allow_forwarded_traffic` | `true` | Whether the peerings that start in this network accept traffic that was sent by a machine outside the peered network. |
+| `landing_zone.networks[].allow_gateway_transit` | `false` | Whether the peerings that start in this network let the peer use the VPN or ExpressRoute gateway of this network. Set it on the hub that has the gateway. Cannot be `true` together with `use_remote_gateways` on the same network. |
+| `landing_zone.networks[].use_remote_gateways` | `false` | Whether the peerings that start in this network use the gateway of the peer. Set it on the spokes. The peer must set `allow_gateway_transit` to `true` and have a gateway. |
+
+```yaml
+landing_zone:
+  networks:
+    - name: vnet-iic-hub-01
+      allow_gateway_transit: true   # the hub has the VPN gateway
+    - name: vnet-iic-mgmt-01
+      peer_with: ["vnet-iic-hub-01"]
+      use_remote_gateways: true     # the spoke uses the hub's gateway
 ```
 
 ---

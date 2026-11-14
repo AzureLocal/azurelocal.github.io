@@ -604,20 +604,20 @@ steps:
 
 The script reads `devops.runners[]`, `devops.runner_network`, `devops.runner_access` and `devops.state` of `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
+On Azure DevOps, `devops.runners[].pool` is required. The script, the Terraform module and the Ansible role no longer fall back to a default pool. The general runner must carry the label of `devops.pipelines.runner_label` in `devops.runners[].labels` (see [Task 05](./task-05-configure-variables.mdx)).
+
 ---
 
 
 :::info Toolkit script
-The toolkit scripts for this task are PowerShell 7. They read `infrastructure.yml`. Run them with `-WhatIf` first: the script reads what exists and lists what it would do.
+The toolkit script for this task is PowerShell 7. It reads `infrastructure.yml` through the mandatory `-InfrastructureFile` parameter and never prompts. It ends with exit code 0, 1 or 2. Run it with `-WhatIf` first: the script reads what exists and lists what it would do.
 :::
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/azurecli/az-deploy-runners.ps1` | Task 06. Deploys the self-hosted runners (Linux and the Windows ztp runner) with Terraform. Azure CLI variant. Supports `-WhatIf`. |
 | `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Deploy-CicdRunners.ps1` | Task 06. Deploys the self-hosted runners (Linux and the Windows ztp runner) with Terraform. Supports `-WhatIf`. |
-| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Invoke-CicdRunners-Orchestrated.ps1` | Task 06. Deploys the self-hosted runners (Linux and the Windows ztp runner) with Terraform. Orchestrated variant: reads the one infrastructure file. Supports `-WhatIf`. |
 
 Requires: PowerShell 7.
 
@@ -625,8 +625,6 @@ Requires: PowerShell 7.
 
 ```powershell
 ./Deploy-CicdRunners.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
-
-./Invoke-CicdRunners-Orchestrated.ps1 -ConfigPath ./infrastructure.yml -WhatIf
 ```
 
 

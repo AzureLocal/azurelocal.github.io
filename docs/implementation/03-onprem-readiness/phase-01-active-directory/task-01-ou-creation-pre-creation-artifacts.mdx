@@ -143,6 +143,14 @@ AD structure should be defined during the [planning phase](../../../planning/). 
 
 The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
+| Key | What it is |
+|-----|------------|
+| `scenario.identity` | `active_directory` runs this task. With `local_identity` the script does nothing and exits 0 |
+| `identity.active_directory.domain_fqdn` | The domain |
+| `identity.active_directory.ou_path` | The dedicated OU |
+| `identity.active_directory.lcm_user.username`, `.password` | The LCM user. The password is a secret reference, read in memory only |
+| `identity.active_directory.precreate_computer_objects` | Schema 5.6.23. Whether `Set-ADConfiguration.ps1` creates the computer objects of the machines (`nodes[].name`) and of the cluster (`cluster.name`) in the OU before the deployment. Microsoft Learn allows this instead of letting the deployment create them (Custom Active Directory configuration for your Azure Local instance; Prestage cluster computer objects). The cluster object is created disabled. Default `false`: the domain join of the OS configuration and the deployment create the objects |
+
 ---
 
 ## Execution
@@ -154,20 +162,24 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 ### PowerShell
 
-> **When to use**: Run the task from a management host that can reach a domain controller. The Microsoft tool `New-HciAdObjectsPreCreation` (see the preflight above) creates the OU and the LCM user; the toolkit script below validates and prepares the Active Directory side.
+> **When to use**: Run the task from a management host that can reach a domain controller. The script calls Microsoft's `New-HciAdObjectsPreCreation` (see the preflight above) with the OU and the LCM user of `infrastructure.yml`.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Set-ADConfiguration.ps1` | Validates and configures Active Directory prerequisites for Azure Local deployment. |
+| `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Set-ADConfiguration.ps1` | Prepares Active Directory for Azure Local from `infrastructure.yml`: the dedicated OU and the LCM deployment user, and, when the file asks, the computer objects of the machines and the cluster. Supports `-WhatIf`. |
 
-Parameters: `-DomainController`, `-ClusterName`, `-NodeNames`, `-OUPath`, `-ServiceAccountName`, `-ConfigFile`. Read the comment-based help of the script (`Get-Help ./Set-ADConfiguration.ps1 -Full`) before you run it.
+Parameters: `-InfrastructureFile` (mandatory), `-Credential` (the account that creates the objects; without it the account that runs the script is used), `-LogPath`. The script asks nothing. It is idempotent: when the OU and the user both exist, it sends nothing. When only one of the two exists, it stops and says so. It never deletes anything.
+
+Requires: PowerShell 7; modules ActiveDirectory, AsHciADArtifactsPreCreationTool.
 
 #### Run
 
 ```powershell
-./Set-ADConfiguration.ps1 -DomainController "dc01.example.com" -ClusterName "azl-cluster-01" -NodeNames @("node-01","node-02")
+./Set-ADConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Set-ADConfiguration.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>
@@ -188,18 +200,17 @@ Parameters: `-DomainController`, `-ClusterName`, `-NodeNames`, `-OUPath`, `-Serv
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Test-ADConfiguration.ps1` | Validates the Task 01 artifacts: OU creation, LCM user and KDS root key. Run it on a host that reaches a domain controller. |
-| `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Invoke-ADValidation-AzVM.ps1` | Runs the same validation remotely on a domain controller that is an Azure VM, with `Invoke-AzVMRunCommand`. No RDP or VPN needed. |
-| `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Invoke-ADValidation-Arc.ps1` | Runs the same validation remotely on a domain controller that is an Azure Arc-enabled server, with `New-AzConnectedMachineRunCommand`. The script removes the run command when it is done (use `-SkipCleanup` to keep it). |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Checks `ID-AD-003`, `ID-AD-004` and `ID-AD-012` cover this task: the OU, the LCM user and the KDS root key. |
 
-Both remote scripts read the domain controller from `landing_zone.virtual_machines[]` (the entry with role `domain_controller`) in `infrastructure.yml` when you do not pass `-ResourceGroupName` and `-VMName` (or `-MachineName`).
+The three earlier validation scripts of this task folder (`Test-ADConfiguration.ps1`, `Invoke-ADValidation-AzVM.ps1`, `Invoke-ADValidation-Arc.ps1`) are removed. The pre-cluster verification does the same checks.
 
 #### Run
 
 ```powershell
-./Invoke-ADValidation-AzVM.ps1 -ConfigFile ./infrastructure.yml
-./Invoke-ADValidation-Arc.ps1 -ConfigFile ./infrastructure.yml
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category identity
 ```
+
+A run with `-Category` is partial. It ends with exit code 3 when nothing blocks, and it never passes the ARM precondition. Run all categories before the deployment.
 
 </TabItem>
 

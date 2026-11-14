@@ -78,29 +78,26 @@ Get-Service himds | Format-Table Name, Status, StartType
 & "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe" check
 ```
 
-**Script:** `Confirm-ArcRegistration.ps1` in `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity/powershell/`
-
 </TabItem>
 <TabItem value="orchestrated" label="Orchestrated Script">
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script in this task folder.** The folder holds only placeholders (`Invoke-ArcVerification-Orchestrated.ps1` and the Azure CLI `az-verify-arc-registration.ps1`). A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Confirm-ArcRegistration.ps1` and `Confirm-ArcRegistration-Orchestrated.ps1` are removed.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity/powershell/Confirm-ArcRegistration-Orchestrated.ps1` | See the comment-based help of the script. |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity/powershell/Confirm-ArcRegistration.ps1` | See the comment-based help of the script. |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity/powershell/Invoke-ArcVerification-Orchestrated.ps1` | Verifies Arc registration and connectivity across all cluster nodes. |
-
-Requires: PowerShell 7.
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | In Plan mode the **ArcRegistration** step reports, per machine, whether its Arc machine exists and is Connected. It changes nothing. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1` | In `-Mode Plan` it runs the [checks](../../../automation/03-automation-guides/arm-validate-deploy.mdx#what-it-checks-first) before Validate, read only. `ArcMachinesConnected`: each Arc machine exists, is Connected and is in the instance's resource group. `ArcMachineNaming`: each Arc machine is named after the host. |
 
 #### Run
 
 ```powershell
-.\Invoke-ArcVerification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ArcRegistration
+
+./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -Mode Plan -ReportDirectory ./arm-plan
 ```
 
 </TabItem>

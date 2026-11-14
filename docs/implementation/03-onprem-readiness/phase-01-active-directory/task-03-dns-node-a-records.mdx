@@ -86,13 +86,13 @@ Pre-create forward lookup A records for each Azure Local node hostname. Create t
 <TabItem value="manual" label="DNS Manager" default>
 
 1. Open DNS Manager on an authoritative domain DNS server.
-2. Expand Forward Lookup Zones → select the Active Directory–integrated zone (for example, `hybrid.mgmt`).
+2. Expand Forward Lookup Zones → select the Active Directory–integrated zone (for example, `improbability.cloud`).
 3. For each node:
  - Right‑click the zone → New Host (A or AAAA).
- - Enter node name (for example, `hcinode01`) and its management IPv4 address.
+ - Enter node name (for example, `iic-azl-n01`) and its management IPv4 address (`nodes[].management.ip_address`, for example `192.0.2.11`).
  - Leave "Create associated PTR record" unchecked unless the reverse zone is already delegated and managed.
  - Click Add Host.
-4. Repeat for all node hostnames (example: `hcinode01`, `hcinode02`, `hcinode03`, `hcinode04`).
+4. Repeat for all node hostnames (example: `iic-azl-n01`, `iic-azl-n02`, `iic-azl-n03`, `iic-azl-n04`).
 5. Document the mapping (hostname ↔ IP) in the deployment artifacts and store in version control.
 
 </TabItem>
@@ -100,20 +100,14 @@ Pre-create forward lookup A records for each Azure Local node hostname. Create t
 
 ### PowerShell
 
-> **When to use**: Run the task with the script below, from the place its help names (a management workstation, or the node itself).
+> **No script creates the records.** The task folder holds only a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. Create the records with the DNS Manager steps in the other tab, or with your own DNS process.
 
-#### Script
+The earlier `Set-DnsForwarding.ps1` is removed. It made conditional forwarders to 168.63.129.16, an address an on-premises DNS server cannot reach. Learn names host records for the machines, the cluster and its client access point instead.
 
-| Script | What it does |
-|---|---|
-| `scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records/powershell/Set-DnsForwarding.ps1` | Configures DNS conditional forwarders and validates DNS infrastructure for Azure Local. Supports `-WhatIf`. |
-
-Requires: PowerShell 7; modules DnsServer.
-
-#### Run
+The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate) (`Invoke-AzureLocalPreClusterVerification.ps1`) checks the records before the deployment:
 
 ```powershell
-.\Set-DnsForwarding.ps1 -DomainController "dc01.improbability.cloud" -ClusterName "azl-cluster-01" -NodeNames @("node-01","node-02")
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify
 ```
 
 </TabItem>

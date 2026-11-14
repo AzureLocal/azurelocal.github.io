@@ -36,8 +36,10 @@ GitHub Actions workflow for Azure Local deployments. This is a sample equivalent
 | `ansible-lint` | `ubuntu-latest` | Auto (push/PR) | Ansible lint, syntax check |
 | `terraform-plan` | `ubuntu-latest` | Auto (main only) | Terraform plan with artifact upload |
 | `terraform-apply` | `ubuntu-latest` | Manual (environment approval) | Terraform apply from plan artifact |
-| `configure-onprem` | `self-hosted, azurelocal` | After apply | AD prep, OS config, Arc registration |
-| `configure-operations` | `self-hosted, azurelocal` | After on-prem | Monitoring, WAC, management VMs |
+| `configure-onprem` | `self-hosted, linux` and `AZL_RUNNER_LABEL` | After apply | AD prep, OS config, Arc registration |
+| `configure-operations` | `self-hosted, linux` and `AZL_RUNNER_LABEL` | After on-prem | Monitoring and management playbooks |
+
+The workflow names no runner label and no environment. It reads two repository variables that task 05 of the CI/CD setup sets from `infrastructure.yml` ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)): `AZL_RUNNER_LABEL` (`devops.pipelines.runner_label`) and `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` (`devops.pipelines.environments.terraform_deployment`), the environment of the apply and on-premises jobs.
 
 ### Triggers
 
@@ -48,7 +50,7 @@ on:
     paths: ['src/terraform/**', 'src/ansible/**', 'config/variables/**']
   pull_request:
     branches: [main]
-  workflow_dispatch:  # Manual trigger with deploy_target input
+  workflow_dispatch:
 ```
 
 ## Setup
@@ -64,17 +66,17 @@ on:
 
 ### 2. Environment Protection
 
-Create a `production` environment with required reviewers for the `terraform-apply` job.
+Create the environment that `devops.pipelines.environments.terraform_deployment` names, with required reviewers. It gates the `terraform-apply` job and the on-premises jobs.
 
 ### 3. Self-Hosted Runner
 
-Register a runner with labels `self-hosted` and `azurelocal` that has network access to on-premises infrastructure.
+Register a Linux runner that has network access to on-premises infrastructure. Give it the label of `devops.pipelines.runner_label` (an entry of `devops.runners[].labels`). Task 06 of the CI/CD setup deploys the runners.
 
 ```bash
-# On the runner machine:
+# On the runner machine. azure-local is the example value of devops.pipelines.runner_label.
 ./config.sh --url https://github.com/YOUR_ORG/YOUR_REPO \
   --token YOUR_TOKEN \
-  --labels azurelocal,self-hosted
+  --labels azure-local
 ```
 
 ### 4. Deploy Workflow
@@ -101,7 +103,7 @@ git push
 | Job | Description |
 |---|---|
 | `plan` | Read only. Publishes the plan report and the wipe list as an artifact and in the job summary |
-| `apply` | Runs for mode `Apply` only, after a reviewer of the environment `azure-local-os-configuration` approves it. The reviewer reads the plan job's summary, the wipe list included |
+| `apply` | Runs for mode `Apply` only, after a reviewer of the environment in `AZL_ENVIRONMENT_OS_CONFIGURATION` (`devops.pipelines.environments.os_configuration`) approves it. The reviewer reads the plan job's summary, the wipe list included |
 
 Settings are variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) of an app registration with a federated credential for the repository and the environment, so there is **no client secret**. The runner needs a route to the nodes' management network for PowerShell remoting. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
@@ -113,7 +115,7 @@ Settings are variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTIO
 |---|---|
 | `preconditions` | Read only. Generates the ARM parameters and runs every precondition. Always runs |
 | `validate` | Runs for mode `Validate` and `ValidateAndDeploy` |
-| `deploy` | Runs for `ValidateAndDeploy` and `Deploy`, only after a reviewer of the environment `azure-local-deploy` approves. It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
+| `deploy` | Runs for `ValidateAndDeploy` and `Deploy`, only after a reviewer of the environment in `AZL_ENVIRONMENT_ARM_DEPLOYMENT` (`devops.pipelines.environments.arm_deployment`) approves. It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
 
 Inputs: `mode` (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), `infrastructure_file`, `os_configuration_run_id` (the artifact `os-configuration-report` of the OS configuration workflow) or `os_configuration_report`, `handoff_file`, `resume`, `acknowledge_known_issues`. One ARM deployment runs at a time per repository. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
