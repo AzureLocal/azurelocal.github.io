@@ -8,8 +8,8 @@ scope: Operator inputs for the azurelocal-ztp zero-touch automation
 purpose: Describe the environment file keys the automation reads, and where the OEM SBE belongs (OS configuration, not ZTP)
 author: Azure Local Cloud
 created: 2026-11-05
-updated: 2026-11-06
-version: "1.0.0"
+updated: 2026-11-14
+version: "1.2.0"
 tags: ["azure-local", "simplified-provisioning", "zero-touch", "environment-file", "sbe", "bios"]
 keywords: ["environment file", "infrastructure.yml", "SBE", "Solution Builder Extension", "sbe_bundle", "Invoke-ZtpEnvironment"]
 status: Active
@@ -32,105 +32,92 @@ status: Active
 
 ## Overview
 
-The operator supplies one input: **the environment file**, a YAML file that describes the machines, the network, the BIOS settings, the Azure target and the ZTP settings. Everything else is automated, with a gate at each step.
+The operator supplies one input: **the master `infrastructure.yml`** of the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/config/variables), schema 5. Every tool in the route reads the same file: ZTP, [OS configuration](../../../phase-03-os-configuration/index.mdx) and the cluster deployment. It describes the machines, the network, the BIOS settings and the Azure target. Everything else is automated, with a gate at each step.
 
-:::info The master file, and the older layout
-New files use the master `infrastructure.yml` (schema 5), the one file that every tool in the route reads: ZTP, [OS configuration](../../../phase-03-os-configuration/index.mdx) and the cluster deployment. Its schema, examples and variables reference are in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/config/variables) and described in [azurelocal-ztp: schema 5](https://azurelocal.cloud/azurelocal-ztp/infrastructure-schema-5). The example and tables below use the older layout, which ZTP still reads; the keys map one to one.
+:::info Schema 5 is the only input
+ZTP reads only the toolkit's `infrastructure.yml` (`_metadata.schema_version` 5.x). Its own older environment-file layout (`cluster_nodes`, `network_intents`, `ztp`) is retired since azurelocal-ztp 5b75c9a: any other file, or a missing one, stops the run with exit code 2. The full key reference is [azurelocal-ztp: infrastructure file reference](https://azurelocal.cloud/azurelocal-ztp/environment-file).
 :::
 
 :::note The OEM SBE is not a ZTP input
-ZTP resolves and stages no SBE. The SBE package (`hardware.sbe.source_path` in the master file) is a requirement and is read by OS configuration, which puts it in `C:\SBE` and installs the OEM's network drivers from it. A `ztp.node_preparation` block in an old file is accepted and ignored. See [The OEM SBE](#the-oem-sbe).
+ZTP resolves and stages no SBE, and it reads no `hardware.sbe`. The SBE package (`hardware.sbe.source_path` in the master file) is a requirement and is read by OS configuration, which puts it in `C:\SBE` and installs the OEM's network drivers from it. See [The OEM SBE](#the-oem-sbe).
 :::
 
-`Invoke-ZtpEnvironment.ps1` validates the environment file, then generates the JSON inputs that the stage scripts need. Those generated files are specific to your environment. Don't copy them between environments or commit them.
+`Invoke-ZtpEnvironment.ps1` checks the file, then generates the JSON inputs that the stage scripts need. Those generated files are specific to your environment. Don't copy them between environments or commit them.
 
 ---
 
 ## The environment file
 
-The file is passed with `-InfrastructureFile`. The scripts read the keys below. The tables list only the keys the ZTP scripts use. Your environment file can carry more keys for other tools.
+The file is passed with `-InfrastructureFile`. There is no default path. The tables list only the keys ZTP reads; the file can hold every other key of the schema, and ZTP ignores them.
 
-:::info Validation before anything runs
-If a `tools\Validate-Infrastructure.ps1` script sits next to the environment file's folder, `Invoke-ZtpEnvironment.ps1` runs it first and stops if it fails. If the script is absent, the run warns that the file wasn't checked. Check the file yourself in that case.
+### Which template to start from
+
+- **ZTP only.** You install the OS and register the machines with ZTP, and run no automation after it: the [ZTP-only template](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/examples/infrastructure.ztp.example.yml) (`_metadata.scope: ztp`). It holds only the keys ZTP reads. A file with `_metadata.scope: ztp` needs no `identity` section, and its `hardware.sbe` is not checked (registry 5.0.61).
+- **ZTP, then OS configuration and deployment.** The [full template](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/examples/infrastructure.example.yml). ZTP reads its part of it and ignores the rest.
+
+Check the file with the toolkit before a run (in the toolkit clone):
+
+```powershell
+./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path ./infrastructure.yml
+```
+
+:::info How ZTP checks the file
+When the toolkit is found (`$env:AZL_TOOLKIT_ROOT`, else an `azurelocal-toolkit` clone next to the ZTP clone), ZTP runs the toolkit's check of the schema and the rules, and its errors stop the run. ZTP then always runs its own check and lists every problem at once, in schema 5 paths. It runs an extra validator only when `-ValidatorPath` names one; it looks for none by default.
 :::
 
 ### Example
 
-This is the template from the repository, [`examples/infrastructure.example.yml`](https://github.com/AzureLocal/azurelocal-ztp/blob/main/examples/infrastructure.example.yml). Copy it, keep your copy **outside** the repository clone, and replace every value. All values here are placeholders: addresses are from the RFC 5737 documentation ranges, MAC addresses from the RFC 7042 range. The tables below describe each key, and the [environment file reference](https://azurelocal.cloud/azurelocal-ztp/environment-file) has the format of each one.
+All values are placeholders for the example company: `iic-*` names, addresses from the RFC 5737 documentation ranges, MAC addresses from the RFC 7042 range, all-zero GUIDs.
 
-```yaml title="infrastructure.yml"
-azure_identity:
-  azure_tenant_id: "<tenant-id>"
+```yaml title="infrastructure.yml (the keys ZTP reads)"
+_metadata:
+  schema_version: "5.6.27"
+  scope: ztp                        # optional: a file for ZTP only
 
-azure_resources:
-  # Region of the site configuration and the edge machines. Preview: eastus only.
-  location: eastus
+scenario:
+  os_install: simplified
+  outbound_path: direct             # or proxy
+
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  resource_group: "rg-iic-azl-01"
+  location: eastus                  # preview: eastus only
 
 site:
-  name: "Example site"
+  name: "IIC site 01"
+  time_zone: "UTC"
+
+key_vaults:
+  - { name: "kv-iic-mgmt-01", subscription_id: "00000000-0000-0000-0000-000000000000", resource_group: "rg-iic-mgmt-01" }
 
 hardware:
-  vendor: Dell                     # picks config/oem/dell.json (BMC log services and signals)
-  # BIOS: the final settings, and any that must differ during the install only (see below).
-  # bios:
-  #   Slot2: Enabled
-  # bios_during_provisioning:
-  #   Slot2: Disabled
+  vendor: Dell                      # picks config/oem/dell.json; the Boot and Bootstrap stages stop without it
+  bmc:
+    username: "keyvault://kv-iic-mgmt-01/bmc-username"   # or env://, file://, command://, or the name itself
+    password: "keyvault://kv-iic-mgmt-01/bmc-password"
 
-network_intents:
+networking:
   management:
-    subnet: 192.0.2.0/24
-    gateway: 192.0.2.1
-    dns_servers:
-      - 192.0.2.53
-      - 192.0.2.54
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    dns_servers: ["192.0.2.30", "192.0.2.31"]
 
-cluster_nodes:
-  - name: node-01
-    service_tag: <serial-number-1>
-    idrac_ip: 198.51.100.11        # BMC address
-    ip_address: 192.0.2.11         # management address, set on the port with the MAC below
-    mac_address: "00-00-5E-00-53-01"
-  - name: node-02
-    service_tag: <serial-number-2>
-    idrac_ip: 198.51.100.12
-    ip_address: 192.0.2.12
-    mac_address: "00-00-5E-00-53-02"
+nodes:
+  - name: "iic-azl-n01"
+    serial_number: "SERIAL01"
+    bmc: { ip_address: "198.51.100.11" }
+    network_adapters:
+      - { name: "Embedded NIC 1", mac_address: "00:00:5E:00:53:11", roles: [management], ip_assignment: static, ip_address: "192.0.2.11" }
 
-ztp:
-  subscription_id: "<subscription-id>"
-  resource_group: <resource-group>
-  site_name: <site-name>
-  time_zone: UTC
-  # Pin a validated solution recipe version (12.YYMM.x.y); Get-ZtpOsImage.ps1 lists them. latest also works.
-  os_version: "<solution-version>"
-  # Maintenance ISO: latest, a train such as 2610, a build, or a Microsoft download URL.
-  provisioning_iso: latest
-
-  # The address the BMCs reach this host on. Or set share_host_adapter to a local adapter name instead.
-  share_host: 192.0.2.10
-  # share_host_adapter: "<adapter-name>"
-  share_name: ztp-virtual-usb
-
-  # Object ID of the Azure Local resource provider service principal in your tenant. Set it for pipelines.
-  # azl_rp_object_id: "<object-id>"
-
-  tags:
-    workload: azurelocal
-
-  # Provisioning administrator. The secret must exist before the run.
-  admin_secret:
-    subscription_id: "<subscription-id>"
-    resource_group: <key-vault-resource-group>
-    vault: <vault-name>
-    name: <provisioning-admin-secret-name>
-    username: <provisioning-admin-username>
-
-  # BMC login: two secrets, the user name and the password.
-  bmc_secret:
-    vault: <vault-name>
-    username_name: <bmc-username-secret-name>
-    password_name: <bmc-password-secret-name>
+provisioning:
+  os_version: "<solution-version>"  # pin a validated solution recipe version; Get-ZtpOsImage.ps1 lists them
+  simplified:
+    site_name: "iic-site-01"
+    maintenance_iso: latest
+    media_share: { host: "192.0.2.10", name: "ztp-virtual-usb" }
+    admin: { username: "administrator", password: "keyvault://kv-iic-mgmt-01/provisioning-admin-password" }
+    maintenance_password: "keyvault://kv-iic-mgmt-01/maintenance-password"
 ```
 
 ### Machines and network
@@ -139,52 +126,57 @@ ztp:
 |-----|------------|
 | `nodes[].name` | The node name. Also the name of its provisioned machine in Azure. |
 | `nodes[].serial_number` | The machine serial or service tag. It must match the serial in the voucher. |
-| `nodes[].bmc.ip_address` | The BMC address. |
-| `nodes[].network_adapters[].ip_address` | The node's management address. With a static assignment (Mode B or C), the Device stage sets it on the port with the MAC below before the claim; with a DHCP reservation (Mode A), the Network stage verifies it. See [Management address modes](./index.mdx#management-address-modes). |
-| `nodes[].network_adapters[].mac_address` | The MAC of the management port. The Device stage finds the maintenance environment's adapter by it, the Network stage finds the installed machine's adapter by it, and OS configuration finds the port by it too. The installed OS names its ports `Port0` to `Port6`. |
-| `networking.management.ip_assignment` | How each management address is set: `dhcp_reservation` (Mode A, recommended), `static` (Mode B or C), `dhcp` or `preconfigured`. |
+| `nodes[].bmc.ip_address` | The BMC address. The BMC login is `hardware.bmc`; a node that sets another login stops the run. |
+| `nodes[].network_adapters[]` | The machine's ports. ZTP reads the **management port**: the one entry with role `management` and an `ip_assignment` other than `none`. |
+| Management port `mac_address` | The Device stage finds the maintenance environment's adapter by it, the Network stage finds the installed machine's adapter by it, and OS configuration finds the port by it too. The installed OS names its ports `Port0` to `Port6`. |
+| Management port `ip_assignment` | `dhcp_reservation` (Mode A, recommended), `static` (Mode B or C), `dhcp` or `preconfigured`. See [Management address modes](./index.mdx#management-address-modes). |
+| Management port `ip_address` | The node's management address. With `static`, the Device stage sets it on the port with the MAC above before the claim; with `dhcp_reservation`, the Network stage verifies it. |
+| `nodes[].maintenance_address` | Optional. The maintenance environment's address. Without it, the Device stage scans `networking.management.provisioning_dhcp_range` (default: the management subnet) by MAC. |
 | `networking.management.static_method` | Who sets a static address: `device` (default, the Device stage) or `site`. |
 | `networking.management.subnet` | Management subnet in CIDR form. The prefix length is read from it. |
 | `networking.management.gateway` | The one default gateway. |
 | `networking.management.dns_servers` | DNS servers for the management network. ZTP passes them to the Device stage (Modes B and C); OS configuration sets them on the host. |
 | `hardware.bios` and `hardware.bios_during_provisioning` | BIOS settings by attribute. Boot applies `bios_during_provisioning` over `bios`, so an install-only value wins; Restore sets those attributes back. See [BIOS isolation during the install](./index.mdx#bios-isolation-during-the-install). |
-| `hardware.vendor` | The OEM, such as `Dell`. It selects the OEM definition for the BMC (manager and system IDs, the USB-stick slot, the log signals). |
+| `hardware.vendor` | The OEM, such as `Dell`. It selects `config/oem/<vendor>.json` (the BMC log services and signals, the BIOS slot mapping, the one-time USB boot). ZTP has no built-in vendor: the Boot and Bootstrap stages stop without it. |
 
-### Azure target and identity
+### Azure target
 
 | Key | What it is |
 |-----|------------|
-| `azure.tenant_id` | Tenant for sign-in and for the Azure context. |
+| `azure.tenant_id` | Tenant of every Azure call. |
 | `azure.location` | Region. The preview supports East US only. |
-| `site.name` | Display name of the site. |
-| `ztp.subscription_id` | Subscription of the site and the machines. |
-| `ztp.resource_group` | Resource group of the site and the machines. The run creates it if it doesn't exist. |
-| `ztp.site_name` | Name of the Azure Local site resource. |
-| `ztp.time_zone` | Site time zone. |
-| `ztp.tags` | Tags for the resource group and for the resources the deployment creates. |
-| `ztp.azl_rp_object_id` | Object ID of the Azure Local resource provider in your tenant. If you leave it out, the script looks it up, which needs directory read rights that a managed identity doesn't have by default. |
+| `azure.subscription_id`, `azure.resource_group` | Subscription and resource group of the site and the machines. The run creates the group if it doesn't exist. |
+| `provisioning.simplified.subscription_id`, `.resource_group` | Optional. The same, when the provisioning resources go elsewhere than `azure.*`. |
+| `azure.hci_resource_provider_object_id` | Optional. Object ID of the Azure Local resource provider in your tenant. If you leave it out, the script looks it up, which needs directory read rights that a managed identity doesn't have by default. Set it for pipelines. |
+| `site.name`, `site.time_zone` | Display name and time zone of the site. |
+| `provisioning.simplified.site_name` | Resource name of the Azure Local site. |
+| `tags` | Optional. Tags for the site configuration and the edge machines. |
 
 ### ZTP settings
 
 | Key | What it is |
 |-----|------------|
-| `ztp.provisioning_iso` | Which maintenance ISO to resolve: `latest`, a train such as `2610`, a build, or a Microsoft download URL. |
-| `ztp.os_version` | The Azure Local OS solution version to install: `latest`, `latest-preview`, or a validated solution recipe version. ZTP does not check it against an SBE: pin a build your OEM supports. |
-| `ztp.share_host` or `ztp.share_host_adapter` | The address of the management host as the BMCs reach it. Use `share_host_adapter` to name the network adapter and let the script read its IPv4 address, or `share_host` to give the address. One of them is required. |
-| `ztp.share_name` | Name of the SMB share for the images. |
+| `provisioning.simplified.maintenance_iso` | Which maintenance ISO to resolve: `latest`, a train such as `2610`, a build, or a Microsoft download URL. |
+| `provisioning.os_version` | The Azure Local OS solution version to install: `latest`, `latest-preview`, or a validated solution recipe version. ZTP does not check it against an SBE: pin a build your OEM supports. |
+| `provisioning.simplified.media_share.host` or `.host_adapter` | The address of the management host as the BMCs reach it. Use `host_adapter` to name the network adapter and let the script read its IPv4 address, or `host` to give the address. One of them is required. |
+| `provisioning.simplified.media_share.name` | Name of the SMB share for the images. |
+| `provisioning.simplified.media_path`, `.evidence_path` | Optional. Where the run keeps its downloads and its evidence (the event log Sonar follows). Default: under `%ProgramData%\AzureLocalZtp\<site_name>`. Never inside a git working tree. |
 
 ### Secrets
 
-The environment file holds **names and references only**, never values.
+The file holds **references only**, never values. ZTP reads each reference through the toolkit's one resolver (`scripts/common/secrets/AzlSecret.psm1`), so it needs the toolkit: `$env:AZL_TOOLKIT_ROOT`, or an `azurelocal-toolkit` clone next to the ZTP clone. With `-Execute` and no toolkit, the run stops with exit code 2 before it writes anything. The plan (without `-Execute`) reads no secret. Nothing prompts.
 
 | Key | What it points to |
 |-----|-------------------|
-| `ztp.admin_secret.*` | The Key Vault secret that holds the provisioning administrator password, and that administrator's user name. Provisioning sets this account on the installed OS. The secret must exist before the run. |
-| `ztp.bmc_secret.*` | The vault and the names of the secrets that hold the BMC user name and the BMC password. |
-| `identity.local_admin` (master file) | The deployment administrator's name and Key Vault password reference. ZTP doesn't read it: [OS configuration](../../../phase-03-os-configuration/index.mdx) creates the account. |
+| `hardware.bmc.username`, `hardware.bmc.password` | The BMC login of every machine: a secret reference (`keyvault://`, `env://`, `file://` or `command://`); the user name may also be given as plain text. |
+| `provisioning.simplified.admin.username`, `.password` | The provisioning administrator. The password is a `keyvault://<vault>/<secret>` reference only: Azure reads it from the vault itself when it provisions the machines. The secret must exist before the run. |
+| `provisioning.simplified.maintenance_password` | Optional. The maintenance environment's `edgeuser` password, any provider. Without it the image keeps the published default. |
+| `key_vaults[]` | Every vault a `keyvault://` reference names. |
+| `secrets.file.directory`, `secrets.command.*` | Where the resolver reads `file://` and `command://` references from. |
+| `identity.local_admin` | The deployment administrator. ZTP doesn't read it: [OS configuration](../../../phase-03-os-configuration/index.mdx) creates the account. |
 
 :::danger Never commit secret values
-Don't put a password, token or key in the environment file or in any file you commit. The run reads the values from Key Vault at run time.
+Don't put a password, token or key in the file or in any file you commit. The run reads the values through the resolver at run time.
 :::
 
 ---
@@ -207,10 +199,11 @@ How the files reach each node is a separate choice (`hardware.sbe.delivery`); se
 
 ## Validation
 
-- [ ] The environment file passes the validator, or you have checked it by hand
-- [ ] Every machine has `name`, `service_tag`, `idrac_ip`, `ip_address` and `mac_address`
-- [ ] `ztp.share_host` or `ztp.share_host_adapter` is set to the address the BMCs reach
-- [ ] The secrets named in the file exist in Key Vault, and the file holds no secret values
+- [ ] The file is schema 5 (`_metadata.schema_version` 5.x) and passes `Test-InfrastructureFile.ps1`
+- [ ] Every machine has `name`, `serial_number`, `bmc.ip_address` and a management port with `mac_address` (and `ip_address` for `static`)
+- [ ] `hardware.vendor` is set
+- [ ] `provisioning.simplified.media_share.host` or `.host_adapter` is set to the address the BMCs reach
+- [ ] The secrets the references name exist, the file holds no secret values, and the toolkit clone is found (`AZL_TOOLKIT_ROOT` or next to the ZTP clone)
 - [ ] If the machines have BIOS settings that differ during the install, `bios_during_provisioning` names them and `bios` holds the final values
 - [ ] The SBE share or folder (read by OS configuration and the cluster update, not by ZTP) holds the zip, its XML and the discovery XML, or `hardware.sbe.requirement` is `not_applicable` with a reason
 
@@ -237,3 +230,4 @@ How the files reach each node is a separate choice (`hardware.sbe.delivery`); se
 |---------|------|--------|---------|
 | 1.0 | 2026-11-05 | Azure Local Cloud | Initial release |
 | 1.1 | 2026-11-07 | Azure Local Cloud | The SBE moved to OS configuration; BIOS isolation and management address mode keys; the master file |
+| 1.2 | 2026-11-14 | Azure Local Cloud | Schema 5 is the only input (azurelocal-ztp 5b75c9a, toolkit registry 5.0.61); secrets through the toolkit resolver |

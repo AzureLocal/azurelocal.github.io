@@ -65,7 +65,9 @@ git clone https://github.com/AzureLocal/azurelocal-ztp.git
 Set-Location .\azurelocal-ztp
 ```
 
-The run writes its working files, such as downloaded ISOs, images, vouchers and state, to a `_media` folder at the root of the clone. Git ignores that folder. Keep the clone in a place that lasts, because resume depends on what is in `_media`.
+Clone [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) next to it, or set `AZL_TOOLKIT_ROOT` to a toolkit clone. ZTP checks the file with the toolkit and reads every secret reference through its resolver; with `-Execute` and no toolkit, the run stops with exit code 2.
+
+The run writes its working files (downloaded ISOs, images, vouchers and state) to `provisioning.simplified.media_path` and its evidence (the event log, change logs, transcripts) to `provisioning.simplified.evidence_path`. The defaults are `%ProgramData%\AzureLocalZtp\<site_name>\media` and `...\evidence`; `-MediaPath` and `-EvidencePath` override them. The run refuses a folder inside a git working tree. Keep the folders where they last, because resume depends on them.
 
 ### Step 2: Sign in to Azure
 
@@ -104,7 +106,7 @@ Add `-Execute`.
 
 The script then:
 
-1. Reads the BMC account from Key Vault.
+1. Reads the BMC account through the toolkit's secret resolver.
 2. Creates the resource group if it doesn't exist.
 3. Runs the eleven stages, Resolve to Handoff. A failed OS install is resubmitted once automatically. Restore restarts the machines again if a BIOS value was changed for the install.
 
@@ -121,12 +123,12 @@ To provision only some machines, name them. The names are those in `nodes[].name
 
 ### Step 5: Watch the run
 
-The orchestrator writes structured events to a JSON-lines file, `ztp-events.jsonl`, in the `ztp-state` folder under `_media`. Follow it live and read-only with [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/): start it in a second window with the repository's `Start-ZtpMonitor.ps1`. [Monitor with Sonar](./monitor-with-sonar.mdx) has the steps, what the page shows and what's normal.
+The orchestrator writes structured events to a JSON-lines file, `ztp-events.jsonl`, in the evidence folder. Follow it live and read-only with [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/): start it in a second window with the repository's `Start-ZtpMonitor.ps1`. [Monitor with Sonar](./monitor-with-sonar.mdx) has the steps, what the page shows and what's normal.
 
 To read the event file without Sonar:
 
 ```powershell
-Get-Content -Wait -Tail 20 .\_media\ztp-state\ztp-events.jsonl
+Get-Content -Wait -Tail 20 "$env:ProgramData\AzureLocalZtp\<site_name>\evidence\ztp-events.jsonl"
 ```
 
 In the Azure portal, **Azure Arc** > **Operations** > **Provisioning (preview)** > **Provisioned machines** shows each machine's status as Azure sees it.

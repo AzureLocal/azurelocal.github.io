@@ -37,7 +37,18 @@ Azure DevOps Pipelines configuration for Azure Local deployments. This is a samp
 | `ConfigureOnPrem` | The `agentPool` parameter | The `approvalEnvironment` parameter | Ansible site.yml |
 | `ConfigureOperations` | The `agentPool` parameter | The `approvalEnvironment` parameter | Monitoring + management playbooks |
 
-The file names no pool and no environment. Start it by hand (`trigger: none`) and enter both as run parameters: `agentPool` is `devops.runners[].pool` of the general runner, and `approvalEnvironment` is `devops.pipelines.environments.terraform_deployment`. Azure DevOps reads the pool and the environment of a job before any variable exists, so they have no default.
+The file names no pool, environment, service connection or variable group. Start it by hand (`trigger: none`) and enter them as run parameters:
+
+| Parameter | Value from `infrastructure.yml` |
+|---|---|
+| `agentPool` | `devops.runners[].pool` of the general runner |
+| `approvalEnvironment` | `devops.pipelines.environments.terraform_deployment` |
+| `serviceConnection` | `devops.pipelines.service_connection` |
+| `variableGroup` | `devops.pipelines.variable_group`; with entries in `devops.environments[]`, `<name>-<environment>` |
+
+Azure DevOps reads the pool and the environment of a job before any variable exists, so they are run parameters with no default; the service connection and the variable group follow the same rule. Task 05 of the CI/CD setup prints the values to enter.
+
+The Terraform init steps pass the state settings of the variable group to the backend: `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER` (default `tfstate`) and `TF_BACKEND_KEY` (`azure-local.tfstate`).
 
 ### Triggers
 
@@ -49,29 +60,29 @@ trigger: none
 
 ### 1. Service Connection
 
-Create an Azure Resource Manager service connection named `AzureLocal-ServiceConnection`:
+[Task 05 of the CI/CD setup](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx) creates the Azure Resource Manager service connection with workload identity federation (no client secret), named by `devops.pipelines.service_connection` (for example `iic-azure-local`). Task 01 puts the same name in the subject of the federated credential. To create it by hand:
 
 1. Project Settings → Service connections → New → Azure Resource Manager
-2. Select "Service principal (automatic)" or use an existing SPN
-3. Name: `AzureLocal-ServiceConnection`
+2. Select workload identity federation
+3. Name: the value of `devops.pipelines.service_connection`
 4. Scope: Target subscription
 
 ### 2. Variable Group
 
-Create a variable group named `azurelocal-secrets`:
-
-1. Pipelines → Library → + Variable group
-2. Name: `azurelocal-secrets`
-3. Add variables:
+Task 05 also creates the variable group named by `devops.pipelines.variable_group` (for example `iic-azure-credentials`), one per entry of `devops.environments[]`, named `<name>-<environment>`. It holds:
 
 | Variable | Secret | Description |
 |---|---|---|
 | `ARM_CLIENT_ID` | No | Service Principal ID |
-| `ARM_CLIENT_SECRET` | Yes | Service Principal Secret |
+| `ARM_CLIENT_SECRET` | Yes | Service Principal Secret (only with `devops.authentication.method: client_secret`) |
 | `ARM_TENANT_ID` | No | Tenant ID |
 | `ARM_SUBSCRIPTION_ID` | No | Subscription ID |
-| `TF_BACKEND_RG` | No | Terraform state resource group |
-| `TF_BACKEND_SA` | No | Terraform state storage account |
+| `TF_BACKEND_RG` | No | Terraform state resource group (`devops.state.resource_group`) |
+| `TF_BACKEND_SA` | No | Terraform state storage account (`devops.state.storage_account`) |
+| `TF_BACKEND_CONTAINER` | No | Terraform state container (`devops.state.container`, default `tfstate`) |
+| `TF_BACKEND_KEY` | No | Terraform state file, `azure-local.tfstate` |
+
+Both keys are required on Azure DevOps. Before schema 5.6.27 the names were fixed (`AzureLocal-ServiceConnection`, `azurelocal-secrets`, `azure-credentials`, `azurelocal-os-configuration`); set the keys to the names you already use to keep them.
 
 ### 3. Environment
 
@@ -115,7 +126,7 @@ Install the Terraform extension from the marketplace:
 | `ConfirmStorageWipe` | Exists only when the mode is Apply **and** `clear_storage` is true: a second, separate approval (the `clear_storage_approval_environment` parameter: `devops.pipelines.environments.os_configuration_clear_storage`) after reading the wipe list |
 | `Apply` | Runs for mode Apply, after a reviewer of the `approval_environment` parameter approves (`devops.pipelines.environments.os_configuration`) |
 
-Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVault` and a route to the nodes' management subnet; an Azure Resource Manager service connection with workload identity federation; and add Approvals (and an Exclusive lock) to the environments. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVault` and a route to the nodes' management subnet; an Azure Resource Manager service connection with workload identity federation; and add Approvals (and an Exclusive lock) to the environments. The run parameters `service_connection` and `variable_group` have no default: enter `devops.pipelines.service_connection` and `devops.pipelines.variable_group` (with environments, `<name>-<environment>`). See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
 ## ARM Validate and Deploy Pipeline
 
@@ -127,7 +138,7 @@ Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVaul
 | `Validate` | Runs for mode Validate and ValidateAndDeploy |
 | `Deploy` | A deployment job in the environment of the `approvalEnvironment` parameter (`devops.pipelines.environments.arm_deployment`); add an Approvals check to that environment (Pipelines, Environments, Approvals and checks). It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
 
-Parameters: `mode`, `infrastructureFile`, `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`, `azureServiceConnection` (workload identity federation, no client secret), `agentPool` and `approvalEnvironment`. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+Parameters: `mode`, `infrastructureFile`, `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`, `azureServiceConnection` (`devops.pipelines.service_connection`; workload identity federation, no client secret, no default), `agentPool` and `approvalEnvironment`. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
 ## Repository
 

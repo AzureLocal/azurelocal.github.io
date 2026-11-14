@@ -45,9 +45,9 @@ These are Microsoft's prerequisites for simplified machine provisioning (see [Le
 | Region | East US for the provisioning resources (preview limit). The resource group can be in another region. |
 | Operator roles | Owner on the resource group, or Contributor and Role Based Access Control Administrator on it. The identity that runs the automation needs these. |
 | Key Vault, administrator secret | A vault that holds the provisioning administrator password as a secret. The secret must exist before the run, because `Invoke-ZtpEnvironment.ps1` doesn't pass a password. The identity also needs rights to delegate on this vault, because the machine's role delegation includes a Key Vault role. |
-| Key Vault, BMC account | A secret for the BMC user name and one for the BMC password, which the run reads. See [Operator inputs](./operator-inputs.mdx). |
+| BMC account | The BMC user name and password as secret references in `hardware.bmc` (`keyvault://`, `env://`, `file://` or `command://`), read through the toolkit's resolver. One login for every machine. See [Operator inputs](./operator-inputs.mdx#secrets). |
 | Key Vault, deployment administrator | A secret for the local administrator password used for cluster deployment, referenced as `keyvault://<vault>/<secret>`. |
-| Resource provider object ID | The object ID of the Azure Local resource provider in your tenant. Set it in the environment file so the run doesn't need directory read rights, which a managed identity doesn't have by default. |
+| Resource provider object ID | The object ID of the Azure Local resource provider in your tenant. Set it as `azure.hci_resource_provider_object_id` in `infrastructure.yml` so the run doesn't need directory read rights, which a managed identity doesn't have by default. |
 
 :::note Roles are a one-time setup
 Someone with enough rights gives the automation identity its roles once, before the first run. After that the run needs no more than the roles above.
@@ -98,7 +98,8 @@ You can check endpoint and network readiness before the first run with [azureloc
 | Elevation | Run elevated. The Boot stage creates an SMB share, a local account and a firewall rule on the host. |
 | Azure sign-in | The Az PowerShell modules, signed in as an identity that has the [Azure roles](#azure). With `-UseManagedIdentity` the script signs in as the managed identity attached to the host. |
 | Bicep | Available on the host. `Invoke-ZtpEnvironment.ps1` adds the Azure CLI's Bicep folder to `PATH`, so installing the Azure CLI's Bicep is enough. |
-| `powershell-yaml` | Reads the environment file. |
+| `powershell-yaml` | Reads `infrastructure.yml`. |
+| azurelocal-toolkit | A clone of the toolkit, in `AZL_TOOLKIT_ROOT` or next to the ZTP clone. ZTP checks the file with it and reads every secret reference through its resolver. With `-Execute` and no toolkit, the run stops with exit code 2. |
 | Pester 5 | Only needed to run the repository's tests. |
 | Disk | Space for the maintenance ISO and one image per machine. |
 | Network | The [paths above](#network-paths). |

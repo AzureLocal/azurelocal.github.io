@@ -132,7 +132,7 @@ $common = @{ InfrastructureFile = './infrastructure.yml'; OsConfigurationReport 
 & $arm @common -Mode Deploy   -ReportDirectory ./arm-deploy      # 2.5 to 3 hours, only after a Validate of these parameters
 ```
 
-`-Mode ValidateAndDeploy` does the last two in one run with a gate between them (`-ApprovalMode stop|prompt|none`). The default, `stop`, ends after a good Validate in state `AwaitingApproval` with exit code 0; run `-Mode Deploy` to continue. `-WhatIf` does everything except submit.
+`-Mode ValidateAndDeploy` does the last two in one run with a gate between them (`-ApprovalMode stop|none`, or `deployment.approval`; nothing asks on the console). The default, `stop`, ends after a good Validate in state `AwaitingApproval` with exit code 0; run `-Mode Deploy` to continue. `none` continues at once (a lab). The value `prompt` is gone since registry 5.0.61: a file that says `prompt` fails validation, so change it to `stop`. `-WhatIf` does everything except submit.
 
 | Parameter | Meaning |
 |-----------|---------|
@@ -159,9 +159,9 @@ Copy the file for your platform. Each runs the same script: **preconditions** (P
 |----------|---------------------|----------------|----------|---------|
 | GitHub Actions | `pipelines/github-actions/arm-deployment.yml` (copy to `.github/workflows/`) | `preconditions`, `validate`, `deploy` | The environment of `devops.pipelines.environments.arm_deployment`, with required reviewers | `azure/login`, OIDC |
 | GitLab CI | `pipelines/gitlab/stages/arm-deployment.yml` (declares its own stages, include it from a pipeline of its own) | `arm-preconditions`, `arm-validate`, `arm-deploy` | `arm-deploy` is a manual job in the protected environment of `devops.pipelines.environments.arm_deployment` | `id_tokens` and a federated token, or a managed identity |
-| Azure DevOps | `pipelines/azure-devops/arm-deployment.yml` | Stages `Preconditions`, `Validate`, `Deploy` | Approvals check on the environment you enter as a run parameter (the value of `devops.pipelines.environments.arm_deployment`) | A service connection with workload identity federation |
+| Azure DevOps | `pipelines/azure-devops/arm-deployment.yml` | Stages `Preconditions`, `Validate`, `Deploy` | Approvals check on the environment you enter as a run parameter (the value of `devops.pipelines.environments.arm_deployment`) | The service connection of the run parameter `azureServiceConnection` (`devops.pipelines.service_connection`), workload identity federation |
 
-The pipeline files name no runner label, agent pool or environment. On GitHub and GitLab they read `AZL_RUNNER_LABEL` and `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, which task 05 of the CI/CD setup sets from `devops.pipelines.runner_label` and `devops.pipelines.environments.arm_deployment` ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). On Azure DevOps the pool and the environment are run parameters with no default.
+The pipeline files name no runner label, agent pool or environment. On GitHub and GitLab they read `AZL_RUNNER_LABEL` and `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, which task 05 of the CI/CD setup sets from `devops.pipelines.runner_label` and `devops.pipelines.environments.arm_deployment` ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). On Azure DevOps the pool, the environment and the service connection are run parameters with no default.
 
 Pipeline inputs: the mode (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), the path of `infrastructure.yml`, the OS configuration report (the artifact of the OS configuration pipeline, or a repository path), the optional ZTP handoff, `resume`, and the known issue ids to acknowledge.
 
@@ -250,6 +250,19 @@ For a SAN the generator fills the parameters of Microsoft's template: `create-cl
 | `networking.cluster_network_properties.priority_smb` | `3` | 802.1p priority of the SMB traffic, 0 to 7. Default 3 |
 
 The CHAP secret stays a Key Vault reference (`storage.san.iscsi.chap.secret`). The four cluster network values are no longer fixed in the generator. Their defaults are the values of Microsoft's template. A Fibre Channel or Storage Spaces Direct file needs none of the new keys.
+
+### Network ATC overrides of the intents
+
+Leave `networking.intents[].overrides` out to keep Network ATC's defaults, which Microsoft recommends. When an intent has overrides, a value it leaves out is the registry default of its key (registry 5.0.60), not a value fixed in the generator. The defaults are Network ATC's ([Deploy host networking with Network ATC](https://learn.microsoft.com/windows-server/networking/network-atc/network-atc#default-network-atc-values), default DCB configuration: cluster heartbeat priority 7, SMB Direct priority 3 with 50 percent) and the RDMA technology of Microsoft's quickstart parameters file.
+
+| Key | ARM parameter | Default |
+|-----|---------------|---------|
+| `networking.intents[].overrides.qos.cluster_priority` | `priorityValue8021Action_Cluster` | `7` |
+| `networking.intents[].overrides.qos.smb_priority` | `priorityValue8021Action_SMB` | `3` |
+| `networking.intents[].overrides.qos.smb_bandwidth_percent` | `bandwidthPercentage_SMB` | `50` |
+| `networking.intents[].overrides.adapter.network_direct_technology` | `networkDirectTechnology` | `roce_v2` (RoCEv2) |
+
+The physical switches must carry the same priority values.
 
 ---
 

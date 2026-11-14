@@ -265,6 +265,29 @@ The runner holds **resource-group-scope roles only**, never a subscription role.
 
 With the default Arc transport the operator host needs **no path to the nodes**. The Run Command extension must not be blocked (`azcmagent config get extensions.blocklist` on a node), and Azure Policy with `deployIfNotExists` or `modify` effects on the resource group can collide with it; the toolkit has a script that creates temporary exemptions.
 
+### Temporary policy exemptions
+
+`scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1` exempts the deployment resource groups from inherited assignments with the `deployIfNotExists` or `modify` effect (category Waiver), and removes the exemptions after the deployment. Audit, deny and other effects stay in force.
+
+The groups come from `infrastructure.yml` (`-InfrastructureFile`, mandatory): `azure.resource_group`, and with simplified provisioning `provisioning.simplified.resource_group` and `provisioning.simplified.managed_resource_group_name` (in `provisioning.simplified.subscription_id` when that is another subscription). Add a group Azure named itself with `-ManagedResourceGroupName`.
+
+The script **makes changes unless you pass `-WhatIf`**. The earlier `-Execute`, `-SubscriptionId` and `-ResourceGroupName` parameters are gone (registry 5.0.61).
+
+```powershell
+Connect-AzAccount -Tenant <tenant-id>   # the script does not sign in and never prompts
+
+# List what reaches the groups and what would be exempted; changes nothing
+./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+# Before provisioning: create the exemptions (they expire after 7 days by default, -ExpiresInDays)
+./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -InfrastructureFile ./infrastructure.yml
+
+# After the deployment succeeds: remove the exemptions this script made
+./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -InfrastructureFile ./infrastructure.yml -Remove
+```
+
+Creating an exemption needs `Microsoft.Authorization/policyAssignments/exempt/action` at the scope of each assignment (Resource Policy Contributor or Owner there). Exit codes: 0 done, 1 an Azure call or a precondition failed, 2 a value in the file is missing.
+
 ---
 
 ## Troubleshooting

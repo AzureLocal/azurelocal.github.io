@@ -67,7 +67,7 @@ The runner meets the [management host prerequisites](./prerequisites.mdx#managem
 - Install the runner or agent as a **service** that runs as an account with local administrator rights on the runner.
 - Label the runner so that only this pipeline's jobs target it, for example with a `ztp` label or its own pool. The service account has administrator rights and can reach your BMC network, so don't share the pool.
 - Set the job timeout well above the run time.
-- Keep the repository clone, with the `_media` folder at its root, in a **persistent location** that the runner's workspace clean-up doesn't remove. The run keeps its state, downloaded files, images and vouchers there, and resume depends on them. Restrict access to that folder, because vouchers are proof of ownership of the machines.
+- Keep the run folders, `provisioning.simplified.media_path` and `evidence_path` (default under `%ProgramData%\AzureLocalZtp\<site_name>`), in a **persistent location** that the runner's workspace clean-up doesn't remove, outside any git working tree. The run keeps its state, downloaded files, images and vouchers there, and resume depends on them. Restrict access to them, because vouchers are proof of ownership of the machines.
 
 For setup steps, see the vendor's documentation, such as [self-hosted Windows agents](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/windows-agent?view=azure-devops) for Azure Pipelines or [self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners) for GitHub Actions.
 
@@ -91,14 +91,14 @@ Give the identity these roles. A person with enough rights does this once, befor
 | The Key Vault that holds the BMC account | Permission to read secrets | The run reads the BMC user name and password. |
 | The subscription | The `Microsoft.DeviceOnboarding/AzureLocalZTP` feature and the resource providers [registered](./prerequisites.mdx#azure) | The Bootstrap stage checks them before the claim. |
 
-A managed identity has no directory read rights by default, so set `ztp.azl_rp_object_id` in the environment file. That way the run doesn't need to look up the resource provider's object ID.
+A managed identity has no directory read rights by default, so set `azure.hci_resource_provider_object_id` in `infrastructure.yml`. That way the run doesn't need to look up the resource provider's object ID.
 
 ---
 
 ## Secrets from Key Vault
 
-- The environment file holds **names and references**: the vault names, the secret names, and `keyvault://<vault>/<secret>`. See [Operator inputs](./operator-inputs.mdx#secrets).
-- The scripts read the BMC account, the provisioning administrator password and the deployment administrator password from Key Vault at run time, using the pipeline identity.
+- `infrastructure.yml` holds **references only**: `keyvault://<vault>/<secret>`, or `env://`, `file://` and `command://` for the BMC login and the maintenance password. See [Operator inputs](./operator-inputs.mdx#secrets).
+- The scripts read the BMC account and the maintenance password at run time through the toolkit's resolver, using the pipeline identity for Key Vault. The runner needs an `azurelocal-toolkit` clone (`AZL_TOOLKIT_ROOT`, or next to the ZTP clone). Azure reads the provisioning administrator password from the vault itself.
 - With a managed identity or a federated credential, the pipeline needs **no stored secret values**. Don't pass the BMC or administrator passwords as pipeline variables.
 - Don't echo, upload or cache the generated files. They hold node names, addresses and Azure resource IDs that are specific to your environment.
 

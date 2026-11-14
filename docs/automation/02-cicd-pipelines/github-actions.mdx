@@ -64,6 +64,17 @@ on:
 | `ARM_TENANT_ID` | Azure AD Tenant ID |
 | `ARM_SUBSCRIPTION_ID` | Target Subscription ID |
 
+The `terraform init` steps of the plan and apply jobs read four repository variables for the state backend. Task 05 of the CI/CD setup sets them from `devops.state`:
+
+| Variable | Source |
+|---|---|
+| `TF_BACKEND_RG` | `devops.state.resource_group` |
+| `TF_BACKEND_SA` | `devops.state.storage_account` |
+| `TF_BACKEND_CONTAINER` | `devops.state.container` (default `tfstate`) |
+| `TF_BACKEND_KEY` | The state file of the `azure-local` environment, `azure-local.tfstate` |
+
+The backend signs in to the storage account with Microsoft Entra ID (`use_azuread_auth=true`).
+
 ### 2. Environment Protection
 
 Create the environment that `devops.pipelines.environments.terraform_deployment` names, with required reviewers. It gates the `terraform-apply` job and the on-premises jobs.

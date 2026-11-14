@@ -11,7 +11,7 @@
 One master, one file, one template per tool.
 
 - **The registry is the only master.** `config/variables/schema/master-registry.yaml` defines every variable: the keys of `infrastructure.yml`, the parameters and settings of each tool, the secret names and the environment variables. Nothing else defines a variable. A variable that exists only in a script, a file, a hand-edited schema or a document is drift, and the tests fail on it.
-- **One `infrastructure.yml` feeds every tool.** It describes one Azure Local instance. It follows schema 5 (the current version is 5.6.26). The toolkit scripts, azurelocal-ztp, azurelocal-sonar, Trailwright, the ARM deployment, Terraform and Ansible all read this file.
+- **One `infrastructure.yml` feeds every tool.** It describes one Azure Local instance. It follows schema 5 (the current version is 5.6.27). The toolkit scripts, azurelocal-ztp, azurelocal-sonar, Trailwright, the ARM deployment, Terraform and Ansible all read this file.
 - **One generated template per tool.** Each tool gets a template with only the keys it reads, under `config/variables/templates/tools`.
 - **Secrets are references, never values.** One resolver reads them, through four providers (Azure Key Vault is the default). No script names a vault.
 - **Every script parameter is registered.** A generator reads each script and writes its parameters into the registry.
@@ -69,7 +69,7 @@ Every script takes the file as a parameter, for example `-InfrastructureFile ./i
 azurelocal-toolkit/config/variables/schema/master-registry.yaml
 ```
 
-For every variable the registry holds the type, the description, the default, the allowed values, an example, the schema version that added it (`since`) and the tools that read it (`used_by`). The registry version is 5.0.58 and it follows infrastructure schema 5.6.26.
+For every variable the registry holds the type, the description, the default, the allowed values, an example, the schema version that added it (`since`) and the tools that read it (`used_by`). The registry version is 5.0.61 and it follows infrastructure schema 5.6.27.
 
 ### Layout
 
@@ -205,7 +205,7 @@ $gateway = $infra.networking.management.gateway
 $value = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'provisioning.simplified.site_name'
 ```
 
-Without `-Path`, `Import-AzlInfrastructure` looks for `$env:AZL_INFRASTRUCTURE_FILE`, then `./infrastructure.yml`, then `./config/infrastructure.yml`.
+`-Path` is required. `Import-AzlInfrastructure` has no default path, reads no environment variable (`AZL_INFRASTRUCTURE_FILE` is gone) and does not search for the file.
 
 A script that a person calls takes `-InfrastructureFile`, and the parameter is mandatory. It never asks for a value: no `Read-Host` and no `Get-Credential`. A credential comes from a `-Credential` parameter or from a secret reference in `infrastructure.yml`. When neither gives one, the script stops with exit code 2.
 
@@ -276,12 +276,16 @@ The variable map (`config/variables/docs/VARIABLE-MAP.md`) answers "what variabl
 
 ## The Earlier Layout (Retired)
 
-The earlier toolkit layout was a nested `variables.yml` (registry 4.0.0) read by loader helpers. Schema 5 replaces it, together with the environment file of azurelocal-ztp and the export of Trailwright 1.x. The earlier layout is gone from the toolkit (registry 5.0.58, schema 5.6.26):
+The earlier toolkit layout was a nested `variables.yml` (registry 4.0.0) read by loader helpers. Schema 5 replaces it, together with the environment file of azurelocal-ztp and the export of Trailwright 1.x. The earlier layout is gone from the toolkit (registry 5.0.58, schema 5.6.26; the last leftovers in registry 5.0.59 to 5.0.61):
 
 - `config/variables/variables.example.yml`, `variables.schema.json`, `validate-variables.ps1`, `Test-VariablesFile.ps1` and `Test-VariableConfig.ps1` are removed. Use `config/variables/examples/infrastructure.example.yml` and `Test-InfrastructureFile.ps1`.
 - `config-loader.ps1` and `keyvault-helper.ps1` are removed. Scripts use `Import-AzlInfrastructure` and `AzlSecret.psm1`.
 - No script takes `-ConfigPath` or `-ConfigFile`. Every script takes `-InfrastructureFile`.
 - The registry-only keys `environment.env_name`, `env_type`, `env_owner`, `env_description`, `site.env_name` and `identity.active_directory.security_groups_by_role` are removed. Use `environment.name`, `type`, `owner`, `description`, `site.name` and `identity.active_directory.security_groups[]`.
+- `Import-AzlInfrastructure` has no default path and reads no `AZL_INFRASTRUCTURE_FILE` (registry 5.0.59). The discovery scripts take `-InfrastructureFile` and never prompt or sign in: `Inventory-AzureTenant.ps1` (it replaces the removed `Get-TenantInfo.ps1`) and `Get-OnPremInventory.ps1`.
+- `security.keyvault.platform.kv_platform_*` is removed (registry 5.0.60).
+- `Assign-AzureLocalRBAC.ps1` is removed (registry 5.0.61). `Set-EntraGroupRoleAssignments.ps1` and task 01 of the CI/CD setup assign the roles.
+- No script prompts: `deployment.approval` and `-ApprovalMode` take `stop` or `none` (registry 5.0.61).
 
 [MIGRATION.md](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/MIGRATION.md) says where every old key and every removed script went.
 

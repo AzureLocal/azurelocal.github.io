@@ -410,39 +410,41 @@ For deployments where Azure resources already exist, use automated discovery to 
 
 ### Azure Tenant Discovery Process
 
-**Script:** `Inventory-AzureTenant.ps1` 
-**Output:** `discovery/azure-inventory.json`
+**Script:** `scripts/common/discovery/Inventory-AzureTenant.ps1` 
+**Output:** `discovery/azure-inventory.json` and CSV files (`-Format JSON`, `CSV` or `Both`, default `Both`)
+
+The script is read only. It takes the tenant from `azure.tenant_id` of `infrastructure.yml` (`-InfrastructureFile`, mandatory). It does not sign in and never prompts: sign in first. Reader on the subscriptions is enough; add Management Group Reader at the root to see the management groups. It stops when the signed-in tenant is not the one in the file. Exit codes: 0 done, 1 a precondition or a read failed (the files are still written and list the errors), 2 `azure.tenant_id` is missing or the file cannot be read.
 
 ```powershell
-# Authenticate to target tenant
-Connect-AzAccount -Tenant "{{CUSTOMER_TENANT_ID}}"
+# Sign in to the tenant of azure.tenant_id first
+Connect-AzAccount -Tenant <tenant-id>
 
-# Run discovery
-.\scripts\common\discovery\Inventory-AzureTenant.ps1 `
- -TenantId "{{CUSTOMER_TENANT_ID}}" `
- -IncludeRBAC `
- -Verbose
+# Run discovery (writes to .\discovery by default)
+./scripts/common/discovery/Inventory-AzureTenant.ps1 -InfrastructureFile ./infrastructure.yml -IncludeRBAC
 ```
+
+The earlier `Get-TenantInfo.ps1` is removed: `Inventory-AzureTenant.ps1` records the tenant too. To list the computer objects already in the Active Directory OU of the instance (`identity.active_directory.ou_path`), run the read-only `scripts/common/discovery/Get-OnPremInventory.ps1 -InfrastructureFile ./infrastructure.yml`. It needs the ActiveDirectory module (RSAT) and does nothing when `scenario.identity` is `local_identity`.
 
 ### What Gets Discovered
 
 | Category | Resources | Details Captured |
 |----------|-----------|------------------|
-| **Identity** | Management Groups, Subscriptions | Hierarchy, state, tenant association |
-| **Compute** | VMs, Disks, Availability Sets | Size, OS, network config |
-| **Networking** | VNets, Subnets, NSGs, NICs | Address spaces, peering, rules |
-| **Storage** | Storage Accounts, File Shares | SKU, encryption, endpoints |
-| **Security** | Key Vaults, Managed Identities | Configuration, access policies |
-| **Monitoring** | Log Analytics, App Insights | Workspace details, retention |
+| **Tenant** | Management groups, subscriptions, resource groups, every resource | Hierarchy, registered resource providers, tags |
+| **Azure Local** | Clusters, custom locations, logical networks, images, network interfaces, disks | Existing Azure Local resources (on unless `-IncludeAzureLocal:$false`) |
+| **Networking** | VNets with subnets and peerings, VPN and local network gateways, connections, route tables, public addresses | Address spaces, peering, routes |
+| **Compute** | VMs, disks | Size, disks, addresses |
+| **Storage** | Storage accounts | SKU, settings |
+| **Security and governance** | Key Vaults, managed identities, policy assignments, role assignments (with `-IncludeRBAC`) | Configuration, scope |
+| **Monitoring** | Log Analytics workspaces | Workspace details |
 
 ### Review and Import
 
 ```powershell
 # View discovery summary
 $discovery = Get-Content discovery/azure-inventory.json | ConvertFrom-Json
-Write-Host "Subscriptions: $($discovery.subscriptions.Count)"
-Write-Host "Resource Groups: $($discovery.resource_groups.Count)"
-Write-Host "VNets: $($discovery.vnets.Count)"
+Write-Host "Subscriptions: $($discovery.Subscriptions.Count)"
+Write-Host "Resource Groups: $($discovery.ResourceGroups.Count)"
+Write-Host "VNets: $($discovery.Networking.VirtualNetworks.Count)"
 
 # Copy the values you need into infrastructure.yml by hand.
 # The toolkit has no import script for the Azure inventory. Its hardware discovery

@@ -130,6 +130,16 @@ Common adapter names by NIC vendor:
 
 A change of the management address is a guarded change: the node applies it, checks it and rolls it back unless the management host confirms it through a new session.
 
+The timings of the guard are run settings (registry 5.0.60), given in the JSON file of `-SettingsFile` or in `-Settings`. Keep the defaults unless a node needs more time:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `startDelaySeconds` | `20` | Pause between staging a change and the node's first change, so the call that staged it has returned |
+| `checkSeconds` | `300` | Longest the node waits for its checks to stay green for `networkStableSeconds` (at least `networkStableSeconds` + 120) |
+| `repairSeconds` | `45` | After each step of the repair ladder, how long the checks get to pass before the next step |
+| `vlanLinkDownSeconds` | `120` | Added to the node's deadline when a VLAN changes (the adapter restarts and the switch has to forward the new VLAN) |
+| `hostnameConfirmExtraMinutes` | `10` | Added to the confirmation window when the computer name changes with a restart |
+
 The nodes' local administrator comes from `identity.local_admin` of `infrastructure.yml` (the password is a secret reference), or from `-Credential`. The script never prompts. Run settings go in a JSON file given with `-SettingsFile`.
 
 #### Run

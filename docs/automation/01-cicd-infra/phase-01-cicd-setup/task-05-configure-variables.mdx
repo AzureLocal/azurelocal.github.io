@@ -76,6 +76,17 @@ The script sets them as GitHub repository variables or GitLab project CI/CD vari
 
 Create the variables (or run this task) before the first pipeline run. With `AZL_RUNNER_LABEL` empty, a job has no label to select a runner by. On GitLab, for the first run of the CI/CD infrastructure stage, before the runners exist, give `AZL_RUNNER_LABEL` a shared runner tag when you run the pipeline.
 
+### The service connection and the variable group (Azure DevOps)
+
+From schema 5.6.27 the Azure DevOps pipeline files hold no service connection or variable group name either. GitHub and GitLab ignore these keys.
+
+| Key | What it is |
+|-----|------------|
+| `devops.pipelines.service_connection` | The name of the Azure Resource Manager service connection (workload identity federation) that task 05 creates and that the Azure DevOps pipelines sign in through. Task 01 puts the same name in the subject of the federated credential. Example: `iic-azure-local`. |
+| `devops.pipelines.variable_group` | The name of the variable group (Pipelines > Library) task 05 writes the sign-in values (`ARM_*`) and the state settings (`TF_BACKEND_*`) to. With entries in `devops.environments[]` there is one group per environment, named `<variable_group>-<environment>`. Example: `iic-azure-credentials`. |
+
+On Azure DevOps both keys are required: task 01 and task 05 stop with a message when one is missing. The pipelines take the names as run parameters with no default, and the script prints the values to enter. Before schema 5.6.27 the names were fixed (`AzureLocal-ServiceConnection` and `azure-credentials`). To keep what an earlier task 05 created, set the keys to those names.
+
 ---
 
 ## Required Variables
@@ -88,6 +99,15 @@ Configure the following variables for **each** target Azure subscription:
 | `ARM_SUBSCRIPTION_ID` | Azure subscription ID | Masked |
 | `ARM_CLIENT_ID` | `azurelocal-cicd` App Registration ID (from Task 01) | Masked |
 | `ARM_CLIENT_SECRET` | `azurelocal-cicd` App Registration secret (from Task 01) | Secret |
+
+With a state storage account in `devops.state`, the script also sets the Terraform state settings that the Azure DevOps, GitHub and GitLab pipelines pass to `terraform init`:
+
+| Variable | Source | Sensitivity |
+|----------|--------|-------------|
+| `TF_BACKEND_RG` | `devops.state.resource_group` | Plain |
+| `TF_BACKEND_SA` | `devops.state.storage_account` | Plain |
+| `TF_BACKEND_CONTAINER` | `devops.state.container` (default `tfstate`) | Plain |
+| `TF_BACKEND_KEY` | The state file of the `azure-local` environment, `azure-local.tfstate` (the name `New-IacVariableFiles.ps1` writes to `backend.hcl`) | Plain |
 
 ---
 
@@ -166,9 +186,11 @@ For multi-environment deployments, use environment-scoped secrets:
 
 ### Create Variable Group
 
+The script creates the group. To create it by hand:
+
 1. Navigate to **Pipelines** → **Library**
 2. Click **+ Variable group**
-3. Name it: `azure-credentials-<environment>` (e.g. `azure-credentials-azr-prod-us`)
+3. Name it `<variable_group>-<environment>`, from `devops.pipelines.variable_group` (e.g. `iic-azure-credentials-azr-prod-us`). Without entries in `devops.environments[]` the name is `devops.pipelines.variable_group` alone.
 4. Add variables:
 
 | Variable | Value | Lock |
@@ -176,20 +198,21 @@ For multi-environment deployments, use environment-scoped secrets:
 | `ARM_TENANT_ID` | Entra ID tenant ID | 🔒 |
 | `ARM_SUBSCRIPTION_ID` | Azure subscription ID | 🔒 |
 | `ARM_CLIENT_ID` | App Registration client ID | 🔒 |
-| `ARM_CLIENT_SECRET` | App Registration client secret | 🔒 |
+| `ARM_CLIENT_SECRET` | App Registration client secret (only with `devops.authentication.method: client_secret`) | 🔒 |
+| `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | The Terraform state settings (table above) | |
 
 5. Click **Save**
 
+With OIDC (workload identity federation) the script also creates the service connection named by `devops.pipelines.service_connection`. There is no client secret.
+
 ### Link to Pipeline
 
-Reference the variable group in your pipeline YAML:
+The toolkit's Azure DevOps pipelines take the group as a run parameter (`variableGroup` in `azure-local-deploy.yml`, `variable_group` in `os-configuration.yml`), and the service connection as `serviceConnection`, `azureServiceConnection` or `service_connection`. Enter the values the script prints when you run the pipeline. The pipeline file links the group like this:
 
 ```yaml
 variables:
-  - group: azure-credentials-azr-prod-us
+  - group: ${{ parameters.variableGroup }}
 ```
-
-> **Tip:** Create separate variable groups per environment and link them using pipeline stages.
 
 </TabItem>
 </Tabs>

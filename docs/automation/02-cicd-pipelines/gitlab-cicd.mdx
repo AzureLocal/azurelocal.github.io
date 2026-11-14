@@ -70,6 +70,12 @@ pipelines/gitlab/
 | `CLUSTER_NAME` | Variable | Azure Local cluster name |
 | `CLUSTER_RESOURCE_GROUP` | Variable | Cluster resource group |
 | `CI_ENVIRONMENT_NAME` | Variable | Target environment (lab/staging/production) |
+| `TF_BACKEND_RG` | Variable | Terraform state resource group (`devops.state.resource_group`) |
+| `TF_BACKEND_SA` | Variable | Terraform state storage account (`devops.state.storage_account`) |
+| `TF_BACKEND_CONTAINER` | Variable | Terraform state container (`devops.state.container`, default `tfstate`) |
+| `TF_BACKEND_KEY` | Variable | Terraform state file, `azure-local.tfstate` (the name `New-IacVariableFiles.ps1` writes to `backend.hcl`) |
+
+Task 05 of the CI/CD setup sets the four `TF_BACKEND_*` variables from `devops.state`. Every `terraform init` of the pipeline and of the reusable template passes them to the azurerm backend, with Microsoft Entra sign-in to the storage account (`use_azuread_auth=true`). The state stays in the backend: the apply job no longer keeps `terraform.tfstate` as an artifact, because a state file holds secrets. The earlier `TF_STATE_NAME` variable is gone.
 
 ### Runner Requirements
 
@@ -114,7 +120,7 @@ The **configure-onprem** and **configure-operations** stages require a self-host
 
 ### terraform-plan-apply.yml
 
-Extends `.terraform:plan` and `.terraform:apply` with backend configuration:
+Extends `.terraform:plan` and `.terraform:apply` with backend configuration (`TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER` and `TF_BACKEND_KEY`):
 
 ```yaml
 include:

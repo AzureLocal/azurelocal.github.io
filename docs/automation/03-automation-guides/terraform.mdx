@@ -126,6 +126,15 @@ Manages Key Vault with RBAC authorization and SPN role assignments:
 - SPN roles at both subscription and resource group scope
 - Managed identities output for use by other modules
 
+The Key Vault rules follow the registered keys (registry 5.0.60 and 5.0.61), the same rules as `Deploy-KeyVaults.ps1` and the ARM deployment:
+
+| Vault | Purge protection | Soft-delete retention |
+|---|---|---|
+| Platform Key Vault | On, except when `scenario.environment_class` is `lab`, `test` or `dev`, where a vault has to be removable | 90 days, the Azure default |
+| Cluster Key Vault (`cluster.key_vault`) | Off, as Microsoft's deployment template creates it | `cluster.key_vault.soft_delete_retention_days`, 7 to 90 (default 30) |
+
+Purge protection cannot be switched off once it is on. A cluster vault that an earlier version of the module created keeps its purge protection: the module ignores that attribute on an existing vault, so the plan does not try to change it.
+
 ### monitoring
 
 Deploys Log Analytics and alerting infrastructure:
@@ -159,6 +168,8 @@ Variables flow from `infrastructure.yml` to `terraform.tfvars.json`. The registr
 | `landing_zone.management_groups` | `management_groups` | Management group hierarchy |
 | `landing_zone.networks[]` | `vnet_*`, `subnets` | Hub VNet configuration |
 | `key_vaults[]` | `key_vault_*` | Key Vault settings |
+| `cluster.key_vault.soft_delete_retention_days` | `azl_key_vault_soft_delete_retention_days` | Retention of the cluster Key Vault |
+| `scenario.environment_class` | `environment_class` | Purge protection of the platform Key Vault |
 | `operations.monitoring` | `log_analytics_*` | Log Analytics config |
 | `landing_zone.policy` | `policy_assignments` | Azure Policy |
 | `landing_zone.virtual_machines[]` | `management_vms` | VM definitions |
@@ -172,9 +183,11 @@ backend "azurerm" {
   resource_group_name  = "rg-iic-terraform-01"
   storage_account_name = "stiictfstatelab"
   container_name       = "tfstate"
-  key                  = "azurelocal.tfstate"
+  key                  = "azure-local.tfstate"
 }
 ```
+
+`New-IacVariableFiles.ps1` writes these values to `backend.hcl`. The container comes from `devops.state.container` (default `tfstate`); the state file of the `azure-local` environment is `azure-local.tfstate`. The Azure DevOps, GitHub and GitLab pipelines pass the same values to `terraform init` as `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER` and `TF_BACKEND_KEY`, which task 05 of the CI/CD setup sets.
 
 ## Repository
 
