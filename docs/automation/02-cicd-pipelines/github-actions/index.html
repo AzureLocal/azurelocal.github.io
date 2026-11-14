@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://www.googletagmanager.com">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-2D9XDHSXJW"></script>
 <script>function gtag(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],gtag("js",new Date),gtag("config","G-2D9XDHSXJW",{anonymize_ip:!0})</script><link rel="stylesheet" href="/assets/css/styles.a534308d.css">
-<script src="/assets/js/runtime~main.881560fb.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.75a06976.js" defer="defer"></script>
 <script src="/assets/js/main.ea23a2d8.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -41,6 +41,9 @@
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="setup">Setup<a href="#setup" class="hash-link" aria-label="Direct link to Setup" title="Direct link to Setup" translate="no">​</a></h2>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="1-repository-secrets">1. Repository Secrets<a href="#1-repository-secrets" class="hash-link" aria-label="Direct link to 1. Repository Secrets" title="Direct link to 1. Repository Secrets" translate="no">​</a></h3>
 <table><thead><tr><th>Secret</th><th>Description</th></tr></thead><tbody><tr><td><code>ARM_CLIENT_ID</code></td><td>Service Principal Application ID</td></tr><tr><td><code>ARM_CLIENT_SECRET</code></td><td>Service Principal Secret</td></tr><tr><td><code>ARM_TENANT_ID</code></td><td>Azure AD Tenant ID</td></tr><tr><td><code>ARM_SUBSCRIPTION_ID</code></td><td>Target Subscription ID</td></tr></tbody></table>
+<p>The <code>terraform init</code> steps of the plan and apply jobs read four repository variables for the state backend. Task 05 of the CI/CD setup sets them from <code>devops.state</code>:</p>
+<table><thead><tr><th>Variable</th><th>Source</th></tr></thead><tbody><tr><td><code>TF_BACKEND_RG</code></td><td><code>devops.state.resource_group</code></td></tr><tr><td><code>TF_BACKEND_SA</code></td><td><code>devops.state.storage_account</code></td></tr><tr><td><code>TF_BACKEND_CONTAINER</code></td><td><code>devops.state.container</code> (default <code>tfstate</code>)</td></tr><tr><td><code>TF_BACKEND_KEY</code></td><td>The state file of the <code>azure-local</code> environment, <code>azure-local.tfstate</code></td></tr></tbody></table>
+<p>The backend signs in to the storage account with Microsoft Entra ID (<code>use_azuread_auth=true</code>).</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="2-environment-protection">2. Environment Protection<a href="#2-environment-protection" class="hash-link" aria-label="Direct link to 2. Environment Protection" title="Direct link to 2. Environment Protection" translate="no">​</a></h3>
 <p>Create the environment that <code>devops.pipelines.environments.terraform_deployment</code> names, with required reviewers. It gates the <code>terraform-apply</code> job and the on-premises jobs.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="3-self-hosted-runner">3. Self-Hosted Runner<a href="#3-self-hosted-runner" class="hash-link" aria-label="Direct link to 3. Self-Hosted Runner" title="Direct link to 3. Self-Hosted Runner" translate="no">​</a></h3>

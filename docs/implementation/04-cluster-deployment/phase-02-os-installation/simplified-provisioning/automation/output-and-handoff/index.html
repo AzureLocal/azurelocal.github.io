@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://www.googletagmanager.com">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-2D9XDHSXJW"></script>
 <script>function gtag(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],gtag("js",new Date),gtag("config","G-2D9XDHSXJW",{anonymize_ip:!0})</script><link rel="stylesheet" href="/assets/css/styles.a534308d.css">
-<script src="/assets/js/runtime~main.881560fb.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.75a06976.js" defer="defer"></script>
 <script src="/assets/js/main.ea23a2d8.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -48,7 +48,7 @@
 <p>You can also confirm in the Azure portal. Go to <strong>Azure Arc</strong> &gt; <strong>Operations</strong> &gt; <strong>Provisioning (preview)</strong> &gt; <strong>Provisioned machines</strong>. Each machine shows <strong>Ready to cluster</strong>. See <a class="" href="/docs/implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/task-05-verify-arc">Task 05</a> for the portal checks.</p>
 <hr>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="files-the-run-writes">Files the run writes<a href="#files-the-run-writes" class="hash-link" aria-label="Direct link to Files the run writes" title="Direct link to Files the run writes" translate="no">​</a></h2>
-<p>The run writes its state and outputs to the <code>ztp-state</code> folder under the <code>_media</code> folder at the root of the repository clone. The file names start with the run name, which is the names of the machines in the run joined with <code>+</code>.</p>
+<p>The run writes its state and outputs to the <code>ztp-state</code> folder under <code>provisioning.simplified.media_path</code> (default <code>%ProgramData%\AzureLocalZtp\&lt;site_name&gt;\media</code>), never inside a git working tree. The file names start with the run name, which is the names of the machines in the run joined with <code>+</code>.</p>
 <table><thead><tr><th>File</th><th>What it holds</th></tr></thead><tbody><tr><td><code>&lt;run&gt;.ztp-handoff.json</code></td><td>The handoff (schema 2), only what Azure generated: for each machine, its name, serial, provisioned machine name and resource ID, Arc machine name, <strong><code>arcMachineResourceId</code></strong>, the management mode, <code>managementAddressVerified</code> with its reason, <code>biosRestored</code>, and every port as Azure reports it. It also records the site and the installed OS build (<code>solution.vsrVersion</code>). It no longer carries SBE, bootstrap or timestamp blocks.</td></tr><tr><td><code>&lt;run&gt;.ztp-cluster-inputs.yaml</code></td><td>The cluster inputs: an <code>arc_machine_names</code> block that maps each node name to its Arc machine name, plus <code>release.azure_local_version</code>, the build installed. The SBE values for deployment come from OS configuration.</td></tr><tr><td><code>&lt;run&gt;.arc-machine-names.json</code></td><td>The map from node to Arc machine name.</td></tr><tr><td><code>&lt;run&gt;.ztp-provisioning.state.json</code></td><td>The state file that makes the run resumable.</td></tr><tr><td><code>ztp-events.jsonl</code></td><td>Structured events that Sonar can follow.</td></tr></tbody></table>
 <p>The handoff and cluster inputs hold environment-specific names and resource IDs. Treat them as internal. Don&#x27;t publish them.</p>
 <hr>
