@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2604.2.0](https://github.com/AzureLocal/azurelocal.github.io/compare/v2604.1.0...v2604.2.0) (2026-11-14)
+
+
+### Features
+
+* **nav:** Tools and Solutions dropdowns list every live tool; drop single-version config ([374eed8](https://github.com/AzureLocal/azurelocal.github.io/commit/374eed87b337f6438ed3c1669c022e1189da6c34))
+
+
+### Bug Fixes
+
+* **docs:** broken anchors, pin client-redirects plugin to 3.9.2, format src pages ([a9f0163](https://github.com/AzureLocal/azurelocal.github.io/commit/a9f016354052f8ed04154504a591dbf3491dd79d))
+* **docs:** replace literal passwords in samples with a placeholder AB[#0](https://github.com/AzureLocal/azurelocal.github.io/issues/0) ([9756d8e](https://github.com/AzureLocal/azurelocal.github.io/commit/9756d8e96bed921080b9d09f9499a25bff4006f2))
+* **docs:** use the zero GUID for the subscription ID in the SSH connectivity sample AB[#0](https://github.com/AzureLocal/azurelocal.github.io/issues/0) ([4468538](https://github.com/AzureLocal/azurelocal.github.io/commit/4468538bdaacc9f48c19236b2aa414aeb4e51e62))
+* **nav:** remove the Migrate section from the Tools menu ([86357fb](https://github.com/AzureLocal/azurelocal.github.io/commit/86357fb7948bdf0747a465e9e57b9d5d09817ef0))
+* **nav:** the Tools menu lists only Azure Local tools ([a71ada2](https://github.com/AzureLocal/azurelocal.github.io/commit/a71ada2b1c0f03447dd242d168b485254d4e5728))
+
 ## [2604.1.0](https://github.com/AzureLocal/azurelocal.github.io/compare/v2604.0.1...v2604.1.0) (2026-09-22)
 
 
