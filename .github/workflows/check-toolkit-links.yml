@@ -1,0 +1,53 @@
+name: Check toolkit links
+
+# Owner rule D19: the toolkit and both guides (Implementation and Automation) stay aligned.
+# Every toolkit path written on the site must exist in the public toolkit at main.
+# Called by deploy.yml before the build; also runs on pull requests, weekly (the toolkit
+# changes on its own) and by hand.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'blog/**'
+      - 'src/pages/**'
+      - 'docusaurus.config.js'
+      - 'sidebars.js'
+      - 'repo-management/scripts/Test-ToolkitLinks.ps1'
+      - 'repo-management/scripts/toolkit-links-allowlist.txt'
+      - '.github/workflows/check-toolkit-links.yml'
+  schedule:
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  toolkit-links:
+    name: Toolkit paths exist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout site
+        uses: actions/checkout@v4
+
+      - name: Checkout toolkit (main, shallow)
+        uses: actions/checkout@v4
+        with:
+          repository: AzureLocal/azurelocal-toolkit
+          ref: main
+          fetch-depth: 1
+          path: _toolkit
+
+      - name: List toolkit files
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          git -C _toolkit ls-files | Set-Content -LiteralPath "$env:RUNNER_TEMP/toolkit-files.txt"
+
+      - name: Check toolkit paths on the site
+        shell: pwsh
+        run: ./repo-management/scripts/Test-ToolkitLinks.ps1 -ToolkitFileList "$env:RUNNER_TEMP/toolkit-files.txt"
