@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Task 02: Apply Azure Policy Initiatives"
 sidebar_label: "Task 02: Azure Policy"
 sidebar_position: 2
@@ -67,6 +67,18 @@ azure.tenant_id                          the tenant; also the id of the tenant r
 landing_zone.policy.required_tags        the tag names to require (no default: the names follow your tagging standard)
 landing_zone.policy.management_group     optional; the management group to assign at
 ```
+
+The Terraform route (`src/terraform/modules/security`) assigns the policies these keys list (registry 5.0.62, schema 5.6.28, optional). They replace the earlier `extra.tfvars` copy of `terraform.tfvars.example`:
+
+| Key | What it is |
+|-----|------------|
+| `landing_zone.policy.assignments[]` | Azure Policy assignments at the scope of the Azure Local subscription (`azure.subscription_id`) |
+| `landing_zone.policy.resource_group_assignments[]` | Azure Policy assignments at the scope of a resource group of the landing zone; `resource_group` names an entry of `landing_zone.resource_groups` |
+| `.name` | Name of the assignment (its resource name, unique in its scope) |
+| `.policy_definition_id` | Resource ID of the policy definition or initiative |
+| `.display_name`, `.description` | Display name and description of the assignment |
+| `.enforce` | Enforcement mode: `true` (default) applies the policy's effect, `false` only reports (DoNotEnforce) |
+| `.non_compliance_message` | Message shown when a resource is not compliant |
 
 ## Procedure
 

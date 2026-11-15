@@ -11,7 +11,7 @@
 One master, one file, one template per tool.
 
 - **The registry is the only master.** `config/variables/schema/master-registry.yaml` defines every variable: the keys of `infrastructure.yml`, the parameters and settings of each tool, the secret names and the environment variables. Nothing else defines a variable. A variable that exists only in a script, a file, a hand-edited schema or a document is drift, and the tests fail on it.
-- **One `infrastructure.yml` feeds every tool.** It describes one Azure Local instance. It follows schema 5 (the current version is 5.6.27). The toolkit scripts, azurelocal-ztp, azurelocal-sonar, Trailwright, the ARM deployment, Terraform and Ansible all read this file.
+- **One `infrastructure.yml` feeds every tool.** It describes one Azure Local instance. It follows schema 5 (the current version is 5.6.28). The toolkit scripts, azurelocal-ztp, azurelocal-sonar, Trailwright, the ARM deployment, Terraform and Ansible all read this file.
 - **One generated template per tool.** Each tool gets a template with only the keys it reads, under `config/variables/templates/tools`.
 - **Secrets are references, never values.** One resolver reads them, through four providers (Azure Key Vault is the default). No script names a vault.
 - **Every script parameter is registered.** A generator reads each script and writes its parameters into the registry.
@@ -69,7 +69,7 @@ Every script takes the file as a parameter, for example `-InfrastructureFile ./i
 azurelocal-toolkit/config/variables/schema/master-registry.yaml
 ```
 
-For every variable the registry holds the type, the description, the default, the allowed values, an example, the schema version that added it (`since`) and the tools that read it (`used_by`). The registry version is 5.0.61 and it follows infrastructure schema 5.6.27.
+For every variable the registry holds the type, the description, the default, the allowed values, an example, the schema version that added it (`since`) and the tools that read it (`used_by`). The registry version is 5.0.62 and it follows infrastructure schema 5.6.28.
 
 ### Layout
 
@@ -241,7 +241,7 @@ A new violation is fixed in the script, by reading the value from the infrastruc
 
 ## Terraform and Ansible
 
-The Terraform code (`src/terraform`) and the Ansible roles (`src/ansible`) do not define the facts of an environment a second time. `config/variables/scripts/New-IacVariableFiles.ps1` reads `infrastructure.yml` and writes `terraform.tfvars.json`, `backend.hcl`, `inventory/hosts.yml`, `group_vars/all.yml` and `host_vars/<node>.yml`. Every variable of the code says in the registry where it comes from. A secret is never written: the script tells you which environment variable the code reads at run time.
+The Terraform code (`src/terraform`) and the Ansible roles (`src/ansible`) do not define the facts of an environment a second time. `config/variables/scripts/New-IacVariableFiles.ps1` reads `infrastructure.yml` and writes `terraform.tfvars.json`, `backend.hcl`, `inventory/hosts.yml`, `group_vars/all.yml` and `host_vars/<node>.yml`. Every variable of the code says in the registry where it comes from. A secret is never written: the script tells you which environment variable the code reads at run time. From registry 5.0.62 (owner directive D121) this holds for every pipeline, Ansible role, Terraform module and config template of the toolkit: none of them carries a value of a deployment. The pipelines read the variables task 05 of the CI/CD setup sets from `infrastructure.yml` and generate the Terraform and Ansible variable files before they run, no `group_vars/all.yml` is committed, the `terraform.tfvars.example` files hold comments only, and the ARM parameter examples and the TOR switch configurations are generated from the file.
 
 ```powershell
 ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac -WhatIf

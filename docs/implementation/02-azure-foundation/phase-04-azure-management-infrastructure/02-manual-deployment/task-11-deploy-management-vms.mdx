@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Task 11: Deploy Management VMs"
 sidebar_label: "Task 11: Deploy Mgmt VMs"
 sidebar_position: 11
@@ -88,6 +88,19 @@ landing_zone.networks[].name, .subscription, .resource_group, .location     wher
 landing_zone.subscriptions[].name, .id                                      the subscription that holds the network
 ```
 
+Keys added in registry 5.0.62 (schema 5.6.28, all optional) for the Terraform `compute` module and the Ansible `domain-controller` role, so that neither keeps a value of its own:
+
+| Key | What it is | Default |
+|-----|------------|---------|
+| `landing_zone.virtual_machines[].os_disk_size_gb` | Size of the OS disk in GB (VMs in Azure) | `128` |
+| `landing_zone.virtual_machines[].os_disk_type` | Storage type of the OS disk: `Standard_LRS`, `StandardSSD_LRS`, `StandardSSD_ZRS`, `Premium_LRS`, `Premium_ZRS` | `Premium_LRS` |
+| `landing_zone.virtual_machines[].os_disk_caching` | Caching of the OS disk: `None`, `ReadOnly`, `ReadWrite` | `ReadWrite` |
+| `landing_zone.virtual_machines[].image_version` | Version of the Marketplace image of `os`: `latest`, or a version such as `26100.1234.250101` | `latest` |
+| `landing_zone.virtual_machines[].dc_promotion` | For a machine with role `domain_controller`: `new_forest` (the first domain controller: it creates the forest of `identity.active_directory.domain_fqdn`) or `replica` | |
+| `landing_zone.virtual_machines[].dsrm_password` | For a machine with role `domain_controller`: a Key Vault reference (`keyvault://<vault>/<secret>`) to the Directory Services Restore Mode password; the role reads it on the controller and never generates one | |
+| `identity.active_directory.forest_functional_level`, `.domain_functional_level` | Functional levels of a new forest and its domain that the Ansible `domain-controller` role creates: `WinThreshold` or `Win2025` | `WinThreshold` |
+| `identity.active_directory.dns_forwarders` | DNS forwarders of the domain controllers the role promotes; when empty, Azure DNS for a VM in Azure only | |
+
 ---
 
 ## Single Subscription Model
@@ -127,8 +140,8 @@ landing_zone.subscriptions[].name, .id                                      the 
 3. **Disks**:
  | Field | Value | Source |
  |-------|-------|--------|
- | OS disk type | Premium SSD | `landing_zone.virtual_machines[]` |
- | OS disk size | Per config | `landing_zone.virtual_machines[]` |
+ | OS disk type | Premium SSD | `landing_zone.virtual_machines[].os_disk_type` (Terraform route; default `Premium_LRS`) |
+ | OS disk size | Per config | `landing_zone.virtual_machines[].os_disk_size_gb` (Terraform route; default 128) |
 
 4. **Networking**:
  | Field | Value | Source |

@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Task 07: NAT Gateway"
 sidebar_label: "Task 07: NAT Gateway"
 sidebar_position: 7
@@ -67,7 +67,7 @@ This task deploys an Azure NAT Gateway and associates it with the management sub
 
 | Setting | Value | Source |
 |---------|-------|--------|
-| SKU | Standard | Default |
+| SKU | `Standard` (default) or `StandardV2` (zone redundant; StandardV2 public IPs only) | `landing_zone.connectivity.nat_gateway.sku` (Terraform route) |
 | Idle Timeout | Per config (minutes) | `landing_zone.connectivity.nat_gateway.idle_timeout_minutes` |
 | Subnet | Management subnet | `landing_zone.networks[].subnets[].name` |
 
@@ -87,6 +87,8 @@ landing_zone.networks[].name, .subscription, .resource_group, .location     wher
 landing_zone.subscriptions[].name, .id                                      the subscription that holds the network
 ```
 
+The Terraform route (`src/terraform/modules/networking`) also reads two keys added in registry 5.0.62 (schema 5.6.28, optional): `landing_zone.connectivity.nat_gateway.public_ip_name` (the name of the public IP of the NAT gateway) and `landing_zone.connectivity.nat_gateway.sku` (`Standard`, the default, or `StandardV2`).
+
 ---
 
 ## Single Subscription Model
@@ -98,7 +100,7 @@ landing_zone.subscriptions[].name, .id                                      the 
 | Subscription | Customer subscription | `landing_zone.subscriptions[].id` |
 | Resource Group | `rg-azrlmgmt-{env}-{region}-01` | `landing_zone.networks[].resource_group` |
 | NAT Gateway Name | `ng-azrl-{env}-{region}-01` | Naming convention |
-| Public IP Name | `pip-azrlnat-{env}-{region}-01` | Naming convention |
+| Public IP Name | `pip-azrlnat-{env}-{region}-01` | Naming convention (Terraform route: `landing_zone.connectivity.nat_gateway.public_ip_name`) |
 
 ### Execution Options
 
