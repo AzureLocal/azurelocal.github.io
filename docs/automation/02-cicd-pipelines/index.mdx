@@ -28,9 +28,11 @@ This part documents the supported delivery pipeline platforms for Azure Local au
 
 | Platform | Best For | Azure Auth Model | Approval Model |
 |---|---|---|---|
-| **GitLab CI/CD** | Teams standardizing on GitLab and modular stage-based delivery | OIDC through `id_tokens` (a federated app registration) or a managed identity for the OS configuration and ARM pipelines; service principal variables for the Terraform and Ansible pipeline | Manual jobs in protected environments |
-| **GitHub Actions** | Teams standardizing on GitHub repositories and environment rules | OIDC (`azure/login`) with no client secret for the OS configuration and ARM pipelines | Environment protection rules (required reviewers) |
-| **Azure DevOps Pipelines** | Teams already operating in Azure DevOps | ARM service connections, with workload identity federation for the OS configuration and ARM pipelines | Environment approvals and checks |
+| **GitLab CI/CD** | Teams standardizing on GitLab and modular stage-based delivery | `AZL_AUTH_METHOD`: OIDC through the ID token `ARM_OIDC_TOKEN` (`id_tokens`, a federated app registration), or the masked `ARM_CLIENT_SECRET` | Manual jobs in protected environments |
+| **GitHub Actions** | Teams standardizing on GitHub repositories and environment rules | `AZL_AUTH_METHOD`: OIDC (`azure/login`, no client secret) or `ARM_CLIENT_SECRET` | Environment protection rules (required reviewers) |
+| **Azure DevOps Pipelines** | Teams already operating in Azure DevOps | ARM service connection: workload identity federation (`oidc`) or its secret (`client_secret`) | Environment approvals and checks |
+
+Every pipeline follows `devops.authentication.method` through `AZL_AUTH_METHOD`, and every value a pipeline needs (sign-in, runner, environments, infrastructure file, tool versions, state, job timeouts) is a key of `infrastructure.yml` that [Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx) sets on the platform; no pipeline file carries a value of a deployment. A managed identity of the runner is not a sign-in method of the pipelines.
 
 ## Common Pipeline Flow
 
@@ -38,7 +40,7 @@ The toolkit ships three families of pipeline files for each platform. They are s
 
 | Family | Stages | Calls |
 |---|---|---|
-| **Terraform and Ansible deploy** | `validate -> plan -> deploy-foundation -> configure-onprem -> deploy-cluster -> configure-operations -> validate-deployment` | Terraform, Ansible playbooks, Azure CLI. It does **not** call the schema 5 ARM deployment script |
+| **Terraform and Ansible deploy** | `validate -> plan -> deploy-foundation -> configure-onprem -> configure-operations -> validate-deployment` | Terraform and Ansible playbooks (05, 01, 02, 03, then 04), each job writing its variable files from `infrastructure.yml` first. It does **not** deploy the cluster: that is the ARM pipeline |
 | **OS configuration** (Phase 03) | Plan (read only), then Apply behind an approval | `Invoke-AzureLocalOsConfiguration.ps1`. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx) |
 | **ARM Validate and Deploy** (Phase 05) | Preconditions, Validate, then Deploy behind an approval | `Invoke-AzureLocalArmDeployment.ps1`. See [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx) |
 
@@ -55,7 +57,7 @@ Order for a new instance: provisioning (azurelocal-ztp or an ISO) -> OS configur
 
 | Platform | Description |
 |---|---|
-| [GitLab CI/CD](./gitlab-cicd.mdx) | Primary reference pipeline with modular stages and reusable templates |
+| [GitLab CI/CD](./gitlab-cicd.mdx) | Primary reference pipeline with modular stages and `Use-AzlGitLabTool.ps1` for the tool versions |
 | [GitHub Actions](./github-actions.mdx) | GitHub-native workflow equivalent with environment protection |
 | [Azure DevOps Pipelines](./azure-devops-pipelines.mdx) | Azure DevOps implementation using service connections and agent pools |
 | [ARM Validate and Deploy](../03-automation-guides/arm-validate-deploy.mdx) | The pipeline that runs Microsoft's ARM template through Validate, approval and Deploy, on all three platforms |

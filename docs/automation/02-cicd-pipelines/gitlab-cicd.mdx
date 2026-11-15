@@ -21,130 +21,123 @@ description: "GitLab CI/CD pipeline configuration for Azure Local"
 
 ## Overview
 
-GitLab CI/CD is the primary pipeline platform for Azure Local deployments. The pipeline uses modular stage includes with reusable templates, manual approval gates between phases, and artifact passing between jobs.
+GitLab CI/CD is the primary pipeline platform for Azure Local deployments. The pipeline uses modular stage includes, manual approval gates between phases, and artifact passing between jobs. **No value of a deployment is written in a pipeline file**: every value a job needs is a key of `infrastructure.yml`, and Task 05 of the CI/CD setup sets it on the project as a CI/CD variable ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). Run Task 05 again after you change the file.
 
 ## Pipeline Architecture
 
 ```
-validate → plan → deploy-foundation → configure-onprem → deploy-cluster → configure-operations → validate-deployment
+validate → plan → deploy-foundation → configure-onprem → configure-operations → validate-deployment
 ```
 
 | Stage | Tool | Runner | Trigger |
 |---|---|---|---|
-| **validate** | Terraform validate, Ansible lint, config validation | Cloud (shared) | Automatic |
-| **plan** | Terraform plan | Cloud (shared) | Automatic |
-| **deploy-foundation** | Terraform apply, output export | Cloud (shared) | Manual approval |
-| **configure-onprem** | Ansible playbooks (AD, OS, Arc) | Self-hosted | Manual approval |
-| **deploy-cluster** | Azure CLI (ARM) | Cloud (shared) | Manual approval |
-| **configure-operations** | Ansible playbooks (monitoring, management VMs) | Self-hosted | Manual approval |
+| **validate** | Terraform validate, Ansible lint, config validation | The tag in `AZL_RUNNER_LABEL` | Automatic |
+| **plan** | Terraform plan | The tag in `AZL_RUNNER_LABEL` | Automatic |
+| **deploy-foundation** | Terraform apply, output export | The tag in `AZL_RUNNER_LABEL` | Manual approval |
+| **configure-onprem** | Ansible playbooks 05, 01, 02, 03 (domain controllers, AD preparation, OS configuration, Arc registration) | Self-hosted | Manual approval |
+| **configure-operations** | Ansible playbook 04 (monitoring) | Self-hosted | Manual approval |
 | **validate-deployment** | Connectivity tests, compliance checks | Self-hosted | Manual |
+
+The Azure Local cluster itself is deployed by the [ARM Validate and Deploy pipeline](#arm-validate-and-deploy-pipeline) below, not by this chain. The earlier `deploy-cluster` stage is gone.
 
 ## Pipeline Structure
 
 ```
 pipelines/gitlab/
-├── .gitlab-ci.yml              # Master pipeline definition
-├── stages/
-│   ├── validate.yml            # Lint, schema validate, plan
-│   ├── deploy-foundation.yml   # Terraform apply
-│   ├── configure-onprem.yml    # AD prep, OS config, Arc registration
-│   ├── deploy-cluster.yml      # ARM cluster deployment
-│   ├── configure-operations.yml # Monitoring, management VMs
-│   └── validate-deployment.yml # Post-deployment tests
-└── templates/
-    ├── terraform-plan-apply.yml # Reusable TF plan/apply template
-    └── ansible-playbook.yml     # Reusable Ansible run template
+├── .gitlab-ci.yml                  # Master pipeline definition (includes stages/*.yml)
+├── Use-AzlGitLabTool.ps1           # Installs the tool versions of devops.pipelines.tool_versions
+├── os-configuration.gitlab-ci.yml  # OS configuration (plan, manual apply)
+└── stages/
+    ├── validate.yml                # Terraform validate, Ansible lint, infrastructure file check, Terraform plan
+    ├── deploy-foundation.yml       # Terraform apply, outputs
+    ├── configure-onprem.yml        # Playbooks 05, 01, 02, 03
+    ├── configure-operations.yml    # Playbook 04
+    ├── validate-deployment.yml     # Post-deployment tests
+    ├── deploy-cicd-infra.yml       # The runners (runs with CICD_INFRA=true)
+    └── arm-deployment.yml          # ARM Validate and Deploy (a pipeline of its own)
 ```
+
+The reusable templates `templates/terraform-plan-apply.yml` and `templates/ansible-playbook.yml` are gone: each job is one `pwsh` block of its own.
 
 ## Configuration
 
-### Required CI/CD Variables
+### CI/CD Variables
 
-| Variable | Type | Description |
-|---|---|---|
-| `ARM_CLIENT_ID` | Secret | Service Principal Application ID |
-| `ARM_CLIENT_SECRET` | Secret | Service Principal Secret |
-| `ARM_TENANT_ID` | Secret | Azure AD Tenant ID |
-| `ARM_SUBSCRIPTION_ID` | Secret | Target Azure Subscription ID |
-| `DOMAIN_ADMIN_PASSWORD` | Secret | On-premises domain admin password |
-| `CLUSTER_NAME` | Variable | Azure Local cluster name |
-| `CLUSTER_RESOURCE_GROUP` | Variable | Cluster resource group |
-| `CI_ENVIRONMENT_NAME` | Variable | Target environment (lab/staging/production) |
-| `TF_BACKEND_RG` | Variable | Terraform state resource group (`devops.state.resource_group`) |
-| `TF_BACKEND_SA` | Variable | Terraform state storage account (`devops.state.storage_account`) |
-| `TF_BACKEND_CONTAINER` | Variable | Terraform state container (`devops.state.container`, default `tfstate`) |
-| `TF_BACKEND_KEY` | Variable | Terraform state file, `azure-local.tfstate` (the name `New-IacVariableFiles.ps1` writes to `backend.hcl`) |
+Task 05 sets each variable below from its key as a project CI/CD variable (scope `*`; the sign-in values also per environment). The pipeline files hold no runner tag, environment name, tool version, infrastructure file path or sign-in method of their own.
 
-Task 05 of the CI/CD setup sets the four `TF_BACKEND_*` variables from `devops.state`. Every `terraform init` of the pipeline and of the reusable template passes them to the azurerm backend, with Microsoft Entra sign-in to the storage account (`use_azuread_auth=true`). The state stays in the backend: the apply job no longer keeps `terraform.tfstate` as an artifact, because a state file holds secrets. The earlier `TF_STATE_NAME` variable is gone.
+| Variable | Key in `infrastructure.yml` |
+|---|---|
+| `ARM_CLIENT_ID` | `azure.automation_identity.client_id` (else the app registration Task 01 made) |
+| `ARM_TENANT_ID` | `azure.tenant_id` |
+| `ARM_SUBSCRIPTION_ID` | `azure.subscription_id` |
+| `AZL_AUTH_METHOD` | `devops.authentication.method` (`oidc` or `client_secret`) |
+| `ARM_CLIENT_SECRET` (masked, only with `client_secret`) | `devops.authentication.client_secret` (a secret reference; Task 05 reads it from Key Vault) |
+| `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` |
+| `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` (one of `devops.runners[].labels` of the general runner) |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, `AZL_ENVIRONMENT_CICD_INFRA`, `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.*` |
+| `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` |
+| `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` |
+| `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` |
+| `AZL_RUNNER_SSH_PUBLIC_KEY` | `devops.runners[].admin_ssh_public_key` of the Linux runner |
+
+Nothing else is set by hand: the earlier `DOMAIN_ADMIN_PASSWORD`, `CLUSTER_NAME` and `CLUSTER_RESOURCE_GROUP` variables are gone. The Ansible roles read the LCM and DSRM passwords from Key Vault on the controller, and the cluster values come from the infrastructure file.
+
+**Sign-in.** With `oidc` each job signs in with the GitLab ID token `ARM_OIDC_TOKEN` (`id_tokens`, audience `api://AzureADTokenExchange`, the federated credential Task 01 made): `Connect-AzAccount -FederatedToken`, Terraform `ARM_USE_OIDC=true`. With `client_secret` the jobs use the masked `ARM_CLIENT_SECRET`: `Connect-AzAccount -Credential`, Terraform `ARM_CLIENT_SECRET`. A managed identity of the runner is not a sign-in method of the pipelines.
+
+**State.** Every `terraform init` passes the four `TF_BACKEND_*` variables to the azurerm backend, with Microsoft Entra sign-in to the storage account (`use_azuread_auth=true`). The state stays in the backend: the apply job keeps no `terraform.tfstate` as an artifact, because a state file holds secrets.
+
+**Variable files.** Every Terraform and Ansible job writes its inputs from the infrastructure file first, with `config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile <file> -OutputDirectory $IAC_DIRECTORY` (a directory outside the checkout, removed after the job). Terraform plans with `-var-file=$IAC_DIRECTORY/terraform/azure-local/terraform.tfvars.json`; the Ansible jobs copy `hosts.yml`, `group_vars` and `host_vars` into `src/ansible/inventory` (git-ignored there) and run with `-i inventory/hosts.yml`. The files hold subscription IDs and names, so they are never committed or kept as artifacts.
+
+### Tool versions
+
+GitLab has no installer action or task, so each job dot-sources `pipelines/gitlab/Use-AzlGitLabTool.ps1` at the start of its `pwsh` block:
+
+```powershell
+. ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Terraform -TerraformVersion $env:AZL_TERRAFORM_VERSION
+```
+
+| `-Tool` | What it does |
+|---|---|
+| `Terraform` | Uses `terraform` from PATH when it is that version; otherwise downloads that release from releases.hashicorp.com and puts it first in PATH |
+| `Ansible` | Creates a virtual environment with `python<PythonVersion>`, installs `ansible-core==<AnsibleCoreVersion>` and, when given, `ansible-lint==<AnsibleLintVersion>` |
+| `Modules` | Installs each PowerShell module whose version is given (powershell-yaml, Az, Az.KeyVault) from the PowerShell Gallery, unless that version is there |
+
+The script holds no version of its own; a missing version or a failed download or install fails the job.
 
 ### Runner Requirements
 
-The **configure-onprem** and **configure-operations** stages require a self-hosted GitLab Runner with:
+The **configure-onprem** and **configure-operations** stages require the general self-hosted GitLab Runner (the one in `devops.runners[]`, tagged with `AZL_RUNNER_LABEL`) with:
 
 - **Network access**: WinRM (5986), LDAP (389), Kerberos (88) to on-premises infrastructure
-- **Software**: Python 3.10+, Ansible >= 2.15, PowerShell >= 7.0, Azure CLI
-- **Tags**: the tag in the CI/CD variable `AZL_RUNNER_LABEL` (`devops.pipelines.runner_label`). Task 05 of the CI/CD setup sets `AZL_RUNNER_LABEL` and `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` from `infrastructure.yml` as project variables ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). The pipeline files hold no runner tag and no environment name.
+- **Software**: PowerShell 7 (every job script is a `pwsh` block) and Python at the version `devops.pipelines.tool_versions.python` (`python<version>` on PATH)
+- **Outbound HTTPS** to the PowerShell Gallery, PyPI and releases.hashicorp.com, unless the tool versions are already installed
 
 ### Stage Details
 
 #### Validate Stage
-- `terraform:validate` — `terraform init -backend=false && terraform validate && terraform fmt -check`
-- `ansible:lint` — `ansible-lint playbooks/ roles/` and `ansible-playbook --syntax-check`
-- `config:validate` — Checks `infrastructure.yml` with `scripts/common/infrastructure/Test-InfrastructureFile.ps1` (the path is the variable `INFRASTRUCTURE_FILE`)
+- `terraform:validate` — `terraform init -backend=false`, `terraform validate` and `terraform fmt -check`
+- `ansible:lint` — `ansible-lint playbooks/ roles/` and `ansible-playbook --syntax-check playbooks/site.yml`
+- `config:validate` — Checks the infrastructure file in `AZL_INFRASTRUCTURE_FILE` with `scripts/common/infrastructure/Test-InfrastructureFile.ps1` before anything is generated from it
 
 #### Plan Stage
-- `terraform:plan` — Generates a plan artifact passed to the apply job
+- `terraform:plan` — Writes the variable files, then `terraform plan -out=tfplan` with the generated `terraform.tfvars.json`; the plan is passed to the apply job
 
 #### Deploy Foundation Stage
-- `terraform:apply` — Applies the plan with manual approval gate
-- `terraform:outputs` — Exports outputs as JSON artifact for downstream stages
+- `terraform:apply` — Applies the plan, manual job in the environment in `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT`
+- `terraform:outputs` — Exports outputs as a JSON artifact for downstream stages
 
 #### Configure On-Prem Stage (sequential with manual gates)
-- `ad:preparation` — `playbooks/01-ad-preparation.yml`
-- `os:configuration` — `playbooks/02-os-configuration.yml` (depends on AD prep)
-- `arc:registration` — `playbooks/03-arc-registration.yml` (depends on OS config)
-
-#### Deploy Cluster Stage
-- `cluster:validate` — Checks cluster readiness via Azure CLI
-- `cluster:deploy` — Initiates cluster deployment (long-running, 45-90 minutes)
+- `management:vms` — `playbooks/05-management-vms.yml` (the domain controllers, first)
+- `ad:preparation` — `playbooks/01-ad-preparation.yml` (on the first domain controller)
+- `os:configuration` — `playbooks/02-os-configuration.yml`, which runs `Invoke-AzureLocalOsConfiguration.ps1` on the runner with `-e azurelocal_os_configuration_infrastructure_file=<AZL_INFRASTRUCTURE_FILE>` (PowerShell 7, powershell-yaml, Az and Az.KeyVault)
+- `arc:registration` — `playbooks/03-arc-registration.yml`
 
 #### Configure Operations Stage
 - `monitoring:setup` — `playbooks/04-monitoring-setup.yml`
-- `management:vms` — `playbooks/05-management-vms.yml`
 
 #### Validate Deployment Stage
 - `validate:connectivity` — Post-deployment connectivity tests
 - `validate:compliance` — Azure Policy and Defender compliance checks
-
-## Reusable Templates
-
-### terraform-plan-apply.yml
-
-Extends `.terraform:plan` and `.terraform:apply` with backend configuration (`TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER` and `TF_BACKEND_KEY`):
-
-```yaml
-include:
-  - local: 'pipelines/gitlab/templates/terraform-plan-apply.yml'
-
-my-plan:
-  extends: .terraform:plan
-  variables:
-    TF_ROOT: src/terraform/environments/azure-local
-```
-
-### ansible-playbook.yml
-
-Extends `.ansible:playbook` for consistent collection installation and execution:
-
-```yaml
-include:
-  - local: 'pipelines/gitlab/templates/ansible-playbook.yml'
-
-my-playbook:
-  extends: .ansible:playbook
-  variables:
-    PLAYBOOK: playbooks/01-ad-preparation.yml
-```
 
 ## OS Configuration Pipeline
 
@@ -155,7 +148,7 @@ my-playbook:
 | `plan` | Automatic | Read only. Publishes the plan report and the wipe list (the disks that would be wiped on each node when `os_configuration.clear_storage` is true) as artifacts |
 | `apply` | **Manual** | Someone allowed to run protected jobs reads the plan job's log and artifacts, then plays it. `resource_group` keeps two runs from working on the cluster at once |
 
-Sign-in is `AZURE_AUTH` = `oidc` (a federated app registration, through `id_tokens`) or `managed-identity`. No secret is stored: the nodes' local administrator password is read from the Key Vault named by `identity.local_admin.password`. The runner needs a route to the nodes' management network for PowerShell remoting (WinRM), or `-Transport ArcRunCommand` for a site with no route. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+Variables: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (`oidc` through `id_tokens`, or `client_secret` with the masked `ARM_CLIENT_SECRET`), `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OS_CONFIGURATION` (the approval environment of the apply job), `AZL_INFRASTRUCTURE_FILE`, `AZL_HANDOFF_PATH` (a handoff file or a directory of `*.ztp-handoff.json`, or the artifact of the ZTP pipeline through `needs:`) and the tool versions `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`, all set by Task 05. The transport and the storage wipe come from the master file (`os_configuration.remoting.transport`, `os_configuration.clear_storage`); the pipeline overrides neither. No secret is stored in the file: the nodes' local administrator password is read from the Key Vault named by `identity.local_admin.password`. The runner needs a route to the nodes' management network for PowerShell remoting (WinRM), or `-Transport ArcRunCommand` for a site with no route. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
 ## ARM Validate and Deploy Pipeline
 
@@ -167,7 +160,7 @@ Sign-in is `AZURE_AUTH` = `oidc` (a federated app registration, through `id_toke
 | `arm-validate` | `arm-validate` | Runs when `ARM_MODE` is `Validate` or `ValidateAndDeploy` |
 | `arm-deploy` | `arm-deploy` | **Manual** job in the protected environment in `AZL_ENVIRONMENT_ARM_DEPLOYMENT` (`devops.pipelines.environments.arm_deployment`). It re-checks every precondition and that these parameters validated. `ARM_RESUME=true` resubmits a failed Deploy |
 
-CI/CD variables: `ARM_MODE`, `AZURE_AUTH`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `INFRASTRUCTURE_FILE`, `OS_CONFIGURATION_REPORT`, `HANDOFF_FILE`, `ARM_ACKNOWLEDGE`. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+Project CI/CD variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (and the masked `ARM_CLIENT_SECRET` with `client_secret`), `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. Run variables (the web form offers them): `ARM_MODE` (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`; default `Plan`), `OS_CONFIGURATION_REPORT` (GitLab fetches another pipeline's artifact only through `needs: pipeline:` or `needs: project:`), `HANDOFF_FILE`, `ARM_ACKNOWLEDGE`. The Validate and Deploy jobs have a fixed upper bound of 1500 minutes (the registry maximum of `deployment.validate_timeout_minutes` and `deployment.deploy_timeout_minutes`, 1440, plus 60); the runner's own maximum job timeout must allow it. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
 ## Repository
 

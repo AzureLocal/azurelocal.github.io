@@ -606,6 +606,31 @@ The script reads `devops.runners[]`, `devops.runner_network`, `devops.runner_acc
 
 On Azure DevOps, `devops.runners[].pool` is required. The script, the Terraform module and the Ansible role no longer fall back to a default pool. The general runner must carry the label of `devops.pipelines.runner_label` in `devops.runners[].labels` (see [Task 05](./task-05-configure-variables.mdx)).
 
+From registry 5.0.62 the Terraform runner module (`src/terraform/modules/cicd-runner`) and the Ansible `cicd_runner` role hold no value of a deployment of their own. These keys (all optional) give the values they had in the code:
+
+| Key | What it is | Default |
+|---|---|---|
+| `devops.runners[].admin_username` | Local administrator user name of the runner machines (Terraform `admin_username`, and the account the Ansible `cicd_runner` playbook connects as) | `runneradmin` |
+| `devops.runners[].admin_ssh_public_key` | SSH public key of the administrator of a Linux runner: the key itself, or a reference the script reads through the secret resolver. A public key, not a secret; the pipelines read it as `AZL_RUNNER_SSH_PUBLIC_KEY` | |
+| `devops.runners[].identity_client_id` | Client ID of the runner's user-assigned managed identity, once it exists | |
+| `devops.runners[].nsg_name` | Name of the network security group of the runner subnet | |
+| `devops.runners[].managed_identity_name` | Name of the user-assigned managed identity the runner signs in to Azure as | |
+| `devops.runners[].windows_admin_password_secret` | Windows runners only: the Key Vault reference of the secret this task writes the generated administrator password to | |
+| `devops.runners[].zones` | Availability zones the runner machines are spread over (`1`, `2`, `3`) | |
+| `devops.runners[].os_disk_size_gb` | Size of the OS disk in GB | |
+| `devops.runners[].os_disk_type` | Storage type of the OS disk and of the data disk | `Premium_LRS` |
+| `devops.runners[].os_disk_caching`, `.data_disk_caching` | Caching of the OS disk and of the data disk (`None`, `ReadOnly`, `ReadWrite`) | `ReadWrite` |
+| `devops.runners[].encryption_at_host` | Encryption at host of the runner machines | `false` |
+| `devops.runners[].image.publisher`, `.offer`, `.sku`, `.version` | Marketplace image of the runner machines | `version`: `latest` |
+| `devops.runner_network.hub_peering.spoke_name`, `.hub_name` | Names of the spoke half (on the runner VNet) and the hub half (on the hub VNet) of the peering | |
+| `devops.runner_network.allow_internet_https` | The runner NSG allows HTTPS (443) outbound to the internet: the SCM platform, package repositories, runner downloads | `true` |
+| `devops.runner_network.allow_internet_http` | The runner NSG allows HTTP (80) outbound to the internet: package mirrors with signed metadata | `true` |
+| `devops.runner_network.allow_icmp` | The runner NSG allows ICMP outbound to `reachable_cidrs` and `bmc_cidrs`, for reachability checks | `true` |
+| `devops.runner_network.reachable_tcp_ports` | TCP ports allowed outbound to the lab networks (now with its default) | `22 443 445 3389 5985 5986` |
+| `devops.runner_access.additional_role_assignments[]` | Other role assignments of the runner identities: `name` (unique in the list), `scope` (a resource ID) and `role_definition_name` | |
+
+One release per tool: ansible-core, ansible-lint and the Az module are the same release in the pipelines, the Terraform runner module and the Ansible runner role, and a toolkit test keeps them equal.
+
 ---
 
 
@@ -651,7 +676,7 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 
 **Runner cannot reach Azure APIs:**
 - Verify outbound HTTPS (port 443) to `management.azure.com`, `login.microsoftonline.com`, `graph.microsoft.com`
-- Test with: `az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID`
+- Test with (method `client_secret`; with `oidc` the pipeline signs in with its federated token): `az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID`
 
 **On-prem runner cannot reach cluster nodes:**
 - Verify the runner VM is on the correct management VLAN (e.g., VLAN 2203)

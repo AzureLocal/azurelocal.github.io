@@ -21,7 +21,7 @@ description: "GitHub Actions workflows for Azure Local automation"
 
 ## Overview
 
-GitHub Actions workflow for Azure Local deployments. This is a sample equivalent of the primary GitLab CI/CD pipeline, adapted for GitHub-hosted and self-hosted runners with environment protection rules.
+GitHub Actions workflow for Azure Local deployments. This is a sample equivalent of the primary GitLab CI/CD pipeline, adapted for GitHub-hosted and self-hosted runners with environment protection rules. **No value of a deployment is written in a workflow file**: every value a job needs is a key of `infrastructure.yml`, and Task 05 of the CI/CD setup (`Set-CicdVariables.ps1`) sets it as a repository variable (`vars.NAME`; the sign-in values also per environment) ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). Run Task 05 again after you change the file.
 
 ## Workflow
 
@@ -34,54 +34,66 @@ GitHub Actions workflow for Azure Local deployments. This is a sample equivalent
 |---|---|---|---|
 | `terraform-validate` | `ubuntu-latest` | Auto (push/PR) | Terraform init, validate, fmt check |
 | `ansible-lint` | `ubuntu-latest` | Auto (push/PR) | Ansible lint, syntax check |
-| `terraform-plan` | `ubuntu-latest` | Auto (main only) | Terraform plan with artifact upload |
-| `terraform-apply` | `ubuntu-latest` | Manual (environment approval) | Terraform apply from plan artifact |
-| `configure-onprem` | `self-hosted, linux` and `AZL_RUNNER_LABEL` | After apply | AD prep, OS config, Arc registration |
-| `configure-operations` | `self-hosted, linux` and `AZL_RUNNER_LABEL` | After on-prem | Monitoring and management playbooks |
+| `terraform-plan` | `ubuntu-latest` | Auto (default branch only) | Writes the variable files, Terraform plan with artifact upload |
+| `terraform-apply` | `[self-hosted, AZL_RUNNER_OS, AZL_RUNNER_LABEL]` | Manual (environment approval) | Terraform apply from plan artifact |
+| `configure-onprem` | `[self-hosted, AZL_RUNNER_OS, AZL_RUNNER_LABEL]` | After apply | Playbooks 05 (domain controllers), 01 (AD preparation), 02 (OS configuration), 03 (Arc registration) |
+| `configure-operations` | `[self-hosted, AZL_RUNNER_OS, AZL_RUNNER_LABEL]` | After on-prem | Playbook 04 (monitoring) |
 
-The workflow names no runner label and no environment. It reads two repository variables that task 05 of the CI/CD setup sets from `infrastructure.yml` ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)): `AZL_RUNNER_LABEL` (`devops.pipelines.runner_label`) and `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` (`devops.pipelines.environments.terraform_deployment`), the environment of the apply and on-premises jobs.
+The workflow names no runner label, runner OS, environment, tool version or infrastructure file. `ubuntu-latest` is the vendor's label of its hosted image, used only by the jobs that validate and plan. The apply and on-premises jobs run in the environment in `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` (`devops.pipelines.environments.terraform_deployment`). One deployment runs at a time per repository (`concurrency` group).
+
+Every Terraform and Ansible job writes its inputs from the infrastructure file first (`config/variables/scripts/New-IacVariableFiles.ps1`): the Terraform variables into the job's temporary directory (`terraform plan -var-file=<dir>/terraform/azure-local/terraform.tfvars.json`), the Ansible `hosts.yml`, `group_vars` and `host_vars` into `src/ansible/inventory` (git-ignored there). They hold subscription IDs and names, so they are never committed or uploaded. Playbook 02 runs `Invoke-AzureLocalOsConfiguration.ps1` on the runner with `-e azurelocal_os_configuration_infrastructure_file=<AZL_INFRASTRUCTURE_FILE>`.
 
 ### Triggers
 
 ```yaml
 on:
   push:
-    branches: [main]
-    paths: ['src/terraform/**', 'src/ansible/**', 'config/variables/**']
+    paths:
+      - 'src/terraform/**'
+      - 'src/ansible/**'
+      - 'config/variables/**'
   pull_request:
-    branches: [main]
+    paths:
+      - 'src/terraform/**'
+      - 'src/ansible/**'
   workflow_dispatch:
 ```
 
+Every push and pull request that touches the code validates it. Plan, apply and the configuration run only on the default branch of the repository (`github.event.repository.default_branch`), because the branch filter of a trigger cannot read a variable.
+
 ## Setup
 
-### 1. Repository Secrets
+### 1. Repository Variables
 
-| Secret | Description |
+Task 05 sets each variable below from its key. Every run step is PowerShell 7.
+
+| Variable | Key in `infrastructure.yml` |
 |---|---|
-| `ARM_CLIENT_ID` | Service Principal Application ID |
-| `ARM_CLIENT_SECRET` | Service Principal Secret |
-| `ARM_TENANT_ID` | Azure AD Tenant ID |
-| `ARM_SUBSCRIPTION_ID` | Target Subscription ID |
+| `ARM_CLIENT_ID` | `azure.automation_identity.client_id` (else the app registration Task 01 made) |
+| `ARM_TENANT_ID` | `azure.tenant_id` |
+| `ARM_SUBSCRIPTION_ID` | `azure.subscription_id` |
+| `AZL_AUTH_METHOD` | `devops.authentication.method`: `oidc` (a federated credential, no secret) or `client_secret` |
+| `ARM_CLIENT_SECRET` (a secret, only with `client_secret`) | `devops.authentication.client_secret` (Task 05 reads it from Key Vault) |
+| `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL` | `devops.runners[].os_type` of the general runner and `devops.pipelines.runner_label` |
+| `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT`, `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.*` |
+| `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` |
+| `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` |
+| `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` |
+| `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` |
+| `AZL_VALIDATE_JOB_TIMEOUT_MINUTES`, `AZL_DEPLOY_JOB_TIMEOUT_MINUTES` | `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, each plus 60 minutes |
+| `AZL_RUNNER_SSH_PUBLIC_KEY` | `devops.runners[].admin_ssh_public_key` of the Linux runner |
 
-The `terraform init` steps of the plan and apply jobs read four repository variables for the state backend. Task 05 of the CI/CD setup sets them from `devops.state`:
+**Sign-in.** With `oidc`, `azure/login` takes `client-id`, `tenant-id` and `subscription-id`, and Terraform runs with `ARM_USE_OIDC=true`. With `client_secret`, `azure/login` takes `creds` from `ARM_CLIENT_SECRET` and Terraform reads `ARM_CLIENT_SECRET`. A managed identity of the runner is not a sign-in method of the pipelines.
 
-| Variable | Source |
-|---|---|
-| `TF_BACKEND_RG` | `devops.state.resource_group` |
-| `TF_BACKEND_SA` | `devops.state.storage_account` |
-| `TF_BACKEND_CONTAINER` | `devops.state.container` (default `tfstate`) |
-| `TF_BACKEND_KEY` | The state file of the `azure-local` environment, `azure-local.tfstate` |
-
-The backend signs in to the storage account with Microsoft Entra ID (`use_azuread_auth=true`).
+**State.** The `terraform init` steps pass the four `TF_BACKEND_*` variables to the azurerm backend, which signs in to the storage account with Microsoft Entra ID (`use_azuread_auth=true`).
 
 ### 2. Environment Protection
 
-Create the environment that `devops.pipelines.environments.terraform_deployment` names, with required reviewers. It gates the `terraform-apply` job and the on-premises jobs.
+Create the environment that `devops.pipelines.environments.terraform_deployment` names, with required reviewers (Task 04 of the CI/CD setup creates it). It gates the `terraform-apply` job and the on-premises jobs.
 
 ### 3. Self-Hosted Runner
 
-Register a Linux runner that has network access to on-premises infrastructure. Give it the label of `devops.pipelines.runner_label` (an entry of `devops.runners[].labels`). Task 06 of the CI/CD setup deploys the runners.
+Register a runner that has network access to on-premises infrastructure. Give it the label of `devops.pipelines.runner_label` (an entry of `devops.runners[].labels`). Task 06 of the CI/CD setup deploys the runners.
 
 ```bash
 # On the runner machine. azure-local is the example value of devops.pipelines.runner_label.
@@ -101,7 +113,7 @@ git push
 
 ## Key Features
 
-- **OIDC Authentication**: Uses `id-token: write` permission for keyless Azure auth
+- **Sign-in by `AZL_AUTH_METHOD`**: OIDC (`id-token: write`, no secret) or a client secret read from Key Vault by Task 05
 - **Environment Protection**: Manual approval via GitHub environment rules
 - **Artifact Passing**: Terraform plan artifact uploaded/downloaded between jobs
 - **Self-Hosted Runner**: On-prem config stages run on runner with network access
@@ -109,14 +121,14 @@ git push
 
 ## OS Configuration Workflow
 
-**File**: `pipelines/github/os-configuration.yml` (copy to `.github/workflows/os-configuration.yml`). It runs `Invoke-AzureLocalOsConfiguration.ps1` and nothing else.
+**File**: `pipelines/github-actions/os-configuration.yml` (copy to `.github/workflows/os-configuration.yml`; it was `pipelines/github/os-configuration.yml` before). It runs `Invoke-AzureLocalOsConfiguration.ps1` and nothing else.
 
 | Job | Description |
 |---|---|
 | `plan` | Read only. Publishes the plan report and the wipe list as an artifact and in the job summary |
 | `apply` | Runs for mode `Apply` only, after a reviewer of the environment in `AZL_ENVIRONMENT_OS_CONFIGURATION` (`devops.pipelines.environments.os_configuration`) approves it. The reviewer reads the plan job's summary, the wipe list included |
 
-Settings are variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) of an app registration with a federated credential for the repository and the environment, so there is **no client secret**. The runner needs a route to the nodes' management network for PowerShell remoting. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+Inputs: `mode` (`Plan` or `Apply`, default `Plan`), `handoff_run_id` (the artifact `ztp-handoff` of a ZTP run, in place of `AZL_HANDOFF_PATH`) and `approved_bootstrap` (approves the one-time WinRM bootstrap of `os_configuration.remoting.bootstrap_transport` for this run). Repository variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (`oidc` with a federated credential for the repository and the environment, or `client_secret` with the secret `ARM_CLIENT_SECRET`), `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_INFRASTRUCTURE_FILE`, `AZL_HANDOFF_PATH`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. The transport, the storage wipe and the bootstrap route come from the master file; the workflow overrides none of them. The runner needs a route to the nodes' management network for PowerShell remoting. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
 ## ARM Validate and Deploy Workflow
 
@@ -128,7 +140,7 @@ Settings are variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTIO
 | `validate` | Runs for mode `Validate` and `ValidateAndDeploy` |
 | `deploy` | Runs for `ValidateAndDeploy` and `Deploy`, only after a reviewer of the environment in `AZL_ENVIRONMENT_ARM_DEPLOYMENT` (`devops.pipelines.environments.arm_deployment`) approves. It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
 
-Inputs: `mode` (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), `infrastructure_file`, `os_configuration_run_id` (the artifact `os-configuration-report` of the OS configuration workflow) or `os_configuration_report`, `handoff_file`, `resume`, `acknowledge_known_issues`. One ARM deployment runs at a time per repository. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+The infrastructure file is the repository variable `AZL_INFRASTRUCTURE_FILE`, not an input. The Validate and Deploy jobs time out at `AZL_VALIDATE_JOB_TIMEOUT_MINUTES` and `AZL_DEPLOY_JOB_TIMEOUT_MINUTES` (`deployment.validate_timeout_minutes`, default 90, and `deployment.deploy_timeout_minutes`, default 360, each plus 60 minutes). Inputs: `mode` (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), `os_configuration_run_id` (the artifact `os-configuration-report` of the OS configuration workflow) or `os_configuration_report`, `handoff_file`, `resume`, `acknowledge_known_issues`. One ARM deployment runs at a time per repository. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
 ## Repository
 

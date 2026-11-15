@@ -32,12 +32,12 @@ Azure DevOps Pipelines configuration for Azure Local deployments. This is a samp
 | Stage | Agent Pool | Approval | Description |
 |---|---|---|---|
 | `Validate` | `ubuntu-latest` | None | Terraform validate + Ansible lint |
-| `Plan` | `ubuntu-latest` | None | Terraform plan with artifact |
-| `DeployFoundation` | `ubuntu-latest` | The `approvalEnvironment` parameter | Terraform apply |
-| `ConfigureOnPrem` | The `agentPool` parameter | The `approvalEnvironment` parameter | Ansible site.yml |
-| `ConfigureOperations` | The `agentPool` parameter | The `approvalEnvironment` parameter | Monitoring + management playbooks |
+| `Plan` | `ubuntu-latest` | None | Writes the variable files, Terraform plan with artifact (default branch only) |
+| `DeployFoundation` | The `agentPool` parameter | The `approvalEnvironment` parameter | Terraform apply |
+| `ConfigureOnPrem` | The `agentPool` parameter | The `approvalEnvironment` parameter | Playbooks 05 (domain controllers), 01 (AD preparation), 02 (OS configuration), 03 (Arc registration) |
+| `ConfigureOperations` | The `agentPool` parameter | The `approvalEnvironment` parameter | Playbook 04 (monitoring) |
 
-The file names no pool, environment, service connection or variable group. Start it by hand (`trigger: none`) and enter them as run parameters:
+**No value of a deployment is written in the pipeline file.** It names no pool, environment, service connection, variable group, infrastructure file or tool version. Start it by hand (`trigger: none`) and enter the run parameters:
 
 | Parameter | Value from `infrastructure.yml` |
 |---|---|
@@ -45,10 +45,13 @@ The file names no pool, environment, service connection or variable group. Start
 | `approvalEnvironment` | `devops.pipelines.environments.terraform_deployment` |
 | `serviceConnection` | `devops.pipelines.service_connection` |
 | `variableGroup` | `devops.pipelines.variable_group`; with entries in `devops.environments[]`, `<name>-<environment>` |
+| `infrastructureFile` | `devops.pipelines.infrastructure_file` |
 
-Azure DevOps reads the pool and the environment of a job before any variable exists, so they are run parameters with no default; the service connection and the variable group follow the same rule. Task 05 of the CI/CD setup prints the values to enter.
+Azure DevOps reads the pool, the environment of a job, the service connection, the variable group and a parameter path before any variable exists, so these are run parameters **with no default**: the run form asks for them, and Task 05 of the CI/CD setup prints the value to enter for each. Because they have no default, a run started by a push or a pull request could not supply them: the Azure DevOps pipelines are started by hand. The other parameters are choices of one run (mode, nodes, steps, resume, an artifact run ID) and default to the safe choice (`Plan`, `all`, `false`, `none`).
 
-The Terraform init steps pass the state settings of the variable group to the backend: `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER` (default `tfstate`) and `TF_BACKEND_KEY` (`azure-local.tfstate`).
+The Plan stage runs only on the default branch, `AZL_DEFAULT_BRANCH` of the variable group (`devops.repository.default_branch`), because Azure DevOps has no predefined variable with the default branch. Every Terraform and Ansible job writes its inputs from the infrastructure file first (`config/variables/scripts/New-IacVariableFiles.ps1`); Terraform plans with the generated `terraform.tfvars.json`, and the Ansible jobs copy `hosts.yml`, `group_vars` and `host_vars` into `src/ansible/inventory` (git-ignored there). Playbook 02 runs `Invoke-AzureLocalOsConfiguration.ps1` on the agent with `-e azurelocal_os_configuration_infrastructure_file=<infrastructureFile>`.
+
+The Terraform init steps pass the state settings of the variable group to the backend: `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER` and `TF_BACKEND_KEY` (`devops.state.azure_local_key`).
 
 ### Triggers
 
@@ -80,7 +83,13 @@ Task 05 also creates the variable group named by `devops.pipelines.variable_grou
 | `TF_BACKEND_RG` | No | Terraform state resource group (`devops.state.resource_group`) |
 | `TF_BACKEND_SA` | No | Terraform state storage account (`devops.state.storage_account`) |
 | `TF_BACKEND_CONTAINER` | No | Terraform state container (`devops.state.container`, default `tfstate`) |
-| `TF_BACKEND_KEY` | No | Terraform state file, `azure-local.tfstate` |
+| `TF_BACKEND_KEY` | No | Terraform state file (`devops.state.azure_local_key`) |
+| `AZL_AUTH_METHOD` | No | `devops.authentication.method` (`oidc` or `client_secret`) |
+| `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | No | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` |
+| `AZL_DEFAULT_BRANCH` | No | `devops.repository.default_branch` |
+| `AZL_RUNNER_SSH_PUBLIC_KEY` | No | `devops.runners[].admin_ssh_public_key` of the Linux runner |
+
+Sign-in follows `AZL_AUTH_METHOD`: with `oidc` the service connection uses workload identity federation (made by Task 05) and the scripts read `$env:idToken`; with `client_secret` they read the service connection's secret, `$env:servicePrincipalKey`. A managed identity of the agent is not a sign-in method of the pipelines.
 
 Both keys are required on Azure DevOps. Before schema 5.6.27 the names were fixed (`AzureLocal-ServiceConnection`, `azurelocal-secrets`, `azure-credentials`, `azurelocal-os-configuration`); set the keys to the names you already use to keep them.
 
@@ -126,7 +135,7 @@ Install the Terraform extension from the marketplace:
 | `ConfirmStorageWipe` | Exists only when the mode is Apply **and** `clear_storage` is true: a second, separate approval (the `clear_storage_approval_environment` parameter: `devops.pipelines.environments.os_configuration_clear_storage`) after reading the wipe list |
 | `Apply` | Runs for mode Apply, after a reviewer of the `approval_environment` parameter approves (`devops.pipelines.environments.os_configuration`) |
 
-Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVault` and a route to the nodes' management subnet; an Azure Resource Manager service connection with workload identity federation; and add Approvals (and an Exclusive lock) to the environments. The run parameters `service_connection` and `variable_group` have no default: enter `devops.pipelines.service_connection` and `devops.pipelines.variable_group` (with environments, `<name>-<environment>`). See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVault` and a route to the nodes' management subnet; an Azure Resource Manager service connection with workload identity federation; and add Approvals (and an Exclusive lock) to the environments. The run parameters `agent_pool`, `service_connection`, `variable_group`, `infrastructure_file`, `handoff_path`, `approval_environment` and `clear_storage_approval_environment` have no default: enter `devops.runners[].pool`, `devops.pipelines.service_connection`, `devops.pipelines.variable_group` (with environments, `<name>-<environment>`), `devops.pipelines.infrastructure_file`, `devops.pipelines.handoff_path` (`none` for an ISO-installed cluster), `devops.pipelines.environments.os_configuration` and `.os_configuration_clear_storage`. The run choices `mode`, `nodes`, `steps`, `handoff_pipeline_id`, `handoff_run_id`, `approved_bootstrap` and `confirm_wipe_deployed_cluster` default to `Plan`, `all`, `none` and `false`. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
 ## ARM Validate and Deploy Pipeline
 
@@ -138,7 +147,7 @@ Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVaul
 | `Validate` | Runs for mode Validate and ValidateAndDeploy |
 | `Deploy` | A deployment job in the environment of the `approvalEnvironment` parameter (`devops.pipelines.environments.arm_deployment`); add an Approvals check to that environment (Pipelines, Environments, Approvals and checks). It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
 
-Parameters: `mode`, `infrastructureFile`, `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`, `azureServiceConnection` (`devops.pipelines.service_connection`; workload identity federation, no client secret, no default), `agentPool` and `approvalEnvironment`. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+Run parameters with no default: `infrastructureFile` (`devops.pipelines.infrastructure_file`), `azureServiceConnection` (`devops.pipelines.service_connection`), `variableGroup` (`devops.pipelines.variable_group`), `agentPool` (`devops.runners[].pool`) and `approvalEnvironment` (`devops.pipelines.environments.arm_deployment`). Run choices: `mode` (default `Plan`), `osConfigurationPipelineId` and `osConfigurationRunId` (the OS configuration report artifact, default `none`) or `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`. The Validate and Deploy jobs have a fixed upper bound of 1500 minutes (the registry maximum of `deployment.validate_timeout_minutes` and `deployment.deploy_timeout_minutes`, 1440, plus 60), because a job timeout is read before any variable exists; the script's own wait is the real limit. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
 ## Repository
 
