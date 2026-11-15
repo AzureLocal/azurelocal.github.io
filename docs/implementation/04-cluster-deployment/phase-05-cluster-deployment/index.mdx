@@ -140,11 +140,14 @@ ARM template deployments provide:
 - **Compliance** - Audit trail of infrastructure changes
 
 :::info Azure Local Cloud ARM Templates
-Azure Local Cloud parameter templates are maintained in the Azure Local Toolkit:
+The Azure Local Toolkit keeps no parameter file to fill in by hand. The parameters of a deployment are built from `infrastructure.yml`: `New-AzureLocalArmParameters.ps1` writes the full parameter file for the design of the file (Active Directory or local identity, Storage Spaces Direct or a SAN, rack aware), and `Invoke-AzureLocalArmDeployment.ps1` builds the same parameters and runs the deployment. `parameter-sources.md` in the report directory shows which key fed each parameter.
 
-**Toolkit location:** `config/azure/arm-templates/cluster-deployment/`
-- `azuredeploy.parameters.ad.json` — Active Directory authentication
-- `azuredeploy.parameters.local-identity.json` — Local Identity authentication
+**Toolkit location:** `config/azure/arm-templates/`
+- `template-parameters.json` — the parameters of each Microsoft quickstart template the toolkit can select
+- `parameter-sources.json` — which `infrastructure.yml` keys feed which ARM parameter
+- `examples/*.parameters.json` — example parameter files **generated** from the toolkit's example infrastructure files by `config/variables/scripts/New-ArmParameterExample.ps1` (do not edit them)
+
+The earlier hand-filled files in `config/azure/arm-templates/cluster-deployment/` are gone. Microsoft's copy of the `create-cluster` template is now a test fixture (`tests/fixtures/arm/microsoft-create-cluster/`), read only by the tests.
 
 **Microsoft official templates:** Pull at deploy time from the [Azure Quickstart Templates](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci) repository. Do not modify the main template — customize only via the parameters file. Template per scenario (Learn 2610):
 

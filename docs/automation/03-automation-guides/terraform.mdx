@@ -56,15 +56,26 @@ environments/azure-local/main.tf
 
 ### Backend Bootstrap
 
-A separate bootstrap module provisions the remote state storage:
+A separate bootstrap module provisions the remote state storage. Its values come from `devops.state` through the generated variable file (step 1 below):
 
-```bash
+```powershell
 cd src/terraform/backend
 terraform init
-terraform apply -var="subscription_id=<your-sub-id>" -var="org_code=iic"
+terraform apply -var-file=D:\work\iac\terraform\backend\terraform.tfvars.json
 ```
 
-Creates: Resource Group, Storage Account (GRS, TLS 1.2, versioning), blob container `tfstate`.
+Creates: the resource group, the storage account and the blob container of `devops.state` (`resource_group`, `storage_account`, `container`), in `devops.state.subscription_id` (else `azure.subscription_id`). The account settings follow the `devops.state` keys added in registry 5.0.62:
+
+| Key | Terraform variable | What it sets |
+|---|---|---|
+| `devops.state.replication_type` | `replication_type` | Redundancy: LRS, ZRS, GRS, RAGRS, GZRS or RAGZRS |
+| `devops.state.public_network_access` | `public_network_access_enabled` | False: private endpoints only, and `allowed_ip_ranges` must be empty |
+| `devops.state.allowed_ip_ranges` | `allowed_ip_ranges` | Public IP addresses or CIDR ranges allowed to reach the account |
+| `devops.state.versioning` | `versioning_enabled` | Blob versioning |
+| `devops.state.blob_soft_delete_days` | `blob_soft_delete_retention_days` | Days a deleted state blob stays recoverable, 1 to 365 |
+| `devops.state.container_soft_delete_days` | `container_soft_delete_retention_days` | Days a deleted container stays recoverable, 1 to 365 |
+| `devops.state.network_bypass` | `network_bypass` | AzureServices, Logging, Metrics or None |
+| `devops.state.azure_local_key` | (`backend.hcl` and `TF_BACKEND_KEY`) | The state file of the `azure-local` environment |
 
 ## Usage
 
@@ -75,7 +86,14 @@ Creates: Resource Group, Storage Account (GRS, TLS 1.2, versioning), blob contai
 ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac
 ```
 
-This writes `terraform.tfvars.json` and `backend.hcl` for each environment. A secret is never written: the script writes `not-written.txt` next to the variable file and names the environment variable that Terraform reads at run time. Settings that `infrastructure.yml` has no key for yet go in an `extra.tfvars` copied from `terraform.tfvars.example`.
+This writes `terraform.tfvars.json` and `backend.hcl` for each environment. A secret is never written: the script writes `not-written.txt` next to the variable file and names the environment variable that Terraform reads at run time:
+
+```powershell
+$env:TF_VAR_vm_admin_password = '<resolve landing_zone.virtual_machines[].admin_password>'
+$env:TF_VAR_vpn_shared_key    = '<resolve landing_zone.connectivity.vpn_gateway.site_to_site[0].shared_key>'
+```
+
+Every value comes from `infrastructure.yml` (a key the file leaves out gets its registry default); a variable with a default is a setting of the code (class c in the registry). Add no `.tfvars` file of your own: a later `-var-file` overrides the generated values. The `terraform.tfvars.example` files hold comments only, and the earlier `extra.tfvars` step is gone: the NSG rules, Key Vault IP ranges and policy assignments now have keys (`landing_zone.network_security_groups[]`, `key_vaults[].allowed_ip_ranges`, `landing_zone.policy.assignments[]` and `resource_group_assignments[]`).
 
 ### 2. Initialize and Plan
 
@@ -95,7 +113,7 @@ terraform apply tfplan
 
 ### landing-zone
 
-Creates a management group hierarchy following Azure Landing Zone patterns:
+Creates the management groups of `landing_zone.management_groups[]` in the tree their `parent` keys describe, puts each subscription of `landing_zone.subscriptions[]` under the management group its `management_group` key names, and creates the resource groups. An Azure Landing Zone tree, for example:
 
 ```
 Root (IIC)
@@ -107,7 +125,13 @@ Root (IIC)
 └── Landing Zones
 ```
 
-Variables: `management_groups` (map of objects), `subscriptions` (map with subscription IDs), `resource_groups` (map with location and tags).
+is five entries whose `parent` names the group above. A group whose parent is not in the list (or is not set) sits under that parent as it exists already (not set: the tenant root group). A tree has at most six levels below the tenant root, so the module creates the groups level by level ([What are Azure management groups?](https://learn.microsoft.com/azure/governance/management-groups/overview)).
+
+Variables: `management_groups` (list of name, display name and parent), `subscriptions` (with the management group of each), `resource_groups` (with location and tags).
+
+:::warning State move on an existing deployment
+Before registry 5.0.62 the module built a fixed hierarchy. The management groups and the subscription placements now have new state addresses: `azurerm_management_group.root`, `.platform`, `.identity`, `.connectivity`, `.management`, `.security` and `.landing_zones` became `azurerm_management_group.level0` to `.level5` keyed by group name, and the five `azurerm_management_group_subscription_association` resources became `.subscriptions`. A state that an earlier version of the module created needs a state move (`terraform state mv`, or a `moved` block in your root module) before the next apply; otherwise the plan destroys and re-creates the groups. Read the plan before you apply it.
+:::
 
 ### networking
 
@@ -130,7 +154,7 @@ The Key Vault rules follow the registered keys (registry 5.0.60 and 5.0.61), the
 
 | Vault | Purge protection | Soft-delete retention |
 |---|---|---|
-| Platform Key Vault | On, except when `scenario.environment_class` is `lab`, `test` or `dev`, where a vault has to be removable | 90 days, the Azure default |
+| Platform Key Vault | On, except when `scenario.environment_class` is `lab`, `test` or `dev`, where a vault has to be removable | `key_vaults[purpose=management].soft_delete_retention_days`, 7 to 90 (default 90) |
 | Cluster Key Vault (`cluster.key_vault`) | Off, as Microsoft's deployment template creates it | `cluster.key_vault.soft_delete_retention_days`, 7 to 90 (default 30) |
 
 Purge protection cannot be switched off once it is on. A cluster vault that an earlier version of the module created keeps its purge protection: the module ignores that attribute on an existing vault, so the plan does not try to change it.
@@ -171,8 +195,18 @@ Variables flow from `infrastructure.yml` to `terraform.tfvars.json`. The registr
 | `cluster.key_vault.soft_delete_retention_days` | `azl_key_vault_soft_delete_retention_days` | Retention of the cluster Key Vault |
 | `scenario.environment_class` | `environment_class` | Purge protection of the platform Key Vault |
 | `operations.monitoring` | `log_analytics_*` | Log Analytics config |
-| `landing_zone.policy` | `policy_assignments` | Azure Policy |
-| `landing_zone.virtual_machines[]` | `management_vms` | VM definitions |
+| `landing_zone.policy.assignments[]` | `policy_assignments` | Azure Policy at the scope of the Azure Local subscription: `name`, `policy_definition_id`, `display_name`, `description`, `enforce` (default `true`), `non_compliance_message` |
+| `landing_zone.policy.resource_group_assignments[]` | `rg_policy_assignments` | The same, at the scope of a resource group of `landing_zone.resource_groups` (`resource_group`) |
+| `landing_zone.virtual_machines[]` | `management_vms` | VM definitions, with `os_disk_size_gb` (default 128), `os_disk_type` (default `Premium_LRS`), `os_disk_caching` (default `ReadWrite`) and `image_version` (default `latest`) |
+| `landing_zone.network_security_groups[]` | `nsgs` | NSGs and their rules |
+| `landing_zone.connectivity.nat_gateway.public_ip_name`, `.sku` | NAT gateway object | Name of its public IP; SKU `Standard` (default) or `StandardV2` |
+| `landing_zone.connectivity.vpn_gateway.public_ip_name`, `.secondary_public_ip_name`, `.active_active` | VPN gateway object | Names of the public IPs; active-active mode (default `false`; needs the second public IP) |
+| `landing_zone.connectivity.bastion.public_ip_name` | Bastion object | Name of the public IP of the Bastion host |
+| `key_vaults[purpose=management].allowed_ip_ranges`, `.soft_delete_retention_days` | `key_vault_allowed_ips`, `key_vault_soft_delete_retention_days` | Network rules and retention of the platform Key Vault |
+| `azure.automation_identity.resource_group_roles[]` | `spn_resource_group_roles` | Roles of the deployment identity at resource group scope (`resource_group`, `roles`) |
+| `security.defender_for_cloud.alert_notifications`, `.alerts_to_admins` | `alert_notifications`, `alerts_to_admins` | Defender for Cloud sends the security alerts to the security contact, and to the subscription owners (both default `true`) |
+
+The keys in the last rows were added in registry 5.0.62 (schema 5.6.28, all optional), so that no Terraform variable keeps a deployment value of its own.
 
 ## Remote State
 
@@ -187,7 +221,7 @@ backend "azurerm" {
 }
 ```
 
-`New-IacVariableFiles.ps1` writes these values to `backend.hcl`. The container comes from `devops.state.container` (default `tfstate`); the state file of the `azure-local` environment is `azure-local.tfstate`. The Azure DevOps, GitHub and GitLab pipelines pass the same values to `terraform init` as `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER` and `TF_BACKEND_KEY`, which task 05 of the CI/CD setup sets.
+`New-IacVariableFiles.ps1` writes these values to `backend.hcl`. The container comes from `devops.state.container`; the state file of the `azure-local` environment is `devops.state.azure_local_key` (default `azure-local.tfstate`). The Azure DevOps, GitHub and GitLab pipelines pass the same values to `terraform init` as `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER` and `TF_BACKEND_KEY`, which task 05 of the CI/CD setup sets.
 
 ## Repository
 
@@ -195,16 +229,18 @@ Source: `azurelocal-toolkit/src/terraform/`
 
 ```
 src/terraform/
-├── backend/                    # State bootstrap
+├── backend/                    # State storage bootstrap (devops.state)
 ├── modules/
-│   ├── landing-zone/           # 3 files
-│   ├── networking/             # 3 files
-│   ├── identity/               # 3 files
-│   ├── monitoring/             # 3 files
-│   ├── security/               # 3 files
-│   └── compute/                # 3 files
+│   ├── landing-zone/           # Management groups, resource groups
+│   ├── networking/             # VNet, subnets, NSGs, VPN gateway, Bastion, NAT gateway
+│   ├── identity/               # Key Vaults, role assignments, managed identities
+│   ├── monitoring/             # Log Analytics workspace and action group
+│   ├── security/               # Defender for Cloud security contact, Azure Policy
+│   ├── compute/                # Management VMs
+│   └── cicd-runner/            # Self-hosted CI/CD runners (Linux, Windows, ZTP)
 ├── environments/
-│   └── azure-local/            # Root module (6 files)
+│   ├── azure-local/            # Root module that calls the modules above
+│   └── cicd-infra/             # CI/CD runners (task 06 of the CI/CD setup)
 └── README.md
 ```
 

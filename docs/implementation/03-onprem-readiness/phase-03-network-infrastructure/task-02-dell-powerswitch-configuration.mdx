@@ -8,8 +8,8 @@ scope: Top-of-Rack switch configuration
 purpose: Configure Dell switches for RDMA, VLANs, and high availability
 author: Azure Local Cloud CI/CD Engineering
 created: 2026-01-31
-updated: 2026-03-03
-version: "1.1.0"
+updated: 2026-11-15
+version: "1.2.0"
 tags:
   - azure-local
   - dell-powerswitch
@@ -43,13 +43,15 @@ import TabItem from '@theme/TabItem';
 
 **Status**: Active 
 **Estimated Time**: 90 minutes 
-**Last Updated**: 2026-01-31
+**Last Updated**: 2026-11-15
 
 ---
 
 ## Overview
 
 Configure Dell PowerSwitch TOR switches with Data Center Bridging (DCB) for RDMA (RoCE), Virtual Link Trunking (VLT) for redundancy, and VLANs for network segmentation.
+
+The toolkit keeps no finished switch configuration. `config/network-devices/switches/dell/tor.os10.template` is the configuration of a Dell OS10 top-of-rack switch with every site value as a placeholder named after the `infrastructure.yml` key it comes from, and `New-SwitchConfiguration.ps1` fills it once per switch. The earlier hand-edited files `tor1-azlocal-config.txt` and `tor2-azlocal-config.txt` are gone.
 
 ---
 
@@ -59,196 +61,217 @@ Configure Dell PowerSwitch TOR switches with Data Center Bridging (DCB) for RDMA
 |-------------|-------------|
 | OpenGear Access | Step 1 completed - console access available |
 | Switch Console | Access via OpenGear serial ports or SSH |
-| Network Design | VLAN assignments documented |
-| Storage VLANs | VLANs 711-714 available (non-routable) |
+| Network Design | The switches, their ports and the VLANs in `infrastructure.yml` (keys below) |
+| Storage VLANs | The storage networks of `networking.storage.networks[]` available (non-routable) |
 | Firmware | Dell-validated firmware version installed |
 
 ---
 
 ## Values from infrastructure.yml
 
-The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+`New-SwitchConfiguration.ps1` renders each entry of `network_devices[]` whose `type` is `switch` and whose vendor has a template (Dell: `tor.os10.template`). It reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
-```text
-network_devices[]: hostname, type, role, vendor, management.ip_address, management.protocol, credentials.username, credentials.password
+| Part of the configuration | `infrastructure.yml` keys |
+|---|---|
+| Hostname, management address | `network_devices[].hostname`, `network_devices[].management.ip_address` |
+| Management prefix and route, SSH source | `networking.oob.subnet`, `networking.oob.gateway` |
+| Time zone (UTC offset of the Windows time zone ID) | `site.time_zone` |
+| VLANs | `networking.management.vlan_id`, `network_devices[].ports.native_vlan_id`, `networking.oob.vlan_id`, `networking.logical_networks[].vlan_id`, `networking.storage.networks[]` (only with `scenario.storage_connectivity: switched`) |
+| QoS (PFC and ETS) | The intent of `networking.intents[]` with storage traffic: `overrides.qos.cluster_priority`, `smb_priority`, `smb_bandwidth_percent` (registry defaults 7, 3 and 50: Network ATC); the cluster reservation is 1 percent when every storage adapter is faster than 10 Gbps, else 2 (`hardware.network_cards[].ports[].speed_gbps`) |
+| Ports, MTU | `network_devices[].ports.uplinks`, `.node_ports`, `.peer_link`, `network_devices[].mtu` |
+| VLT pair | `network_devices[].ha.domain_id`, `.peer_address`, `.priority`, `.system_mac` |
+| DNS and NTP | `networking.management.dns_servers`, `networking.ntp_servers` |
+| Login | `network_devices[].credentials.username`; the password is a secret reference that the script names and never reads |
+
+The keys added in registry 5.0.62 (infrastructure schema 5.6.28, all optional):
+
+| Key | What it is | Example |
+|---|---|---|
+| `network_devices[].mtu` | Maximum frame size of the ports that face the machines, the uplinks and the link between the two switches of a pair, in bytes | `9216` |
+| `network_devices[].ports.uplinks` | Ports to the network above the rack (trunks with the management, out-of-band and workload VLANs) | `[ethernet1/1/1]` |
+| `network_devices[].ports.node_ports` | Ports cabled to the machines' network adapters (trunks with the VLANs of the intents; with RDMA storage on the switch they get the PFC and ETS policies) | `[ethernet1/1/2, ethernet1/1/3]` |
+| `network_devices[].ports.peer_link` | Ports of the link between the two switches of a pair (OS10: VLTi, the `vlt-domain` discovery interfaces) | `[ethernet1/1/13, ethernet1/1/14]` |
+| `network_devices[].ports.native_vlan_id` | The VLAN the switch puts the untagged frames of the node ports in (OS10: `switchport access vlan` on a trunk port) | `2201` |
+| `network_devices[].ha.domain_id` | The ID of the high availability domain the two switches of a pair share (OS10: `vlt-domain`) | `1` |
+| `network_devices[].ha.peer_address` | The management address of the other switch of the pair, its backup heartbeat (OS10: `backup destination`) | `198.51.100.7` |
+| `network_devices[].ha.priority` | Election priority of this switch in the pair; the lower value becomes the primary (OS10: `primary-priority`) | `100` |
+| `network_devices[].ha.system_mac` | The MAC address the pair presents as one system (OS10: `vlt-mac`) | `00-00-5E-00-53-01` |
+
+A key the file lacks falls back to its registry default; a key with no default that the template needs stops the run with its name. Port names differ by switch model, so they are keys, not part of the template.
+
+---
+
+## Generate the switch configurations
+
+```powershell
+# Render and check every switch, write nothing.
+./scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/New-SwitchConfiguration.ps1 `
+    -InfrastructureFile ./infrastructure.yml -OutputDirectory ./switch-config -WhatIf
+
+# Write <hostname>.cfg for each switch (or only some with -Hostname).
+./scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/New-SwitchConfiguration.ps1 `
+    -InfrastructureFile ./infrastructure.yml -OutputDirectory ./switch-config
 ```
+
+| Parameter | What it is |
+|---|---|
+| `-InfrastructureFile` | The master `infrastructure.yml` (schema 5). Only the keys the template names are read |
+| `-OutputDirectory` | Where the configurations go, one `<hostname>.cfg` per switch. Keep it out of the repository: the files hold the site's addresses |
+| `-Hostname` | Optional. Only the switches with these host names |
+| `-TemplateRoot` | Optional. The folder with one folder per vendor (default: `config/network-devices/switches` of the toolkit) |
+| `-WhatIf` | Renders and checks everything and writes nothing |
+
+The script never connects to a switch, a node or Azure, and no password is read or written: `network_devices[].credentials.password` must be a secret reference (`keyvault://`, `env://`, `file://` or `command://`), and the output only tells you to create the account with the password from the secret store. A switch whose vendor has no template is reported and skipped.
+
+It stops instead of rendering a wrong switch: an SMB bandwidth that leaves nothing for the other traffic, equal SMB and cluster priorities, or a template placeholder that names a password, secret or token.
+
+| Exit code | Meaning |
+|---|---|
+| `0` | Every switch was written (or rendered with `-WhatIf`), or the file lists none |
+| `1` | A file could not be written, or a rendered configuration still holds a placeholder |
+| `2` | A value in the file is missing or not usable; the message names the key |
+
+The network team reviews each file and applies it on its switch (console or SSH: `configure terminal`, paste, `show running-configuration`, `write memory`).
 
 ---
 
 ## Configuration Areas Overview
 
+What the template configures, and where each part takes its values:
+
 | Configuration Area | Purpose | Key Settings |
 |-------------------|---------|--------------|
-| **System Settings** | Basic switch identity and management | Hostname, management IP, NTP, SSH |
-| **QoS/DCB for RDMA** | Enable lossless storage traffic | DCBX, PFC on priority 3, ETS bandwidth allocation |
-| **VLT (Virtual Link Trunking)** | Switch redundancy and high availability | VLT domain, discovery interfaces, backup destination |
-| **VLANs** | Network segmentation | Management, storage (711-714), tenant VLANs |
-| **Trunk Ports** | Node connectivity | Jumbo frames, QoS policies, allowed VLANs |
-| **Uplinks** | Core/distribution connectivity | Port-channels, trunk mode |
-| **Monitoring** | Operational visibility | SNMP, syslog forwarding |
+| **System Settings** | Basic switch identity and management | Hostname, management IP on the out-of-band network, time zone, DNS, NTP, SSH |
+| **QoS/DCB for RDMA** | Enable lossless storage traffic | DCBX, PFC on the SMB priority, ETS bandwidth of Network ATC |
+| **VLT (Virtual Link Trunking)** | Switch redundancy and high availability | VLT domain, discovery interfaces, backup destination, primary priority, VLT MAC |
+| **VLANs** | Network segmentation | Management, out-of-band, workload and (switched storage) storage VLANs |
+| **Trunk Ports** | Node connectivity | MTU, QoS policies, allowed VLANs, untagged VLAN |
+| **Uplinks** | Core/distribution connectivity | Trunks with the management, out-of-band and workload VLANs |
+
+Values that stay in the template are fixed by Dell or Microsoft and say so in a comment: the SSH ciphers, LLDP and DCBX, the console and session hardening, RSTP with bridge priority 4096, the OS10 syntax. Syslog and SNMP forwarding are parked: the template leaves them out, and they have no keys.
 
 ---
 
 ## Section A: QoS/DCB Configuration for RoCE
 
-Azure Local requires Data Center Bridging (DCB) with Priority Flow Control (PFC) and Enhanced Transmission Selection (ETS) for reliable RDMA over Converged Ethernet (RoCE).
+Azure Local requires Data Center Bridging (DCB) with Priority Flow Control (PFC) and Enhanced Transmission Selection (ETS) for reliable RDMA over Converged Ethernet (RoCE). The template writes this section only when `scenario.storage_connectivity` is `switched` and an intent carries storage traffic.
+
+Network ATC configures the hosts with cluster heartbeat priority 7 (1 percent when the adapters are faster than 10 Gbps, 2 percent otherwise), SMB Direct priority 3 with 50 percent, and priority 0 for the rest, and Microsoft says the physical network must match ([Network ATC default values](https://learn.microsoft.com/windows-server/networking/network-atc/network-atc#default-network-atc-values)). The template takes the same numbers from the file, so a change in `networking.intents[].overrides.qos` changes the hosts and the switches. Dell's older guides use priority 5 for the cluster class; the toolkit follows Network ATC.
 
 ### Key Configuration Elements
 
 | Element | Purpose | Configuration |
 |---------|---------|---------------|
 | **DCBX** | DCB exchange protocol | Enable globally |
-| **Trust Map** | Map 802.1p priorities to queues | Priority 3 → Queue 3 (SMB Storage) |
-| **PFC Policy** | Lossless traffic for SMB | Enable pause on priority 3 |
-| **ETS Policy** | Bandwidth allocation | ~50% storage, ~48% management/compute, ~2% heartbeat |
-| **Jumbo Frames** | Large frame support for storage | MTU 9216 on all storage paths |
+| **Trust Map** | Map 802.1p priorities to queues | SMB priority (default 3), cluster priority (default 7), the rest to queue 0 |
+| **PFC Policy** | Lossless traffic for SMB | Pause on the SMB priority |
+| **ETS Policy** | Bandwidth allocation | SMB `smb_bandwidth_percent` (default 50), cluster 1 or 2 percent, the rest to the default class |
+| **Jumbo Frames** | Large frame support for storage | `network_devices[].mtu` on the node ports, uplinks and VLTi |
 
-### QoS Class Map Configuration (OS10)
+### QoS as rendered with the defaults (OS10)
+
+With the registry defaults and storage adapters faster than 10 Gbps, the QoS part of a generated file reads:
 
 ```cisco
-! Create queuing class maps
-class-map type queuing Q0
- match queue 0
-class-map type queuing Q3
- match queue 3
-class-map type queuing Q5
- match queue 5
-
-! Create network-qos class maps
+class-map type queuing QDefault
+    match queue 0
+class-map type queuing QSmb
+    match queue 3
+class-map type queuing QCluster
+    match queue 7
 class-map type network-qos SmbStorage
- match qos-group 3
-class-map type network-qos NodeHeartBeat
- match qos-group 5
-```
+    match qos-group 3
+class-map type network-qos ClusterHeartbeat
+    match qos-group 7
 
-### Trust Map Configuration (OS10)
-
-```cisco
 trust dot1p-map trust_map
- qos-group 0 dot1p 0-2,4,6-7
- qos-group 3 dot1p 3
- qos-group 5 dot1p 5
+    qos-group 0 dot1p 0-2,4-6
+    qos-group 3 dot1p 3
+    qos-group 7 dot1p 7
 
 qos-map traffic-class queue-map
- queue 0 qos-group 0-2,4,6-7
- queue 3 qos-group 3
- queue 5 qos-group 5
-```
+    queue 0 qos-group 0-2,4-6
+    queue 3 qos-group 3
+    queue 7 qos-group 7
 
-### ETS Policy Configuration (OS10)
-
-```cisco
 policy-map type queuing ets-policy
- ! class Q0 - Management and compute traffic
- class Q0
- bandwidth percent 48
- ! class Q3 - SMB Storage traffic (lossless)
- class Q3
- bandwidth percent 50
- ! class Q5 - Cluster heartbeat
- class Q5
- bandwidth percent 2
-```
+    class QDefault
+        bandwidth percent 49
+    class QSmb
+        bandwidth percent 50
+    class QCluster
+        bandwidth percent 1
 
-### PFC Policy Configuration (OS10)
-
-```cisco
 policy-map type network-qos pfc-policy
- ! Enable pause on SMB Storage traffic
- class SmbStorage
- pause
- pfc-cos 3
-```
+    class SmbStorage
+        pause
+        pfc-cos 3
 
-### Apply QoS System-Wide
-
-```cisco
 system qos
- trust-map dot1p trust_map
+    trust-map dot1p trust_map
 ```
 
 ---
 
 ## Section B: VLT Configuration for High Availability
 
-VLT (Virtual Link Trunking) provides switch redundancy with active-active uplinks.
+VLT (Virtual Link Trunking) provides switch redundancy with active-active uplinks. The template writes the VLTi ports and the VLT domain only when `network_devices[].ha.domain_id` is set.
 
 ### VLT Components
 
-| Component | Description |
-|-----------|-------------|
-| **VLT Domain** | Logical grouping of two VLT peer switches |
-| **VLT Peer Link (VLTi)** | Inter-switch link for control and data sync |
-| **Backup Destination** | Out-of-band heartbeat via management interface |
-| **VLT MAC** | Virtual MAC address for the VLT domain |
+| Component | Description | Key |
+|-----------|-------------|-----|
+| **VLT Domain** | Logical grouping of two VLT peer switches | `network_devices[].ha.domain_id` |
+| **VLT Peer Link (VLTi)** | Inter-switch link for control and data sync | `network_devices[].ports.peer_link` |
+| **Backup Destination** | Out-of-band heartbeat via the management interface of the other switch | `network_devices[].ha.peer_address` |
+| **Primary Priority** | The lower value becomes the primary | `network_devices[].ha.priority` |
+| **VLT MAC** | Virtual MAC address for the VLT domain | `network_devices[].ha.system_mac` |
 
-### VLT Peer Link Configuration (TOR1)
+### VLT domain as rendered (OS10)
+
+With the example values of the variables reference (documentation addresses), one switch of the pair:
 
 ```cisco
-! Configure VLT peer link interfaces
-interface range ethernet1/1/11-1/1/12
- description VLTi-PeerLink
- mtu 9216
- flowcontrol receive off
- flowcontrol transmit off
- priority-flow-control mode on
- service-policy input type network-qos pfc-policy
- service-policy output type queuing ets-policy
- ets mode on
- qos-map traffic-class queue-map
- no shutdown
- no switchport
+interface ethernet1/1/13
+    description VLTi
+    no shutdown
+    no switchport
+    mtu 9216
+    flowcontrol receive off
+    flowcontrol transmit off
+    priority-flow-control mode on
+    service-policy input type network-qos pfc-policy
+    service-policy output type queuing ets-policy
+    ets mode on
+    qos-map traffic-class queue-map
+    exit
 
-! Configure VLT domain
 vlt-domain 1
- backup destination 192.168.255.2
- discovery-interface ethernet1/1/11
- discovery-interface ethernet1/1/12
- vlt-mac 00:00:00:00:00:01
+    backup destination 198.51.100.7
+    discovery-interface ethernet1/1/13
+    discovery-interface ethernet1/1/14
+    peer-routing
+    primary-priority 100
+    vlt-mac 00:00:5e:00:53:01
+    exit
 ```
 
-### VLT Peer Link Configuration (TOR2)
+The other switch has its own `network_devices[]` entry: the same `domain_id` and `system_mac`, the first switch's management address as `peer_address`, and a higher `priority`.
+
+### Management Interface
 
 ```cisco
-! Configure VLT peer link interfaces
-interface range ethernet1/1/11-1/1/12
- description VLTi-PeerLink
- mtu 9216
- flowcontrol receive off
- flowcontrol transmit off
- priority-flow-control mode on
- service-policy input type network-qos pfc-policy
- service-policy output type queuing ets-policy
- ets mode on
- qos-map traffic-class queue-map
- no shutdown
- no switchport
+interface mgmt1/1/1
+    no shutdown
+    no ip address dhcp
+    ip address <network_devices[].management.ip_address>/<prefix length of networking.oob.subnet>
+    no ipv6 enable
+    exit
 
-! Configure VLT domain (note different backup destination)
-vlt-domain 1
- backup destination 192.168.255.1
- discovery-interface ethernet1/1/11
- discovery-interface ethernet1/1/12
- vlt-mac 00:00:00:00:00:01
+management route 0.0.0.0/0 <networking.oob.gateway>
 ```
 
-### Management Interface Configuration
-
-```cisco
-! TOR1
-interface mgmt1/1/1
- no shutdown
- no ip address dhcp
- ip address 192.168.255.1/30
- ipv6 address autoconfig
-
-! TOR2
-interface mgmt1/1/1
- no shutdown
- no ip address dhcp
- ip address 192.168.255.2/30
- ipv6 address autoconfig
-```
+SSH is allowed only from `networking.oob.subnet` (access list `SSH-Allowed` on the vty lines).
 
 ---
 
@@ -256,165 +279,76 @@ interface mgmt1/1/1
 
 ### VLAN Types
 
-| VLAN Type | Purpose | Layer 3 Routing |
-|-----------|---------|-----------------|
-| **Management VLAN** | Node management, Windows Admin Center | Yes (routable) |
-| **Storage VLANs 711-714** | SMB storage traffic between nodes | **No** (east/west only) |
-| **Tenant VLANs** | VM workload networks | Yes (typically routable) |
-| **iDRAC/BMC VLAN** | Out-of-band management | Yes (routable, isolated) |
+| VLAN Type | Purpose | Layer 3 Routing | Key |
+|-----------|---------|-----------------|-----|
+| **Management VLAN** | Node management | Yes (routable) | `networking.management.vlan_id` |
+| **Untagged VLAN of the node ports** | Untagged frames of the machines' adapters | | `network_devices[].ports.native_vlan_id` |
+| **Storage VLANs** | SMB storage traffic between nodes | **No** (east/west only) | `networking.storage.networks[].vlan_id` |
+| **Workload VLANs** | VM workload networks | Yes (typically routable) | `networking.logical_networks[].vlan_id` |
+| **Out-of-band VLAN** | iDRAC/BMC and switch management | Yes (routable, isolated) | `networking.oob.vlan_id` |
 
 :::warning Storage VLAN Discovery Requirement
-**Storage VLANs 711-714** are non-routable and used exclusively for east/west traffic between Azure Local cluster nodes. These VLANs:
-- Are configured on **ToR switch trunk ports** connecting to cluster nodes
+The storage VLANs are non-routable and used exclusively for east/west traffic between Azure Local cluster nodes. These VLANs:
+- Are configured on **ToR switch trunk ports** connecting to cluster nodes (the template adds them only with `scenario.storage_connectivity: switched`)
 - Are **NOT configured on firewalls or any Layer 3 interfaces**
 - Are managed automatically by **Microsoft Network ATC** during cluster deployment
 - **MUST be verified as available** in the customer's environment during discovery
 :::
 
-### VLAN Configuration (OS10)
-
-```cisco
-! Management VLAN
-interface vlan 200
- description MANAGEMENT
- mtu 9216
- no shutdown
-
-! Storage VLANs (non-routable - NO IP address assigned)
-interface vlan 711
- description STORAGE-1
- no ip address
- mtu 9216
- no shutdown
-
-interface vlan 712
- description STORAGE-2
- no ip address
- mtu 9216
- no shutdown
-
-interface vlan 713
- description STORAGE-3
- no ip address
- mtu 9216
- no shutdown
-
-interface vlan 714
- description STORAGE-4
- no ip address
- mtu 9216
- no shutdown
-```
+The template creates one `interface vlan` per unique VLAN ID of these keys, and one per storage network with its `name` as the description.
 
 ---
 
 ## Section D: Trunk Port Configuration for Cluster Nodes
 
-### Node-Facing Port Configuration
+Each port of `network_devices[].ports.node_ports` becomes a trunk:
 
 ```cisco
-interface ethernet1/1/1
- description AzureLocal-Node1-Port1
- no shutdown
- switchport mode trunk
- switchport access vlan 1
- switchport trunk allowed vlan 200,711-714
- mtu 9216
- flowcontrol receive off
- flowcontrol transmit off
- priority-flow-control mode on
- service-policy input type network-qos pfc-policy
- service-policy output type queuing ets-policy
- ets mode on
- qos-map traffic-class queue-map
- spanning-tree bpduguard enable
- spanning-tree port type edge
+interface ethernet1/1/2
+    description AzureLocalNode
+    no shutdown
+    switchport mode trunk
+    switchport access vlan <network_devices[].ports.native_vlan_id>
+    switchport trunk allowed vlan <management and workload VLANs, without the untagged VLAN>
+    switchport trunk allowed vlan <storage VLANs (switched storage only)>
+    mtu <network_devices[].mtu>
+    flowcontrol receive off
+    flowcontrol transmit off
+    priority-flow-control mode on
+    service-policy input type network-qos pfc-policy
+    service-policy output type queuing ets-policy
+    ets mode on
+    qos-map traffic-class queue-map
+    spanning-tree bpduguard enable
+    spanning-tree port type edge
+    exit
 ```
 
-### All Node Ports (Range Configuration)
-
-```cisco
-! TOR1 - Converged topology
-interface range ethernet1/1/1-1/1/8
- description NodeDCB
- no shutdown
- switchport mode trunk
- switchport access vlan 1
- switchport trunk allowed vlan 200,711
- mtu 9216
- flowcontrol receive off
- flowcontrol transmit off
- priority-flow-control mode on
- service-policy input type network-qos pfc-policy
- service-policy output type queuing ets-policy
- ets mode on
- qos-map traffic-class queue-map
- spanning-tree bpduguard enable
- spanning-tree port type edge
-
-! TOR2 - Converged topology (different storage VLAN)
-interface range ethernet1/1/1-1/1/8
- description NodeDCB
- no shutdown
- switchport mode trunk
- switchport access vlan 1
- switchport trunk allowed vlan 200,712
- mtu 9216
- flowcontrol receive off
- flowcontrol transmit off
- priority-flow-control mode on
- service-policy input type network-qos pfc-policy
- service-policy output type queuing ets-policy
- ets mode on
- qos-map traffic-class queue-map
- spanning-tree bpduguard enable
- spanning-tree port type edge
-```
+The PFC and ETS lines are written only with switched storage and a storage intent. A VLAN is either the untagged VLAN of a port or one of its tagged VLANs, not both.
 
 ---
 
 ## Section E: Uplink Configuration
 
-### Datacenter Uplink Port-Channel
+Each port of `network_devices[].ports.uplinks` becomes a trunk with the management, untagged, out-of-band and workload VLANs:
 
 ```cisco
-! Configure uplink port-channel
-interface port-channel10
- description DataCenterUplink
- no shutdown
- switchport mode trunk
- switchport access vlan 1
- switchport trunk allowed vlan 200
- vlt-port-channel 10
-
-! Configure physical uplink ports
-interface range ethernet1/1/9-1/1/10
- description CUSTOMER.UPLINK
- no shutdown
- channel-group 10 mode active
- no switchport
- flowcontrol receive on
- flowcontrol transmit off
+interface ethernet1/1/1
+    description Uplink
+    no shutdown
+    switchport mode trunk
+    switchport trunk allowed vlan <the VLAN list>
+    mtu <network_devices[].mtu>
+    flowcontrol receive on
+    flowcontrol transmit off
+    exit
 ```
 
 ---
 
-## Section F: Enable Services
+## Section F: Services
 
-```cisco
-! Enable LLDP
-lldp enable
-
-! Enable SSH
-ip ssh server enable
-
-! Set clock
-clock set <HH:MM:SS> <YYYY-MM-DD>
-
-! Clear logs and save
-clear logging log-file
-write memory
-```
+The template enables LLDP, DCBX and SSH (with the ciphers and MAC the toolkit allows), sets the time zone from `site.time_zone`, the DNS servers from `networking.management.dns_servers`, the NTP servers from `networking.ntp_servers`, RSTP with bridge priority 4096, and the local audit log, and ends with `write memory`. The login account `network_devices[].credentials.username` is written as a comment: create it on the switch with the password from the secret store (`username <name> password <password> role sysadmin`).
 
 ---
 
@@ -439,8 +373,8 @@ show running-configuration policy-map
 show qos interface ethernet1/1/1
 ```
 
-- Confirm PFC enabled on priority 3
-- Confirm ETS bandwidth allocation correct
+- Confirm PFC enabled on the SMB priority (default 3)
+- Confirm ETS bandwidth allocation matches Network ATC (SMB `smb_bandwidth_percent`, cluster 1 or 2 percent)
 - Confirm trust map applied
 
 ### 3. Verify VLANs
@@ -449,7 +383,7 @@ show qos interface ethernet1/1/1
 show vlan
 ```
 
-- All required VLANs present and active (200, 711-714)
+- All required VLANs present and active (the VLAN IDs of the keys in Section C)
 
 ### 4. Verify Port Status
 
@@ -465,10 +399,11 @@ show interface status
 
 - [ ] VLT domain operational (both switches)
 - [ ] VLT peer link and backup link up
-- [ ] QoS/DCB configured (DCBX, PFC on priority 3, ETS)
+- [ ] Configuration generated with `New-SwitchConfiguration.ps1` from `infrastructure.yml` and reviewed
+- [ ] QoS/DCB configured (DCBX, PFC on the SMB priority, ETS of Network ATC)
 - [ ] Trust map applied system-wide
-- [ ] All VLANs active (management, storage 711-714)
-- [ ] Trunk ports configured with jumbo frames (MTU 9216)
+- [ ] All VLANs active (management, out-of-band, workload, storage)
+- [ ] Trunk ports configured with jumbo frames (`network_devices[].mtu`)
 - [ ] All node-facing ports up with correct speed
 - [ ] Uplinks operational
 - [ ] LLDP enabled
@@ -484,7 +419,9 @@ show interface status
 | VLT peer link down | Incorrect port-channel member assignment or cable fault | Verify VLT configuration, check cables between switches, confirm port-channel membership |
 | PFC not negotiating | DCBX mode mismatch between switch and NIC | Set DCBX to IEEE on both ends, verify NIC firmware supports RoCEv2 |
 | Storage VLAN unreachable | VLAN not added to trunk port or VLAN not created | Verify VLAN exists (`show vlan`), confirm trunk port has VLAN tagged |
-| Jumbo frames not working | MTU mismatch along path | Confirm MTU 9216 on all switch ports, VLANs, and host NICs in the storage path |
+| Jumbo frames not working | MTU mismatch along path | Confirm `network_devices[].mtu` (for example 9216) on all switch ports and the host NICs in the storage path |
+| `New-SwitchConfiguration.ps1` ends with exit code 2 | A key the template needs has no value and no default, or the QoS of the storage intent is not usable | Set the key the message names in `infrastructure.yml` and run it again |
+| PFC priority differs between host and switch | The switch was configured from an older guide (cluster priority 5) | Generate the configuration again: it follows `networking.intents[].overrides.qos` and Network ATC |
 | SSH access denied | SSH service not enabled or management ACL blocking | Run `show ip ssh`, verify SSH enabled, check management ACL entries |
 
 ---
@@ -509,12 +446,13 @@ See procedure steps above for manual execution guidance.
 
 ### PowerShell
 
-> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
+> **When to use**: Run the task from a management workstation or a pipeline. The scripts read `infrastructure.yml` and carry no values of their own.
 
-#### Script
+#### Scripts
 
 | Script | What it does |
 |---|---|
+| `scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/New-SwitchConfiguration.ps1` | Writes the configuration of every top-of-rack switch of `network_devices[]` from the vendor's template (`config/network-devices/switches/dell/tor.os10.template`), one `<hostname>.cfg` each. Sends nothing to a switch. Supports `-WhatIf`. |
 | `scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1` | Checks that every switch of network_devices in infrastructure.yml can be reached and that its login can be read. Changes nothing on a switch. |
 
 Requires: PowerShell 7.
@@ -522,6 +460,8 @@ Requires: PowerShell 7.
 #### Run
 
 ```powershell
+./New-SwitchConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory ./switch-config -WhatIf
+./New-SwitchConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory ./switch-config
 ./Set-PowerSwitchEndpoint.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
@@ -553,6 +493,7 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 |---------|------|--------|---------|
 | 1.0 | 2026-01-31 | Azure Local Cloud CI/CD Engineering | Initial document |
 | 1.1 | 2026-03-03 | Azure Local Cloud CI/CD Engineering | Standardized runbook format |
+| 1.2 | 2026-11-15 | Azure Local Cloud CI/CD Engineering | The configuration is generated by `New-SwitchConfiguration.ps1` from `tor.os10.template` (toolkit registry 5.0.62); QoS follows Network ATC |
 
 ---
 

@@ -226,31 +226,31 @@ Create the deployment-ready JSON parameter file for the `create-cluster` templat
 <Tabs groupId="deployment-method">
 <TabItem value="manual" label="Manual Commands" default>
 
-**When to use**: You want to build the parameter file by hand or use a pre-built example as a starting point.
+**When to use**: You want to build the parameter file by hand, to learn the template's parameters.
 
-1. Copy the template: `config/azure/arm-templates/cluster-deployment/azuredeploy.parameters.ad.json` in azurelocal-toolkit
-2. Replace all `{{VARIABLE}}` placeholders with values from your `infrastructure.yml`
+The toolkit keeps no parameter file to fill in by hand: the earlier `config/azure/arm-templates/cluster-deployment/` files with `{{VARIABLE}}` placeholders are gone. The orchestrated tab writes the file from `infrastructure.yml`. To build it by hand:
 
-**Key placeholders to replace** (most common errors come from these):
+1. Start from Microsoft's sample [azuredeploy.parameters.json](https://github.com/Azure/azure-quickstart-templates/blob/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.parameters.json) for the `create-cluster` template, or from the toolkit's generated example `config/azure/arm-templates/examples/active-directory-s2d-switched.parameters.json` (example values only)
+2. Replace each value with the value of its key in your `infrastructure.yml`
 
-| Placeholder | YAML Source Path | Description |
-|-------------|-----------------|-------------|
-| `{{CLUSTER_NAME}}` | `cluster.name` | Cluster resource name |
-| `{{CLUSTER_RESOURCE_GROUP}}` | `azure.resource_group` | Target resource group |
-| `{{SUBSCRIPTION_ID}}` | `azure.subscription_id` | Subscription |
-| `{{AZURE_REGION}}` | `azure.location` | Azure region |
-| `{{TENANT_ID}}` | `azure.tenant_id` | Entra ID tenant |
-| `{{CLUSTER_KEYVAULT_NAME}}` | `cluster.key_vault.name` | Cluster KV (created by ARM) |
-| `{{DIAGNOSTIC_STORAGE_ACCOUNT_NAME}}` | `cluster.diagnostics.storage_account` | KV diagnostics storage |
-| `{{CLUSTER_WITNESS_STORAGE_NAME}}` | `cluster.witness.storage_account` | Cloud witness storage |
-| `{{LOCAL_ADMIN_USERNAME}}` | `identity.local_admin.username` | Local admin on all nodes |
-| `{{LCM_USERNAME}}` | `identity.active_directory.lcm_user.username` | LCM sAMAccountName (no `@domain`) |
-| `{{HCI_RESOURCE_PROVIDER_OBJECT_ID}}` | `azure.hci_resource_provider_object_id` | From Task 2 |
-| `{{DOMAIN_FQDN}}` | `identity.active_directory.domain_fqdn` | AD domain FQDN |
-| `{{DOMAIN_OU_PATH}}` | `identity.active_directory.ou_path` | OU distinguished name |
-| `{{NAMING_PREFIX}}` | `cluster.naming_prefix` | Resource prefix |
-| `{{NODE_01_NAME}}`, `{{NODE_01_IP}}` | `nodes[].name`, `nodes[].management.ip_address` | One pair per machine |
-| `{{INTENT_LIST}}` | `networking.intents[]` | Network intents (`name`, `traffic`, `adapters`) |
+**Parameters to set** (most common errors come from these; `config/azure/arm-templates/parameter-sources.json` in the toolkit lists every parameter and its keys):
+| ARM parameter | Key in `infrastructure.yml` |
+|---------------|-----------------------------|
+| `clusterName` | `cluster.name` |
+| `location` | `azure.location` |
+| `tenantId` | `azure.tenant_id` |
+| `keyVaultName`, `softDeleteRetentionDays` | `cluster.key_vault.name`, `cluster.key_vault.soft_delete_retention_days` (the cluster Key Vault, created by ARM) |
+| `diagnosticStorageAccountName` | `cluster.diagnostics.storage_account` |
+| `witnessType`, `clusterWitnessStorageAccountName` | `cluster.witness.type`, `cluster.witness.storage_account` |
+| `localAdminUserName` | `identity.local_admin.username` |
+| `hciResourceProviderObjectID` | `azure.hci_resource_provider_object_id` (from Task 2) |
+| `arcNodeResourceIds` | `azure.subscription_id`, `azure.resource_group`, `nodes[].arc_machine_name` |
+| `namingPrefix` | `cluster.naming_prefix` |
+| `physicalNodesSettings` | `nodes[].name`, `nodes[].management.ip_address` |
+| `startingIPAddress`, `endingIPAddress`, `defaultGateway`, `dnsServers` | `networking.management.infrastructure_pool.start`, `.end`, `networking.management.gateway`, `networking.management.dns_servers` |
+| `intentList` | `networking.intents[]` (`name`, `traffic`, `adapters`) || `AzureStackLCMAdminUsername` | `identity.active_directory.lcm_user.username` (sAMAccountName, no `@domain`) |
+| `domainFqdn` | `identity.active_directory.domain_fqdn` |
+| `adouPath` | `identity.active_directory.ou_path` (OU distinguished name) |
 
 For `localAdminPassword` and `AzureStackLCMAdminPassword`, use Key Vault references (not plain text):
 
@@ -265,11 +265,11 @@ For `localAdminPassword` and `AzureStackLCMAdminPassword`, use Key Vault referen
 }
 ```
 
-3. Verify all `{{` placeholders are replaced: search the file for `{{` — there should be zero matches
+3. Verify that no sample value is left: every value is a key of your file, a Key Vault reference, or the template default
 4. Save as `azuredeploy.parameters.ad.json` in your working directory
 
 :::tip Use an Example as Reference
-Validated IIC examples exist for each networking pattern in `config/azure/arm-templates/examples/`. Compare your file against the matching pattern — see the **Example Parameter Files** collapsible in the [Reference](#reference) section below.
+The toolkit's examples in `config/azure/arm-templates/examples/` are generated by `config/variables/scripts/New-ArmParameterExample.ps1` from the example infrastructure files, with the deployment's own code; do not edit them. Compare your file against the matching design: see the **Example Parameter Files** collapsible in the [Reference](#reference) section below.
 :::
 
 </TabItem>
@@ -808,8 +808,16 @@ Always use Key Vault references to the platform Key Vault for sensitive paramete
 <details>
 <summary><strong>Example Parameter Files by Networking Pattern</strong></summary>
 
-Azure Local Cloud maintains validated IIC examples for each networking pattern in:
-`azurelocal-toolkit/config/azure/arm-templates/examples/`
+The toolkit keeps one generated example per design in `azurelocal-toolkit/config/azure/arm-templates/examples/` (written by `config/variables/scripts/New-ArmParameterExample.ps1`; its `-Check` fails when one is out of date):
+
+| File | Built from | Design |
+|------|------------|--------|
+| `active-directory-s2d-switched.parameters.json` | `config/variables/examples/infrastructure.example.yml` | Active Directory, Storage Spaces Direct on switched storage, two machines |
+| `local-identity-s2d-switchless.parameters.json` | `config/variables/examples/scenarios/local-identity-switchless-iso.yml` | Local identity with Key Vault, switchless storage, two machines |
+| `rack-aware-s2d.parameters.json` | `config/variables/examples/scenarios/rack-aware-ztp.yml` | Rack aware cluster, two zones of two machines |
+| `fibre-channel-san.parameters.json` | `config/variables/examples/scenarios/disaggregated-fibre-channel-proxy.yml` | Disaggregated, external SAN over Fibre Channel |
+
+The examples by networking pattern (`single-intent-converged`, `two-intent-standard`, `three-intent-separated`) are gone. The layouts below show the networking patterns; you set them with `networking.intents[]`.
 
 <Tabs>
 <TabItem value="single" label="1-Intent (HyperConverged)" default>
@@ -822,8 +830,6 @@ NIC1 (25 Gbps) ──┐
  ├── Management + Compute + Storage
 NIC2 (25 Gbps) ──┘
 ```
-
-See: `examples/single-intent-converged/azuredeploy.parameters.ad.json`
 
 </TabItem>
 <TabItem value="two" label="2-Intent (Standard)">
@@ -840,8 +846,6 @@ SMB1 (25 Gbps) ──┐
  ├── Intent 2: Storage (RDMA)
 SMB2 (25 Gbps) ──┘
 ```
-
-See: `examples/two-intent-standard/azuredeploy.parameters.ad.json`
 
 </TabItem>
 <TabItem value="three" label="3-Intent (Separated)">
@@ -862,8 +866,6 @@ SMB1 (25 Gbps) ──┐
  ├── Intent 3: Storage (RDMA)
 SMB2 (25 Gbps) ──┘
 ```
-
-See: `examples/three-intent-separated/azuredeploy.parameters.ad.json`
 
 </TabItem>
 </Tabs>
