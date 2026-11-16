@@ -1,0 +1,126 @@
+---
+title: "Task 04: Storage Performance Validation"
+sidebar_label: "Task 04: Storage Performance"
+sidebar_position: 4
+description: "Check the storage pools, virtual disks, physical disks and cluster shared volumes, and optionally measure disk latency, from the cluster"
+category: "Runbook"
+scope: "The storage of a deployed Azure Local cluster"
+purpose: "Evidence that the storage is healthy, not too full and fast enough"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - validation
+  - storage
+keywords:
+  - Storage Spaces Direct
+  - cluster shared volume
+  - latency
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Storage Performance Validation
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Part 7](https://img.shields.io/badge/Part-07%20Validation%20%26%20Handover-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: The storage of a deployed Azure Local cluster   
+> **PURPOSE**: Check pool, disk and volume health and capacity, and optionally measure latency   
+> **MASTER REFERENCE**: [Storage Spaces Direct overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/storage-spaces-direct-overview)
+
+**Status**: Active
+
+The VMFleet baseline of [Part 6 task 02](../06-testing-validation/task-02-vmfleet-storage-testing.mdx) is the performance acceptance test. This task is the quick health and capacity read for the handover and after changes; with `-RunPerformanceTest` it also writes and reads a test file on each volume. That generates I/O on the cluster: run it in a maintenance window on a production cluster.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `cluster.name` | The cluster to test |
+
+The limits (`-CsvUsageWarningPercent`, `-MaxAvgWriteLatencyMs`, `-MaxAvgReadLatencyMs`) are parameters, not values of a deployment.
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="PowerShell on a cluster machine" default>
+
+### PowerShell on a cluster machine
+
+```powershell
+Get-StoragePool -IsPrimordial $false; Get-VirtualDisk; Get-PhysicalDisk
+Get-ClusterSharedVolume | Select-Object Name, State, OwnerNode
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="PowerShell">
+
+### PowerShell
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/07-validation-handover/task-04-storage-performance-validation/powershell/Test-StoragePerformance.ps1` | Pool health and capacity, virtual disk health and resiliency, physical disks, volume ownership, state and usage, and with `-RunPerformanceTest` average write and read latency |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-VolumeNames` | Only these volumes. Default: all |
+| `-RunPerformanceTest`, `-DurationSeconds` | The I/O test and its length in seconds (at least 2, default 60) |
+| `-CsvUsageWarningPercent` | A volume fuller than this is a warning (default 85) |
+| `-MaxAvgWriteLatencyMs`, `-MaxAvgReadLatencyMs` | Latency above which the test warns (defaults 10 and 5) |
+| `-OutputPath` | A folder for the JSON results |
+
+```powershell
+./Test-StoragePerformance.ps1 -InfrastructureFile ./infrastructure.yml -OutputPath ./handover
+```
+
+Exit codes: `0` no check logged an error, `1` a check or the run failed, `2` `cluster.name` is missing or the file cannot be read.
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+- [ ] Exit code 0, every pool and virtual disk `Healthy`
+- [ ] Every volume `Online` and below the usage limit
+- [ ] With `-RunPerformanceTest`: latency below the limits
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| A volume is above the usage limit | The volume is filling | Extend it, or move data; plan capacity ([Task 04 of Part 8](../08-day2-operations/task-04-cluster-operations.mdx), `Capacity`) |
+| A virtual disk is `Warning` | A repair job is running | `Get-StorageJob`; wait |
+| Latency is above the limit | The cluster is busy, or a disk is slow | Run it again in a quiet window; check `Get-PhysicalDisk` |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 03: Network Configuration](./task-03-network-configuration-validation.mdx) | [Part 7 Index](./index.mdx) | [Task 05: Deployment Documentation](./task-05-deployment-documentation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release. The script reads `cluster.name` from `infrastructure.yml` (it was `-ClusterName`) |

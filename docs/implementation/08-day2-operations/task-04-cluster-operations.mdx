@@ -1,0 +1,150 @@
+---
+title: "Task 04: Cluster Operations"
+sidebar_label: "Task 04: Cluster Operations"
+sidebar_position: 4
+description: "Day to day operations on an Azure Local cluster: health check, maintenance mode of a node, live migration, volume ownership, capacity and alerts"
+category: "Runbook"
+scope: "Operate a running Azure Local cluster from a management machine"
+purpose: "One script, one action per run, with -WhatIf for every change and an exit code for every outcome"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - day-2
+  - operations
+keywords:
+  - health check
+  - maintenance mode
+  - live migration
+  - Move-ClusterVirtualMachineRole
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Cluster Operations
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Day 2](https://img.shields.io/badge/Part-08%20Day%202%20Operations-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: A running Azure Local cluster   
+> **PURPOSE**: Read the health, capacity and alerts of the cluster, and make the changes of day 2 (maintenance mode, live migration, volume ownership) safely   
+> **MASTER REFERENCE**: [Suspend and resume Azure Local machines for maintenance](https://learn.microsoft.com/en-us/azure/azure-local/manage/suspend-resume-cluster-maintenance)
+
+**Status**: Active
+
+The script connects to the cluster (`cluster.name`) or to one node with PowerShell remoting and runs the cluster cmdlets there, so the machine that runs it needs no failover clustering tools. It signs in nowhere and asks nothing. `HealthCheck`, `Capacity` and `Alerts` only read; `MaintenanceMode`, `LiveMigrate` and `Rebalance` change the cluster, and each change is behind `-WhatIf` and `-Confirm`.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `cluster.name` | The cluster to connect to and to operate on |
+| `nodes[].name`, `nodes[].management.ip_address`, `identity.active_directory.domain_fqdn` | `-NodeName` is matched against them (a name, a fully qualified name or an address). A name that is not in the file is used as it is, with a warning |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="PowerShell on a cluster machine" default>
+
+### PowerShell on a cluster machine
+
+> **When to use**: A single question, by hand
+
+```powershell
+Get-ClusterNode; Get-StoragePool -IsPrimordial $false; Get-VirtualDisk; Get-StorageJob; Get-ClusterNetwork
+Get-StorageSubSystem -FriendlyName "Clustered*" | Debug-StorageSubSystem          # Health Service faults
+Get-ClusterNode -Name "<MachineName>" | Get-ClusterGroup                           # the roles on a machine
+Move-ClusterVirtualMachineRole -Name "<VirtualMachineRole>" -Node "<Target>" -MigrationType Live
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="PowerShell">
+
+### PowerShell
+
+> **When to use**: The same, with one summary, a JSON file and an exit code
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/08-day2-operations/task-04-cluster-operations/powershell/Invoke-ClusterOperations.ps1` | One action per run. One row per finding or step (`Item`, `Action`, `Detail`) |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-Action` | `HealthCheck`, `MaintenanceMode`, `LiveMigrate`, `Rebalance`, `Capacity` or `Alerts`. Required |
+| `-NodeName` | The machine of `MaintenanceMode` and `LiveMigrate` |
+| `-Enable` | With `MaintenanceMode`: enter maintenance. Without it: leave maintenance |
+| `-Credential` | An administrator of the cluster. Without it the account that runs the script is used |
+| `-OutputPath` | Also write the rows as JSON to this file |
+| `-LogPath` | Also append the progress lines to this file |
+
+| Action | What it does | Changes the cluster |
+|--------|--------------|:-------------------:|
+| `HealthCheck` | Nodes `Up`, pools and virtual disks healthy, no storage repair job running, cluster networks up, the Arc agent of every node connected. Exit 1 when anything is not healthy | no |
+| `MaintenanceMode -Enable` | Checks it is safe (other nodes `Up`, virtual disks healthy, no repair job), `Suspend-ClusterNode -Drain -Wait`, then `Remove-MocPhysicalNode` | yes |
+| `MaintenanceMode` | `Resume-ClusterNode -Failback Immediate`, `New-MocPhysicalNode`, then a read of the storage repair jobs | yes |
+| `LiveMigrate` | Moves the clustered virtual machines of the node, live, each to the other node with the fewest virtual machines (`Move-ClusterVirtualMachineRole -MigrationType Live`) | yes |
+| `Rebalance` | Spreads the cluster shared volumes evenly over the nodes that are `Up` (`Move-ClusterSharedVolume`) | yes |
+| `Capacity` | Pool size and used space, memory and virtual processors assigned per node | no |
+| `Alerts` | Health Service faults, storage health actions and the Critical, Error and Warning events of the failover clustering log of the last 24 hours. Exit 1 when there are any | no |
+
+#### Run
+
+```powershell
+./Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action HealthCheck -OutputPath ./health.json
+./Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action MaintenanceMode -NodeName node01 -Enable -WhatIf
+./Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action MaintenanceMode -NodeName node01 -Enable
+```
+
+Exit codes: `0` the action finished (or is planned) and `HealthCheck` or `Alerts` found nothing, `1` a step failed or `HealthCheck` or `Alerts` found something, `2` `cluster.name` is missing, the file cannot be read, or an action that needs `-NodeName` has none (nothing is sent).
+
+To reboot a node in one run, with the wait for the storage repair, use [Task 03](./task-03-node-maintenance.mdx).
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+- [ ] `HealthCheck` ends with exit code 0 and every row is `Healthy`
+- [ ] After `MaintenanceMode -Enable`: `Get-ClusterNode` shows the node `Paused` and `Get-MocPhysicalNode` no longer lists it
+- [ ] After `MaintenanceMode` (leave): the node is `Up`, listed again, and `Get-StorageJob` shows nothing before the next node is touched
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `Not safe: ...` on `MaintenanceMode -Enable` | Another node is not `Up`, a virtual disk is not healthy or a repair job is running | Wait for the repair to finish (`HealthCheck` shows it), then run again. Nothing was changed |
+| `The cluster has no node 'x'` | The name is not a node of the cluster | Check `-NodeName` against `nodes[].name` |
+| `LiveMigrate` fails for one virtual machine | The virtual machine is not clustered, or the target lacks the memory | The other virtual machines are still moved; the exit code is 1. Move that one by hand |
+| `Alerts` returns an event of the last 24 hours that is already fixed | The log keeps the event | Read the time of the row; the exit code only clears when no event is left in the window |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 03: Node Maintenance](./task-03-node-maintenance.mdx) | [Part 8 Index](./index.mdx) | [Implementation Guide](../index.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release |

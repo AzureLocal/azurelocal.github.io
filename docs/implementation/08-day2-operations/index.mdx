@@ -1,0 +1,69 @@
+---
+title: "Part 8: Day 2 Operations"
+sidebar_label: "Part 8: Day 2 Operations"
+sidebar_position: 8
+description: "Check for updates, start the solution update, maintain a node and operate the cluster after the deployment, from infrastructure.yml"
+---
+
+# Part 8: Day 2 Operations
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: Azure Local clusters that are deployed and handed over   
+> **PURPOSE**: Keep the cluster current and healthy: the monthly update, node maintenance and the day to day cluster operations   
+> **MASTER REFERENCE**: [Update Azure Local by using PowerShell](https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2)
+
+**Status**: Active
+
+Every task of this part has a script under `scripts/deploy/08-day2-operations` that reads `infrastructure.yml`, a page here and a test. Nothing in this part runs by itself: an operator, a pipeline or a scheduled task starts each script.
+
+## Tasks
+
+| Task | What it does | Script folder | Azure CLI script |
+|------|--------------|---------------|------------------|
+| [Task 01: Check for Updates](./task-01-check-for-updates.mdx) | Reads what the update service has discovered and what Azure shows. Read only. Run it after the deployment and on a schedule | `scripts/deploy/08-day2-operations/task-01-check-for-updates` | yes |
+| [Task 02: Start the Solution Update](./task-02-start-solution-update.mdx) | Starts (or only prepares) the chosen solution update, after the deployment or for the monthly update | `scripts/deploy/08-day2-operations/task-02-start-solution-update` | no |
+| [Task 03: Node Maintenance](./task-03-node-maintenance.mdx) | Checks it is safe, drains, reboots and resumes one node, then waits for the storage to repair | `scripts/deploy/08-day2-operations/task-03-node-maintenance` | no |
+| [Task 04: Cluster Operations](./task-04-cluster-operations.mdx) | Health check, maintenance mode, live migration, volume ownership, capacity and alerts | `scripts/deploy/08-day2-operations/task-04-cluster-operations` | no |
+
+## The monthly update, in order
+
+An Azure Local release is supported for six months, so a cluster takes an update about once a month. The steps are always the same ([Update management and SBE](../../operations/update-management-and-sbe.mdx) has the background):
+
+1. **Check.** [Task 01](./task-01-check-for-updates.mdx). The verdict says what is offered: `UpdateAvailable`, `AdditionalContentRequired`, `UpdateRunning`, `UpToDate` or `AttentionNeeded`.
+2. **Import the SBE files, only when an update is in the state `AdditionalContentRequired`.** [Phase 06, Task 10: SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import.mdx) lists the files on the share and prints the import commands. Then check again (step 1) until the update is `Ready`.
+3. **Prepare (recommended).** [Task 02](./task-02-start-solution-update.mdx) with `-Mode OnDemand -PrepareOnly` downloads the update and runs the readiness checks before the maintenance window. The update becomes `ReadyToInstall`.
+4. **Start.** [Task 02](./task-02-start-solution-update.mdx) with `-Mode OnDemand`, inside the maintenance window. The script returns at once; the update takes hours and the machines restart.
+5. **Follow.** Run [Task 01](./task-01-check-for-updates.mdx) again, or watch Update Manager in the Azure portal. Sonar watches the progress as well.
+6. **Verify.** The update is `Installed` and `Get-SolutionUpdateEnvironment` shows the new `CurrentVersion`. Run the checks of [Part 7](../07-validation-handover/index.mdx) again.
+
+The first update after a deployment is the same path. Set `operations.updates.install_after_deployment: true` to let [Task 02](./task-02-start-solution-update.mdx) start it in the default mode `AfterDeployment`.
+
+## Check after the deployment, and on a schedule
+
+A freshly deployed cluster does not show its first update on its own until later: the update service finds updates by itself, and the update agent checks once a day (Microsoft Learn: Use Azure Update Manager to update Azure Local). So the toolkit always checks:
+
+- **Right after the deployment**, once: `Get-AvailableSolutionUpdate.ps1 -WaitMinutes 120` waits for the first update to be offered.
+- **On a schedule**, for example daily: `Get-AvailableSolutionUpdate.azcli.ps1 -OutputPath <file>` needs no access to a node, so a pipeline agent or an administrator's workstation can run it. Exit code `1` means the cluster needs attention (a failed update, a health state of `Failure`, `Error` or `Warning`, or an update service that has not checked for 48 hours): use it as the alert. The JSON file holds the verdict and every update for a monitor.
+
+Both scripts only read. Neither installs an update.
+
+## Prerequisites
+
+- [ ] The cluster is deployed ([Part 4](../04-cluster-deployment/index.mdx)) and registered in Azure
+- [ ] `infrastructure.yml` is the file the deployment used (`cluster.name`; `azure.*` for the Azure CLI scripts)
+- [ ] The account that runs the PowerShell scripts is the deployment user (Learn: sign in with the deployment user account), or `-Credential` names it
+- [ ] For the Azure CLI script: `az login --tenant <azure.tenant_id>` was run, with at least read access to the cluster resource
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Part 7: Validation & Handover](../07-validation-handover/index.mdx) | [Implementation Guide](../index.mdx) | [Task 01: Check for Updates](./task-01-check-for-updates.mdx) |
+
+---
+
+*Document maintained by Azure Local Cloud Team.*
+*Part of the [Azure Local Implementation Guide](../index.mdx).*

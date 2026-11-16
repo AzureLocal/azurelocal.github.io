@@ -1,0 +1,160 @@
+---
+title: "Task 03: Node Maintenance"
+sidebar_label: "Task 03: Node Maintenance"
+sidebar_position: 3
+description: "Take one Azure Local node through maintenance: check it is safe, drain it, reboot it, resume it and wait for the storage repair jobs before the next node"
+category: "Runbook"
+scope: "Suspend, reboot and resume one machine of an Azure Local cluster"
+purpose: "Reboot a node without losing availability: the order of Microsoft Learn, with the storage repair wait that protects the next node"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - day-2
+  - maintenance
+keywords:
+  - Suspend-ClusterNode
+  - Resume-ClusterNode
+  - Remove-MocPhysicalNode
+  - Get-StorageJob
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Node Maintenance
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Day 2](https://img.shields.io/badge/Part-08%20Day%202%20Operations-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: One machine of a running Azure Local cluster (version 2311.2 or later)   
+> **PURPOSE**: Suspend, drain, reboot and resume a machine, and wait for the storage to repair before another machine is touched   
+> **MASTER REFERENCE**: [Suspend and resume Azure Local machines for maintenance](https://learn.microsoft.com/en-us/azure/azure-local/manage/suspend-resume-cluster-maintenance)
+
+**Status**: Active
+
+Do not use this task to install updates: Learn lists manual installs as unsupported, and the update service already drains and reboots the machines in order ([Task 02](./task-02-start-solution-update.mdx)). Use it for a planned reboot or to replace a component.
+
+One machine at a time. The storage of the cluster is shared by all machines, so taking one out leaves the data on the others; while the machine is away, new writes are tracked and, when it returns, resynchronised. Until that repair has finished, taking a second machine out is not safe.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `nodes[].name`, `nodes[].management.ip_address` | Find the machine named by `-TargetNode` (a name, a fully qualified name or the management address) and its address. A machine that is not in the file is used as it is, with a warning |
+| `identity.active_directory.domain_fqdn` | The fully qualified name `name.domain` is accepted as `-TargetNode` |
+| `identity.local_admin.username`, `.password` | The local administrator the script connects as (the password is a secret reference, read by the toolkit's secret resolver) |
+| `identity.active_directory.lcm_user.username`, `.password`, `identity.active_directory.netbios_name` | The fallback account when the local administrator is denied. `-Credential` replaces both |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="PowerShell on a cluster machine" default>
+
+### PowerShell on a cluster machine
+
+> **When to use**: One machine, by hand (Learn: Suspend and resume Azure Local machines for maintenance; Failover cluster maintenance procedures)
+
+1. Verify it is safe: every virtual disk is `Healthy` and `OK`, no repair job runs, every other machine is `Up`.
+2. Suspend and drain, then remove the machine from the virtual machine configuration so no new virtual machine lands on it.
+3. Reboot, wait for it, resume it, add it back, and wait for the repair jobs.
+
+```powershell
+Get-VirtualDisk | Format-Table FriendlyName, OperationalStatus, HealthStatus
+Get-StorageJob
+Suspend-ClusterNode -Name "<MachineName>" -Drain -Wait
+Remove-MocPhysicalNode -NodeName "<MachineName>"
+Restart-Computer -Force                       # on the machine
+Resume-ClusterNode -Name "<MachineName>" -Failback Immediate
+New-MocPhysicalNode -NodeName "<MachineName>"
+Get-StorageJob                                # no output: the repair is done
+Get-StoragePool -FriendlyName "<StoragePoolName>"
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="PowerShell">
+
+### PowerShell
+
+> **When to use**: The same procedure with the checks, the waits and the exit codes
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/08-day2-operations/task-03-node-maintenance/powershell/Invoke-NodeMaintenanceReboot.ps1` | Checks, drains, removes from the VM configuration, reboots, waits, resumes, adds back, waits for the storage repair. `-WhatIf` sends nothing to any machine |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-TargetNode` | The machine: name, fully qualified name or management address. Required |
+| `-Credential` | Use this account instead of the ones in the file |
+| `-SkipDrain` | Reboot without the safety checks and the suspend (for a machine that is already suspended) |
+| `-SkipResume` | Leave the machine in maintenance after the reboot. Run again with `-ResumeOnly` |
+| `-ResumeOnly` | Only resume a machine that is in maintenance, add it back and wait for the storage |
+| `-FailbackMode` | `Immediate` (default), `NoFailback` or `Policy` |
+| `-TimeoutSeconds`, `-PingIntervalSeconds` | How long, and how often, to wait for the machine to come back |
+| `-StorageRepairTimeoutMinutes`, `-StoragePollSeconds` | How long (0 to 1440, default 180; 0 does not wait) and how often to wait for the repair jobs |
+| `-LogPath` | The log file. Default `logs\node-maintenance-reboot\<date>_<time>_<node>.log` |
+
+#### Run
+
+```powershell
+./Invoke-NodeMaintenanceReboot.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode node01 -WhatIf
+./Invoke-NodeMaintenanceReboot.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode node01
+```
+
+Run it for the next machine only after the first has ended with exit code 0: that means the machine is `Up`, in the virtual machine configuration again, and the storage is repaired.
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Done, and the storage is healthy (or planned under `-WhatIf`) |
+| `1` | It was not safe (nothing was changed), the machine was not `Paused` after the drain, did not come back, a step failed, or the storage had not repaired when the wait ran out |
+| `2` | The file is missing or not usable, or no credential could be built |
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+- [ ] `Get-ClusterNode` shows every machine `Up`
+- [ ] `Get-MocPhysicalNode` lists the machine
+- [ ] `Get-StorageJob` returns nothing and `Get-VirtualDisk` shows `Healthy` and `OK` for every disk
+- [ ] Virtual machines are running on the machine again (with `-FailbackMode Immediate`)
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `Not safe to take 'node' out` | Another machine is down, a virtual disk is not healthy, or a repair job is running | Wait for the repair to finish (`Get-StorageJob`), fix the other machine, run again. Nothing was changed |
+| The machine does not have `Remove-MocPhysicalNode` | The machine runs a version before 2311.2 | Update first. The script stops before it changes anything |
+| The machine did not come back | Hardware or boot problem | Use the BMC console. The node stays suspended; resume it with `-ResumeOnly` once it is back |
+| A repair job stays `Suspended` at 0 percent | The storage orchestration is waiting | Do not reboot again. Check `Get-StorageJob` and `Get-VirtualDisk`; the exit code stays 1 until it is repaired |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 02: Start the Solution Update](./task-02-start-solution-update.mdx) | [Part 8 Index](./index.mdx) | [Task 04: Cluster Operations](./task-04-cluster-operations.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release. Adds the safety checks, `Remove-MocPhysicalNode` and `New-MocPhysicalNode`, the storage repair wait and the exit codes |

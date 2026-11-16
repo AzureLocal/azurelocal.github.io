@@ -1,0 +1,124 @@
+---
+title: "Task 03: Network Configuration Validation"
+sidebar_label: "Task 03: Network Configuration"
+sidebar_position: 3
+description: "Check the network adapters, virtual switches, Network ATC intents, RDMA, cluster networks, DNS and the endpoints from the nodes, read only"
+category: "Runbook"
+scope: "The host network of a deployed Azure Local cluster"
+purpose: "Evidence that the host network is configured and connected as deployed"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - validation
+  - network
+keywords:
+  - Network ATC
+  - RDMA
+  - virtual switch
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 03: Network Configuration Validation
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Part 7](https://img.shields.io/badge/Part-07%20Validation%20%26%20Handover-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: Every node of a deployed Azure Local cluster   
+> **PURPOSE**: Check the host network from the nodes   
+> **MASTER REFERENCE**: [Host network requirements for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements)
+
+**Status**: Active
+
+[Part 6 task 03](../06-testing-validation/task-03-network-rdma-validation.mdx) validates the network and RDMA for the acceptance test. This task is the repeatable evidence run for the handover and after changes. It changes nothing.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `cluster.name` | The cluster whose nodes (those that are `Up`) are checked, and a name the nodes must resolve |
+| `azure.location` | The region of the endpoint list (the host names the nodes must resolve, and with `-TestExternalConnectivity` reach on 443). The list is the one documented list of the toolkit |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="PowerShell on a cluster machine" default>
+
+### PowerShell on a cluster machine
+
+On each node:
+
+```powershell
+Get-NetAdapter; Get-VMSwitch; Get-VMSwitchTeam; Get-NetIntent; Get-NetAdapterRdma
+Get-ClusterNetwork; Resolve-DnsName <cluster name>
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="PowerShell">
+
+### PowerShell
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/07-validation-handover/task-03-network-configuration-validation/powershell/Test-NetworkConfiguration.ps1` | Physical adapters, virtual switches (Switch Embedded Teaming), Network ATC intents, RDMA, cluster networks, node to node ping, DNS, and optionally the external endpoints |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-TestExternalConnectivity` | Also open TCP connections on 443 from a node to the endpoint list |
+| `-CustomEndpoints` | More endpoints to test, as `host:port` (your proxy, a time source) |
+| `-OutputPath` | A folder: the results are also saved there as `network-test-<date>-<time>.json` |
+
+```powershell
+./Test-NetworkConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -TestExternalConnectivity -OutputPath ./handover
+```
+
+Exit codes: `0` no problem was logged, `1` a check logged an error (a down network, a failed ping, a name that does not resolve, an endpoint that cannot be reached), `2` `cluster.name` is missing or the file cannot be read.
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+- [ ] Exit code 0
+- [ ] Every cluster network is `Up`, every node reaches every other node, RDMA is enabled on the storage adapters
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `Failed to check virtual switches` | The Hyper-V role or the switch is missing | Check the Network ATC intent deployment ([Phase 06 task 09](../04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification.mdx)) |
+| `No RDMA-enabled adapters found` (warning) | RDMA is off, or the adapters do not support it | `Get-NetAdapterRdma`; see Part 6 task 03 |
+| A name does not resolve from the node | DNS servers of the node are wrong | Check the DNS servers of the management adapter |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 02: Arc Connectivity](./task-02-arc-connectivity-validation.mdx) | [Part 7 Index](./index.mdx) | [Task 04: Storage Performance](./task-04-storage-performance-validation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release. The script reads `cluster.name` and `azure.location` from `infrastructure.yml`, takes its endpoints from the shared list and ends with exit code 1 when a check fails |

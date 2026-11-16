@@ -1,0 +1,125 @@
+---
+title: "Task 02: Arc Connectivity Validation"
+sidebar_label: "Task 02: Arc Connectivity"
+sidebar_position: 2
+description: "Check from every node that the Azure Arc agent is connected, its extensions are healthy and the Arc endpoints are reachable on 443, read only"
+category: "Runbook"
+scope: "The Azure Arc side of every node of a deployed Azure Local cluster"
+purpose: "Evidence that every node is connected to Azure and can reach the endpoints it needs"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - validation
+  - arc
+keywords:
+  - azcmagent
+  - Arc endpoints
+  - connectivity
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Arc Connectivity Validation
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Part 7](https://img.shields.io/badge/Part-07%20Validation%20%26%20Handover-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: Every node of a deployed Azure Local cluster   
+> **PURPOSE**: Check the Arc agent, its extensions and the Arc endpoints from the nodes themselves   
+> **MASTER REFERENCE**: [Azure Connected Machine agent CLI reference](https://learn.microsoft.com/en-us/azure/azure-arc/servers/azcmagent)
+
+**Status**: Active
+
+What Azure shows about the Arc machines (status, extensions, identity) is [Phase 04, Task 04](../04-cluster-deployment/phase-04-arc-registration/index.mdx), which has its own Azure CLI script. This task is the node side: what the machine itself reports and can reach. That is why it has no Azure CLI script. It changes nothing.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `cluster.name` | The cluster whose nodes (those that are `Up`) are asked |
+| `azure.location` | The region of the endpoint list. The list is the one documented list of the toolkit (Learn: Firewall requirements for Azure Local); the script has no host of its own |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="PowerShell on a cluster machine" default>
+
+### PowerShell on a cluster machine
+
+On each node:
+
+```powershell
+& "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe" show
+& "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe" extension list
+Test-NetConnection -ComputerName <endpoint host> -Port 443
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="PowerShell">
+
+### PowerShell
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/07-validation-handover/task-02-arc-connectivity-validation/powershell/Test-ArcConnectivity.ps1` | Over PowerShell remoting, per node that is `Up`: the agent (`Connected` passes, `Disconnected` fails), the extensions (a state other than `Succeeded` warns) and a TCP connection on 443 to every endpoint of the list (a required host that cannot be reached fails, an optional one warns) |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-Credential` | The account for the remoting sessions. Without it the account that runs the script is used |
+| `-OutputPath` | A folder: the results are also saved there as `arc-connectivity-<date>-<time>.json` |
+
+```powershell
+./Test-ArcConnectivity.ps1 -InfrastructureFile ./infrastructure.yml -OutputPath ./handover
+```
+
+Exit codes: `0` no check failed, `1` a check failed or the cluster could not be read, `2` `cluster.name` or `azure.location` is missing, or the file cannot be read.
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+- [ ] Every node: `Agent` is `Passed` (`Connected`)
+- [ ] Every node: `Endpoints` is `Passed`
+- [ ] `Extensions` is `Passed`, or the warning is understood (they install some time after the registration)
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `Endpoints` fails for one host | A firewall or proxy blocks 443 | Open the host (Learn: Firewall requirements for Azure Local). The Arc gateway and a proxy change the path: the TCP probe only describes a direct path |
+| `Agent` is `Disconnected` | The agent cannot reach Azure, or the machine was deleted in Azure | `azcmagent show` on the node shows the error |
+| `azure.location is missing` | The region is not in the file | Set `azure.location` |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01: Cluster Health](./task-01-cluster-health-validation.mdx) | [Part 7 Index](./index.mdx) | [Task 03: Network Configuration](./task-03-network-configuration-validation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release. The script was rewritten to the toolkit rules: no host of its own, no Azure call, exit codes 0, 1 and 2 |

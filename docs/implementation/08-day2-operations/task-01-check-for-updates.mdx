@@ -1,0 +1,183 @@
+---
+title: "Task 01: Check for Updates"
+sidebar_label: "Task 01: Check for Updates"
+sidebar_position: 1
+description: "Check what updates the cluster has discovered and what Azure shows for it, after the deployment and on a schedule. Read only"
+category: "Runbook"
+scope: "Read the update state of a deployed Azure Local cluster, from the cluster and from Azure"
+purpose: "Know which update is offered, what to do with it, and whether the cluster needs attention, without starting anything"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - day-2
+  - updates
+keywords:
+  - Get-SolutionUpdate
+  - Get-SolutionUpdateEnvironment
+  - Azure Update Manager
+  - check for updates
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Check for Updates
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Day 2](https://img.shields.io/badge/Part-08%20Day%202%20Operations-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: A deployed Azure Local cluster   
+> **PURPOSE**: Show what the update service has discovered and what Azure offers, and say what is next for each update. Changes nothing   
+> **MASTER REFERENCE**: [Update Azure Local by using PowerShell](https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2)
+
+**Status**: Active
+
+A freshly deployed cluster does not show its first update on its own until later. The Lifecycle Manager discovers updates by itself (it also queries the hardware vendor's online SBE manifest), the update agent checks the cluster once a day, and Learn names no command that forces a check: `Get-SolutionUpdate` is how you "rediscover the updates", and Azure Update Manager has a **Check for updates** button. This task is the check the toolkit always runs after a deployment and then on a schedule. It starts nothing.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `cluster.name` | The cluster the PowerShell script connects to (or one node, with `-ComputerName`); the name of the cluster resource for the Azure CLI script |
+| `operations.updates.target_version` | Optional. `latest` (default) or a solution version of four numbers. The report says whether that version is offered |
+| `azure.tenant_id`, `azure.subscription_id`, `azure.resource_group` | Azure CLI script only: where the cluster resource is. The sign-in must be to this tenant |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="PowerShell on a cluster machine" default>
+
+### PowerShell on a cluster machine
+
+> **When to use**: One cluster, by hand
+
+Sign in to a machine of the cluster as the deployment user, then read the update environment and the discovered updates (Learn: Update Azure Local by using PowerShell, steps 1 and 2):
+
+```powershell
+Get-SolutionUpdateEnvironment | Format-List CurrentVersion, CurrentSbeVersion, State, HealthState, LastChecked
+Get-SolutionUpdate | Format-Table DisplayName, PackageType, Version, SbeVersion, State
+```
+
+Review `HealthState`: `Failure`, `Error` or `Warning` has to be fixed before an update starts. Repeat `Get-SolutionUpdate` to rediscover. An update that is not listed may not be visible yet: a feature update can take a week after its release, until the hardware partner has validated it.
+
+</TabItem>
+<TabItem value="orchestrated" label="PowerShell">
+
+### PowerShell
+
+> **When to use**: Straight after the deployment, and whenever you want the answer as a table and a JSON file
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/08-day2-operations/task-01-check-for-updates/powershell/Get-AvailableSolutionUpdate.ps1` | Reads the update environment and polls `Get-SolutionUpdate` on the cluster. One row per update that is not finished, with what is next. Read only |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-ComputerName` | Connect to this machine instead of `cluster.name` |
+| `-Credential` | The deployment user. Without it the account that runs the script is used |
+| `-WaitMinutes`, `-PollSeconds` | Read again every `-PollSeconds` (default 60) until an update is offered or `-WaitMinutes` (0 to 240, default 0) have passed |
+| `-OutputPath` | Also write the whole report as JSON to this file. Keep it out of the repository |
+
+#### Run
+
+```powershell
+# once, right after the deployment: wait up to two hours for the first update
+./Get-AvailableSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -WaitMinutes 120 -OutputPath ./update-check.json
+```
+
+</TabItem>
+<TabItem value="azurecli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: On a schedule, from a pipeline agent or a workstation: it needs no access to a node
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/08-day2-operations/task-01-check-for-updates/azurecli/Get-AvailableSolutionUpdate.azcli.ps1` | Reads the update summary and the updates of the cluster resource in Azure (`az rest`, GET only). Same table, verdict and JSON |
+
+The Azure CLI has no `az stack-hci update` command, so the script reads the two operations of the Microsoft.AzureStackHCI resource provider that Learn documents (Update Summaries - Get, Updates - List). It does not sign in: run `az login --tenant <azure.tenant_id>` first. The signed-in identity needs read access to the cluster resource.
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-MaxCheckAgeHours` | The longest time since the update service last checked (1 to 720, default 48). Longer is `AttentionNeeded`: the cluster is not looking for updates |
+| `-OutputPath` | Also write the whole report as JSON to this file |
+
+```powershell
+az login --tenant <tenant-id>
+./Get-AvailableSolutionUpdate.azcli.ps1 -InfrastructureFile ./infrastructure.yml -OutputPath ./update-check-azure.json
+```
+
+</TabItem>
+<TabItem value="portal" label="Azure portal">
+
+### Azure portal
+
+> **When to use**: One cluster, from the browser
+
+1. Go to **Azure Update Manager** > **Resources** > **Azure Local**.
+2. Select the cluster, then **Check for updates** (optional: the agent checks daily).
+3. The status column shows **Updates available** when an update is offered; the **Updates** page of the cluster lists them.
+
+</TabItem>
+</Tabs>
+
+---
+
+## The verdict
+
+| Verdict | Meaning | Next |
+|---------|---------|------|
+| `UpToDate` | No update is offered and none is running | Nothing. Check again later |
+| `UpdateAvailable` | An update is `Ready` or `ReadyToInstall` | [Task 02](./task-02-start-solution-update.mdx): prepare it, then start it |
+| `AdditionalContentRequired` | An update waits for the hardware vendor's SBE files | [SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import.mdx), then check again |
+| `UpdateRunning` | An update is `Downloading`, `Preparing`, `HealthChecking` or `Installing` | Wait. Run this task again to follow it |
+| `AttentionNeeded` | An update failed or needs a prerequisite, the health is `Failure`, `Error` or `Warning`, the update environment is `UpdateFailed` or `NeedsAttention`, or (Azure CLI) the update service has not checked for too long | Read the `[attention]` lines. Fix them before an update is started |
+
+Exit codes: `0` the cluster was read and nothing needs attention (an update may be offered), `1` it could not be read or the verdict is `AttentionNeeded`, `2` a value in the file is missing or not usable (nothing is sent).
+
+## Validation
+
+- [ ] The script ends with exit code 0, or the `[attention]` lines are understood
+- [ ] The installed version is the version you expect (`CurrentVersion`)
+- [ ] `LastChecked` is within a day (PowerShell script: printed; Azure CLI script: in the JSON)
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| No update is offered after the deployment | Discovery has not finished, or the release is not validated for your hardware yet | Run the script with `-WaitMinutes`; check again the next day. A feature update can take a week after its release to be visible |
+| `AdditionalContentRequired` | The SBE on the cluster has no download connector (or no credentials) for this cluster | Import the vendor files ([SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import.mdx)) or set the connector credentials with `Set-SolutionExtensionSecretLocation` |
+| The Azure CLI script says the cluster resource was not found | Wrong `azure.resource_group` or `cluster.name`, or the cluster is not registered | Check both keys against the portal |
+| `AttentionNeeded` with a health of `Warning` | A readiness check warns | `Get-SolutionHealthSummary` on a machine shows the details (Learn: Troubleshoot readiness checks) |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Part 8: Day 2 Operations](./index.mdx) | [Part 8 Index](./index.mdx) | [Task 02: Start the Solution Update](./task-02-start-solution-update.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release |

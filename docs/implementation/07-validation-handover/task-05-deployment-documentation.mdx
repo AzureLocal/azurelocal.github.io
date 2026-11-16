@@ -1,0 +1,113 @@
+---
+title: "Task 05: Deployment Documentation"
+sidebar_label: "Task 05: Deployment Documentation"
+sidebar_position: 5
+description: "Write the deployment documentation package of an Azure Local instance from infrastructure.yml and from what the cluster reports"
+category: "Runbook"
+scope: "The handover documentation of one Azure Local instance"
+purpose: "A Markdown page and a JSON file that describe the instance as it was deployed"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - handover
+  - documentation
+keywords:
+  - as-built
+  - handover package
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 05: Deployment Documentation
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Part 7](https://img.shields.io/badge/Part-07%20Validation%20%26%20Handover-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: One deployed Azure Local instance   
+> **PURPOSE**: Write the documentation package the customer receives   
+> **MASTER REFERENCE**: [Azure Local documentation](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+**Status**: Active
+
+The script collects, read only, the instance as the file describes it (customer, cluster name, tenant, subscription, resource group, region) and the cluster as it is now (nodes and quorum, cluster networks and virtual switches, storage pools, virtual disks and volumes, the Arc agent). It writes a Markdown page (overview, network, storage, Azure integration, a Mermaid architecture diagram, operational procedures) and a JSON file with the same data. A part the cluster cannot report is left out with a warning; the page is written anyway. It changes nothing on the cluster or in Azure.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `cluster.name`, `site.customer` | Required. The cluster to read and the customer the package is for. Both name the output files |
+| `azure.tenant_id`, `azure.subscription_id`, `azure.resource_group`, `azure.location` | Where the instance is in Azure (written in the Azure integration section) |
+| every secret reference of the file | With `-IncludeCredentialLocations` only: the reference and the key it is under, never a value |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="orchestrated" label="PowerShell" default>
+
+### PowerShell
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/07-validation-handover/task-05-deployment-documentation/powershell/New-DeploymentDocumentation.ps1` | Collects the cluster and writes `<customer>-<cluster>-Documentation.md` and `-Config.json` in `-OutputPath`. `-WhatIf` collects and writes no file |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-OutputPath` | The folder for the package (created when it does not exist). Required |
+| `-IncludeCredentialLocations` | Also list where the secrets are kept (references only) |
+| `-LogPath` | Also append the progress lines to this file |
+
+```powershell
+./New-DeploymentDocumentation.ps1 -InfrastructureFile ./infrastructure.yml -OutputPath ./handover
+```
+
+Exit codes: `0` the documentation is written (or planned under `-WhatIf`), `1` the files could not be written, `2` `cluster.name` or `site.customer` is missing, or the file cannot be read.
+
+Put the output of tasks 01 to 04 and of [Part 6](../06-testing-validation/index.mdx) in the same folder: the toolkit has no script that merges the validation reports.
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+- [ ] The Markdown page and the JSON file are in the output folder
+- [ ] The page lists every node, the storage and the networks you expect, and holds no secret value
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `site.customer` is missing | The key is empty | Set `site.customer` |
+| A section is left out with a warning | The cluster could not report that part | Run from a machine that reaches the cluster with PowerShell remoting |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 04: Storage Performance](./task-04-storage-performance-validation.mdx) | [Part 7 Index](./index.mdx) | [Task 06: Customer Transfer](./task-06-customer-transfer.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release (the script moved here from the old handover folder of the toolkit) |
