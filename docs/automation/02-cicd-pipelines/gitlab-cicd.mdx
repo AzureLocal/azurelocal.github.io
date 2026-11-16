@@ -34,9 +34,11 @@ validate → plan → deploy-foundation → configure-onprem → configure-opera
 | **validate** | Terraform validate, Ansible lint, config validation | The tag in `AZL_RUNNER_LABEL` | Automatic |
 | **plan** | Terraform plan | The tag in `AZL_RUNNER_LABEL` | Automatic |
 | **deploy-foundation** | Terraform apply, output export | The tag in `AZL_RUNNER_LABEL` | Manual approval |
-| **configure-onprem** | Ansible playbooks 05, 01, 02, 03 (domain controllers, AD preparation, OS configuration, Arc registration) | Self-hosted | Manual approval |
-| **configure-operations** | Ansible playbook 04 (monitoring) | Self-hosted | Manual approval |
+| **configure-onprem** | Ansible playbooks 05, 01, 02, 03 (domain controllers, AD preparation, OS configuration, Arc registration) | Self-hosted | Manual, in the approval environment of `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` |
+| **configure-operations** | Ansible playbook 04 (monitoring) | Self-hosted | Manual, in the approval environment of `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` |
 | **validate-deployment** | Read-only Azure Policy and Defender for Cloud summary (`validate:compliance`) | Self-hosted | Manual |
+
+The Ansible plays change machines, so the configure stages use the same protected environment as `terraform:apply`, the same as on GitHub. While `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` is empty their jobs are not created, and `configure-onprem-approval-environment-not-set` and `configure-operations-approval-environment-not-set` fail and say why.
 
 The Azure Local cluster itself is deployed by the [ARM Validate and Deploy pipeline](#arm-validate-and-deploy-pipeline) below, not by this chain. The earlier `deploy-cluster` stage is gone.
 
