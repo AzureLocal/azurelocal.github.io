@@ -8,8 +8,8 @@ scope: "Deploy Azure Monitor Agent to cluster nodes and configure Data Collectio
 purpose: "Deploy Azure Monitor Agent to cluster nodes and configure Data Collection Rules"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-16
+version: "1.1.0"
 tags:
   - azure-local
   - operational-foundations
@@ -104,38 +104,17 @@ flowchart TB
 
 > **Tip**: When you enable HCI Insights (Step 3), AMA is automatically installed on all cluster nodes.
 
-#### Step 2.2: Create Data Collection Rule
+#### Step 2.2: Data Collection Rule (created by Insights, Task 03)
 
-1. Navigate to **Azure Monitor** → **Data Collection Rules**
-2. Click **+ Create**
-3. Configure **Basics**:
+Do not build the data collection rule of Insights by hand. Microsoft Learn ([Monitor a single Azure Local system with Insights](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-single-23h2?view=azloc-2610#enable-insights)) strongly recommends against creating your own rule: the rule Insights creates includes a special data stream that Insights needs. Insights creates it (prefix `AzureStackHCI-`) when you enable Insights in [Task 03](./task-03-enable-hci-insights.mdx), and you can edit that rule later to collect more data.
 
-| Setting | Value |
-|---------|-------|
-| **Rule Name** | `dcr-azl-{{SITE_CODE}}-performance` |
-| **Subscription** | `{{AZURE_SUBSCRIPTION_NAME}}` |
-| **Resource Group** | `{{AZURE_RESOURCE_GROUP}}` |
-| **Region** | `{{AZURE_REGION}}` |
-| **Platform Type** | Windows |
-| **Data Collection Endpoint** | `dce-{{SITE_CODE}}-azl-01` |
+Learn lists what the rule collects; [Task 03](./task-03-enable-hci-insights.mdx) checks it, read only, before it associates the rule with the nodes:
 
-4. Configure **Resources** — Add all cluster nodes as Arc-enabled servers
-5. Configure **Collect and deliver**:
-
-**Data Source 1: Performance Counters**
-- Type: Performance Counters
-- Select counters for HCI Insights compatibility
-
-**Data Source 2: Windows Event Logs**
-- Type: Windows Event Logs
-- Add: `Microsoft-Windows-Health/Operational`, `Microsoft-Windows-SDDC-Management/Operational`
-
-6. Configure **Destination**:
-- Destination Type: Azure Monitor Logs
-- Subscription: `{{AZURE_SUBSCRIPTION_NAME}}`
-- Log Analytics Workspace: `{{LOG_ANALYTICS_WORKSPACE_NAME}}`
-
-7. Click **Review + Create** → **Create**
+| Data | Learn's list |
+|------|--------------|
+| Performance counters | `Memory(*)\Available Bytes`, `Network Interface(*)\Bytes Total/sec`, `Processor(_Total)\% Processor Time`, `RDMA Activity(*)\RDMA Inbound Bytes/sec`, `RDMA Activity(*)\RDMA Outbound Bytes/sec` |
+| Windows event log channels | `Microsoft-Windows-Health/Operational`, `Microsoft-Windows-SDDC-Management/Operational` |
+| Destination | The Log Analytics workspace of [Task 01](./task-01-configure-log-analytics-workspace.mdx) |
 
 </TabItem>
 
@@ -151,13 +130,18 @@ flowchart TB
 |---|---|
 | `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/powershell/Install-AzureMonitorAgent.ps1` | Installs the Azure Monitor Agent extension on the Azure Local instance that infrastructure.yml describes. Supports `-WhatIf`. |
 
-Requires: PowerShell 7.
+Parameters: `-InfrastructureFile` (mandatory), `-LogPath`. It installs one extension (`AzureMonitorWindowsAgent`) on the instance through the Azure Local resource provider, which installs it on every node and on a node that joins later. It creates no data collection rule (Step 2.2) and no association ([Task 03](./task-03-enable-hci-insights.mdx)). With `operations.monitoring.enabled` false it does nothing and exits 0.
+
+Requires: PowerShell 7; modules Az.Accounts, Az.StackHCI. Sign in first with `Connect-AzAccount -Tenant <azure.tenant_id>`.
 
 #### Run
 
 ```powershell
 ./Install-AzureMonitorAgent.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Install-AzureMonitorAgent.ps1 -InfrastructureFile ./infrastructure.yml
 ```
+
+Exit codes: `0` the extension is on the instance (installed now, already there, or planned under `-WhatIf`) or monitoring is off; `1` an Azure call or a precondition failed; `2` a value in the file is missing or not usable.
 
 </TabItem>
 <TabItem value="azure-cli" label="Azure CLI">
@@ -188,23 +172,7 @@ It installs one extension (`AzureMonitorWindowsAgent`) on the instance through t
 
 ## Associate DCR with Cluster Nodes
 
-After creating the DCR, associate it with each cluster node:
-
-```powershell
-# Associate DCR with each Arc-enabled server
-$dcrResourceId = "/subscriptions/{{AZURE_SUBSCRIPTION_ID}}/resourceGroups/{{AZURE_RESOURCE_GROUP}}/providers/Microsoft.Insights/dataCollectionRules/dcr-azl-{{SITE_CODE}}-performance"
-
-foreach ($node in $ClusterNodes) {
- $arcServer = Get-AzConnectedMachine -ResourceGroupName $ResourceGroup -Name $node
- 
- New-AzDataCollectionRuleAssociation `
- -TargetResourceId $arcServer.Id `
- -AssociationName "assoc-$node" `
- -RuleId $dcrResourceId
- 
- Write-Host "✅ DCR associated with $node" -ForegroundColor Green
-}
-```
+The association of the Insights rule with every node is done by [Task 03](./task-03-enable-hci-insights.mdx): `Enable-HciInsights.ps1` (or its Azure CLI twin) checks the rule against Learn's list above, then associates it with the Arc machine of each node under the name `<machine>-dataCollectionRuleAssociations` that the Learn policy uses. This task's script installs the agent only.
 
 ## Validation
 
@@ -319,3 +287,4 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-16 | Azure Local Cloud | Step 2.2 follows Learn (Insights creates the rule; Task 03 checks and associates it); script parameters and exit codes |

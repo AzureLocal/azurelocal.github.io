@@ -8,8 +8,8 @@ scope: "Enable Azure Local (HCI) Insights for cluster health monitoring and perf
 purpose: "Enable Azure Local (HCI) Insights for cluster health monitoring and performance analytics"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-16
+version: "1.1.0"
 tags:
   - azure-local
   - operational-foundations
@@ -55,6 +55,7 @@ azure.tenant_id, azure.subscription_id, azure.resource_group, cluster.name, node
 operations.monitoring.enabled                               false means: do nothing
 operations.monitoring.workspace_resource_group              the resource group of the rule
 operations.monitoring.data_collection_rule                  the name of the existing rule
+operations.monitoring.log_analytics_workspace               optional: the workspace the rule must send to
 ```
 
 ## Overview
@@ -119,15 +120,28 @@ When you configure Insights, Azure Monitor Agent is automatically installed on a
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Enable-HciInsights.ps1` | Enables Insights for Azure Local: associates the Insights data collection rule with the Arc machine of every node. Supports `-WhatIf`. |
+| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Enable-HciInsights.ps1` | Enables Insights for Azure Local: checks the Insights data collection rule against what Learn lists for Insights, then associates it with the Arc machine of every node. Supports `-WhatIf`. |
 
-Requires: PowerShell 7.
+Parameters: `-InfrastructureFile` (mandatory), `-LogPath`.
+
+One step stays in the portal: creating the rule (Step 3.1 and 3.2). The script never creates or changes a rule. It needs the Azure Monitor Agent on the instance ([Task 02](./task-02-configure-azure-monitor-agent.mdx)). In order, it:
+
+1. Looks up the rule `operations.monitoring.data_collection_rule` in `operations.monitoring.workspace_resource_group`. A missing rule stops it with exit code 1.
+2. Checks the rule, read only, against the [Data collection rules](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-single-23h2?view=azloc-2610#data-collection-rules) section of Learn: the five performance counters (any instance), the two event log channels `Microsoft-Windows-Health/Operational` and `Microsoft-Windows-SDDC-Management/Operational`, and a Log Analytics destination. When `operations.monitoring.log_analytics_workspace` is set, the rule must send to that workspace in `operations.monitoring.workspace_resource_group`. When something is missing it stops with exit code 1, lists what is missing and associates nothing, also under `-WhatIf`. Learn's way back is the portal: the instance, **Capabilities**, **Insights**, **Update**.
+3. Associates the rule with the Arc machine of every `nodes[]` entry under the name `<machine>-dataCollectionRuleAssociations`. An association that exists is left alone (`AlreadyExists`); one with that name that points to another rule is reported as `Conflict`, never changed.
+
+Requires: PowerShell 7; modules Az.Accounts, Az.StackHCI, Az.Monitor. Sign in first with `Connect-AzAccount -Tenant <azure.tenant_id>`.
 
 #### Run
 
 ```powershell
 ./Enable-HciInsights.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Enable-HciInsights.ps1 -InfrastructureFile ./infrastructure.yml
 ```
+
+Exit codes: `0` every node is associated (created now, already there, or planned under `-WhatIf`) or monitoring is off; `1` an Azure call or a precondition failed (no agent, the rule is missing or lacks what Insights needs, an association failed or is in conflict); `2` a value in the file is missing or not usable.
+
+The Insights views themselves are Azure's own workbook (Learn: Insights is managed by Azure and built on Azure Monitor workbook templates). The toolkit deploys no workbook of its own.
 
 </TabItem>
 <TabItem value="azure-cli" label="Azure CLI">
@@ -144,7 +158,7 @@ Requires: PowerShell 7.
 
 Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci` (`az extension add --name stack-hci`); the script does not install it.
 
-One step stays in the portal: creating the rule. Microsoft documents no template for the rule of Insights, so the script never creates or changes a rule. Enable Insights once for the instance in the Azure portal, name the rule in `operations.monitoring.data_collection_rule`, then run the script; without the rule it stops with exit code 1. It needs the Azure Monitor Agent on the instance ([Task 02](./task-02-configure-azure-monitor-agent.mdx)). An association that points to another rule is reported as `Conflict` and never changed.
+One step stays in the portal: creating the rule. Microsoft documents no template for the rule of Insights, so the script never creates or changes a rule. Enable Insights once for the instance in the Azure portal, name the rule in `operations.monitoring.data_collection_rule`, then run the script; without the rule it stops with exit code 1. It needs the Azure Monitor Agent on the instance ([Task 02](./task-02-configure-azure-monitor-agent.mdx)). Like the PowerShell script, it reads the rule (`az monitor data-collection rule show`) and stops with exit code 1, associating nothing, when the rule lacks a counter, a channel or the Log Analytics destination that Learn lists for Insights. An association that points to another rule is reported as `Conflict` and never changed.
 
 #### Run
 
@@ -258,6 +272,7 @@ Event
 |-------|---------------|------------|
 | Insights shows "Not configured" | AMA not installed | Check Extensions on cluster nodes |
 | No data in workbook | DCR not associated | Verify DCR associations in Monitor → DCRs |
+| `Enable-HciInsights.ps1` stops: the rule is not ready for Insights | A counter, a channel or the workspace destination was removed from the rule, or the file names another rule | On the instance, **Capabilities**, **Insights**, **Update** (Learn: Update Insights), or name the rule Insights created in `operations.monitoring.data_collection_rule` |
 | Stale data (>15 min old) | Agent connectivity issue | Check `azcmagent show` on nodes |
 | Missing health events | Event log channel not enabled | Verify Windows Event Log settings |
 | Cluster shows "Other" status | Recent Arc reconnection | Wait for next health check cycle |
@@ -321,3 +336,4 @@ After enabling HCI Insights:
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-16 | Azure Local Cloud | The scripts check the Insights rule against Learn's counters, channels and destination before they associate it; parameters, run and exit codes |

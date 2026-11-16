@@ -8,8 +8,8 @@ scope: Active Directory preparation
 purpose: Create Azure Local OU and LCM user account
 author: Azure Local Cloud
 created: 2026-01-31
-updated: 2026-11-08
-version: "1.2.0"
+updated: 2026-11-16
+version: "1.3.0"
 tags:
   - azure-local
   - active-directory
@@ -38,7 +38,7 @@ import TabItem from '@theme/TabItem';
 
 **Status**: Active 
 **Estimated Time**: 15 minutes 
-**Last Updated**: 2026-11-08
+**Last Updated**: 2026-11-16
 
 ---
 
@@ -149,6 +149,7 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 | `identity.active_directory.domain_fqdn` | The domain |
 | `identity.active_directory.ou_path` | The dedicated OU |
 | `identity.active_directory.lcm_user.username`, `.password` | The LCM user. The password is a secret reference, read in memory only |
+| `identity.active_directory.create_parent_ous` | Schema 5.6.28. Whether `Set-ADConfiguration.ps1` creates the parent OUs of `ou_path` that are missing, from the domain down, before it calls `New-HciAdObjectsPreCreation`. Microsoft's cmdlet creates only the OU itself and stops when its parent does not exist. A parent that exists is never changed, and no group policy setting is made on a parent the script creates. Default `false`: a missing parent stops the script with exit code 1 and nothing is created |
 | `identity.active_directory.precreate_computer_objects` | Schema 5.6.23. Whether `Set-ADConfiguration.ps1` creates the computer objects of the machines (`nodes[].name`) and of the cluster (`cluster.name`) in the OU before the deployment. Microsoft Learn allows this instead of letting the deployment create them (Custom Active Directory configuration for your Azure Local instance; Prestage cluster computer objects). The cluster object is created disabled. Default `false`: the domain join of the OS configuration and the deployment create the objects |
 
 ---
@@ -172,6 +173,15 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 Parameters: `-InfrastructureFile` (mandatory), `-Credential` (the account that creates the objects; without it the account that runs the script is used), `-LogPath`. The script asks nothing. It is idempotent: when the OU and the user both exist, it sends nothing. When only one of the two exists, it stops and says so. It never deletes anything.
 
+**Parent OUs.** `New-HciAdObjectsPreCreation` creates the OU inside its parent and stops when the parent does not exist. Before it runs, the script reads every parent OU of `identity.active_directory.ou_path` from the domain down:
+
+| `create_parent_ous` | A parent OU is missing |
+|---|---|
+| `false` or not set (default) | The script stops with exit code 1, names the first missing parent and creates nothing. Also under `-WhatIf` |
+| `true` | The script creates the missing parents top-down with `New-ADOrganizationalUnit` (protected from accidental deletion), then runs Microsoft's cmdlet. Under `-WhatIf` it lists them as `WouldCreate` |
+
+The script sets no group policy option on a parent it creates. Learn recommends **Block Inheritance** on the parent OU too when many instances share it; set it yourself if your design needs it.
+
 Requires: PowerShell 7; modules ActiveDirectory, AsHciADArtifactsPreCreationTool.
 
 #### Run
@@ -181,6 +191,8 @@ Requires: PowerShell 7; modules ActiveDirectory, AsHciADArtifactsPreCreationTool
 
 ./Set-ADConfiguration.ps1 -InfrastructureFile ./infrastructure.yml
 ```
+
+Exit codes: `0` the OU, the user (and the objects) are in place, already there or planned under `-WhatIf`; `1` a precondition or a call failed (module missing, domain not reachable, a half-made preparation, a missing parent OU with `create_parent_ous` not set, the secret could not be read); `2` a value in the file is missing or not usable.
 
 </TabItem>
 </Tabs>
@@ -235,6 +247,7 @@ A run with `-Category` is partial. It ends with exit code 3 when nothing blocks,
 | Issue | Cause | Resolution |
 |-------|-------|------------|
 | `New-ADOrganizationalUnit` fails with access denied | Insufficient permissions to create OUs | Run as Domain Admin or delegate OU creation rights on the parent container |
+| `Set-ADConfiguration.ps1` stops: a parent OU does not exist | The OU of `ou_path` sits under an OU that is not there yet | Create the parent OU, or set `identity.active_directory.create_parent_ous: true` and run the script again |
 | Deployment later fails to log on as the LCM user | Default domain policy denies **Log on as a batch job** or interactive logon | Grant the right explicitly to the LCM account or remove the deny |
 | OU creation rejects the path | Path contains `&`, `"`, `'`, `<` or `>`, or is the domain root | Use a distinguished name such as `OU=Local001,DC=contoso,DC=com` |
 | AsHciADArtifactsPreCreationTool module not found | Module not installed or wrong PS version | Install via `Install-Module AsHciADArtifactsPreCreationTool` on PowerShell 5.1+ |
@@ -270,6 +283,7 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
 | 1.1 | 2026-03-03 | Azure Local Cloud | Standardized runbook format |
 | 1.2.0 | 2026-11-08 | Azure Local Cloud | Aligned to Microsoft Learn 2610: removed KDS root key from AD prep, added requirements and constraints, delegated-rights table and preflight check |
+| 1.3.0 | 2026-11-16 | Azure Local Cloud | The script checks the parent OUs and creates the missing ones when `create_parent_ous` is true; the task folder's placeholder is retired |
 
 ---
 
