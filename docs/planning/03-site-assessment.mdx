@@ -425,6 +425,8 @@ Connect-AzAccount -Tenant <tenant-id>
 
 The earlier `Get-TenantInfo.ps1` is removed: `Inventory-AzureTenant.ps1` records the tenant too. To list the computer objects already in the Active Directory OU of the instance (`identity.active_directory.ou_path`), run the read-only `scripts/common/discovery/Get-OnPremInventory.ps1 -InfrastructureFile ./infrastructure.yml`. It needs the ActiveDirectory module (RSAT) and does nothing when `scenario.identity` is `local_identity`.
 
+**From a pipeline.** The toolkit's discovery pipeline runs both scripts for you, read only and with no approval: `pipelines/github-actions/discovery.yml`, `pipelines/gitlab/stages/discovery.yml` or `pipelines/azure-devops/discovery.yml`, with the scope `tenant` (`Inventory-AzureTenant.ps1`; `include_rbac` adds the role assignments), `directory` (`Get-OnPremInventory.ps1`; needs a domain-joined runner with the ActiveDirectory module) or `all` (both, and the BMC hardware inventory). Each runs `scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1`, which writes the tenant inventory to `azure-tenant/` and the Active Directory inventory to `ad-inventory/` of one report, with `discovery-report.json` and `summary.md`. The pipeline publishes the report as the artifact `discovery-report`. See [Pipelines of the deployment route](../automation/02-cicd-pipelines/index.mdx#pipelines-of-the-deployment-route).
+
 ### What Gets Discovered
 
 | Category | Resources | Details Captured |
@@ -448,7 +450,7 @@ Write-Host "VNets: $($discovery.Networking.VirtualNetworks.Count)"
 
 # Copy the values you need into infrastructure.yml by hand.
 # The toolkit has no import script for the Azure inventory. Its hardware discovery
-# (Update-InfrastructureYml-FromDiscovery.ps1, Phase 04) writes serial numbers and port MACs only.
+# (Update-InfrastructureYml-FromDiscovery.ps1, Part 4 Phase 01 Task 02) writes serial numbers and port MACs only.
 ```
 
 ---

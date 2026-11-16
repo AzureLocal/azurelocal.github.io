@@ -36,7 +36,7 @@ validate → plan → deploy-foundation → configure-onprem → configure-opera
 | **deploy-foundation** | Terraform apply, output export | The tag in `AZL_RUNNER_LABEL` | Manual approval |
 | **configure-onprem** | Ansible playbooks 05, 01, 02, 03 (domain controllers, AD preparation, OS configuration, Arc registration) | Self-hosted | Manual approval |
 | **configure-operations** | Ansible playbook 04 (monitoring) | Self-hosted | Manual approval |
-| **validate-deployment** | Connectivity tests, compliance checks | Self-hosted | Manual |
+| **validate-deployment** | Read-only Azure Policy and Defender for Cloud summary (`validate:compliance`) | Self-hosted | Manual |
 
 The Azure Local cluster itself is deployed by the [ARM Validate and Deploy pipeline](#arm-validate-and-deploy-pipeline) below, not by this chain. The earlier `deploy-cluster` stage is gone.
 
@@ -52,10 +52,14 @@ pipelines/gitlab/
     ├── deploy-foundation.yml       # Terraform apply, outputs
     ├── configure-onprem.yml        # Playbooks 05, 01, 02, 03
     ├── configure-operations.yml    # Playbook 04
-    ├── validate-deployment.yml     # Post-deployment tests
+    ├── validate-deployment.yml     # Read-only policy and Defender summary (validate:compliance)
     ├── deploy-cicd-infra.yml       # The runners (runs with CICD_INFRA=true)
+    ├── discovery.yml               # Discovery (a pipeline of its own)
+    ├── pre-cluster-verification.yml # The gate before the ARM Validate (a pipeline of its own)
     └── arm-deployment.yml          # ARM Validate and Deploy (a pipeline of its own)
 ```
+
+`.gitlab-ci.yml` includes only the stages of the Terraform and Ansible chain and `deploy-cicd-infra.yml`. `discovery.yml`, `pre-cluster-verification.yml` and `arm-deployment.yml` declare their own stages, so they are **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own (`include: local: pipelines/gitlab/stages/<file>`), or copy it.
 
 The reusable templates `templates/terraform-plan-apply.yml` and `templates/ansible-playbook.yml` are gone: each job is one `pwsh` block of its own.
 
@@ -136,8 +140,9 @@ The **configure-onprem** and **configure-operations** stages require the general
 - `monitoring:setup` — `playbooks/04-monitoring-setup.yml`
 
 #### Validate Deployment Stage
-- `validate:connectivity` — Post-deployment connectivity tests
-- `validate:compliance` — Azure Policy and Defender compliance checks
+- `validate:compliance` — Manual, read only: the Azure Policy compliance summary and the first Defender for Cloud assessments of the subscription. It changes nothing
+
+This stage has one job. The earlier connectivity job only ran the same file check as `config:validate` and printed a hint, so it is removed. The post-deployment checks of the cluster are `Invoke-VerifyPostDeployment.ps1` and the scripts of `scripts/deploy/06-testing-validation`: they need a jump server that reaches the cluster, so no job of this pipeline runs them.
 
 ## OS Configuration Pipeline
 
@@ -149,6 +154,46 @@ The **configure-onprem** and **configure-operations** stages require the general
 | `apply` | **Manual** | Someone allowed to run protected jobs reads the plan job's log and artifacts, then plays it. `resource_group` keeps two runs from working on the cluster at once |
 
 Variables: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (`oidc` through `id_tokens`, or `client_secret` with the masked `ARM_CLIENT_SECRET`), `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OS_CONFIGURATION` (the approval environment of the apply job), `AZL_INFRASTRUCTURE_FILE`, `AZL_HANDOFF_PATH` (a handoff file or a directory of `*.ztp-handoff.json`, or the artifact of the ZTP pipeline through `needs:`) and the tool versions `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`, all set by Task 05. The transport and the storage wipe come from the master file (`os_configuration.remoting.transport`, `os_configuration.clear_storage`); the pipeline overrides neither. No secret is stored in the file: the nodes' local administrator password is read from the Key Vault named by `identity.local_admin.password`. The runner needs a route to the nodes' management network for PowerShell remoting (WinRM), or `-Transport ArcRunCommand` for a site with no route. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+
+## Discovery Pipeline
+
+**File**: `pipelines/gitlab/stages/discovery.yml`. It declares its own stage (`discovery`), so include it from a pipeline file of its own, **not** from `.gitlab-ci.yml`. It runs `scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1` and nothing else.
+
+| Job | Stage | Description |
+|---|---|---|
+| `discovery` | `discovery` | Read only, no approval job: nothing in the run changes a BMC, a node, Azure or Active Directory. `resource_group` allows one discovery at a time |
+
+Run variables (the web form offers them):
+
+| Variable | Meaning |
+|---|---|
+| `DISCOVERY_SCOPE` | `all` (default: hardware inventory, Azure tenant and Active Directory), `hardware` (any maker, standard Redfish API), `dell` (Dell iDRAC only, with the proposal for `nodes[]`), `tenant` or `directory` |
+| `DISCOVERY_MANAGEMENT_PORT` | Scope `dell`: the management port of every node, by suggested name or MAC. Empty: the MAC already in the file |
+| `DISCOVERY_WRITE_BACK` | `true`, scope `dell`: put the serial numbers and MAC addresses found into a **copy** of the master file, in the artifacts (`write-back/`). The file in the repository is not changed and nothing is committed: review the copy and commit it through a merge request |
+| `DISCOVERY_INCLUDE_RBAC` | `true`, scope `tenant`: also record the role assignments |
+
+The job keeps `discovery-report.json`, `summary.md` and a folder per step as artifacts (`when: always`, so also when a step fails; kept for 30 days) and prints `summary.md` in the log. The job fails when a step fails.
+
+Project CI/CD variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (and the masked `ARM_CLIENT_SECRET` with `client_secret`), `AZL_RUNNER_LABEL`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. The identity needs Reader on the subscriptions of the tenant inventory and Get on the Key Vault secrets of the BMC login. The BMC login is never in the file or in a project variable: it is the secret reference in `infrastructure.yml` (`hardware.bmc`, or `nodes[].bmc`), read from Key Vault at run time with the Azure sign-in of the job. The runner needs a route to the BMC addresses (HTTPS, TCP 443) and, for the `directory` step, the ActiveDirectory module (RSAT) on a domain-joined runner.
+
+## Pre-cluster Verification Pipeline
+
+**File**: `pipelines/gitlab/stages/pre-cluster-verification.yml`. It declares its own stage (`pre-cluster-verification`), so include it from a pipeline file of its own, **not** from `.gitlab-ci.yml`. It runs `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` and nothing else. Run it after the OS configuration and before the ARM Validate: the ARM run refuses to go on without a passing, current result of it for the same master file.
+
+| Job | Description |
+|---|---|
+| `pre-cluster-verify` | Read only. `PRECLUSTER_MODE` `Plan` (what would be checked, offline) or `Verify` (every check, against Azure, Active Directory and the nodes) |
+| `pre-cluster-verify-changes` | Runs **instead of** the first when `PRECLUSTER_FIX` or `PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER` is `true`. A **manual** job in the protected environment in `AZL_ENVIRONMENT_ARM_DEPLOYMENT` (`devops.pipelines.environments.arm_deployment`): someone allowed to run jobs there plays it. `PRECLUSTER_FIX` registers the mandatory resource providers that are not registered (Azure side only). `PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER` puts the Environment Checker on the nodes for this run and removes it again |
+
+Run variables: `PRECLUSTER_MODE` (default `Plan`), `OS_CONFIGURATION_REPORT` (GitLab fetches another pipeline's artifact only through `needs: pipeline:` or `needs: project:`, so add that to the jobs), `HANDOFF_FILE`, `PRECLUSTER_ACCEPT_SKIPPED` (ids of checks that may stay Skipped, comma separated; the report records that you accepted them), `PRECLUSTER_ALLOW_REVALIDATE`, `PRECLUSTER_FIX`, `PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER`. Project CI/CD variables: the same as the discovery pipeline, plus `AZL_ENVIRONMENT_ARM_DEPLOYMENT`. The identity needs Reader for the checks (Owner or Contributor for `PRECLUSTER_FIX`).
+
+**The job fails when the verdict is not Pass** (exit code 1: a Failed or Skipped check blocks; 3: a partial run). It keeps `report.json`, `summary.md` and the event feed as artifacts (kept for 30 days) and prints `summary.md` in the log.
+
+:::warning The ARM run reads a folder, not the artifact
+The job passes no `-ReportDirectory`. The script writes its result where the ARM run reads it: `deployment.pre_cluster_verification_report_directory`, else `arm-report/verification/live` in the environment data folder of the master file. The artifact is only a copy. Run the ARM pipeline on the same runner, or set `deployment.pre_cluster_verification_report_directory` to a folder both runs reach.
+:::
+
+The runner needs a route to the nodes (WinRM, TCP 5985 or 5986), to a domain controller (LDAP, TCP 389) and to the DNS servers of the file. A check the runner cannot ask is Skipped with its reason, and a Skipped check blocks the verdict until you accept its id. Details: [Pre-cluster verification gate](../03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate).
 
 ## ARM Validate and Deploy Pipeline
 

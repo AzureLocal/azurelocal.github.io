@@ -137,6 +137,44 @@ Install the Terraform extension from the marketplace:
 
 Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVault` and a route to the nodes' management subnet; an Azure Resource Manager service connection with workload identity federation; and add Approvals (and an Exclusive lock) to the environments. The run parameters `agent_pool`, `service_connection`, `variable_group`, `infrastructure_file`, `handoff_path`, `approval_environment` and `clear_storage_approval_environment` have no default: enter `devops.runners[].pool`, `devops.pipelines.service_connection`, `devops.pipelines.variable_group` (with environments, `<name>-<environment>`), `devops.pipelines.infrastructure_file`, `devops.pipelines.handoff_path` (`none` for an ISO-installed cluster), `devops.pipelines.environments.os_configuration` and `.os_configuration_clear_storage`. The run choices `mode`, `nodes`, `steps`, `handoff_pipeline_id`, `handoff_run_id`, `approved_bootstrap` and `confirm_wipe_deployed_cluster` default to `Plan`, `all`, `none` and `false`. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
+## Discovery Pipeline
+
+**File**: `pipelines/azure-devops/discovery.yml` (create a pipeline from the existing YAML file; no trigger). It runs `scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1` and nothing else.
+
+| Stage | Description |
+|---|---|
+| `Discover` | Read only, no approval environment: nothing in the run changes a BMC, a node, Azure or Active Directory. Publishes the report as the build artifact `discovery-report` and `summary.md` as the run summary. Runs queue one after the other (`lockBehavior: sequential`) |
+
+Run parameters with no default: `infrastructure_file` (`devops.pipelines.infrastructure_file`), `agent_pool` (`devops.runners[].pool` of the general runner), `service_connection` (`devops.pipelines.service_connection`) and `variable_group` (`devops.pipelines.variable_group`). Run choices:
+
+| Parameter | Meaning |
+|---|---|
+| `scope` | `all` (default: hardware inventory, Azure tenant and Active Directory), `hardware` (any maker, standard Redfish API), `dell` (Dell iDRAC only, with the proposal for `nodes[]`), `tenant` or `directory` |
+| `management_port` | Scope `dell`: the management port of every node, by suggested name or MAC. `none` (default): the MAC already in the file |
+| `write_back` | Scope `dell`: put the serial numbers and MAC addresses found into a **copy** of the master file, in the artifact (`write-back/`). The file in the repository is not changed and nothing is committed: review the copy and commit it through a pull request |
+| `include_rbac` | Scope `tenant`: also record the role assignments |
+
+The artifact holds `discovery-report.json`, `summary.md` and a folder per step. It is published even when a step fails; the run fails when a step fails. The service connection needs Reader on the subscriptions of the tenant inventory and Key Vault Secrets User on the vault of the BMC login. The variable group holds no BMC password: the login is the secret reference in `infrastructure.yml` (`hardware.bmc`, or `nodes[].bmc`), read from Key Vault at run time. The agent needs a route to the BMC addresses (HTTPS, TCP 443) and, for the `directory` step, the ActiveDirectory module (RSAT) on a domain-joined agent.
+
+## Pre-cluster Verification Pipeline
+
+**File**: `pipelines/azure-devops/pre-cluster-verification.yml` (create a pipeline from the existing YAML file; no trigger). It runs `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` and nothing else. Run it after the OS configuration and before the ARM Validate: the ARM run refuses to go on without a passing, current result of it for the same master file.
+
+| Stage | Description |
+|---|---|
+| `Verify` | Read only. Mode `Plan` (what would be checked, offline) or `Verify` (every check, against Azure, Active Directory and the nodes) |
+| `VerifyWithChanges` | Runs **instead of** `Verify` when the parameter `fix` or `install_environment_checker` is set: a deployment job in the environment of the `approval_environment` parameter (`devops.pipelines.environments.arm_deployment`); add an Approvals check to it. `fix` registers the mandatory resource providers that are not registered (Azure side only). `install_environment_checker` puts the Environment Checker on the nodes for this run and removes it again at the end |
+
+Run parameters with no default: `infrastructure_file`, `agent_pool`, `approval_environment`, `service_connection`, `variable_group`. Run choices: `mode` (default `Plan`), `os_configuration_pipeline_id` and `os_configuration_run_id` (the artifact `os-configuration-report` of an OS configuration run) or `os_configuration_report` (a repository path), `handoff_file`, `accept_skipped` (ids of checks that may stay Skipped, comma separated; the report records that you accepted them), `allow_revalidate`, `fix`, `install_environment_checker`. The text choices default to `none`, the switches to `false`.
+
+**The run fails when the verdict is not Pass** (exit code 1: a Failed or Skipped check blocks; 3: a partial run). Each stage publishes `report.json`, `summary.md` and the event feed as the build artifact `pre-cluster-verification` and `summary.md` as the run summary.
+
+:::warning The ARM run reads a folder, not the artifact
+The pipeline passes no `-ReportDirectory`. The script writes its result where the ARM run reads it: `deployment.pre_cluster_verification_report_directory`, else `arm-report/verification/live` in the environment data folder of the master file. The artifact is only a copy. Run the ARM pipeline on the same agent, or set `deployment.pre_cluster_verification_report_directory` to a folder both runs reach.
+:::
+
+The service connection needs Reader for the checks (Owner or Contributor for `fix`) and Key Vault Secrets User on the vaults of the local administrator and the LCM user. The agent needs a route to the nodes (WinRM, TCP 5985 or 5986), to a domain controller (LDAP, TCP 389) and to the DNS servers of the file. A check the agent cannot ask is Skipped with its reason, and a Skipped check blocks the verdict until you accept its id. Details: [Pre-cluster verification gate](../03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate).
+
 ## ARM Validate and Deploy Pipeline
 
 **File**: `pipelines/azure-devops/arm-deployment.yml`.

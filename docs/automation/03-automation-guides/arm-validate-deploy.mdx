@@ -86,10 +86,27 @@ It is **idempotent**. A Validate that already passed with the same parameters is
 
 ## Pre-cluster verification gate
 
-The toolkit defines a **pre-cluster verification gate**: a stage that runs after OS configuration and before the cluster ARM Validate.
+The toolkit defines a **pre-cluster verification gate**: a stage that runs after OS configuration and before the cluster ARM Validate. It checks, read only, the prerequisites of an Azure Local deployment that Microsoft Learn lists, so that an ARM Validate does not fail for something the toolkit could have caught. `Invoke-AzureLocalArmDeployment.ps1` (Mode Validate or Deploy) refuses to go on without a passing, current result of the gate for the same infrastructure file. The toolkit's run guide is `docs/pre-cluster-verification.md`; it holds the full check catalog.
 
-:::warning Gate details are pending in the toolkit
-The gate's own run guide, `docs/pre-cluster-verification.md` in the azurelocal-toolkit repository, had not landed on the toolkit's `main` branch when this page was written (2026-11-08), and `docs/arm-deployment-guide.md` does not describe it. To avoid inventing behaviour, this page does **not** list the gate's other checks, parameters, outputs or exit codes (the [SBE package checks](#the-sbe-package-checks) below are the exception). Take them from that document once it is on `main`, and update this section in the same change. Open item for the documentation owner.
+```powershell
+$gate = './scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1'
+
+& $gate -InfrastructureFile ./infrastructure.yml                                                    # Plan: what would be checked, offline
+& $gate -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -Mode Verify   # every check; writes the result the ARM run reads
+& $gate -InfrastructureFile ./infrastructure.yml -Mode Verify -Fix                                    # also registers the mandatory resource providers (Azure side only)
+& $gate -InfrastructureFile ./infrastructure.yml -Mode Verify -InstallEnvironmentChecker              # the Environment Checker on the nodes for this run, removed at the end
+```
+
+- **Verdict.** Each check is Passed, Failed, Warning, Skipped, NotApplicable or Fixed. The verdict is **Pass** only when nothing blocks. A Skipped check (the run could not ask, for example no route to a domain controller) blocks, unless you name its id in `-AcceptSkipped`; the report records that you did.
+- **Exit codes.** 0 Plan done, or Verify with the verdict Pass; 1 the verdict Fail, or a run that failed after it started; 2 bad input; 3 a partial run (`-Category`), which never satisfies the ARM run.
+- **Changes.** Without `-Fix` and `-InstallEnvironmentChecker`, nothing is changed anywhere. `-Fix` (Verify only) only registers the mandatory resource providers and waits until they are Registered.
+- **Output.** `report.json`, `summary.md` and the event feed `precluster-verification-events.jsonl`, in `-ReportDirectory`, else `deployment.pre_cluster_verification_report_directory`, else `arm-report/verification/live` in the environment data folder of the master file. The ARM run reads the result from there.
+- **Needs.** PowerShell 7, `Connect-AzAccount` done (Reader is enough; Owner or Contributor for `-Fix`), Get on the Key Vault secrets of the file, WinRM to every node, LDAP to a domain controller and DNS to the DNS servers of the file.
+
+**In a pipeline.** `pipelines/github-actions/pre-cluster-verification.yml`, `pipelines/gitlab/stages/pre-cluster-verification.yml` and `pipelines/azure-devops/pre-cluster-verification.yml` run the gate on the general self-hosted runner, publish `report.json`, `summary.md` and the event feed as an artifact, and **fail the run when the verdict is not Pass**. The read-only job runs Plan or Verify. `-Fix` and `-InstallEnvironmentChecker` run only in a second job behind the approval environment of the ARM deployment (`devops.pipelines.environments.arm_deployment`): GitHub job `verify-with-changes`, GitLab manual job `pre-cluster-verify-changes`, Azure DevOps stage `VerifyWithChanges`.
+
+:::warning Run the ARM pipeline where it can read the gate's result
+The gate pipelines pass no `-ReportDirectory`, so the result goes to `deployment.pre_cluster_verification_report_directory`, else the environment data folder on the runner. The ARM run reads that folder, not the artifact. Run the ARM pipeline on the same runner, or set `deployment.pre_cluster_verification_report_directory` to a folder both runs reach.
 :::
 
 ### The SBE package checks
@@ -195,7 +212,7 @@ Pipeline inputs: the mode (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), t
 - The Deploy job re-runs every precondition and checks that **these parameters were validated** (the Validate's ARM deployment is named from a hash of the parameters), so an approval cannot start a Deploy of something that was never validated. The reviewer reads the Validate job's `summary.md`.
 - Passwords are read from the Key Vaults named by the `keyvault://` references in the master file. The identity needs `Get` on those secrets.
 
-The OS configuration step has its own pipelines (`pipelines/github-actions/os-configuration.yml`, `pipelines/gitlab/os-configuration.gitlab-ci.yml`, `pipelines/azure-devops/os-configuration.yml`) with an approval before apply: see the pipeline pages for [GitHub Actions](../02-cicd-pipelines/github-actions.mdx), [GitLab CI/CD](../02-cicd-pipelines/gitlab-cicd.mdx) and [Azure DevOps](../02-cicd-pipelines/azure-devops-pipelines.mdx).
+The OS configuration step has its own pipelines (`pipelines/github-actions/os-configuration.yml`, `pipelines/gitlab/os-configuration.gitlab-ci.yml`, `pipelines/azure-devops/os-configuration.yml`) with an approval before apply: see the pipeline pages for [GitHub Actions](../02-cicd-pipelines/github-actions.mdx), [GitLab CI/CD](../02-cicd-pipelines/gitlab-cicd.mdx) and [Azure DevOps](../02-cicd-pipelines/azure-devops-pipelines.mdx). Run the [pre-cluster verification gate](#pre-cluster-verification-gate) pipeline between the OS configuration and this one. All pipelines of the route are in [the route table](../02-cicd-pipelines/index.mdx#pipelines-of-the-deployment-route).
 
 ---
 

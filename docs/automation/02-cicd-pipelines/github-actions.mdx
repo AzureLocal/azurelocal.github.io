@@ -23,6 +23,8 @@ description: "GitHub Actions workflows for Azure Local automation"
 
 GitHub Actions workflow for Azure Local deployments. This is a sample equivalent of the primary GitLab CI/CD pipeline, adapted for GitHub-hosted and self-hosted runners with environment protection rules. **No value of a deployment is written in a workflow file**: every value a job needs is a key of `infrastructure.yml`, and Task 05 of the CI/CD setup (`Set-CicdVariables.ps1`) sets it as a repository variable (`vars.NAME`; the sign-in values also per environment) ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). Run Task 05 again after you change the file.
 
+`pipelines/github-actions/` is the only folder of GitHub deployment workflows in the toolkit: `azure-local-deploy.yml`, `cicd-infra.yml`, `discovery.yml`, `os-configuration.yml`, `pre-cluster-verification.yml` and `arm-deployment.yml`. The toolkit's own `.github/workflows` folder holds one workflow of the toolkit repository itself (`deploy-docs.yml`), not a deployment pipeline. The old archive folder of GitHub workflows is gone: its workflows were the toolkit's own repository checks, not deployment pipelines.
+
 ## Workflow
 
 **File**: `pipelines/github-actions/azure-local-deploy.yml`  
@@ -130,9 +132,53 @@ git push
 
 Inputs: `mode` (`Plan` or `Apply`, default `Plan`), `handoff_run_id` (the artifact `ztp-handoff` of a ZTP run, in place of `AZL_HANDOFF_PATH`) and `approved_bootstrap` (approves the one-time WinRM bootstrap of `os_configuration.remoting.bootstrap_transport` for this run). Repository variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (`oidc` with a federated credential for the repository and the environment, or `client_secret` with the secret `ARM_CLIENT_SECRET`), `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_INFRASTRUCTURE_FILE`, `AZL_HANDOFF_PATH`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. The transport, the storage wipe and the bootstrap route come from the master file; the workflow overrides none of them. The runner needs a route to the nodes' management network for PowerShell remoting. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
+## Discovery Workflow
+
+**File**: `pipelines/github-actions/discovery.yml` (copy to `.github/workflows/discovery.yml`). It runs `scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1` and nothing else.
+
+| Job | Description |
+|---|---|
+| `discover` | Read only. Runs the discovery steps of the chosen scope, then publishes the report as the artifact `discovery-report` and `summary.md` as the job summary. There is no approval: nothing in the run changes a BMC, a node, Azure or Active Directory |
+
+Inputs:
+
+| Input | Meaning |
+|---|---|
+| `scope` | `all` (default: hardware inventory, Azure tenant and Active Directory), `hardware` (`Get-HardwareInventory.ps1`, any maker, over the standard Redfish API), `dell` (`Invoke-HardwareDiscovery.ps1`, Dell iDRAC only, with the proposal for `nodes[]`), `tenant` (`Inventory-AzureTenant.ps1`) or `directory` (`Get-OnPremInventory.ps1`) |
+| `management_port` | Scope `dell`: the management port of every node, by suggested name or MAC. Empty: the MAC already in the file |
+| `write_back` | Scope `dell`: put the serial numbers and MAC addresses found into a **copy** of the master file, in the artifact (`write-back/`, with `write-back/changes.txt`). The file in the repository is not changed and nothing is committed: review the copy and commit it through a pull request of your own |
+| `include_rbac` | Scope `tenant`: also record the role assignments |
+
+The artifact holds `discovery-report.json` (what ran, the exit code of each step, the files each step wrote, the verdict), `summary.md` and a folder per step. It is published even when a step fails, and kept for 30 days. The run fails when a step fails. The artifact holds serial numbers and MAC addresses.
+
+Repository variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (and the secret `ARM_CLIENT_SECRET` with `client_secret`), `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. The identity needs Reader on the subscriptions of the tenant inventory and Get on the Key Vault secrets of the BMC login.
+
+**The BMC login is never in the workflow or in a variable.** It is the secret reference in `infrastructure.yml` (`hardware.bmc`, or `nodes[].bmc`), and the toolkit secret resolver reads it from Key Vault at run time with the Azure sign-in of the job.
+
+The job runs on the general self-hosted runner. It needs a route to the BMC addresses (HTTPS, TCP 443) and, for the `directory` step, the ActiveDirectory module (RSAT) on a domain-joined runner. A step the runner cannot do fails with its reason in the report. See [Task 02: Hardware Discovery](../../implementation/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api.mdx).
+
+## Pre-cluster Verification Workflow
+
+**File**: `pipelines/github-actions/pre-cluster-verification.yml` (copy to `.github/workflows/pre-cluster-verification.yml`). It runs `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` and nothing else. It is the gate after the OS configuration and before the ARM Validate: the ARM run refuses to go on without a passing, current result of it for the same master file.
+
+| Job | Description |
+|---|---|
+| `verify` | Read only. Mode `Plan` (what would be checked, offline) or `Verify` (every check, against Azure, Active Directory and the nodes) |
+| `verify-with-changes` | Runs **instead of** `verify` when the input `fix` or `install_environment_checker` is set, and only after a reviewer of the environment in `AZL_ENVIRONMENT_ARM_DEPLOYMENT` (`devops.pipelines.environments.arm_deployment`) approves. `fix` registers the mandatory resource providers that are not registered (Azure side only). `install_environment_checker` puts the Environment Checker on the nodes for this run and removes it again at the end |
+
+Inputs: `mode` (`Plan` or `Verify`, default `Plan`), `os_configuration_run_id` (the artifact `os-configuration-report` of the OS configuration workflow) or `os_configuration_report` (a repository path), `handoff_file` (optional), `accept_skipped` (ids of checks that may stay Skipped, comma separated; the report records that you accepted them), `allow_revalidate`, `fix`, `install_environment_checker`.
+
+**The run fails when the verdict is not Pass** (exit code 1: a Failed or Skipped check blocks; 3: a partial run). Each job publishes `report.json`, `summary.md` and the event feed as the artifact `pre-cluster-verification` (kept for 30 days) and in the job summary.
+
+:::warning The ARM run reads a folder, not the artifact
+The workflow passes no `-ReportDirectory`. The script writes its result where the ARM run reads it: `deployment.pre_cluster_verification_report_directory`, else `arm-report/verification/live` in the environment data folder of the master file. The artifact is only a copy. Run the ARM workflow on the same runner, or set `deployment.pre_cluster_verification_report_directory` to a folder both runs reach.
+:::
+
+The identity needs Reader for the checks (Owner or Contributor for `fix`) and Get on the Key Vault secrets of the local administrator and the LCM user. The runner needs a route to the nodes (WinRM, TCP 5985 or 5986), to a domain controller (LDAP, TCP 389) and to the DNS servers of the file. A check the runner cannot ask is Skipped with its reason, and a Skipped check blocks the verdict until you accept its id. Details: [Pre-cluster verification gate](../03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate).
+
 ## ARM Validate and Deploy Workflow
 
-**File**: `pipelines/github-actions/arm-deployment.yml` (copy to `.github/workflows/arm-deployment.yml`).
+**File**: `pipelines/github-actions/arm-deployment.yml` (copy to `.github/workflows/arm-deployment.yml`). Run it after a passing [pre-cluster verification](#pre-cluster-verification-workflow), on the same runner unless the report directory is shared.
 
 | Job | Description |
 |---|---|

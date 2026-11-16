@@ -36,15 +36,32 @@ Every pipeline follows `devops.authentication.method` through `AZL_AUTH_METHOD`,
 
 ## Common Pipeline Flow
 
-The toolkit ships three families of pipeline files for each platform. They are separate pipelines, not one chain.
+The toolkit ships these families of pipeline files for each platform. They are separate pipelines, not one chain.
 
 | Family | Stages | Calls |
 |---|---|---|
 | **Terraform and Ansible deploy** | `validate -> plan -> deploy-foundation -> configure-onprem -> configure-operations -> validate-deployment` | Terraform and Ansible playbooks (05, 01, 02, 03, then 04), each job writing its variable files from `infrastructure.yml` first. It does **not** deploy the cluster: that is the ARM pipeline |
+| **Discovery** (before the OS configuration) | One read-only job, no approval | `Invoke-AzlDiscoveryRun.ps1`: the BMC hardware inventory, the Dell iDRAC discovery, the Azure tenant and the Active Directory inventory. See [Task 02: Hardware Discovery](../../implementation/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api.mdx) |
 | **OS configuration** (Phase 03) | Plan (read only), then Apply behind an approval | `Invoke-AzureLocalOsConfiguration.ps1`. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx) |
+| **Pre-cluster verification** (the gate before the ARM Validate) | A read-only job; a second job for `-Fix` and `-InstallEnvironmentChecker`, behind the approval of the ARM deployment environment. Fails when the verdict is not Pass | `Invoke-AzureLocalPreClusterVerification.ps1`. See [Pre-cluster verification gate](../03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate) |
 | **ARM Validate and Deploy** (Phase 05) | Preconditions, Validate, then Deploy behind an approval | `Invoke-AzureLocalArmDeployment.ps1`. See [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx) |
 
-Order for a new instance: provisioning (azurelocal-ztp or an ISO) -> OS configuration pipeline -> the **pre-cluster verification gate** -> ARM Validate and Deploy pipeline. The OS configuration pipeline publishes the artifact `os-configuration-report`, which the ARM pipeline takes as its OS configuration report. The gate's details are described on the [ARM Validate and Deploy page](../03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate).
+## Pipelines of the Deployment Route
+
+One pipeline per piece of the route, in the order a deployment runs them. Each exists once per platform and runs one entry point of the toolkit and nothing else.
+
+| Pipeline | Entry point | GitHub Actions | GitLab CI | Azure DevOps |
+|---|---|---|---|---|
+| CI/CD infrastructure (the runners) | `Deploy-CicdRunners.ps1` (Task 06) | `pipelines/github-actions/cicd-infra.yml` | `pipelines/gitlab/stages/deploy-cicd-infra.yml` | `pipelines/azure-devops/cicd-infra.yml` |
+| Discovery (BMCs, Azure tenant, Active Directory) | `scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1` | `pipelines/github-actions/discovery.yml` | `pipelines/gitlab/stages/discovery.yml` | `pipelines/azure-devops/discovery.yml` |
+| OS configuration (Phase 03) | `Invoke-AzureLocalOsConfiguration.ps1` | `pipelines/github-actions/os-configuration.yml` | `pipelines/gitlab/os-configuration.gitlab-ci.yml` | `pipelines/azure-devops/os-configuration.yml` |
+| Pre-cluster verification (the gate) | `Invoke-AzureLocalPreClusterVerification.ps1` | `pipelines/github-actions/pre-cluster-verification.yml` | `pipelines/gitlab/stages/pre-cluster-verification.yml` | `pipelines/azure-devops/pre-cluster-verification.yml` |
+| ARM Validate and Deploy | `Invoke-AzureLocalArmDeployment.ps1` | `pipelines/github-actions/arm-deployment.yml` | `pipelines/gitlab/stages/arm-deployment.yml` | `pipelines/azure-devops/arm-deployment.yml` |
+| Terraform foundation and Ansible configuration (the older chain) | Terraform, `ansible-playbook` | `pipelines/github-actions/azure-local-deploy.yml` | `pipelines/gitlab/.gitlab-ci.yml` with `stages/*.yml` | `pipelines/azure-devops/azure-local-deploy.yml` |
+
+On GitLab, `discovery.yml`, `pre-cluster-verification.yml` and `arm-deployment.yml` declare their own stages and are **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own. On GitHub, `pipelines/github-actions/` is the only folder of deployment workflows; copy a file to `.github/workflows/` in your repository.
+
+Order for a new instance: discovery -> provisioning (azurelocal-ztp or an ISO) -> OS configuration pipeline -> the **pre-cluster verification gate** -> ARM Validate and Deploy pipeline. The OS configuration pipeline publishes the artifact `os-configuration-report`, which the gate and the ARM pipeline take as their OS configuration report. The gate writes its result to a folder the ARM run reads (`deployment.pre_cluster_verification_report_directory`, else the environment data folder of the master file), not to the artifact, so run the ARM pipeline on the same runner or point that key at a folder both runs reach.
 
 ## How to Use This Part
 
