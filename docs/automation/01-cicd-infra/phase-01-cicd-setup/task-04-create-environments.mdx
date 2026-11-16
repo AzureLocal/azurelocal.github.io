@@ -150,6 +150,8 @@ For production environments:
 Azure DevOps Environments are referenced in YAML pipelines via the `environment:` key in deployment jobs. Approvals and checks automatically gate deployments.
 :::
 
+The toolkit's Azure DevOps pipelines read the environment names from `pipelines/azure-devops/variables/approval-environments.yml` when they are compiled, not from a run parameter. The person who queues a run cannot choose an environment without approvals. [Task 05](./task-05-configure-variables.mdx) lists the name to write there for each pipeline. Add the Approvals check to each environment before the first run: a deployment job in an environment with no check runs without an approval.
+
 **References:** [Azure DevOps — Create and target an environment](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/environments)
 
 </TabItem>
@@ -185,7 +187,7 @@ Azure DevOps Environments are referenced in YAML pipelines via the `environment:
 
 The script reads `devops.environments[]` (name, approval required, approvers, wait minutes, deployment branch) of `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
-The pipeline files of the toolkit name no environment. `devops.pipelines.environments` (schema 5.6.25) says which entry of `devops.environments[]` gates which pipeline: `os_configuration`, `os_configuration_clear_storage`, `arm_deployment`, `cicd_infra` and `terraform_deployment`. Each value must name an entry with `approval_required: true`. [Task 05](./task-05-configure-variables.mdx) turns them into pipeline variables.
+The pipeline files of the toolkit name no environment. `devops.pipelines.environments` (schema 5.6.25) says which entry of `devops.environments[]` gates which pipeline: `os_configuration`, `os_configuration_clear_storage`, `arm_deployment`, `cicd_infra` and `terraform_deployment`. Each value must name an entry with `approval_required: true`. [Task 05](./task-05-configure-variables.mdx) turns them into pipeline variables on GitHub and GitLab. On Azure DevOps it lists the value of each one to write in `pipelines/azure-devops/variables/approval-environments.yml`, once, in a pull request.
 
 ---
 

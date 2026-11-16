@@ -33,21 +33,21 @@ Azure DevOps Pipelines configuration for Azure Local deployments. This is a samp
 |---|---|---|---|
 | `Validate` | `ubuntu-latest` | None | Terraform validate + Ansible lint |
 | `Plan` | `ubuntu-latest` | None | Writes the variable files, Terraform plan with artifact (default branch only) |
-| `DeployFoundation` | The `agentPool` parameter | The `approvalEnvironment` parameter | Terraform apply |
-| `ConfigureOnPrem` | The `agentPool` parameter | The `approvalEnvironment` parameter | Playbooks 05 (domain controllers), 01 (AD preparation), 02 (OS configuration), 03 (Arc registration) |
-| `ConfigureOperations` | The `agentPool` parameter | The `approvalEnvironment` parameter | Playbook 04 (monitoring) |
+| `DeployFoundation` | The `agentPool` parameter | The environment named by `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | Terraform apply |
+| `ConfigureOnPrem` | The `agentPool` parameter | The environment named by `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | Playbooks 05 (domain controllers), 01 (AD preparation), 02 (OS configuration), 03 (Arc registration) |
+| `ConfigureOperations` | The `agentPool` parameter | The environment named by `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | Playbook 04 (monitoring) |
+| `ApprovalEnvironmentNotSet` | The `agentPool` parameter | None | Exists **instead of** the three stages above while `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` is empty. It fails after the plan with a message that names the file to edit. Nothing is changed |
 
-**No value of a deployment is written in the pipeline file.** It names no pool, environment, service connection, variable group, infrastructure file or tool version. Start it by hand (`trigger: none`) and enter the run parameters:
+**No value of a deployment is written in the pipeline file.** It names no pool, environment, service connection, variable group, infrastructure file or tool version. The approval environment comes from `pipelines/azure-devops/variables/approval-environments.yml` (see [3. Approval environments](#approval-environments)). Start the pipeline by hand (`trigger: none`) and enter the run parameters:
 
 | Parameter | Value from `infrastructure.yml` |
 |---|---|
 | `agentPool` | `devops.runners[].pool` of the general runner |
-| `approvalEnvironment` | `devops.pipelines.environments.terraform_deployment` |
 | `serviceConnection` | `devops.pipelines.service_connection` |
 | `variableGroup` | `devops.pipelines.variable_group`; with entries in `devops.environments[]`, `<name>-<environment>` |
 | `infrastructureFile` | `devops.pipelines.infrastructure_file` |
 
-Azure DevOps reads the pool, the environment of a job, the service connection, the variable group and a parameter path before any variable exists, so these are run parameters **with no default**: the run form asks for them, and Task 05 of the CI/CD setup prints the value to enter for each. Because they have no default, a run started by a push or a pull request could not supply them: the Azure DevOps pipelines are started by hand. The other parameters are choices of one run (mode, nodes, steps, resume, an artifact run ID) and default to the safe choice (`Plan`, `all`, `false`, `none`).
+Azure DevOps reads the pool, the service connection, the variable group and a parameter path before any variable exists, so these are run parameters **with no default**: the run form asks for them, and Task 05 of the CI/CD setup prints the value to enter for each. Because they have no default, a run started by a push or a pull request could not supply them: the Azure DevOps pipelines are started by hand. The other parameters are choices of one run (mode, nodes, steps, resume, an artifact run ID) and default to the safe choice (`Plan`, `all`, `false`, `none`). The approval environment is not a run parameter.
 
 The Plan stage runs only on the default branch, `AZL_DEFAULT_BRANCH` of the variable group (`devops.repository.default_branch`), because Azure DevOps has no predefined variable with the default branch. Every Terraform and Ansible job writes its inputs from the infrastructure file first (`config/variables/scripts/New-IacVariableFiles.ps1`); Terraform plans with the generated `terraform.tfvars.json`, and the Ansible jobs copy `hosts.yml`, `group_vars` and `host_vars` into `src/ansible/inventory` (git-ignored there). Playbook 02 runs `Invoke-AzureLocalOsConfiguration.ps1` on the agent with `-e azurelocal_os_configuration_infrastructure_file=<infrastructureFile>`.
 
@@ -93,14 +93,31 @@ Sign-in follows `AZL_AUTH_METHOD`: with `oidc` the service connection uses workl
 
 Both keys are required on Azure DevOps. Before schema 5.6.27 the names were fixed (`AzureLocal-ServiceConnection`, `azurelocal-secrets`, `azure-credentials`, `azurelocal-os-configuration`); set the keys to the names you already use to keep them.
 
-### 3. Environment
+### 3. Approval environments {#approval-environments}
 
-Create the environment that `devops.pipelines.environments.terraform_deployment` names (an entry of `devops.environments[]` with `approval_required: true`), with approval checks:
+In every pipeline on this page, a stage that changes a system is a deployment job in an environment with an Approvals check. Each pipeline takes the name of its environment from a variable of `pipelines/azure-devops/variables/approval-environments.yml`. This is a YAML file of the repository. Each pipeline includes it (`- template: variables/approval-environments.yml`) and reads it when the pipeline is compiled.
+
+**The approval environment is not a run parameter.** A deployment job in an environment with no check runs without an approval. With a run parameter, the person who queues a run could type the name of such an environment. A template expression sees only the variables of YAML files. It does not see the variables stored on the pipeline, in a library or given in the run form ([Template expressions](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions)). So the queuer cannot choose the environment.
+
+| Variable of `approval-environments.yml` | Value from `infrastructure.yml` | Pipeline and stage |
+|---|---|---|
+| `AZL_ENVIRONMENT_OS_CONFIGURATION` | `devops.pipelines.environments.os_configuration` | `os-configuration.yml`, stage `Apply` |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE` | `devops.pipelines.environments.os_configuration_clear_storage` | `os-configuration.yml`, stage `ConfirmStorageWipe` |
+| `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `devops.pipelines.environments.arm_deployment` | `arm-deployment.yml`, stage `Deploy`; `pre-cluster-verification.yml`, stage `VerifyWithChanges` |
+| `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.cicd_infra` | `cicd-infra.yml`, stage `Apply` (when `apply` is on) |
+| `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` | `azure-local-deploy.yml`, stages `DeployFoundation`, `ConfigureOnPrem` and `ConfigureOperations` |
+
+The toolkit ships the variables empty, because no value of a deployment is written in the toolkit. [Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx) prints the value to write for each one. Write the values once, in a pull request. The names are the same as the GitHub repository variables and the GitLab project variables of the same purpose. When you copy a pipeline to your own repository, copy `approval-environments.yml` with it.
+
+**While a variable is empty, the stages that change something do not exist.** A run that would change something fails in the stage `ApprovalEnvironmentNotSet` with a message that names the file, and nothing is changed. For the storage wipe of the OS configuration, the stage `ConfirmStorageWipe` fails instead and `Apply` does not run. The stages that only read (`Validate`, `Plan`, `Preconditions`, `Verify`) run as before and have no environment.
+
+Each value must be an entry of `devops.environments[]` with `approval_required: true`. Task 04 of the CI/CD setup creates these environments. To create one by hand:
 
 1. Pipelines → Environments → New environment → the name from the file
-2. Add approval check with required reviewers
+2. Approvals and checks → add an Approvals check with required reviewers
+3. Add an Exclusive lock check, so that two runs never work on the same system at once
 
-Task 04 of the CI/CD setup creates the environments of `devops.environments[]`.
+Add the checks before the first run.
 
 ### 4. Self-Hosted Agent Pool
 
@@ -121,7 +138,7 @@ Install the Terraform extension from the marketplace:
 
 - **Service Connections**: Azure auth via ARM service connection (no secrets in pipeline)
 - **Terraform Task v4**: Native Terraform task with backend auto-configuration
-- **Environment Approvals**: Deployment gates between stages
+- **Environment Approvals**: Deployment gates between stages, on the environments named in `approval-environments.yml`
 - **Variable Groups**: Centralized secret management
 - **Deployment Strategy**: `runOnce` strategy for controlled rollouts
 
@@ -132,10 +149,11 @@ Install the Terraform extension from the marketplace:
 | Stage | Description |
 |---|---|
 | `Plan` | Read only. Publishes the plan report and the wipe list as the build artifact `os-configuration-plan` |
-| `ConfirmStorageWipe` | Exists only when the mode is Apply **and** `clear_storage` is true: a second, separate approval (the `clear_storage_approval_environment` parameter: `devops.pipelines.environments.os_configuration_clear_storage`) after reading the wipe list |
-| `Apply` | Runs for mode Apply, after a reviewer of the `approval_environment` parameter approves (`devops.pipelines.environments.os_configuration`) |
+| `ConfirmStorageWipe` | Runs only when the mode is Apply **and** `clear_storage` is true: a second, separate approval after reading the wipe list, in the environment named by `AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE` (`devops.pipelines.environments.os_configuration_clear_storage`). While that variable is empty, this stage fails in the run that would wipe, and `Apply` does not run |
+| `Apply` | Runs for mode Apply, after a reviewer of the environment named by `AZL_ENVIRONMENT_OS_CONFIGURATION` approves (`devops.pipelines.environments.os_configuration`) |
+| `ApprovalEnvironmentNotSet` | Exists for mode Apply **instead of** `ConfirmStorageWipe` and `Apply` while `AZL_ENVIRONMENT_OS_CONFIGURATION` is empty. It fails after the plan with a message that names the file to edit. Nothing is changed |
 
-Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVault` and a route to the nodes' management subnet; an Azure Resource Manager service connection with workload identity federation; and add Approvals (and an Exclusive lock) to the environments. The run parameters `agent_pool`, `service_connection`, `variable_group`, `infrastructure_file`, `handoff_path`, `approval_environment` and `clear_storage_approval_environment` have no default: enter `devops.runners[].pool`, `devops.pipelines.service_connection`, `devops.pipelines.variable_group` (with environments, `<name>-<environment>`), `devops.pipelines.infrastructure_file`, `devops.pipelines.handoff_path` (`none` for an ISO-installed cluster), `devops.pipelines.environments.os_configuration` and `.os_configuration_clear_storage`. The run choices `mode`, `nodes`, `steps`, `handoff_pipeline_id`, `handoff_run_id`, `approved_bootstrap` and `confirm_wipe_deployed_cluster` default to `Plan`, `all`, `none` and `false`. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+Both approval environments are variables of `pipelines/azure-devops/variables/approval-environments.yml`, not run parameters (see [3. Approval environments](#approval-environments)). Set up a self-hosted agent pool with PowerShell 7, `Az.Accounts` and `Az.KeyVault` and a route to the nodes' management subnet; an Azure Resource Manager service connection with workload identity federation; and add Approvals (and an Exclusive lock) to the environments. The run parameters `agent_pool`, `service_connection`, `variable_group`, `infrastructure_file` and `handoff_path` have no default: enter `devops.runners[].pool`, `devops.pipelines.service_connection`, `devops.pipelines.variable_group` (with environments, `<name>-<environment>`), `devops.pipelines.infrastructure_file` and `devops.pipelines.handoff_path` (`none` for an ISO-installed cluster). The run choices `mode`, `nodes`, `steps`, `handoff_pipeline_id`, `handoff_run_id`, `approved_bootstrap` and `confirm_wipe_deployed_cluster` default to `Plan`, `all`, `none` and `false`. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
 ## Discovery Pipeline
 
@@ -166,7 +184,7 @@ The artifact holds `discovery-report.json`, `summary.md` and a folder per step. 
 | `VerifyWithChanges` | Runs **instead of** `Verify` when the parameter `fix` or `install_environment_checker` is set: a deployment job in the approval environment named by the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` (`devops.pipelines.environments.arm_deployment`); add an Approvals check to it. `fix` registers the mandatory resource providers that are not registered (Azure side only). `install_environment_checker` puts the Environment Checker on the nodes for this run and removes it again at the end |
 | `ApprovalEnvironmentNotSet` | Runs **instead of** `VerifyWithChanges` when `fix` or `install_environment_checker` is set but `AZL_ENVIRONMENT_ARM_DEPLOYMENT` is empty. It fails with a message that names the file to edit. Nothing is changed |
 
-**The approval environment is not a run parameter.** It is the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` in `pipelines/azure-devops/variables/approval-environments.yml`, a YAML file of the repository that the pipeline reads when it is compiled. A run parameter would let the person who queues the run type the name of an environment that has no approval check, and a template expression sees only the variables of the YAML files, not those of the pipeline, a library or the run form. The toolkit ships the variable empty: write the name once, in a pull request ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx) lists the value). While it is empty, the read-only `Verify` stage runs as before, and a `fix` or `install_environment_checker` run fails in `ApprovalEnvironmentNotSet` and changes nothing.
+**The approval environment is not a run parameter.** As in every pipeline on this page that changes something, it is a variable of `pipelines/azure-devops/variables/approval-environments.yml`: here `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, the same as the ARM deployment pipeline (see [3. Approval environments](#approval-environments)). The toolkit ships the variable empty: write the name once, in a pull request ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx) lists the value). While it is empty, the read-only `Verify` stage runs as before, and a `fix` or `install_environment_checker` run fails in `ApprovalEnvironmentNotSet` and changes nothing.
 
 The result of a run replaces the one before, so the stages `Verify` and `VerifyWithChanges` set `lockBehavior: sequential`: two runs of the same stage never run together and the second waits. `lockBehavior` decides how runs behave when they meet an Exclusive lock check; set at the pipeline level, it also makes the Exclusive lock on the approval environment queue the runs instead of cancelling the older ones.
 
@@ -188,9 +206,10 @@ The service connection needs Reader for the checks (Owner or Contributor for `fi
 |---|---|
 | `Preconditions` | Read only. Parameters and every precondition. Always runs |
 | `Validate` | Runs for mode Validate and ValidateAndDeploy |
-| `Deploy` | A deployment job in the environment of the `approvalEnvironment` parameter (`devops.pipelines.environments.arm_deployment`); add an Approvals check to that environment (Pipelines, Environments, Approvals and checks). It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
+| `Deploy` | Runs for mode ValidateAndDeploy and Deploy. A deployment job in the environment named by `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of `pipelines/azure-devops/variables/approval-environments.yml` (`devops.pipelines.environments.arm_deployment`); add an Approvals check to that environment (Pipelines, Environments, Approvals and checks). It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
+| `ApprovalEnvironmentNotSet` | Exists for mode ValidateAndDeploy and Deploy **instead of** `Deploy` while `AZL_ENVIRONMENT_ARM_DEPLOYMENT` is empty. It fails with a message that names the file to edit. Nothing is deployed |
 
-Run parameters with no default: `infrastructureFile` (`devops.pipelines.infrastructure_file`), `azureServiceConnection` (`devops.pipelines.service_connection`), `variableGroup` (`devops.pipelines.variable_group`), `agentPool` (`devops.runners[].pool`) and `approvalEnvironment` (`devops.pipelines.environments.arm_deployment`). Run choices: `mode` (default `Plan`), `osConfigurationPipelineId` and `osConfigurationRunId` (the OS configuration report artifact, default `none`) or `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`. The Validate and Deploy jobs have a fixed upper bound of 1500 minutes (the registry maximum of `deployment.validate_timeout_minutes` and `deployment.deploy_timeout_minutes`, 1440, plus 60), because a job timeout is read before any variable exists; the script's own wait is the real limit. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+Run parameters with no default: `infrastructureFile` (`devops.pipelines.infrastructure_file`), `azureServiceConnection` (`devops.pipelines.service_connection`), `variableGroup` (`devops.pipelines.variable_group`) and `agentPool` (`devops.runners[].pool`). The approval environment is not a run parameter (see [3. Approval environments](#approval-environments)). Run choices: `mode` (default `Plan`), `osConfigurationPipelineId` and `osConfigurationRunId` (the OS configuration report artifact, default `none`) or `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`. The Validate and Deploy jobs have a fixed upper bound of 1500 minutes (the registry maximum of `deployment.validate_timeout_minutes` and `deployment.deploy_timeout_minutes`, 1440, plus 60), because a job timeout is read before any variable exists; the script's own wait is the real limit. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
 ## Repository
 

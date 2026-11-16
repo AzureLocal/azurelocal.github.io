@@ -59,7 +59,7 @@ Configure CI/CD pipeline environment variables for each target Azure subscriptio
 
 ### Every variable the pipelines read
 
-On GitHub each is a repository variable (`vars.NAME`; the sign-in values also per environment), on GitLab a project CI/CD variable (scope `*`; the sign-in values also per environment), on Azure DevOps an entry of the variable group `devops.pipelines.variable_group` (one per environment, `<name>-<environment>`) or a run parameter.
+On GitHub each is a repository variable (`vars.NAME`; the sign-in values also per environment), on GitLab a project CI/CD variable (scope `*`; the sign-in values also per environment), on Azure DevOps an entry of the variable group `devops.pipelines.variable_group` (one per environment, `<name>-<environment>`), a run parameter, or (the approval environments) a variable of `pipelines/azure-devops/variables/approval-environments.yml`.
 
 | Variable | Key in `infrastructure.yml` | GitHub | GitLab | Azure DevOps |
 |---|---|---|---|---|
@@ -71,7 +71,7 @@ On GitHub each is a repository variable (`vars.NAME`; the sign-in values also pe
 | `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` | variable | variable | variable group |
 | `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` | variable | variable | (the pool, a run parameter) |
 | `AZL_RUNNER_OS` | `devops.runners[].os_type` of the general runner | variable | | |
-| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.*` | variable | variable | (run parameters; for the pre-cluster verification pipeline, `AZL_ENVIRONMENT_ARM_DEPLOYMENT` in `pipelines/azure-devops/variables/approval-environments.yml`) |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_OS_CONFIGURATION_CLEAR_STORAGE` (Azure DevOps only), `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.*` | variable | variable | the variable of the same name in `pipelines/azure-devops/variables/approval-environments.yml` (written once, in a pull request; see below) |
 | `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | variable | variable | (a run parameter) |
 | `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | variable | variable | (a run parameter) |
 | `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` | variable | variable | variable group |
@@ -96,9 +96,19 @@ From schema 5.6.25 the toolkit's pipeline files hold no runner label, agent pool
 
 Each environment value is the name of an entry of `devops.environments[]` that has `approval_required: true`. Two pipelines may use the same entry.
 
-The script sets them as GitHub repository variables or GitLab project CI/CD variables: `AZL_RUNNER_LABEL` and one `AZL_ENVIRONMENT_...` variable per pipeline. Azure DevOps reads the pool, the environment of a job, the service connection, the variable group and the file paths before any variable exists, so there they are run parameters with no default. The script prints the values to enter. A label that the general runner does not have, or an environment that `devops.environments[]` does not list with `approval_required: true`, stops the task.
+The script sets them as GitHub repository variables or GitLab project CI/CD variables: `AZL_RUNNER_LABEL` and one `AZL_ENVIRONMENT_...` variable per pipeline. Azure DevOps reads the pool before any variable exists, so there it is a run parameter with no default, and the script prints the value to enter. A label that the general runner does not have, or an environment that `devops.environments[]` does not list with `approval_required: true`, stops the task.
 
-**One exception on Azure DevOps: the pre-cluster verification pipeline.** It does not take its approval environment as a run parameter, because whoever queues a run could then type the name of an environment with no approval check. It reads the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` from `pipelines/azure-devops/variables/approval-environments.yml`, a YAML file of the repository, when the pipeline is compiled. The toolkit ships it empty. The script lists the value of `devops.pipelines.environments.arm_deployment` and says to write it there: do it once, in a pull request. While it is empty, a run with `fix` or `install_environment_checker` fails in the stage `ApprovalEnvironmentNotSet` and changes nothing; the read-only run works as before. See [Azure DevOps: Pre-cluster Verification Pipeline](../../02-cicd-pipelines/azure-devops-pipelines.mdx#pre-cluster-verification-pipeline).
+**On Azure DevOps the approval environments are not run parameters.** With a run parameter, whoever queues a run could type the name of an environment with no approval check, and the change would run without an approval. So every Azure DevOps pipeline that changes something reads its environment from a variable of `pipelines/azure-devops/variables/approval-environments.yml`, a YAML file of the repository, when the pipeline is compiled. The toolkit ships the variables empty. The script cannot write that file. For each variable it lists the value to write there (action `Pipeline variable template`, status `Skipped`). Write them once, in a pull request:
+
+| Variable in `approval-environments.yml` | Value the script lists | Used by |
+|---|---|---|
+| `AZL_ENVIRONMENT_OS_CONFIGURATION` | `devops.pipelines.environments.os_configuration` | `os-configuration.yml`, stage `Apply` |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE` | `devops.pipelines.environments.os_configuration_clear_storage` | `os-configuration.yml`, stage `ConfirmStorageWipe` |
+| `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `devops.pipelines.environments.arm_deployment` | `arm-deployment.yml`, stage `Deploy`; `pre-cluster-verification.yml`, stage `VerifyWithChanges` |
+| `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.cicd_infra` | `cicd-infra.yml`, stage `Apply` |
+| `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` | `azure-local-deploy.yml`, stages `DeployFoundation`, `ConfigureOnPrem` and `ConfigureOperations` |
+
+While a variable is empty, the stages that change something do not exist. A run that would change something fails in the stage `ApprovalEnvironmentNotSet` (for the storage wipe, `ConfirmStorageWipe`) and changes nothing. The read-only stages run as before. See [Azure DevOps: Approval environments](../../02-cicd-pipelines/azure-devops-pipelines.mdx#approval-environments).
 
 Create the variables (or run this task) before the first pipeline run. With `AZL_RUNNER_LABEL` empty, a job has no label to select a runner by. On GitLab, for the first run of the CI/CD infrastructure stage, before the runners exist, give `AZL_RUNNER_LABEL` a shared runner tag when you run the pipeline.
 
@@ -254,6 +264,25 @@ The toolkit's Azure DevOps pipelines take the group as a run parameter (`variabl
 ```yaml
 variables:
   - group: ${{ parameters.variableGroup }}
+```
+
+### Write the approval environments
+
+The approval environments are not in the variable group and are not run parameters. The script lists five values, one for each variable of `pipelines/azure-devops/variables/approval-environments.yml`:
+
+| Variable | Value |
+|----------|-------|
+| `AZL_ENVIRONMENT_OS_CONFIGURATION` | `devops.pipelines.environments.os_configuration` |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE` | `devops.pipelines.environments.os_configuration_clear_storage` |
+| `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `devops.pipelines.environments.arm_deployment` |
+| `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.cicd_infra` |
+| `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` |
+
+Write each value in that file, once, in a pull request. The pipelines read the file when they are compiled, so whoever queues a run cannot choose the environment. The file links into each pipeline like this:
+
+```yaml
+variables:
+  - template: variables/approval-environments.yml
 ```
 
 </TabItem>
