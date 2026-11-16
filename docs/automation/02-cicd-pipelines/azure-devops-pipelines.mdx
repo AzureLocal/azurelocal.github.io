@@ -116,8 +116,11 @@ Each value must be an entry of `devops.environments[]` with `approval_required: 
 1. Pipelines → Environments → New environment → the name from the file
 2. Approvals and checks → add an Approvals check with required reviewers
 3. Add an Exclusive lock check, so that two runs never work on the same system at once
+4. Add a Branch control check: allowed branches `refs/heads/<your default branch>`, with "Verify branch protection" on
 
 Add the checks before the first run.
+
+**Why the Branch control check is needed.** The run form lets the person who queues a run choose the branch, and the pipeline is compiled from that branch, with that branch's copy of `approval-environments.yml`. Someone who can push a branch could change the file there. The checks of an environment or a service connection are set in Azure DevOps, not in YAML, so a branch cannot change them. Add the same Branch control check to the service connection and the agent pool the pipelines use. Also limit the pipeline permissions of each environment and service connection to the toolkit's pipelines.
 
 ### 4. Self-Hosted Agent Pool
 
