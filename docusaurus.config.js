@@ -63,6 +63,11 @@ const config = {
             from: '/docs/operations/disconnected-operations-on-azure-local',
             to: '/docs/disconnected-operations/disconnected-operations-on-azure-local',
           },
+          // The SBE update import became Task 11 of Phase 06 (Task 10 is external storage hybrid).
+          {
+            from: '/docs/implementation/04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import',
+            to: '/docs/implementation/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import',
+          },
         ]),
         // Docs used to be versioned (2411 and next). Keep the old URLs working.
         createRedirects(existingPath) {

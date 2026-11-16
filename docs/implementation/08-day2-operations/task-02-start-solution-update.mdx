@@ -36,7 +36,7 @@ import TabItem from '@theme/TabItem';
 
 **Status**: Active
 
-Run [Task 01](./task-01-check-for-updates.mdx) first: it says whether an update is ready. If it says `AdditionalContentRequired`, do the [SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import.mdx) first. Microsoft supports two ways to install an update, PowerShell on the cluster and Azure Update Manager in the portal; this script is the PowerShell way, so this task has no Azure CLI script (the Azure CLI has no update command).
+Run [Task 01](./task-01-check-for-updates.mdx) first: it says whether an update is ready. If it says `AdditionalContentRequired`, do the [SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import.mdx) first. Microsoft supports two ways to install an update, PowerShell on the cluster and Azure Update Manager in the portal; this script is the PowerShell way, so this task has no Azure CLI script (the Azure CLI has no update command).
 
 The script reads the update environment and the discovered updates, chooses the solution update, refuses to start while the health of the update environment is `Failure`, `Error` or `Warning`, and calls `Start-SolutionUpdate`. It does not wait: an update takes about four hours for one machine and six for four, and the machines restart. It never resumes or retries an update that is in a failed state.
 
@@ -157,7 +157,7 @@ Run [Task 01](./task-01-check-for-updates.mdx) again (verdict `UpdateRunning`), 
 |-------|-------|------------|
 | `operations.updates.install_after_deployment is not true` | Mode `AfterDeployment` and the switch is off | Use `-Mode OnDemand`, or set the key to `true` |
 | The update environment health is `Warning` | A readiness check warns | `Get-SolutionHealthSummary`; fix it. To resume an update that failed on warnings, Learn names `Start-SolutionUpdate -IgnoreWarnings`; the script does not use it |
-| `AdditionalContentRequired` | The vendor content is missing | [SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import.mdx) |
+| `AdditionalContentRequired` | The vendor content is missing | [SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import.mdx) |
 | A newer update is in a failed state | The script never starts an older update past a failed newer one | Fix the newer update (Learn: Troubleshoot updates), or name the version to install in `operations.updates.target_version` |
 | `No solution update is ready to install` with a state such as `ScanFailed` or `PendingOEMValidation` | An update is failed or waiting, so the script cannot say the cluster is at the target | Read the advice in the row. For a scan or a validation that is still running, try again later; for a failed one, see Learn: Troubleshoot updates |
 | The update service lists no update `<version>` | A feature update can take a week after its release to be visible | Check again later, or `Add-SolutionUpdate` imports one by hand |
