@@ -49,7 +49,7 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 | Key | What the script does with it |
 |-----|------------------------------|
-| `nodes[].name`, `nodes[].management.ip_address` | Find the machine named by `-TargetNode` (a name, a fully qualified name or the management address) and its address. A machine that is not in the file is used as it is, with a warning |
+| `nodes[].name`, `nodes[].management.ip_address` | Find the machine named by `-TargetNode` (a name, a fully qualified name or the management address) and its address. A machine that is not in the file is used as it is, with a warning (with `-RequireNodeInFile` the run stops with exit code 2) |
 | `identity.active_directory.domain_fqdn` | The fully qualified name `name.domain` is accepted as `-TargetNode` |
 | `identity.local_admin.username`, `.password` | The local administrator the script connects as (the password is a secret reference, read by the toolkit's secret resolver) |
 | `identity.active_directory.lcm_user.username`, `.password`, `identity.active_directory.netbios_name` | The fallback account when the local administrator is denied. `-Credential` replaces both |
@@ -96,6 +96,7 @@ Get-StoragePool -FriendlyName "<StoragePoolName>"
 |-----------|---------|
 | `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
 | `-TargetNode` | The machine: name, fully qualified name or management address. Required |
+| `-RequireNodeInFile` | Refuse a `-TargetNode` that is not in `nodes[]` of the file: exit code 2, before any credential is read and before anything is sent. The pipelines always pass it |
 | `-Credential` | Use this account instead of the ones in the file |
 | `-SkipDrain` | Reboot without the drain (no `Suspend-ClusterNode`, no `Remove-MocPhysicalNode`). The machine must already be `Paused`: the script reads its state first and stops with exit code 1, with nothing changed, when it is not. The other safety checks still run |
 | `-SkipResume` | Leave the machine in maintenance after the reboot. Run again with `-ResumeOnly` |

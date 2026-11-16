@@ -48,7 +48,7 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 | Key | What the script does with it |
 |-----|------------------------------|
 | `cluster.name` | The cluster to connect to and to operate on |
-| `nodes[].name`, `nodes[].management.ip_address`, `identity.active_directory.domain_fqdn` | `-NodeName` is matched against them (a name, a fully qualified name or an address). A name that is not in the file is used as it is, with a warning |
+| `nodes[].name`, `nodes[].management.ip_address`, `identity.active_directory.domain_fqdn` | `-NodeName` is matched against them (a name, a fully qualified name or an address). A name that is not in the file is used as it is, with a warning (with `-RequireNodeInFile` the run stops with exit code 2) |
 
 ---
 
@@ -85,6 +85,7 @@ Move-ClusterVirtualMachineRole -Name "<VirtualMachineRole>" -Node "<Target>" -Mi
 | `-Action` | `HealthCheck`, `MaintenanceMode`, `LiveMigrate`, `Rebalance`, `Capacity` or `Alerts`. Required |
 | `-NodeName` | The machine of `MaintenanceMode` and `LiveMigrate` |
 | `-Enable` | With `MaintenanceMode`: enter maintenance. Without it: leave maintenance |
+| `-RequireNodeInFile` | Refuse a `-NodeName` that is not in `nodes[]` of the file: exit code 2, nothing is sent to the cluster. The pipelines always pass it |
 | `-Credential` | An administrator of the cluster. Without it the account that runs the script is used |
 | `-OutputPath` | Also write the rows as JSON to this file |
 | `-LogPath` | Also append the progress lines to this file |
@@ -107,7 +108,7 @@ Move-ClusterVirtualMachineRole -Name "<VirtualMachineRole>" -Node "<Target>" -Mi
 ./Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action MaintenanceMode -NodeName node01 -Enable
 ```
 
-Exit codes: `0` the action finished (or is planned) and `HealthCheck` or `Alerts` found nothing, `1` a step failed or `HealthCheck` or `Alerts` found something, `2` `cluster.name` is missing, the file cannot be read, or an action that needs `-NodeName` has none (nothing is sent).
+Exit codes: `0` the action finished (or is planned) and `HealthCheck` or `Alerts` found nothing, `1` a step failed or `HealthCheck` or `Alerts` found something, `2` `cluster.name` is missing, the file cannot be read, an action that needs `-NodeName` has none, or `-RequireNodeInFile` is given and the node is not in `nodes[]` (nothing is sent).
 
 To reboot a node in one run, with the wait for the storage repair, use [Task 03](./task-03-node-maintenance.mdx).
 
