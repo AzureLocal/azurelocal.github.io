@@ -8,7 +8,7 @@ scope: "RBAC role assignment for Azure Local deployment identities"
 purpose: "Assign required roles to the deployment SPN and deployment user at subscription and resource group scope"
 author: "Azure Local Cloud"
 created: 2026-01-15
-updated: 2026-03-02
+updated: 2026-11-15
 version: "2.0.0"
 tags:
  - azure-local
@@ -176,6 +176,34 @@ Requires: PowerShell 7; modules Az.Accounts, Az.KeyVault, powershell-yaml.
 ```
 
 </TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/azurecli/New-EntraSecurityGroups.azcli.ps1` | Creates the Microsoft Entra security groups that identity.entra.groups of infrastructure.yml lists, with the Azure CLI. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/azurecli/Set-EntraGroupRoleAssignments.azcli.ps1` | Assigns the Azure roles that identity.entra.groups of infrastructure.yml gives each Microsoft Entra group, at the scope it names, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Azure side only. The first script adds no members. The second never removes a role assignment, and a role held at a higher scope does not count: it assigns the role at the scope the file names. `Owner` and `User Access Administrator` let the group grant access to others, so review the file before you run it. You need a role that can write role assignments at each scope, and permission to read groups.
+
+#### Run
+
+```powershell
+./New-EntraSecurityGroups.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-EntraSecurityGroups.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+
+./Set-EntraGroupRoleAssignments.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Set-EntraGroupRoleAssignments.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
 </Tabs>
 
 ---
@@ -228,6 +256,34 @@ Requires: PowerShell 7; modules Az.Accounts, Az.KeyVault, powershell-yaml.
 ./New-EntraSecurityGroups.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
 ./Set-EntraGroupRoleAssignments.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/azurecli/New-EntraSecurityGroups.azcli.ps1` | Creates the Microsoft Entra security groups that identity.entra.groups of infrastructure.yml lists, with the Azure CLI. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/azurecli/Set-EntraGroupRoleAssignments.azcli.ps1` | Assigns the Azure roles that identity.entra.groups of infrastructure.yml gives each Microsoft Entra group, at the scope it names, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Azure side only. The first script adds no members. The second never removes a role assignment, and a role held at a higher scope does not count: it assigns the role at the scope the file names. `Owner` and `User Access Administrator` let the group grant access to others, so review the file before you run it. You need a role that can write role assignments at each scope, and permission to read groups.
+
+#### Run
+
+```powershell
+./New-EntraSecurityGroups.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-EntraSecurityGroups.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+
+./Set-EntraGroupRoleAssignments.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Set-EntraGroupRoleAssignments.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

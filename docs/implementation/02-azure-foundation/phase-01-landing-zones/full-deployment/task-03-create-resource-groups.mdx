@@ -8,7 +8,7 @@ scope: "Full CAF/WAF resource group structure"
 purpose: "Create multi-subscription resource group organization"
 author: "Hybrid Cloud Solutions"
 created: 2026-01-15
-updated: 2026-03-19
+updated: 2026-11-15
 version: "3.0.0"
 tags:
  - azure-local
@@ -177,6 +177,30 @@ Requires: PowerShell 7.
 
 ```powershell
 ./Deploy-ResourceGroups.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/azurecli/Deploy-ResourceGroups.azcli.ps1` | Creates the Azure resource groups that landing_zone.resource_groups of infrastructure.yml lists, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Azure side only. A resource group that exists is left alone: its location and tags are never changed, and nothing is deleted or moved. You need Contributor or Owner on each subscription.
+
+#### Run
+
+```powershell
+./Deploy-ResourceGroups.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Deploy-ResourceGroups.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

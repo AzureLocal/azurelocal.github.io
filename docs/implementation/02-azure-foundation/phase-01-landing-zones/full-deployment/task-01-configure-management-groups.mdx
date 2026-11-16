@@ -8,7 +8,7 @@ scope: "Full CAF/WAF management group hierarchy"
 purpose: "Deploy complete CAF-aligned management group structure under the existing root"
 author: "Hybrid Cloud Solutions"
 created: 2026-01-15
-updated: 2026-03-19
+updated: 2026-11-15
 version: "3.0.0"
 tags:
  - azure-local
@@ -213,6 +213,34 @@ Requires: PowerShell 7.
 ./Deploy-ManagementGroups.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
 ./Set-ManagementGroupDisplayNames.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/azurecli/Deploy-ManagementGroups.azcli.ps1` | Creates the Azure management group hierarchy that landing_zone.management_groups of infrastructure.yml lists, with the Azure CLI. Supports `-WhatIf`. |
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/azurecli/Set-ManagementGroupDisplayNames.azcli.ps1` | Renames existing management groups with the Azure CLI: sets the display name infrastructure.yml gives each one. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Azure side only. Both scripts are idempotent. A group that exists is left alone: a different display name or parent is reported and not changed. The id of a management group can never change, only its display name. You need Management Group Contributor on the tenant root group (or on the parent group).
+
+#### Run
+
+```powershell
+./Deploy-ManagementGroups.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Deploy-ManagementGroups.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+
+./Set-ManagementGroupDisplayNames.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Set-ManagementGroupDisplayNames.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

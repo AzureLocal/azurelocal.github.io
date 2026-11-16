@@ -8,7 +8,7 @@ scope: NSG deployment and association
 purpose: Secure management and bastion subnets with NSG rules
 author: Hybrid Cloud Solutions
 created: 2025-09-15
-updated: 2026-03-03
+updated: 2026-11-15
 version: 4.0.0
 tags:
   - azure-local
@@ -45,7 +45,7 @@ This task creates two Network Security Groups (NSGs) and associates them with th
 
 :::info Task Classification
 **Execution Target**: Azure-Only (control-plane API operation) 
-**Tab Profile**: 2 tabs — Azure Portal · Azure CLI / PowerShell
+**Tab Profile**: 3 tabs — Azure Portal · PowerShell · Azure CLI
 :::
 
 :::info Terraform Reference
@@ -214,6 +214,30 @@ Requires: PowerShell 7.
 ```
 
 </TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/azurecli/New-LandingZoneNsg.azcli.ps1` | Creates the Azure network security groups that landing_zone.network_security_groups of infrastructure.yml lists, with their rules, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Run it after the resource groups exist and before the virtual network script of [Task 01](./task-01-virtual-network.mdx), which attaches each group to its subnets. It is additive: it adds the rules a group lacks, reports a rule that differs, and never removes or changes a rule or attaches a group to a subnet. A group that no subnet names is reported as `NotUsed` and not created.
+
+#### Run
+
+```powershell
+./New-LandingZoneNsg.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-LandingZoneNsg.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
 </Tabs>
 
 ### Validation
@@ -269,6 +293,30 @@ Requires: PowerShell 7.
 
 ```powershell
 ./New-LandingZoneNsg.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/azurecli/New-LandingZoneNsg.azcli.ps1` | Creates the Azure network security groups that landing_zone.network_security_groups of infrastructure.yml lists, with their rules, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Run it after the resource groups exist and before the virtual network script of [Task 01](./task-01-virtual-network.mdx), which attaches each group to its subnets. It is additive: it adds the rules a group lacks, reports a rule that differs, and never removes or changes a rule or attaches a group to a subnet. A group that no subnet names is reported as `NotUsed` and not created.
+
+#### Run
+
+```powershell
+./New-LandingZoneNsg.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-LandingZoneNsg.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

@@ -8,7 +8,7 @@ scope: "Azure resource provider registration"
 purpose: "Register all required Azure resource providers before cluster deployment"
 author: "Azure Local Cloud"
 created: 2026-01-15
-updated: 2026-03-02
+updated: 2026-11-15
 version: "2.0.0"
 tags:
  - azure-local
@@ -143,19 +143,41 @@ Register these 13 resource providers in your Azure Local subscription:
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/02-azure-foundation/phase-02-resource-providers/task-01-register-resource-providers/azurecli/Register-ResourceProviders.azcli.ps1` | Registers the Azure resource providers that Azure Local needs, with the Azure CLI, in the subscription of `infrastructure.yml`. |
 | `scripts/deploy/02-azure-foundation/phase-02-resource-providers/task-01-register-resource-providers/powershell/Register-ResourceProviders.ps1` | Registers the Azure resource providers that Azure Local needs in the subscription of `infrastructure.yml`. |
 
-Both take the subscription from `azure.subscription_id` and the one provider list of the toolkit (13 providers). `-Wait` waits until each provider is registered (`-MaxWaitMinutes`, `-PollSeconds`).
+The script takes the subscription from `azure.subscription_id` and the one provider list of the toolkit (13 providers). `-Wait` waits until each provider is registered (`-MaxWaitMinutes`, `-PollSeconds`).
 
-Requires: modules Az.Resources (PowerShell script) or the Azure CLI (Azure CLI script).
+Requires: modules Az.Resources.
 
 #### Run
 
 ```powershell
 .\Register-ResourceProviders.ps1 -InfrastructureFile .\infrastructure.yml -Wait
+```
 
-.\Register-ResourceProviders.azcli.ps1 -InfrastructureFile .\infrastructure.yml -Wait
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-02-resource-providers/task-01-register-resource-providers/azurecli/Register-ResourceProviders.azcli.ps1` | Registers the Azure resource providers that Azure Local needs, with the Azure CLI, in the subscription of `infrastructure.yml`. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+The script takes the subscription from `azure.subscription_id` and the one provider list of the toolkit (13 providers). `-Wait` waits until each provider it registered is registered (`-MaxWaitMinutes`, `-PollSeconds`). It selects `azure.subscription_id` with `az account set` and puts the earlier subscription back at the end.
+
+#### Run
+
+```powershell
+./Register-ResourceProviders.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Register-ResourceProviders.azcli.ps1 -InfrastructureFile ./infrastructure.yml -Wait
 ```
 
 </TabItem>

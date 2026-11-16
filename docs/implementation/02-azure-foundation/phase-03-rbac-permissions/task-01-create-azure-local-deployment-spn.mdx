@@ -8,7 +8,7 @@ scope: "Service principal creation for Azure Local deployment automation"
 purpose: "Create a dedicated service principal for Azure Local cluster deployment"
 author: "Azure Local Cloud"
 created: 2026-01-15
-updated: 2026-03-02
+updated: 2026-11-15
 version: "2.0.0"
 tags:
  - azure-local
@@ -165,6 +165,30 @@ Requires: PowerShell 7; modules Az.Resources.
 
 ```powershell
 ./New-AutomationManagedIdentity.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/azurecli/New-AutomationManagedIdentity.azcli.ps1` | Creates the user-assigned managed identity that azure.automation_identity of infrastructure.yml names, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Works when `azure.automation_identity.type` is `managed_identity`; for `service_principal` it stops with exit code 2 (the CI/CD bootstrap creates that app registration). It creates only the identity and assigns no role. It reports the client id and the principal id (not secrets): record the client id in `azure.automation_identity.client_id`. You need Managed Identity Contributor (or Contributor) on the resource group.
+
+#### Run
+
+```powershell
+./New-AutomationManagedIdentity.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-AutomationManagedIdentity.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

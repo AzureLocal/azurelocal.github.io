@@ -8,7 +8,7 @@ scope: "Verify all Azure resources exist and are configured correctly"
 purpose: "Verify all Azure resources exist and are configured correctly"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -246,6 +246,28 @@ See procedure steps for Azure DevOps-specific guidance.
 </TabItem>
 </Tabs>
 
+
+## Azure CLI script
+
+> **When to use**: Check the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az` and only reads Azure.
+
+### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources/azurecli/Test-ManagementResources.azcli.ps1` | Checks with the Azure CLI that the management infrastructure of `infrastructure.yml` exists in Azure and is in the state the file describes. Changes nothing. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+It reads each resource the file describes with an `az ... show` command (resource group, virtual network and subnets, VPN gateway, Azure Bastion, NAT gateway, Key Vault, Log Analytics workspace, virtual machines), but only what the file describes. One result row for each check (`Pass` or `Fail`). Reader on the subscriptions is enough. The VPN connections and BGP peers are checked in [Task 02](./task-02-test-connectivity.mdx), the Key Vault access, diagnostic settings and tags in [Task 03](./task-03-validate-configuration.mdx).
+
+### Run
+
+```powershell
+./Test-ManagementResources.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+---
 
 :::info Toolkit Reference
 Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.

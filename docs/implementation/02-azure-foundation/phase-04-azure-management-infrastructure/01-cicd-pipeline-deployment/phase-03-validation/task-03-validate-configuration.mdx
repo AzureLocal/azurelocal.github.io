@@ -8,7 +8,7 @@ scope: "Validate Key Vault access, Log Analytics, and monitoring setup"
 purpose: "Validate Key Vault access, Log Analytics, and monitoring setup"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -276,6 +276,28 @@ See procedure steps for Azure DevOps-specific guidance.
 </TabItem>
 </Tabs>
 
+
+## Azure CLI script
+
+> **When to use**: Check the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az` and only reads Azure.
+
+### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration/azurecli/Test-ManagementConfiguration.azcli.ps1` | Checks with the Azure CLI the Key Vault access, the Log Analytics workspace, the diagnostic settings and the tags of the management infrastructure. Changes nothing. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+The Azure side of the checks only. The Key Vault access check reads the secret list of each vault and writes no test secret. You need Reader on the subscriptions and a role that can list the secrets of each vault (for example Key Vault Secrets User). The data collection and the Azure Monitor Agent are out of scope here.
+
+### Run
+
+```powershell
+./Test-ManagementConfiguration.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+---
 
 :::info Toolkit Reference
 Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.

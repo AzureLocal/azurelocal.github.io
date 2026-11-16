@@ -8,7 +8,7 @@ scope: Azure Bastion deployment
 purpose: Provide secure remote access to management VMs
 author: Hybrid Cloud Solutions
 created: 2025-09-15
-updated: 2026-03-03
+updated: 2026-11-15
 version: 4.0.0
 tags:
   - azure-local
@@ -46,7 +46,7 @@ This task deploys Azure Bastion into the AzureBastionSubnet created in Task 01. 
 
 :::info Task Classification
 **Execution Target**: Azure-Only (control-plane API operation) 
-**Tab Profile**: 2 tabs — Azure Portal · Azure CLI / PowerShell
+**Tab Profile**: 3 tabs — Azure Portal · PowerShell · Azure CLI
 :::
 
 :::info Terraform Reference
@@ -167,6 +167,30 @@ Requires: PowerShell 7.
 ```
 
 </TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-05-azure-bastion/azurecli/New-AzureBastion.azcli.ps1` | Creates the Azure Bastion host of the hub that infrastructure.yml describes, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+List a subnet named `AzureBastionSubnet` of /26 or larger in `landing_zone.networks` first ([Task 01](./task-01-virtual-network.mdx)). The host takes about 10 minutes to create and is billed by the hour from then on. The features other than the SKU are the Azure defaults.
+
+#### Run
+
+```powershell
+./New-AzureBastion.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-AzureBastion.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
 </Tabs>
 
 ### Validation
@@ -224,6 +248,30 @@ Requires: PowerShell 7.
 
 ```powershell
 ./New-AzureBastion.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-05-azure-bastion/azurecli/New-AzureBastion.azcli.ps1` | Creates the Azure Bastion host of the hub that infrastructure.yml describes, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+List a subnet named `AzureBastionSubnet` of /26 or larger in `landing_zone.networks` first ([Task 01](./task-01-virtual-network.mdx)). The host takes about 10 minutes to create and is billed by the hour from then on. The features other than the SKU are the Azure defaults.
+
+#### Run
+
+```powershell
+./New-AzureBastion.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-AzureBastion.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

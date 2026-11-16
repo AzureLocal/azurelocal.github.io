@@ -8,7 +8,7 @@ scope: "Test network connectivity including VPN, Bastion, and DNS"
 purpose: "Test network connectivity including VPN, Bastion, and DNS"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -237,6 +237,28 @@ See procedure steps for Azure DevOps-specific guidance.
 </TabItem>
 </Tabs>
 
+
+## Azure CLI script
+
+> **When to use**: Check the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az` and only reads Azure.
+
+### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity/azurecli/Test-ManagementConnectivity.azcli.ps1` | Checks with the Azure CLI the VPN connections, the BGP peers and Azure Bastion that `infrastructure.yml` describes. Changes nothing. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+The Azure side of the tests only. A connection that is `Connecting` counts as a failure for now: the tunnel and BGP can take 5 to 15 minutes after the connection is created, so run the script again. A ping to an on-premises address, a Bastion session and a DNS lookup need a machine inside the network and are not run. Reader on the subscription is enough.
+
+### Run
+
+```powershell
+./Test-ManagementConnectivity.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+---
 
 :::info Toolkit Reference
 Scripts for this task are located in the [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) repository under scripts/deploy/ in the appropriate task folder.
