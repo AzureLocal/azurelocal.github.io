@@ -8,8 +8,8 @@ scope: "The Azure access of the customer administrator for one Azure Local insta
 purpose: "Contributor on the resource group, Reader on the subscription, and a record of the transfer"
 author: "Azure Local Cloud"
 created: 2026-11-15
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-16
+version: "1.0.1"
 tags:
   - azure-local
   - handover
@@ -96,10 +96,14 @@ az login --tenant <tenant-id>
 ./Set-CustomerTransfer.azcli.ps1 -InfrastructureFile ./infrastructure.yml -CustomerTenantId <customer-tenant-id> -CustomerAdminUPN admin@contoso.example -OutputPath ./handover
 ```
 
+- **Arguments.** Every `az` argument goes through the toolkit's guard (`scripts/common/azure-cli/AzlAzureCliArgument.psm1`). A value of the file, or the `-CustomerAdminUPN`, that holds `&`, `|`, `<`, `>`, `^`, `%`, `"` or a line break ends the run with exit code 2 before any `az` call, also under `-WhatIf`. On Windows `az` is a batch file (`az.cmd`), which would read these characters as commands.
+- **An apostrophe in the address.** The guest lookup by mail uses an OData filter, and the script doubles an apostrophe in the address as OData requires (`o'brien@contoso.example` is sent as `o''brien@contoso.example`). The address reaches `az` whole.
+- **Subscription.** The script selects `azure.subscription_id` and puts the earlier subscription back at the end. If it cannot, it prints a warning, adds a `Failed` step and ends with exit code 1; `az` then stays set to the subscription of the file. Run `az account set --subscription <your earlier subscription>`.
+
 </TabItem>
 </Tabs>
 
-Exit codes (both): `0` the transfer is in place (assigned, already there, or planned under `-WhatIf`) and the record is written; `1` an Azure call failed or a precondition failed (not signed in, wrong tenant, the administrator not found, an assignment failed); `2` a value in the file or a parameter is missing or not usable.
+Exit codes (both): `0` the transfer is in place (assigned, already there, or planned under `-WhatIf`) and the record is written; `1` an Azure call failed or a precondition failed (not signed in, wrong tenant, the administrator not found, an assignment failed), or (Azure CLI) the earlier subscription could not be put back; `2` a value in the file or a parameter is missing or not usable.
 
 ---
 
@@ -134,3 +138,4 @@ Exit codes (both): `0` the transfer is in place (assigned, already there, or pla
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release (the script moved here from the old handover folder of the toolkit; adds the Azure CLI script) |
+| 1.0.1 | 2026-11-16 | Azure Local Cloud | Azure CLI tab: the argument guard, an apostrophe in the address, exit code 1 when the earlier subscription cannot be put back |

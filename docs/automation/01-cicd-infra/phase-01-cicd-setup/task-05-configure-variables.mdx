@@ -71,7 +71,7 @@ On GitHub each is a repository variable (`vars.NAME`; the sign-in values also pe
 | `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` | variable | variable | variable group |
 | `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` | variable | variable | (the pool, a run parameter) |
 | `AZL_RUNNER_OS` | `devops.runners[].os_type` of the general runner | variable | | |
-| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.*` | variable | variable | (run parameters) |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.*` | variable | variable | (run parameters; for the pre-cluster verification pipeline, `AZL_ENVIRONMENT_ARM_DEPLOYMENT` in `pipelines/azure-devops/variables/approval-environments.yml`) |
 | `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | variable | variable | (a run parameter) |
 | `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | variable | variable | (a run parameter) |
 | `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` | variable | variable | variable group |
@@ -98,7 +98,11 @@ Each environment value is the name of an entry of `devops.environments[]` that h
 
 The script sets them as GitHub repository variables or GitLab project CI/CD variables: `AZL_RUNNER_LABEL` and one `AZL_ENVIRONMENT_...` variable per pipeline. Azure DevOps reads the pool, the environment of a job, the service connection, the variable group and the file paths before any variable exists, so there they are run parameters with no default. The script prints the values to enter. A label that the general runner does not have, or an environment that `devops.environments[]` does not list with `approval_required: true`, stops the task.
 
+**One exception on Azure DevOps: the pre-cluster verification pipeline.** It does not take its approval environment as a run parameter, because whoever queues a run could then type the name of an environment with no approval check. It reads the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` from `pipelines/azure-devops/variables/approval-environments.yml`, a YAML file of the repository, when the pipeline is compiled. The toolkit ships it empty. The script lists the value of `devops.pipelines.environments.arm_deployment` and says to write it there: do it once, in a pull request. While it is empty, a run with `fix` or `install_environment_checker` fails in the stage `ApprovalEnvironmentNotSet` and changes nothing; the read-only run works as before. See [Azure DevOps: Pre-cluster Verification Pipeline](../../02-cicd-pipelines/azure-devops-pipelines.mdx#pre-cluster-verification-pipeline).
+
 Create the variables (or run this task) before the first pipeline run. With `AZL_RUNNER_LABEL` empty, a job has no label to select a runner by. On GitLab, for the first run of the CI/CD infrastructure stage, before the runners exist, give `AZL_RUNNER_LABEL` a shared runner tag when you run the pipeline.
+
+On GitLab, a person who starts a pipeline by hand can override a variable in the run form, `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of the pre-cluster verification job included. Restrict who may set pipeline variables (project **Settings > CI/CD > Variables**, the minimum role to use pipeline variables) and protect the environment.
 
 ### The service connection and the variable group (Azure DevOps)
 

@@ -8,8 +8,8 @@ scope: "Read the update state of a deployed Azure Local cluster, from the cluste
 purpose: "Know which update is offered, what to do with it, and whether the cluster needs attention, without starting anything"
 author: "Azure Local Cloud"
 created: 2026-11-15
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-16
+version: "1.0.1"
 tags:
   - azure-local
   - day-2
@@ -87,7 +87,7 @@ Review `HealthState`: `Failure`, `Error` or `Warning` has to be fixed before an 
 | `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
 | `-ComputerName` | Connect to this machine instead of `cluster.name` |
 | `-Credential` | The deployment user. Without it the account that runs the script is used |
-| `-WaitMinutes`, `-PollSeconds` | Read again every `-PollSeconds` (default 60) until an update is offered or `-WaitMinutes` (0 to 240, default 0) have passed |
+| `-WaitMinutes`, `-PollSeconds` | Read again every `-PollSeconds` (default 60) until an update is offered or `-WaitMinutes` (0 to 240, default 0) have passed. The wait stops at once, with the verdict `AttentionNeeded`, when an update failed or needs a prerequisite, the health is `Failure`, `Error` or `Warning`, or the update environment is `UpdateFailed`, `NeedsAttention` or `PreparationFailed`: waiting longer fixes none of them |
 | `-OutputPath` | Also write the whole report as JSON to this file. Keep it out of the repository |
 
 #### Run
@@ -109,6 +109,12 @@ Review `HealthState`: `Failure`, `Error` or `Warning` has to be fixed before an 
 | `scripts/deploy/08-day2-operations/task-01-check-for-updates/azurecli/Get-AvailableSolutionUpdate.azcli.ps1` | Reads the update summary and the updates of the cluster resource in Azure (`az rest`, GET only). Same table, verdict and JSON |
 
 The Azure CLI has no `az stack-hci update` command, so the script reads the two operations of the Microsoft.AzureStackHCI resource provider that Learn documents (Update Summaries - Get, Updates - List). It does not sign in: run `az login --tenant <azure.tenant_id>` first. The signed-in identity needs read access to the cluster resource.
+
+- **Any cloud.** The URL has no host (`/subscriptions/...`), so `az rest` uses the Azure Resource Manager endpoint of the cloud that `az` is set to. The script works in the public cloud and in a sovereign cloud alike.
+- **Every page.** The list of updates is followed page by page (`nextLink`), at most 50 pages. A longer list stops the run with exit code 1.
+- **Health.** A health state of `Failure`, `Error` or `Warning` gives `AttentionNeeded`, as in the PowerShell script.
+- **Subscription.** The script selects `azure.subscription_id` with `az account set` and puts the earlier subscription back at the end. If it cannot put it back, it prints a warning and ends with exit code 1; `az` then stays set to the subscription of the file. Run `az account set --subscription <your earlier subscription>`.
+- **Arguments.** Every `az` argument goes through the toolkit's guard (`scripts/common/azure-cli/AzlAzureCliArgument.psm1`). A value of the file that holds `&`, `|`, `<`, `>`, `^`, `%`, `"` or a line break ends the run with exit code 2 before any `az` call.
 
 | Parameter | Meaning |
 |-----------|---------|
@@ -145,9 +151,9 @@ az login --tenant <tenant-id>
 | `UpdateAvailable` | An update is `Ready` or `ReadyToInstall` | [Task 02](./task-02-start-solution-update.mdx): prepare it, then start it |
 | `AdditionalContentRequired` | An update waits for the hardware vendor's SBE files | [SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import.mdx), then check again |
 | `UpdateRunning` | An update is `Downloading`, `Preparing`, `HealthChecking` or `Installing` | Wait. Run this task again to follow it |
-| `AttentionNeeded` | An update failed or needs a prerequisite, the health is `Failure`, `Error` or `Warning`, the update environment is `UpdateFailed` or `NeedsAttention`, or (Azure CLI) the update service has not checked for too long | Read the `[attention]` lines. Fix them before an update is started |
+| `AttentionNeeded` | An update failed or needs a prerequisite, the health is `Failure`, `Error` or `Warning`, the update environment is `UpdateFailed`, `NeedsAttention` or `PreparationFailed`, or (Azure CLI) a critical or warning readiness check failed or the update service has not checked for too long | Read the `[attention]` lines. Fix them before an update is started |
 
-Exit codes: `0` the cluster was read and nothing needs attention (an update may be offered), `1` it could not be read or the verdict is `AttentionNeeded`, `2` a value in the file is missing or not usable (nothing is sent).
+Exit codes: `0` the cluster was read and nothing needs attention (an update may be offered), `1` it could not be read, the verdict is `AttentionNeeded`, or (Azure CLI) the earlier subscription could not be put back, `2` a value in the file is missing or not usable (nothing is sent).
 
 ## Validation
 
@@ -181,3 +187,4 @@ Exit codes: `0` the cluster was read and nothing needs attention (an update may 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release |
+| 1.0.1 | 2026-11-16 | Azure Local Cloud | `-WaitMinutes` stops at once on something that needs attention; the Azure CLI script follows every page, uses the endpoint of the current cloud, raises `AttentionNeeded` on a blocking health and ends with exit code 1 when it cannot put the earlier subscription back |

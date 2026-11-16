@@ -8,8 +8,8 @@ scope: "Start (or only prepare) one solution update on a deployed Azure Local cl
 purpose: "Start the chosen solution update from PowerShell, once the check says it is ready, and leave the run to the update service"
 author: "Azure Local Cloud"
 created: 2026-11-15
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-16
+version: "1.0.1"
 tags:
   - azure-local
   - day-2
@@ -103,14 +103,25 @@ An update that was prepared with `-PrepareOnly` has to be installed from PowerSh
 ./Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -Mode OnDemand               # inside the window
 ```
 
-The script is idempotent. It reports and exits 0, starting nothing, when the switch is off (`AfterDeployment`), when the cluster already runs the target version or has no newer update ready, when an update is already `Downloading`, `Preparing`, `HealthChecking` or `Installing`, and, with `-PrepareOnly`, when the update is already `ReadyToInstall`.
+The script is idempotent. It reports and exits 0, starting nothing, when the switch is off (`AfterDeployment`), when the cluster already runs the target version or has no newer update ready, when an update is already running, and, with `-PrepareOnly`, when the update is already `ReadyToInstall`.
+
+How the script reads the update states (the states Learn lists for the update resource):
+
+| State | What the script does |
+|-------|----------------------|
+| `Ready`, `ReadyToInstall`, `HealthCheckExpired` | Can be started |
+| `Downloading`, `Preparing`, `HealthChecking`, `Installing`, of any package type (a standalone SBE update counts too) | `AlreadyRunning`, exit 0. The same when the update environment state is `UpdateInProgress` or `PreparationInProgress`. Never reported as `AlreadyAtTarget` |
+| `Installed`, `Obsolete`, `Invalid`, `Recalled` | Nothing to do |
+| Every other state: `ScanFailed`, `ScanInProgress`, `NotApplicableBecauseAnotherUpdateIsInProgress`, `PendingOEMValidation`, the failed states, `AdditionalContentRequired`, `HasPrerequisite`, and a state the script does not know | `Failed`, exit 1. Also in `latest` mode when no update is ready: such an update is never read as "at target" |
+
+In `latest` mode with no update ready, an update environment state of `UpdateFailed`, `NeedsAttention` or `PreparationFailed` is also `Failed` (exit 1): the cluster is not known to be at the target, so look at it first (`Get-SolutionUpdateEnvironment`, `Get-SolutionUpdateRun`).
 
 | Row `Action` | Meaning |
 |--------------|---------|
 | `Started`, `Prepared` | The call was made; the detail holds the run and the `ResourceId`. The update runs on its own |
 | `AlreadyRunning`, `AlreadyAtTarget`, `AlreadyPrepared` | Nothing was started (exit 0) |
 | `WouldStart`, `WouldPrepare` | `-WhatIf` plan |
-| `Failed` | The update is in a failed state, needs content or a prerequisite, the health blocks it, a newer update is stuck, or the call failed (exit 1) |
+| `Failed` | The update is in a failed, waiting or unknown state, needs content or a prerequisite, the update environment failed, the health blocks it, a newer update is stuck, or the call failed (exit 1) |
 
 Exit codes: `0` started, prepared, nothing to start, or planned; `1` the cluster could not be read, the system is not ready or the update cannot be started; `2` a value in the file is missing or not usable (nothing is sent).
 
@@ -148,6 +159,7 @@ Run [Task 01](./task-01-check-for-updates.mdx) again (verdict `UpdateRunning`), 
 | The update environment health is `Warning` | A readiness check warns | `Get-SolutionHealthSummary`; fix it. To resume an update that failed on warnings, Learn names `Start-SolutionUpdate -IgnoreWarnings`; the script does not use it |
 | `AdditionalContentRequired` | The vendor content is missing | [SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import.mdx) |
 | A newer update is in a failed state | The script never starts an older update past a failed newer one | Fix the newer update (Learn: Troubleshoot updates), or name the version to install in `operations.updates.target_version` |
+| `No solution update is ready to install` with a state such as `ScanFailed` or `PendingOEMValidation` | An update is failed or waiting, so the script cannot say the cluster is at the target | Read the advice in the row. For a scan or a validation that is still running, try again later; for a failed one, see Learn: Troubleshoot updates |
 | The update service lists no update `<version>` | A feature update can take a week after its release to be visible | Check again later, or `Add-SolutionUpdate` imports one by hand |
 
 ---
@@ -165,3 +177,4 @@ Run [Task 01](./task-01-check-for-updates.mdx) again (verdict `UpdateRunning`), 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release. The script was `Start-SolutionUpdateAfterDeployment.ps1`; it now also runs the monthly update (`-Mode OnDemand`) and can prepare (`-PrepareOnly`) |
+| 1.0.1 | 2026-11-16 | Azure Local Cloud | Every update state is handled: failed, waiting and unknown states are `Failed` (exit 1); a running update of any package type, or a running update environment, is `AlreadyRunning` |

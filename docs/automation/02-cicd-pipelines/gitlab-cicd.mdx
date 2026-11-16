@@ -187,6 +187,10 @@ Project CI/CD variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_S
 
 Run variables: `PRECLUSTER_MODE` (default `Plan`), `OS_CONFIGURATION_REPORT` (GitLab fetches another pipeline's artifact only through `needs: pipeline:` or `needs: project:`, so add that to the jobs), `HANDOFF_FILE`, `PRECLUSTER_ACCEPT_SKIPPED` (ids of checks that may stay Skipped, comma separated; the report records that you accepted them), `PRECLUSTER_ALLOW_REVALIDATE`, `PRECLUSTER_FIX`, `PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER`. Project CI/CD variables: the same as the discovery pipeline, plus `AZL_ENVIRONMENT_ARM_DEPLOYMENT`. The identity needs Reader for the checks (Owner or Contributor for `PRECLUSTER_FIX`).
 
+:::warning Keep the approval environment out of reach of the run form
+A person who starts a GitLab pipeline by hand can override a variable in the run form, `AZL_ENVIRONMENT_ARM_DEPLOYMENT` included. Restrict who may set pipeline variables (project **Settings > CI/CD > Variables**, the minimum role to use pipeline variables) and protect the environment.
+:::
+
 **The job fails when the verdict is not Pass** (exit code 1: a Failed or Skipped check blocks; 3: a partial run). It keeps `report.json`, `summary.md` and the event feed as artifacts (kept for 30 days) and prints `summary.md` in the log.
 
 :::warning The ARM run reads a folder, not the artifact

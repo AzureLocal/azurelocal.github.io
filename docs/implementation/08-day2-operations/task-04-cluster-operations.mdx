@@ -8,8 +8,8 @@ scope: "Operate a running Azure Local cluster from a management machine"
 purpose: "One script, one action per run, with -WhatIf for every change and an exit code for every outcome"
 author: "Azure Local Cloud"
 created: 2026-11-15
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-16
+version: "1.0.1"
 tags:
   - azure-local
   - day-2
@@ -92,10 +92,10 @@ Move-ClusterVirtualMachineRole -Name "<VirtualMachineRole>" -Node "<Target>" -Mi
 | Action | What it does | Changes the cluster |
 |--------|--------------|:-------------------:|
 | `HealthCheck` | Nodes `Up`, pools and virtual disks healthy, no storage repair job running, cluster networks up, the Arc agent of every node connected. Exit 1 when anything is not healthy | no |
-| `MaintenanceMode -Enable` | Checks it is safe (other nodes `Up`, virtual disks healthy, no repair job), `Suspend-ClusterNode -Drain -Wait`, then `Remove-MocPhysicalNode` | yes |
-| `MaintenanceMode` | `Resume-ClusterNode -Failback Immediate`, `New-MocPhysicalNode`, then a read of the storage repair jobs | yes |
+| `MaintenanceMode -Enable` | Checks it is safe (other nodes `Up`, virtual disks healthy, no repair job) and that the node has both `Remove-MocPhysicalNode` and `New-MocPhysicalNode` (if not, it stops before anything is drained), then `Suspend-ClusterNode -Drain -Wait`, then `Remove-MocPhysicalNode` | yes |
+| `MaintenanceMode` | Checks that the node has `New-MocPhysicalNode` (if not, nothing is resumed), then `Resume-ClusterNode -Failback Immediate`, `New-MocPhysicalNode`, then a read of the storage repair jobs | yes |
 | `LiveMigrate` | Moves the clustered virtual machines of the node, live, each to the other node with the fewest virtual machines (`Move-ClusterVirtualMachineRole -MigrationType Live`) | yes |
-| `Rebalance` | Spreads the cluster shared volumes evenly over the nodes that are `Up` (`Move-ClusterSharedVolume`) | yes |
+| `Rebalance` | Spreads the cluster shared volumes evenly over the nodes that are `Up` (`Move-ClusterSharedVolume`): one volume at a time moves from the node that owns the most to the node that owns the fewest, until no two nodes differ by more than one volume. For example 2, 2 and 0 volumes become 1, 2 and 1. A balanced cluster moves nothing; a failed move stops the run (exit 1) | yes |
 | `Capacity` | Pool size and used space, memory and virtual processors assigned per node | no |
 | `Alerts` | Health Service faults, storage health actions and the Critical, Error and Warning events of the failover clustering log of the last 24 hours. Exit 1 when there are any | no |
 
@@ -129,6 +129,7 @@ To reboot a node in one run, with the wait for the storage repair, use [Task 03]
 | Issue | Cause | Resolution |
 |-------|-------|------------|
 | `Not safe: ...` on `MaintenanceMode -Enable` | Another node is not `Up`, a virtual disk is not healthy or a repair job is running | Wait for the repair to finish (`HealthCheck` shows it), then run again. Nothing was changed |
+| `The node x does not have Remove-MocPhysicalNode, New-MocPhysicalNode` | The node runs a version before 2311.2 | Update first. The run stopped before the drain (or the resume); nothing was changed |
 | `The cluster has no node 'x'` | The name is not a node of the cluster | Check `-NodeName` against `nodes[].name` |
 | `LiveMigrate` fails for one virtual machine | The virtual machine is not clustered, or the target lacks the memory | The other virtual machines are still moved; the exit code is 1. Move that one by hand |
 | `Alerts` returns an event of the last 24 hours that is already fixed | The log keeps the event | Read the time of the row; the exit code only clears when no event is left in the window |
@@ -148,3 +149,4 @@ To reboot a node in one run, with the wait for the storage repair, use [Task 03]
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release |
+| 1.0.1 | 2026-11-16 | Azure Local Cloud | `MaintenanceMode` checks the two Moc cmdlets before it drains or resumes; the `Rebalance` rule |

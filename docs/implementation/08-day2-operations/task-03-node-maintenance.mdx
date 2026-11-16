@@ -8,8 +8,8 @@ scope: "Suspend, reboot and resume one machine of an Azure Local cluster"
 purpose: "Reboot a node without losing availability: the order of Microsoft Learn, with the storage repair wait that protects the next node"
 author: "Azure Local Cloud"
 created: 2026-11-15
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-16
+version: "1.0.1"
 tags:
   - azure-local
   - day-2
@@ -97,7 +97,7 @@ Get-StoragePool -FriendlyName "<StoragePoolName>"
 | `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
 | `-TargetNode` | The machine: name, fully qualified name or management address. Required |
 | `-Credential` | Use this account instead of the ones in the file |
-| `-SkipDrain` | Reboot without the safety checks and the suspend (for a machine that is already suspended) |
+| `-SkipDrain` | Reboot without the drain (no `Suspend-ClusterNode`, no `Remove-MocPhysicalNode`). The machine must already be `Paused`: the script reads its state first and stops with exit code 1, with nothing changed, when it is not. The other safety checks still run |
 | `-SkipResume` | Leave the machine in maintenance after the reboot. Run again with `-ResumeOnly` |
 | `-ResumeOnly` | Only resume a machine that is in maintenance, add it back and wait for the storage |
 | `-FailbackMode` | `Immediate` (default), `NoFailback` or `Policy` |
@@ -112,13 +112,24 @@ Get-StoragePool -FriendlyName "<StoragePoolName>"
 ./Invoke-NodeMaintenanceReboot.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode node01
 ```
 
-Run it for the next machine only after the first has ended with exit code 0: that means the machine is `Up`, in the virtual machine configuration again, and the storage is repaired.
+**The reboot must be proven before the machine is resumed.** The script reads the last boot time (`Win32_OperatingSystem.LastBootUpTime`) before and after the restart. The machine is resumed only when the boot time is newer. When a boot time cannot be read, the machine must have been seen offline instead. Without that proof the run ends with exit code 1 and the machine stays `Paused`: check it, reboot it, then run with `-ResumeOnly`. If `Restart-Computer` fails with an error other than the dropped connection of a reboot, the run also ends with exit code 1 and the machine stays `Paused`.
+
+Run it for the next machine only after the first has ended with exit code 0 **and** its result shows `Resumed` true and `StorageRepair` `Repaired`: the machine is `Up`, in the virtual machine configuration again, and the storage is repaired.
 
 | Exit code | Meaning |
 |-----------|---------|
-| `0` | Done, and the storage is healthy (or planned under `-WhatIf`) |
-| `1` | It was not safe (nothing was changed), the machine was not `Paused` after the drain, did not come back, a step failed, or the storage had not repaired when the wait ran out |
+| `0` | Done, and the storage is healthy (or planned under `-WhatIf`). With an opt-out it means less: see below |
+| `1` | It was not safe (nothing was changed), `-SkipDrain` was given for a machine that is not `Paused` (nothing was changed), the machine was not `Paused` after the drain, the restart failed, there is no proof that the machine rebooted, it did not come back, a step failed, or the storage had not repaired when the wait ran out |
 | `2` | The file is missing or not usable, or no credential could be built |
+
+What exit code 0 means with the two opt-outs:
+
+| Run with | Exit code 0 means |
+|----------|-------------------|
+| `-SkipResume` | The machine rebooted and came back, and it is still `Paused`. It was **not** resumed, it is not in the virtual machine configuration again, and the storage was not checked (`Resumed` false, `StorageRepair` `NotWaited`). Run `-ResumeOnly` next |
+| `-StorageRepairTimeoutMinutes 0` | The machine rebooted, was resumed and is `Up`, but the storage repair was **not** waited for (`StorageRepair` `NotWaited`). Do not take another machine offline until `Get-StorageJob` shows no job and every virtual disk is `Healthy` |
+
+The result object has `Node`, `NodeIp`, `State`, `DrainStatus`, `Resumed` (true when the run resumed the machine), `StorageRepair` (`Repaired` or `NotWaited`) and `Duration` (seconds).
 
 </TabItem>
 </Tabs>
@@ -140,6 +151,9 @@ Run it for the next machine only after the first has ended with exit code 0: tha
 |-------|-------|------------|
 | `Not safe to take 'node' out` | Another machine is down, a virtual disk is not healthy, or a repair job is running | Wait for the repair to finish (`Get-StorageJob`), fix the other machine, run again. Nothing was changed |
 | The machine does not have `Remove-MocPhysicalNode` | The machine runs a version before 2311.2 | Update first. The script stops before it changes anything |
+| `-SkipDrain needs a node that is already Paused` | `-SkipDrain` was given for a machine that is `Up` | Run without `-SkipDrain` (the script drains it), or suspend it by hand first. Nothing was changed |
+| `Restart-Computer failed` | The restart command failed with an unexpected error | The machine stays `Paused` and nothing was resumed. Check the machine, then run again |
+| `There is no proof that node ... rebooted` | The last boot time did not change, or it could not be read and the machine was never seen offline | The machine stays `Paused`. Check it, reboot it, then run with `-ResumeOnly` |
 | The machine did not come back | Hardware or boot problem | Use the BMC console. The node stays suspended; resume it with `-ResumeOnly` once it is back |
 | A repair job stays `Suspended` at 0 percent | The storage orchestration is waiting | Do not reboot again. Check `Get-StorageJob` and `Get-VirtualDisk`; the exit code stays 1 until it is repaired |
 
@@ -158,3 +172,4 @@ Run it for the next machine only after the first has ended with exit code 0: tha
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release. Adds the safety checks, `Remove-MocPhysicalNode` and `New-MocPhysicalNode`, the storage repair wait and the exit codes |
+| 1.0.1 | 2026-11-16 | Azure Local Cloud | `-SkipDrain` needs a `Paused` machine; the resume needs proof of the reboot; a failed restart is exit code 1; what exit code 0 means with `-SkipResume` and `-StorageRepairTimeoutMinutes 0`; the `Resumed` field |
