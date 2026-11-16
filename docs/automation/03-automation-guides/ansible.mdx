@@ -33,7 +33,7 @@ The roles use **Ansible Validated Content** collections: `microsoft.ad`, `ansibl
 |---|---|---|---|
 | `05-management-vms.yml` | Part 2, Phase 4 | `domain_controllers` (`serial: 1`) | AD DS promotion of the domain controllers, DNS forwarders |
 | `01-ad-preparation.yml` | Part 3, Phase 1 | `domain_controllers[0]` | The OU and the LCM user (`New-HciAdObjectsPreCreation`), security groups, computer objects, Azure Arc conditional forwarders |
-| `02-os-configuration.yml` | Part 4, Phase 3 | `localhost` (the controller) | Runs `Invoke-AzureLocalOsConfiguration.ps1` through the `ansible/os-configuration` role |
+| `02-os-configuration.yml` | Part 4, Phase 3 | `localhost` (the controller) | Runs `Invoke-AzureLocalOsConfiguration.ps1` through the role `azurelocal_os_configuration` (`src/ansible/roles/azurelocal_os_configuration`) |
 | `03-arc-registration.yml` | Part 4, Phase 4 | `cluster_nodes` | Arc endpoint validation, sign-in, Arc initialization |
 | `04-monitoring-setup.yml` | Part 5, Phase 2 | `cluster_nodes` | Azure Monitor Agent extension, the Azure Local Insights step |
 | `00-cicd-runner.yml` | CI/CD setup | the generated `inventory/cicd-runners.yml` | Configures an existing host as a self-hosted runner |
@@ -51,7 +51,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/site.yml -e @vault.yml \
 # Or run individual phases
 ansible-playbook -i inventory/hosts.yml playbooks/05-management-vms.yml
 ansible-playbook -i inventory/hosts.yml playbooks/01-ad-preparation.yml
-ansible-playbook -i inventory/hosts.yml playbooks/02-os-configuration.yml -e azurelocal_os_configuration_infrastructure_file=./infrastructure.yml
+ansible-playbook playbooks/02-os-configuration.yml -e @/srv/azurelocal/os-configuration.yml   # see "OS configuration" below
 ansible-playbook -i inventory/hosts.yml playbooks/03-arc-registration.yml
 ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
 
@@ -87,7 +87,24 @@ Mirrors `scripts/deploy/03-onprem-readiness/phase-01-active-directory/` (playboo
 No role generates a password: the LCM and DSRM passwords are the Key Vault secrets the deployment reads.
 
 ### OS configuration
-Playbook 02 runs the role of `ansible/os-configuration` (`azurelocal_os_configuration`) on the controller, the Ansible front end of `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1`. The wrapper reads `infrastructure.yml` itself (domain join account, local administrators, join options, the management VLAN, the transport) and does Plan, the approval pause and Apply. The earlier `os-configuration` role of `src/ansible` is gone: there is no second implementation. The controller needs PowerShell 7 with powershell-yaml, Az and Az.KeyVault. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+Playbook 02 (`src/ansible/playbooks/02-os-configuration.yml`) runs the role `azurelocal_os_configuration` (`src/ansible/roles/azurelocal_os_configuration`) on the controller (`localhost`, `connection: local`). The role is the Ansible front end of `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1`. **The engine stays PowerShell 7**: Ansible does not connect to the nodes. It starts `pwsh`, passes the wrapper its parameters, pauses for approval between Plan and Apply, shows `report.json` as facts and fails with the wrapper's exit code. The wrapper reads `infrastructure.yml` itself (domain join account, local administrators, join options, the management VLAN, the transport).
+
+Pass the settings with a vars file. Copy `src/ansible/vars/os-configuration.yml.example` to a place outside the repository, set at least `azurelocal_os_configuration_infrastructure_file`, and run:
+
+```bash
+cd src/ansible
+ansible-playbook playbooks/02-os-configuration.yml -e @/srv/azurelocal/os-configuration.yml --check   # Plan only, changes nothing
+ansible-playbook playbooks/02-os-configuration.yml -e @/srv/azurelocal/os-configuration.yml           # Plan, pause for approval, Apply
+```
+
+- Only the answer `yes` at the pause continues; anything else, or the timeout, fails the run with nothing changed. `azurelocal_os_configuration_approved: true` skips the pause on an unattended run.
+- `--check` is the Plan only.
+- In AWX, split the run into a workflow: a plan job, an approval node, then an apply job with `azurelocal_os_configuration_phase: apply` and `azurelocal_os_configuration_approved: true`.
+- The node credential (ISO-installed nodes over WinRM only) comes from Ansible Vault or the environment variables `AZL_NODE_ADMIN_USER` and `AZL_NODE_ADMIN_PASSWORD`. It reaches the wrapper only through the environment of one `no_log` task, never as a command line argument or a log line. For ZTP nodes the wrapper reads `identity.local_admin` from Key Vault.
+
+The controller needs PowerShell 7 with `powershell-yaml`, `Az.Accounts` and `Az.KeyVault`, an Azure sign-in, and a checkout of the toolkit. The role's variables, the credential and AWX are in its README: `src/ansible/roles/azurelocal_os_configuration/README.md`.
+
+There is **one Ansible tree**, `src/ansible`. The former top-level Ansible folder of the toolkit is gone, and so are its separate runner inventory and its stand-alone OS configuration play: playbook 02 is the only Ansible route to the OS configuration. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
 ### arc-registration
 Mirrors `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/`.

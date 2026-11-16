@@ -66,20 +66,20 @@ Every tool reads the **master `infrastructure.yml`** (schema 5, current version 
   and backend.hcl          group_vars, host_vars  ZTP, Sonar, ARM
              │                   │
              ▼                   ▼
-      ┌─────────────┐   ┌───────────────┐
-      │  Terraform  │   │    Ansible    │
-      │  Modules    │   │    Roles      │
-      ├─────────────┤   ├───────────────┤
-      │ landing-zone│   │ ad-preparation│
-      │ networking  │   │ os-configuration│
-      │ identity    │   │ arc-registration│
-      │ monitoring  │   │ monitoring-agents│
-      │ security    │   │ domain-controller│
-      │ compute     │   │ cicd_runner   │
-      │ cicd-runner │   └───────┬───────┘
-      └──────┬──────┘           │
-             ▼                   ▼
-      Azure Resources      On-Prem Config
+      ┌─────────────┐   ┌─────────────────────────────┐
+      │  Terraform  │   │  Ansible roles (src/ansible)│
+      │  Modules    │   │                             │
+      ├─────────────┤   ├─────────────────────────────┤
+      │ landing-zone│   │ ad-preparation              │
+      │ networking  │   │ azurelocal_os_configuration │
+      │ identity    │   │ arc-registration            │
+      │ monitoring  │   │ monitoring-agents           │
+      │ security    │   │ domain-controller           │
+      │ compute     │   │ cicd_runner                 │
+      │ cicd-runner │   └──────────────┬──────────────┘
+      └──────┬──────┘                  │
+             ▼                         ▼
+      Azure Resources            On-Prem Config
 ```
 
 ## Section Overview
@@ -109,8 +109,8 @@ All automation code lives in the [azurelocal-toolkit](https://github.com/AzureLo
 | Directory | Contents |
 |---|---|
 | `src/terraform/` | Terraform modules and root environment |
-| `src/ansible/` | Ansible roles, playbooks, and inventory |
-| `pipelines/` | CI/CD pipeline definitions: Terraform and Ansible deploy, CI/CD infrastructure, OS configuration, and ARM Validate and Deploy |
+| `src/ansible/` | Ansible roles, playbooks, and inventory. The only Ansible tree: the OS configuration role is `src/ansible/roles/azurelocal_os_configuration`, run by `src/ansible/playbooks/02-os-configuration.yml` |
+| `pipelines/` | CI/CD pipeline definitions: Terraform and Ansible deploy, CI/CD infrastructure, discovery, OS configuration, pre-cluster verification, and ARM Validate and Deploy. The only home of the deployment pipelines (the toolkit's `.github/workflows` folder holds only its own `deploy-docs.yml`). See [the route table](./02-cicd-pipelines/index.mdx#pipelines-of-the-deployment-route) |
 | `scripts/deploy/` | PowerShell deployment scripts |
 | `config/variables/` | Central variable system: the master registry, the `infrastructure.yml` schema, templates and the generated variables reference |
 | `docs/` | Operator guides for OS configuration and ARM Validate and Deploy, with their design and audit |
