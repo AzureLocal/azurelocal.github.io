@@ -8,7 +8,7 @@ scope: "Enable Azure Local (HCI) Insights for cluster health monitoring and perf
 purpose: "Enable Azure Local (HCI) Insights for cluster health monitoring and performance analytics"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -127,6 +127,30 @@ Requires: PowerShell 7.
 
 ```powershell
 ./Enable-HciInsights.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/azurecli/Enable-HciInsights.azcli.ps1` | Enables Insights for Azure Local with the Azure CLI: associates the Insights data collection rule with the Arc machine of every node. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci` (`az extension add --name stack-hci`); the script does not install it.
+
+One step stays in the portal: creating the rule. Microsoft documents no template for the rule of Insights, so the script never creates or changes a rule. Enable Insights once for the instance in the Azure portal, name the rule in `operations.monitoring.data_collection_rule`, then run the script; without the rule it stops with exit code 1. It needs the Azure Monitor Agent on the instance ([Task 02](./task-02-configure-azure-monitor-agent.mdx)). An association that points to another rule is reported as `Conflict` and never changed.
+
+#### Run
+
+```powershell
+./Enable-HciInsights.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Enable-HciInsights.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

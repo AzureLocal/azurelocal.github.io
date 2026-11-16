@@ -8,7 +8,7 @@ scope: "Day 2 management of Network Security Groups on Azure Local"
 purpose: "Day 2 management of Network Security Groups on Azure Local"
 author: "AzureLocal"
 created: 2025-03-25
-updated: 2025-07-25
+updated: 2026-11-15
 version: "2.0.0"
 tags:
   - azure-local
@@ -221,7 +221,7 @@ See procedure steps above for manual execution guidance.
 
 ### PowerShell
 
-> **No script in this task folder.** `Invoke-SdnIntegration-Orchestrated.ps1` and the Azure CLI `az-configure-sdn-integration.ps1` are placeholders: they print `NOT IMPLEMENTED`, change nothing and exit with code 3. The earlier `Set-SdnIntegration.ps1` is removed: SDN enabled by Azure Arc has no load balancer or gateway to configure.
+> **No PowerShell script of its own in this task folder.** `Invoke-SdnIntegration-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Set-SdnIntegration.ps1` is removed: SDN enabled by Azure Arc has no load balancer or gateway to configure. The Day 2 work on the rules of a group has an Azure CLI script: see the Azure CLI tab.
 
 #### Script
 
@@ -233,6 +233,32 @@ See procedure steps above for manual execution guidance.
 
 ```powershell
 ./New-NetworkSecurityGroup.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/azurecli/Set-NetworkSecurityGroupRule.azcli.ps1` | Day 2 management of the rules of the Azure Local network security groups, from networking.network_security_groups of infrastructure.yml, with the Azure CLI. Supports `-WhatIf`. |
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/azurecli/Test-NetworkSecurityGroupRule.azcli.ps1` | Checks the rules of the groups against `infrastructure.yml` with the Azure CLI. Read only. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci-vm` (`az extension add --name stack-hci-vm`); the script does not install it.
+
+SDN enabled by Azure Arc must be on (`sdn.enabled` true). The first script creates the rules of the file that a group lacks and updates the ones that differ; a rule the group has and the file does not list is reported as `Unlisted`, and removed only with `-RemoveUnlistedRules` (after every rule of the file is in place). It never creates a group: a missing group is reported as `Failed` (create it with the script of the [post-deployment NSG task](../../04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs.mdx)). The second script is the [Verification](#verification) section as a script. It never changes anything: a missing or different rule fails the check, and a rule only the group has is reported as `Extra` without failing it. Neither script associates a group with a logical network or a network interface.
+
+#### Run
+
+```powershell
+./Set-NetworkSecurityGroupRule.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Test-NetworkSecurityGroupRule.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

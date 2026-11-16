@@ -8,7 +8,7 @@ scope: "Activate Windows Server Subscription for Azure Local to enable automatic
 purpose: "Activate Windows Server Subscription for Azure Local to enable automatic VM licensing"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -117,7 +117,7 @@ When the key is `false` or missing, the script does nothing and says so. It neve
 
 The script reads `azure.tenant_id`, `azure.subscription_id`, `azure.resource_group`, `cluster.name`, `scenario.connectivity` and `operations.licensing.windows_server_subscription`. It does not sign in and asks nothing: run `Connect-AzAccount` to the tenant of `azure.tenant_id` first, with Contributor or Owner on the instance. Exit codes: 0 Enabled (or not asked for); 1 an Azure call or a precondition failed; 2 a value in the file is missing or not usable.
 
-`Invoke-WindowsServerSubscription-Orchestrated.ps1` and the Azure CLI `az-enable-windows-server-subscription.ps1` in the task folder are placeholders (exit code 3).
+`Invoke-WindowsServerSubscription-Orchestrated.ps1` in the task folder is a placeholder (exit code 3). The Azure CLI tab has a script that does the same as `Enable-WindowsServerSubscription.ps1` with `az`.
 
 Requires: PowerShell 7; modules Az.Accounts, Az.StackHCI.
 
@@ -127,6 +127,30 @@ Requires: PowerShell 7; modules Az.Accounts, Az.StackHCI.
 Connect-AzAccount -Tenant 00000000-0000-0000-0000-000000000000
 ./Enable-WindowsServerSubscription.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ./Enable-WindowsServerSubscription.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/azurecli/Enable-WindowsServerSubscription.azcli.ps1` | Turns on the Windows Server subscription add-on for the Azure Local instance when operations.licensing.windows_server_subscription of infrastructure.yml is true, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci` (`az extension add --name stack-hci`); the script does not install it.
+
+The script never turns the add-on off and refuses `scenario.connectivity` `disconnected` (exit 2). It cannot see the machines: every machine of the instance must be online, registered to Azure and updated before you set the key. You need Contributor or Owner on the instance.
+
+#### Run
+
+```powershell
+./Enable-WindowsServerSubscription.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Enable-WindowsServerSubscription.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

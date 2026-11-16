@@ -8,7 +8,7 @@ scope: "Create and configure the Log Analytics workspace for Azure Local monitor
 purpose: "Create and configure the Log Analytics workspace for Azure Local monitoring and observability"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -164,6 +164,34 @@ Requires: PowerShell 7.
 ./Deploy-DataCollectionEndpoint.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
 ./Deploy-LogAnalyticsWorkspace.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/azurecli/Deploy-LogAnalyticsWorkspace.azcli.ps1` | Creates the Log Analytics workspace that operations.monitoring of infrastructure.yml names, with the Azure CLI. Supports `-WhatIf`. |
+| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/azurecli/Deploy-DataCollectionEndpoint.azcli.ps1` | Creates the Azure Monitor data collection endpoint that operations.monitoring of infrastructure.yml names, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Run the workspace script first: the endpoint is created in the region of the workspace. The resource group must exist (a missing group is a failure). The pricing tier is not set, and the retention is `operations.monitoring.retention_days` (the Azure default of 30 days without it). The endpoint is left open to the public network, the Azure default. With `operations.monitoring.enabled` false both scripts do nothing and exit 0. An existing resource is left alone; a different region or retention is reported, not changed.
+
+#### Run
+
+```powershell
+./Deploy-LogAnalyticsWorkspace.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Deploy-LogAnalyticsWorkspace.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+
+./Deploy-DataCollectionEndpoint.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Deploy-DataCollectionEndpoint.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

@@ -8,7 +8,7 @@ scope: "Validate security configuration, Defender for Cloud, RBAC, and complianc
 purpose: "Validate security configuration, Defender for Cloud, RBAC, and compliance posture"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -530,6 +530,29 @@ Requires: PowerShell 7; -Module Az.Accounts; -Module Az.Resources.
 
 ```powershell
 ./Test-SecurityCompliance.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Check the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az` and only reads Azure.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/06-testing-validation/task-05-security-compliance-validation/azurecli/Test-SecurityCompliance.azcli.ps1` | Validates the Azure side of the security and compliance posture with the Azure CLI. Read only. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+It checks the free level of Defender for Cloud (the `Microsoft.Security` provider and the Microsoft cloud security benchmark assignment), the role assignments on the resource group (a warning when there are more `Owner` assignments than `-MaximumOwnerAssignments`, default 3), and the Azure Policy compliance state of the resource group. `-OutputPath` names a folder for a JSON report. The checks that run on the nodes (BitLocker, Microsoft Defender Antivirus, audit policy) stay with the PowerShell script.
+
+#### Run
+
+```powershell
+./Test-SecurityCompliance.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>
