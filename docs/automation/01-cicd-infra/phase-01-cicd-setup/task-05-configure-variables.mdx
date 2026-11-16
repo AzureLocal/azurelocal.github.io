@@ -71,7 +71,7 @@ On GitHub each is a repository variable (`vars.NAME`; the sign-in values also pe
 | `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` | variable | variable | variable group |
 | `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` | variable | variable | (the pool, a run parameter) |
 | `AZL_RUNNER_OS` | `devops.runners[].os_type` of the general runner | variable | | |
-| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_OS_CONFIGURATION_CLEAR_STORAGE` (Azure DevOps only), `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.*` | variable | variable | the variable of the same name in `pipelines/azure-devops/variables/approval-environments.yml` (written once, in a pull request; see below) |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_OS_CONFIGURATION_CLEAR_STORAGE` (Azure DevOps only), `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT`, `_OPERATIONS` | `devops.pipelines.environments.*` | variable | variable | the variable of the same name in `pipelines/azure-devops/variables/approval-environments.yml` (written once, in a pull request; see below) |
 | `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | variable | variable | (a run parameter) |
 | `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | variable | variable | (a run parameter) |
 | `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` | variable | variable | variable group |
@@ -93,6 +93,7 @@ From schema 5.6.25 the toolkit's pipeline files hold no runner label, agent pool
 | `devops.pipelines.environments.arm_deployment` | The environment that gates the Deploy job of the ARM deployment pipelines. |
 | `devops.pipelines.environments.cicd_infra` | The environment that gates the Apply job of the CI/CD infrastructure pipelines (the runners). |
 | `devops.pipelines.environments.terraform_deployment` | The environment that gates the Terraform apply and the on-premises Ansible jobs of the Terraform and Ansible sample pipelines. |
+| `devops.pipelines.environments.operations` | Schema 5.6.28. The one environment that gates every validation and day 2 job that changes the cluster or puts load on it: the update, the node maintenance, the changing cluster operations and the storage load test of the validation pipeline. One environment on purpose: on Azure DevOps its Exclusive lock check keeps an update and a node reboot from running together. Give it the approvers of your change process. |
 
 Each environment value is the name of an entry of `devops.environments[]` that has `approval_required: true`. Two pipelines may use the same entry.
 
@@ -107,8 +108,11 @@ The script sets them as GitHub repository variables or GitLab project CI/CD vari
 | `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `devops.pipelines.environments.arm_deployment` | `arm-deployment.yml`, stage `Deploy`; `pre-cluster-verification.yml`, stage `VerifyWithChanges` |
 | `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.cicd_infra` | `cicd-infra.yml`, stage `Apply` |
 | `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` | `azure-local-deploy.yml`, stages `DeployFoundation`, `ConfigureOnPrem` and `ConfigureOperations` |
+| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` | `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`, stage `Apply`; `validation.yml`, stage `StoragePerformance` |
 
 While a variable is empty, the stages that change something do not exist. A run that would change something fails in the stage `ApprovalEnvironmentNotSet` (for the storage wipe, `ConfirmStorageWipe`) and changes nothing. The read-only stages run as before. See [Azure DevOps: Approval environments](../../02-cicd-pipelines/azure-devops-pipelines.mdx#approval-environments).
+
+GitHub and GitLab follow the same rule. While an `AZL_ENVIRONMENT_*` variable is empty, a job that would change something does not run without an approval: a refusal job (`approval-environment-not-set` on GitHub, `<pipeline>-approval-environment-not-set` on GitLab) fails with a message that names the variable, and nothing is sent to any machine.
 
 Create the variables (or run this task) before the first pipeline run. With `AZL_RUNNER_LABEL` empty, a job has no label to select a runner by. On GitLab, for the first run of the CI/CD infrastructure stage, before the runners exist, give `AZL_RUNNER_LABEL` a shared runner tag when you run the pipeline.
 
@@ -144,6 +148,22 @@ From schema 5.6.28 (registry 5.0.62) the pipeline files hold no infrastructure f
 | `devops.runners[].admin_ssh_public_key` | The SSH public key of the administrator of a Linux runner (`AZL_RUNNER_SSH_PUBLIC_KEY`): the key itself or a reference | |
 
 The same versions are installed on GitHub, GitLab and Azure DevOps: `hashicorp/setup-terraform`, `actions/setup-python` and `Install-Module` on GitHub, `TerraformInstaller@1`, `UsePythonVersion` and `AzurePowerShell@5` on Azure DevOps, and `pipelines/gitlab/Use-AzlGitLabTool.ps1` on GitLab.
+
+### The schedule of the check for updates
+
+From schema 5.6.28 one key says when the scheduled day 2 pipeline runs:
+
+| Key | What it is | Default |
+|-----|------------|---------|
+| `devops.pipelines.schedules.check_for_updates` | When the day 2 check for updates runs (`day2-check-updates.yml`). A five-field cron expression in UTC. Empty means no schedule | `17 4 * * *` (every day at 04:17 UTC) |
+
+No platform reads a schedule from a variable, so the script sets no variable for this key. It prints the value and where it goes, as the line `Pipeline schedule` (status `Skipped`):
+
+| Platform | Where the value goes |
+|----------|----------------------|
+| GitHub | The `cron` line of `on.schedule` in your copy of `.github/workflows/day2-check-updates.yml`. The sample carries the registry default |
+| GitLab | A pipeline schedule of the project (**CI/CD > Schedules**) for the default branch, which starts `pipelines/gitlab/stages/day2-check-updates.yml` |
+| Azure DevOps | A `schedules` entry in your copy of `pipelines/azure-devops/day2-check-updates.yml`, and a default for each run parameter of that copy. A scheduled run cannot ask for the parameters, and the sample has no defaults. See [Azure DevOps: the schedule](../../02-cicd-pipelines/azure-devops-pipelines.mdx#day2-schedule) |
 
 ---
 
@@ -268,7 +288,7 @@ variables:
 
 ### Write the approval environments
 
-The approval environments are not in the variable group and are not run parameters. The script lists five values, one for each variable of `pipelines/azure-devops/variables/approval-environments.yml`:
+The approval environments are not in the variable group and are not run parameters. The script lists six values, one for each variable of `pipelines/azure-devops/variables/approval-environments.yml`:
 
 | Variable | Value |
 |----------|-------|
@@ -277,6 +297,7 @@ The approval environments are not in the variable group and are not run paramete
 | `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `devops.pipelines.environments.arm_deployment` |
 | `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.cicd_infra` |
 | `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` |
+| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` |
 
 Write each value in that file, once, in a pull request. The pipelines read the file when they are compiled, so whoever queues a run cannot choose the environment. The file links into each pipeline like this:
 

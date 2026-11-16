@@ -45,6 +45,8 @@ The toolkit ships these families of pipeline files for each platform. They are s
 | **OS configuration** (Phase 03) | Plan (read only), then Apply behind an approval | `Invoke-AzureLocalOsConfiguration.ps1`. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx) |
 | **Pre-cluster verification** (the gate before the ARM Validate) | A read-only job; a second job for `-Fix` and `-InstallEnvironmentChecker`, behind the approval of the ARM deployment environment. Fails when the verdict is not Pass | `Invoke-AzureLocalPreClusterVerification.ps1`. See [Pre-cluster verification gate](../03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate) |
 | **ARM Validate and Deploy** (Phase 05) | Preconditions, Validate, then Deploy behind an approval | `Invoke-AzureLocalArmDeployment.ps1`. See [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx) |
+| **Validation** (Part 7, before the handover) | A read-only job; the storage load test as a second job behind the `operations` approval | The four validation scripts. See [Validation and day 2 pipelines](#validation-and-day-2-pipelines) |
+| **Day 2** (Part 8) | Check for updates (read only, on a schedule); update, node maintenance and cluster operations: a read-only plan, then the change behind the `operations` approval | The day 2 scripts. See [Validation and day 2 pipelines](#validation-and-day-2-pipelines) |
 
 ## Pipelines of the Deployment Route
 
@@ -62,6 +64,36 @@ One pipeline per piece of the route, in the order a deployment runs them. Each e
 On GitLab, `discovery.yml`, `pre-cluster-verification.yml` and `arm-deployment.yml` declare their own stages and are **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own. On GitHub, `pipelines/github-actions/` is the only folder of deployment workflows; copy a file to `.github/workflows/` in your repository.
 
 Order for a new instance: discovery -> provisioning (azurelocal-ztp or an ISO) -> OS configuration pipeline -> the **pre-cluster verification gate** -> ARM Validate and Deploy pipeline. The OS configuration pipeline publishes the artifact `os-configuration-report`, which the gate and the ARM pipeline take as their OS configuration report. The gate writes its result to a folder the ARM run reads (`deployment.pre_cluster_verification_report_directory`, else the environment data folder of the master file), not to the artifact, so run the ARM pipeline on the same runner or point that key at a folder both runs reach.
+
+## Validation and Day 2 Pipelines
+
+After the deployment come the validation pipeline and the four day 2 pipelines. Each exists once per platform and runs the script an operator runs by hand, and nothing else. How to run each one by hand and in a pipeline: [Run the Validation in a Pipeline](../../implementation/07-validation-handover/run-validation-in-a-pipeline.mdx) and [Run Day 2 Operations in a Pipeline](../../implementation/08-day2-operations/run-day2-in-a-pipeline.mdx).
+
+| Pipeline | Entry point | GitHub Actions | GitLab CI | Azure DevOps |
+|---|---|---|---|---|
+| Validation before the handover (Part 7) | `Test-AzureLocalClusterHealth.ps1`, `Test-ArcConnectivity.ps1`, `Test-NetworkConfiguration.ps1`, `Test-StoragePerformance.ps1` | `pipelines/github-actions/validation.yml` | `pipelines/gitlab/stages/validation.yml` | `pipelines/azure-devops/validation.yml` |
+| Day 2: check for updates, on a schedule (Part 8, Task 01) | `Get-AvailableSolutionUpdate.azcli.ps1` (Azure view) or `Get-AvailableSolutionUpdate.ps1` (cluster view) | `pipelines/github-actions/day2-check-updates.yml` | `pipelines/gitlab/stages/day2-check-updates.yml` | `pipelines/azure-devops/day2-check-updates.yml` |
+| Day 2: start the solution update (Task 02) | `Start-AzureLocalSolutionUpdate.ps1` | `pipelines/github-actions/day2-update.yml` | `pipelines/gitlab/stages/day2-update.yml` | `pipelines/azure-devops/day2-update.yml` |
+| Day 2: take one node through maintenance (Task 03) | `Invoke-NodeMaintenanceReboot.ps1` | `pipelines/github-actions/day2-node-maintenance.yml` | `pipelines/gitlab/stages/day2-node-maintenance.yml` | `pipelines/azure-devops/day2-node-maintenance.yml` |
+| Day 2: cluster operations (Task 04) | `Invoke-ClusterOperations.ps1` | `pipelines/github-actions/day2-cluster-operations.yml` | `pipelines/gitlab/stages/day2-cluster-operations.yml` | `pipelines/azure-devops/day2-cluster-operations.yml` |
+
+| Pipeline | Read only, no approval | Behind the `operations` approval environment |
+|---|---|---|
+| Check for updates | The whole pipeline. Runs on a schedule | none |
+| Update | The plan: `-WhatIf` says which update it would start | `PrepareOnly` (download and readiness checks) and `Install` (start the update; it does not wait) |
+| Node maintenance | The plan: the node is checked against `nodes[]` (`-RequireNodeInFile`) and `-WhatIf` prints what would happen | `Reboot` (drain, reboot, resume, wait for the storage) and `Resume` (only resume a node left `Paused`) |
+| Cluster operations | `HealthCheck`, `Alerts`, `Capacity`, and the `-WhatIf` plan of every other action | `MaintenanceMode`, `LiveMigrate`, `Rebalance` |
+| Validation | Cluster health, Arc connectivity, network configuration and the storage checks without the load test | The storage load test (`-RunPerformanceTest`), which writes and reads a scratch file on every cluster shared volume |
+
+- **Plan first.** A pipeline that changes something runs a read-only plan job first. The approved job starts only when the plan succeeded.
+- **One approval environment.** Every job that changes the cluster or puts load on it runs behind `devops.pipelines.environments.operations` (the variable `AZL_ENVIRONMENT_OPERATIONS`). Make it an entry of `devops.environments[]` with `approval_required: true`. While the variable is empty, a run that would change something fails in a refusal job (GitHub `approval-environment-not-set`, GitLab `<pipeline>-approval-environment-not-set`) or the Azure DevOps stage `ApprovalEnvironmentNotSet`, and nothing is sent to any machine.
+- **Never two changes together.** GitHub: the concurrency group `azure-local-day2-changes-<infrastructure file>` with `cancel-in-progress: false` (GitHub keeps only one waiting run per group). GitLab: the `resource_group` `azure-local-day2-changes`. Azure DevOps: `lockBehavior: sequential` and the Exclusive lock check of the one environment. The read-only jobs hold no lock.
+- **One node per run.** The node is a run input, checked against `nodes[]` of the file with `-RequireNodeInFile`. A name the file does not list ends the run with exit code 2 before anything is sent.
+- **No password in a pipeline.** The scripts connect to the cluster as the service account of the runner, which must be an administrator of the cluster. No pipeline passes `-Credential`. The node maintenance reads the node login from its secret reference in the file, from Key Vault, with the Azure sign-in of the job.
+- **The check for updates is the alert.** It fails the run when the cluster needs attention (exit code 1) and publishes its JSON report as the artifact `day2-update-check`. It runs on the schedule `devops.pipelines.schedules.check_for_updates` (a five-field cron expression in UTC, default `17 4 * * *`). No platform reads a schedule from a variable: GitHub reads the `cron` line of the workflow file, GitLab keeps the schedule in the project, and the Azure DevOps sample cannot be scheduled as it is (see [Azure DevOps: the schedule](./azure-devops-pipelines.mdx#day2-schedule)).
+- **The runner.** The validation needs the Failover Clustering PowerShell module (RSAT Failover Clustering Tools), so a Windows runner. The Azure view of the check for updates needs the Azure CLI on the runner.
+
+On GitLab, every one of these files declares its own stage and is **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own.
 
 ## How to Use This Part
 

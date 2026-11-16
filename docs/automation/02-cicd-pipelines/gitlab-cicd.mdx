@@ -56,10 +56,15 @@ pipelines/gitlab/
     ├── deploy-cicd-infra.yml       # The runners (runs with CICD_INFRA=true)
     ├── discovery.yml               # Discovery (a pipeline of its own)
     ├── pre-cluster-verification.yml # The gate before the ARM Validate (a pipeline of its own)
-    └── arm-deployment.yml          # ARM Validate and Deploy (a pipeline of its own)
+    ├── arm-deployment.yml          # ARM Validate and Deploy (a pipeline of its own)
+    ├── validation.yml              # Validation before the handover (a pipeline of its own)
+    ├── day2-check-updates.yml      # Day 2: check for updates, on a schedule (a pipeline of its own)
+    ├── day2-update.yml             # Day 2: start the solution update (a pipeline of its own)
+    ├── day2-node-maintenance.yml   # Day 2: one node through maintenance (a pipeline of its own)
+    └── day2-cluster-operations.yml # Day 2: cluster operations (a pipeline of its own)
 ```
 
-`.gitlab-ci.yml` includes only the stages of the Terraform and Ansible chain and `deploy-cicd-infra.yml`. `discovery.yml`, `pre-cluster-verification.yml` and `arm-deployment.yml` declare their own stages, so they are **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own (`include: local: pipelines/gitlab/stages/<file>`), or copy it.
+`.gitlab-ci.yml` includes only the stages of the Terraform and Ansible chain and `deploy-cicd-infra.yml`. `discovery.yml`, `pre-cluster-verification.yml`, `arm-deployment.yml`, `validation.yml` and the four `day2-*.yml` files declare their own stages, so they are **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own (`include: local: pipelines/gitlab/stages/<file>`), or copy it.
 
 The reusable templates `templates/terraform-plan-apply.yml` and `templates/ansible-playbook.yml` are gone: each job is one `pwsh` block of its own.
 
@@ -78,13 +83,15 @@ Task 05 sets each variable below from its key as a project CI/CD variable (scope
 | `ARM_CLIENT_SECRET` (masked, only with `client_secret`) | `devops.authentication.client_secret` (a secret reference; Task 05 reads it from Key Vault) |
 | `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` |
 | `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` (one of `devops.runners[].labels` of the general runner) |
-| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, `AZL_ENVIRONMENT_CICD_INFRA`, `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.*` |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, `AZL_ENVIRONMENT_CICD_INFRA`, `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT`, `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.*` (`operations` gates every validation and day 2 job that changes the cluster) |
 | `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` |
 | `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` |
 | `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` |
 | `AZL_RUNNER_SSH_PUBLIC_KEY` | `devops.runners[].admin_ssh_public_key` of the Linux runner |
 
 Nothing else is set by hand: the earlier `DOMAIN_ADMIN_PASSWORD`, `CLUSTER_NAME` and `CLUSTER_RESOURCE_GROUP` variables are gone. The Ansible roles read the LCM and DSRM passwords from Key Vault on the controller, and the cluster values come from the infrastructure file.
+
+**No change without an approval environment.** Every job of the toolkit's pipelines that changes something runs in the protected environment named by an `AZL_ENVIRONMENT_*` variable. While that variable is empty, the job does not run without an approval. Instead a refusal job runs: `<pipeline>-approval-environment-not-set` (for example `day2-update-approval-environment-not-set` or `arm-approval-environment-not-set`). It fails with a message that names the variable and its `devops.pipelines.environments.*` key, and nothing is sent to any machine. This holds for the OS configuration, CI/CD infrastructure, Terraform, ARM deployment, validation (the storage load test) and day 2 pipelines. The read-only jobs run as before. It is the same rule as the Azure DevOps stage `ApprovalEnvironmentNotSet`.
 
 **Sign-in.** With `oidc` each job signs in with the GitLab ID token `ARM_OIDC_TOKEN` (`id_tokens`, audience `api://AzureADTokenExchange`, the federated credential Task 01 made): `Connect-AzAccount -FederatedToken`, Terraform `ARM_USE_OIDC=true`. With `client_secret` the jobs use the masked `ARM_CLIENT_SECRET`: `Connect-AzAccount -Credential`, Terraform `ARM_CLIENT_SECRET`. A managed identity of the runner is not a sign-in method of the pipelines.
 
@@ -210,6 +217,37 @@ The runner needs a route to the nodes (WinRM, TCP 5985 or 5986), to a domain con
 | `arm-deploy` | `arm-deploy` | **Manual** job in the protected environment in `AZL_ENVIRONMENT_ARM_DEPLOYMENT` (`devops.pipelines.environments.arm_deployment`). It re-checks every precondition and that these parameters validated. `ARM_RESUME=true` resubmits a failed Deploy |
 
 Project CI/CD variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (and the masked `ARM_CLIENT_SECRET` with `client_secret`), `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. Run variables (the web form offers them): `ARM_MODE` (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`; default `Plan`), `OS_CONFIGURATION_REPORT` (GitLab fetches another pipeline's artifact only through `needs: pipeline:` or `needs: project:`), `HANDOFF_FILE`, `ARM_ACKNOWLEDGE`. The Validate and Deploy jobs have a fixed upper bound of 1500 minutes (the registry maximum of `deployment.validate_timeout_minutes` and `deployment.deploy_timeout_minutes`, 1440, plus 60); the runner's own maximum job timeout must allow it. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+
+## Validation and Day 2 Pipelines
+
+Five pipelines run the scripts of Part 7 and Part 8 of the implementation guide, each the command an operator runs by hand and nothing else. Each file declares its own stage: include it from a pipeline file of its own (`include: local: pipelines/gitlab/stages/<file>`), **not** from `.gitlab-ci.yml`. How to run each script by hand and in a pipeline: [Run the Validation in a Pipeline](../../implementation/07-validation-handover/run-validation-in-a-pipeline.mdx) and [Run Day 2 Operations in a Pipeline](../../implementation/08-day2-operations/run-day2-in-a-pipeline.mdx).
+
+| File | Read-only job (no approval) | Manual job (approval) | Run variables |
+|---|---|---|---|
+| `pipelines/gitlab/stages/validation.yml` | `validation-read-only`: the four validation scripts; the storage script without its load test | `validation-storage-performance`: `Test-StoragePerformance.ps1 -RunPerformanceTest`, only when asked, after the read-only job passed | `VALIDATION_RUN_PERFORMANCE_TEST` (default `false`) |
+| `pipelines/gitlab/stages/day2-check-updates.yml` | `day2-check-updates-azure` (Azure CLI, no node access) or `day2-check-updates-cluster` (PowerShell remoting) | none | `UPDATECHECK_SOURCE` (`azure`, the default, or `cluster`) |
+| `pipelines/gitlab/stages/day2-update.yml` | `day2-update-plan`: `Start-AzureLocalSolutionUpdate.ps1 -WhatIf` | `day2-update-apply`: `PrepareOnly` or `Install` | `DAY2UPDATE_ACTION` (`Plan`, `PrepareOnly`, `Install`), `DAY2UPDATE_MODE` (`AfterDeployment`, `OnDemand`) |
+| `pipelines/gitlab/stages/day2-node-maintenance.yml` | `day2-node-maintenance-plan`: the node is checked against `nodes[]` with `-RequireNodeInFile`, then `-WhatIf` | `day2-node-maintenance-apply`: `Reboot` or `Resume` (`-ResumeOnly`) | `MAINTENANCE_NODE` (one node), `MAINTENANCE_ACTION` (`Plan`, `Reboot`, `Resume`) |
+| `pipelines/gitlab/stages/day2-cluster-operations.yml` | `day2-cluster-operations-read` (`HealthCheck`, `Alerts`, `Capacity`), or `day2-cluster-operations-plan` (`-WhatIf`) for a change | `day2-cluster-operations-apply`: `MaintenanceMode`, `LiveMigrate` or `Rebalance` | `OPERATIONS_ACTION`, `OPERATIONS_NODE`, `OPERATIONS_ENABLE` |
+
+- **Plan first.** The manual job needs the read-only job and is offered only when it succeeded.
+- **One approval environment.** Every manual job runs in the protected environment named by `AZL_ENVIRONMENT_OPERATIONS` (`devops.pipelines.environments.operations`). Someone allowed to run jobs there plays it. Approval rules on a protected environment need GitLab Premium or above.
+- **One change at a time.** Every manual job has the `resource_group` `azure-local-day2-changes`, so two changes never run on the cluster together. The read-only jobs hold no lock.
+- **One node per run.** The node variable is checked against `nodes[]` with `-RequireNodeInFile`. A name the file does not list ends the job with exit code 2 before anything is sent.
+- **A failed script fails the job.** The report, plan or log is kept as an artifact even then (`when: always`).
+- **Start.** The jobs start only from the web form, the API or a schedule, never from a push or a merge request.
+
+Project CI/CD variables set by Task 05: `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OPERATIONS`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`. The check for updates (source `azure`) and the node maintenance also sign in to Azure (`ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD`, and the masked `ARM_CLIENT_SECRET` with `client_secret`); the node maintenance also reads `AZL_AZ_POWERSHELL_VERSION` and `AZL_AZ_KEYVAULT_VERSION`. The other pipelines do not sign in to Azure.
+
+**The account.** The scripts connect to the cluster as the account the runner runs as, which must be an administrator of the cluster. No pipeline passes `-Credential` or holds a password. The node maintenance reads the node login from its secret reference in `infrastructure.yml` (`identity.local_admin`), from Key Vault, with the Azure sign-in of the job. The validation needs the Failover Clustering PowerShell module (RSAT Failover Clustering Tools) on the runner, so a Windows runner. The Azure view of the check for updates needs the Azure CLI on the runner.
+
+**The schedule.** GitLab keeps a schedule in the project, not in the file. Create one under **CI/CD > Schedules** for the default branch, with the cron expression of `devops.pipelines.schedules.check_for_updates` (UTC, default `17 4 * * *`: every day at 04:17). Task 05 prints the value to use. A scheduled pipeline takes the Azure view, the default of `UPDATECHECK_SOURCE`. The job fails when the cluster needs attention (exit code 1), so GitLab's notification of a failed pipeline is the alert. The report is the artifact `day2-update-check`.
+
+**While `AZL_ENVIRONMENT_OPERATIONS` is empty, nothing is changed.** A run that would change something fails in the refusal job of its pipeline (`validation-approval-environment-not-set`, `day2-update-approval-environment-not-set`, `day2-node-maintenance-approval-environment-not-set` or `day2-cluster-operations-approval-environment-not-set`), with a message that names the variable, and nothing is sent to any machine.
+
+:::warning Keep the approval environment out of reach of the run form
+A person who starts a pipeline by hand can override a variable in the run form, `AZL_ENVIRONMENT_OPERATIONS` included. Restrict who may set pipeline variables (project **Settings > CI/CD > Variables**, the minimum role to use pipeline variables) and protect the environment.
+:::
 
 ## Repository
 

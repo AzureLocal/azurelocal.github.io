@@ -1,0 +1,238 @@
+---
+title: "Run Day 2 Operations in a Pipeline"
+sidebar_label: "Run It in a Pipeline"
+sidebar_position: 5
+description: "Run the day 2 scripts of Part 8 by hand, or in the day 2 pipelines on GitHub Actions, GitLab CI or Azure DevOps: a scheduled check for updates, the update, node maintenance and cluster operations, each change behind one approval"
+category: "Runbook"
+scope: "The day 2 scripts of a deployed Azure Local cluster (tasks 01 to 04), by hand and in a pipeline"
+purpose: "Check for updates on a schedule, and run every change to the cluster after a read-only plan, behind one approval environment and one lock"
+author: "Azure Local Cloud"
+created: 2026-11-16
+updated: 2026-11-16
+version: "1.0.0"
+tags:
+  - azure-local
+  - day-2
+  - pipelines
+keywords:
+  - day2-check-updates.yml
+  - day2-update.yml
+  - day2-node-maintenance.yml
+  - day2-cluster-operations.yml
+  - RequireNodeInFile
+  - AZL_ENVIRONMENT_OPERATIONS
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Run Day 2 Operations in a Pipeline
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Day 2](https://img.shields.io/badge/Part-08%20Day%202%20Operations-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: Tasks 01 to 04 of Part 8, on a deployed Azure Local cluster   
+> **PURPOSE**: Run the day 2 scripts by hand or in a pipeline: the check on a schedule, every change after a plan and behind an approval   
+> **MASTER REFERENCE**: [azurelocal-toolkit: Validation and day 2 operations](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/day2-and-validation.md)
+
+**Status**: Active
+
+Each task of this part is a script that an operator runs by hand from a workstation or a jump server. Each also has a pipeline on GitHub Actions, GitLab CI and Azure DevOps. A pipeline runs the same script and nothing else.
+
+| Task | Script | Reads or changes | Pipeline |
+|------|--------|------------------|----------|
+| [Task 01: Check for Updates](./task-01-check-for-updates.mdx) | `Get-AvailableSolutionUpdate.azcli.ps1` (Azure view) and `Get-AvailableSolutionUpdate.ps1` (cluster view) | Read only | `day2-check-updates` |
+| [Task 02: Start the Solution Update](./task-02-start-solution-update.mdx) | `Start-AzureLocalSolutionUpdate.ps1` | Starts an update. `-PrepareOnly` only downloads it and runs the readiness checks | `day2-update` |
+| [Task 03: Node Maintenance](./task-03-node-maintenance.mdx) | `Invoke-NodeMaintenanceReboot.ps1` | Drains, reboots and resumes one node | `day2-node-maintenance` |
+| [Task 04: Cluster Operations](./task-04-cluster-operations.mdx) | `Invoke-ClusterOperations.ps1` | `HealthCheck`, `Alerts` and `Capacity` read. `MaintenanceMode`, `LiveMigrate` and `Rebalance` change the cluster | `day2-cluster-operations` |
+
+The validation of [Part 7](../07-validation-handover/run-validation-in-a-pipeline.mdx) has a pipeline of the same shape.
+
+---
+
+## Run it
+
+Run the scripts from the root of the toolkit, with PowerShell 7 and the `powershell-yaml` module.
+
+```powershell
+# Check for updates (read only). The Azure view needs az signed in to the tenant of the file.
+./scripts/deploy/08-day2-operations/task-01-check-for-updates/azurecli/Get-AvailableSolutionUpdate.azcli.ps1 -InfrastructureFile ./infrastructure.yml -OutputPath ./reports/update-check.json
+# The cluster view needs a route to the cluster.
+./scripts/deploy/08-day2-operations/task-01-check-for-updates/powershell/Get-AvailableSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -OutputPath ./reports/update-check.json
+
+# The monthly update: see what it would do, download it, then start it inside the maintenance window
+./scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -Mode OnDemand -WhatIf
+./scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -Mode OnDemand -PrepareOnly
+./scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -Mode OnDemand
+
+# One node through maintenance: check the node against the file first, then the real run
+./scripts/deploy/08-day2-operations/task-03-node-maintenance/powershell/Invoke-NodeMaintenanceReboot.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode node01 -RequireNodeInFile -WhatIf
+./scripts/deploy/08-day2-operations/task-03-node-maintenance/powershell/Invoke-NodeMaintenanceReboot.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode node01 -RequireNodeInFile
+
+# Cluster operations: a read, and the plan of a change
+./scripts/deploy/08-day2-operations/task-04-cluster-operations/powershell/Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action HealthCheck -OutputPath ./reports/health.json
+./scripts/deploy/08-day2-operations/task-04-cluster-operations/powershell/Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action MaintenanceMode -NodeName node01 -Enable -RequireNodeInFile -WhatIf
+```
+
+**`-RequireNodeInFile`** (node maintenance and cluster operations). The node must be a node of `nodes[]` in the file: its name, its fully qualified name or its management address. Any other name ends the run with exit code 2, before anything is sent to a machine. The node maintenance stops before it even reads a credential. Without the switch, a name that is not in the file is used as it is, with a warning. The pipelines always pass it, so a mistyped name never reaches a machine.
+
+| Exit code | Meaning (the same in every script of Part 7 and Part 8) |
+|-----------|---------|
+| `0` | Done, or planned under `-WhatIf` |
+| `1` | A check failed, the cluster needs attention, or a step failed |
+| `2` | A value of the file is missing or not usable. Nothing was sent |
+
+---
+
+## Run it in a pipeline
+
+The pipelines run on the general self-hosted runner. Every value they need is a key of `infrastructure.yml`, set on the platform by [Task 05 of the CI/CD setup](../../automation/01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx). No pipeline file holds a value of a deployment.
+
+| Pipeline | GitHub Actions | GitLab CI | Azure DevOps |
+|----------|----------------|-----------|--------------|
+| Check for updates | `pipelines/github-actions/day2-check-updates.yml` | `pipelines/gitlab/stages/day2-check-updates.yml` | `pipelines/azure-devops/day2-check-updates.yml` |
+| Update | `pipelines/github-actions/day2-update.yml` | `pipelines/gitlab/stages/day2-update.yml` | `pipelines/azure-devops/day2-update.yml` |
+| Node maintenance | `pipelines/github-actions/day2-node-maintenance.yml` | `pipelines/gitlab/stages/day2-node-maintenance.yml` | `pipelines/azure-devops/day2-node-maintenance.yml` |
+| Cluster operations | `pipelines/github-actions/day2-cluster-operations.yml` | `pipelines/gitlab/stages/day2-cluster-operations.yml` | `pipelines/azure-devops/day2-cluster-operations.yml` |
+
+On GitHub, copy a file to `.github/workflows/` in your repository. On GitLab, each file declares its own stage: include it from a pipeline file of its own, not from `.gitlab-ci.yml`. On Azure DevOps, create a pipeline from the existing YAML file.
+
+### The rules every day 2 pipeline follows
+
+- **Plan first.** A pipeline that changes something runs the script with `-WhatIf` as a read-only plan job. The approved job starts only when the plan succeeded. A plan that fails (a node that is not in the file, an update already running, a health state of `Failure`) ends the run before anyone is asked to approve.
+- **One approval environment.** Every job that changes the cluster runs behind `devops.pipelines.environments.operations` (the variable `AZL_ENVIRONMENT_OPERATIONS`). The storage load test of the validation pipeline uses it too. Make it an entry of `devops.environments[]` with `approval_required: true`, and give it the approvers of your change process.
+- **Never two changes together.** The update, the node maintenance, the changing cluster operations and the storage load test share one lock. The read-only jobs hold no lock.
+- **One node per run.** The node is a run input, and the script gets `-RequireNodeInFile`. There is no matrix and no loop over nodes. Run the pipeline again for the next node after the storage has repaired (exit code 0).
+- **A failed script fails the run.** Exit code 1 or 2 fails the job. The report, plan or log is published as an artifact even then.
+- **No password in a pipeline.** The scripts connect to the cluster as the service account of the runner, which must be an administrator of the cluster. No pipeline passes `-Credential`. The node maintenance is the one exception to the account: it reads the node login from its secret reference in the file (`identity.local_admin`, with `identity.active_directory.lcm_user` as the fallback), from Key Vault, with the Azure sign-in of the job.
+
+### Check for updates (task 01)
+
+The whole pipeline is read only, so it has no approval. Choose the view with the input `source` (GitHub), the run variable `UPDATECHECK_SOURCE` (GitLab) or the parameter `source` (Azure DevOps):
+
+| Source | Script | What it needs |
+|--------|--------|---------------|
+| `azure` (the default, and the view of a scheduled run) | `Get-AvailableSolutionUpdate.azcli.ps1` | The Azure CLI on the runner, and the Azure sign-in of the job with Azure Stack HCI Administrator or Reader on the cluster resource. No access to a node |
+| `cluster` | `Get-AvailableSolutionUpdate.ps1` | A route to the cluster (WinRM, TCP 5985 or 5986). It signs in to nothing |
+
+The run **fails** when the check says the cluster needs attention (exit code 1): an update in a failed state, a health state of `Failure`, `Error` or `Warning`, a failed update environment, or an update service that has not checked for days. That failed run is the alert: GitHub, GitLab and Azure DevOps each notify people of a failed run. An update that is only offered ends with exit code 0: read the verdict in the report. The report (`update-check.json`) is published as the artifact `day2-update-check`.
+
+#### The schedule
+
+The schedule is the key `devops.pipelines.schedules.check_for_updates` of `infrastructure.yml`: a five-field cron expression in UTC. The default is `17 4 * * *` (every day at 04:17 UTC), because the update agent of the cluster checks once a day. An empty value means no schedule. No platform reads a schedule from a variable, so Task 05 does not set one. It prints the value to use instead (the line `Pipeline schedule`).
+
+| Platform | Where the schedule is | What to do |
+|----------|-----------------------|------------|
+| GitHub Actions | The `cron` line of `on.schedule` in `day2-check-updates.yml`. The sample carries the registry default | Change the line in your copy when your key differs. A scheduled run has no inputs, so it takes the Azure view |
+| GitLab CI | The project (**CI/CD > Schedules**), not the file | Create a schedule for the default branch with the value of the key. The Azure view is the default of `UPDATECHECK_SOURCE` |
+| Azure DevOps | Not in the sample | See the note below |
+
+:::note Azure DevOps cannot schedule the sample as it is
+An Azure DevOps schedule cannot use variables, and a scheduled run cannot supply run parameters. The sample's parameters `infrastructure_file`, `agent_pool`, `service_connection` and `variable_group` have no default, because no value of a deployment is written in a pipeline file. So the sample carries the `schedules` block only as a comment. To schedule the check, copy the file, give those four parameters the values of your deployment as defaults, and add the `schedules` block with the value of the key. Schedules set in the pipeline's Triggers settings take precedence over YAML schedules ([Configure schedules for pipelines](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/scheduled-triggers)).
+:::
+
+### Start the solution update (task 02)
+
+| Action | What runs |
+|--------|-----------|
+| `Plan` (default) | Only the read-only plan: `Start-AzureLocalSolutionUpdate.ps1 -WhatIf` reads the cluster and says which update it would start |
+| `PrepareOnly` | The plan, then, after the approval, `-PrepareOnly`: it downloads the update and runs the readiness checks. Learn recommends this before the maintenance window. An update prepared this way must be installed with PowerShell, not from the portal |
+| `Install` | The plan, then, after the approval, the script starts the update. It does not wait: the update takes hours and the machines restart. Follow it with the check for updates, Azure Update Manager in the portal, or Sonar |
+
+The mode is `AfterDeployment` (start only when `operations.updates.install_after_deployment` is true) or `OnDemand` (the monthly update; the person who approves is the decision). Inputs: `action` and `update_mode` (GitHub and Azure DevOps), `DAY2UPDATE_ACTION` and `DAY2UPDATE_MODE` (GitLab). The pipeline does not sign in to Azure.
+
+### Node maintenance (task 03)
+
+Exactly one node per run. The input is the node's name in `nodes[]` (a fully qualified name or the management address of that node also works).
+
+| Action | What runs |
+|--------|-----------|
+| `Plan` (default) | Only the read-only plan: the node is checked against `nodes[]` with `-RequireNodeInFile`, the credential reference is read, and `-WhatIf` prints what would happen. Nothing is sent to a machine |
+| `Reboot` | The plan, then, after the approval, the script drains, reboots and resumes the node, and waits for the storage to repair |
+| `Resume` | The plan, then, after the approval, `-ResumeOnly`: it only resumes a node that a failed run left `Paused`. Use it after you looked at the node |
+
+Inputs: `node` and `action` (GitHub and Azure DevOps), `MAINTENANCE_NODE` and `MAINTENANCE_ACTION` (GitLab). The Azure identity of the job needs read access to the Key Vault secrets of the local administrator and the LCM user (Get on GitHub and GitLab, Key Vault Secrets User on the service connection of Azure DevOps). The runner needs a route to the node (WinRM, TCP 5985 or 5986, and ping).
+
+### Cluster operations (task 04)
+
+One action per run.
+
+| Action | What runs |
+|--------|-----------|
+| `HealthCheck`, `Alerts`, `Capacity` | One read-only job, no approval. The run fails when `HealthCheck` or `Alerts` finds something wrong (exit code 1): that failure is the alert |
+| `MaintenanceMode`, `LiveMigrate`, `Rebalance` | A read-only plan with `-WhatIf`, then the same action after the approval |
+
+`MaintenanceMode` and `LiveMigrate` need a node: the input `node` (GitHub and Azure DevOps) or `OPERATIONS_NODE` (GitLab), checked with `-RequireNodeInFile`. With `enable` (`OPERATIONS_ENABLE` on GitLab) set, `MaintenanceMode` puts the node into maintenance. Without it, the node leaves maintenance. To reboot a node in one run, use the node maintenance pipeline. The pipeline does not sign in to Azure.
+
+### Platform details
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+| Pipeline | Read-only job | Approved job |
+|----------|---------------|--------------|
+| `day2-check-updates.yml` | `check-azure` or `check-cluster` | none |
+| `day2-update.yml` | `plan` | `apply` |
+| `day2-node-maintenance.yml` | `plan` | `apply` |
+| `day2-cluster-operations.yml` | `read-only`, or `plan-changes` for a change | `apply-changes` |
+
+- **Approval**: the approved job runs in the GitHub environment named by the repository variable `AZL_ENVIRONMENT_OPERATIONS`. Give that environment required reviewers.
+- **Lock**: the approved job has the concurrency group `azure-local-day2-changes-<infrastructure file>` with `cancel-in-progress: false`. A second change waits for the first. GitHub keeps only one waiting run per group, so a third run replaces the waiting second.
+- **Variables** set by Task 05: `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OPERATIONS`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`. The check for updates and the node maintenance also sign in to Azure: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (and the secret `ARM_CLIENT_SECRET` with `client_secret`). The node maintenance also reads `AZL_AZ_POWERSHELL_VERSION` and `AZL_AZ_KEYVAULT_VERSION`.
+- **Start**: by hand (`workflow_dispatch`). The check for updates also runs on its schedule.
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+| Pipeline | Read-only job | Manual job |
+|----------|---------------|------------|
+| `stages/day2-check-updates.yml` | `day2-check-updates-azure` or `day2-check-updates-cluster` | none |
+| `stages/day2-update.yml` | `day2-update-plan` | `day2-update-apply` |
+| `stages/day2-node-maintenance.yml` | `day2-node-maintenance-plan` | `day2-node-maintenance-apply` |
+| `stages/day2-cluster-operations.yml` | `day2-cluster-operations-read`, or `day2-cluster-operations-plan` for a change | `day2-cluster-operations-apply` |
+
+- **Approval**: the change is a manual job in the protected environment named by `AZL_ENVIRONMENT_OPERATIONS`. Someone allowed to run jobs there plays it. Approval rules on a protected environment need GitLab Premium or above.
+- **Lock**: the manual job has the `resource_group` `azure-local-day2-changes`.
+- **Variables** set by Task 05: `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OPERATIONS`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`. The check for updates (source `azure`) and the node maintenance also sign in to Azure: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (and the masked `ARM_CLIENT_SECRET` with `client_secret`). The node maintenance also reads `AZL_AZ_POWERSHELL_VERSION` and `AZL_AZ_KEYVAULT_VERSION`.
+- **Start**: from the web form, the API or a schedule, never from a push or a merge request.
+- **Run form**: a person who starts a pipeline by hand can override a variable in the run form, `AZL_ENVIRONMENT_OPERATIONS` included. Restrict who may set pipeline variables, and protect the environment.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+| Pipeline | Read-only stage | Approved stage |
+|----------|-----------------|----------------|
+| `day2-check-updates.yml` | `CheckAzure` or `CheckCluster` | none |
+| `day2-update.yml` | `Plan` | `Apply` |
+| `day2-node-maintenance.yml` | `Plan` | `Apply` |
+| `day2-cluster-operations.yml` | `ReadOnly`, or `Plan` for a change | `Apply` |
+
+- **Approval**: `Apply` is a deployment job in the environment named by `AZL_ENVIRONMENT_OPERATIONS` of `pipelines/azure-devops/variables/approval-environments.yml`. The name is bound when the pipeline is compiled, so the person who queues a run cannot choose it. While the variable is empty, a run that would change something fails in the stage `ApprovalEnvironmentNotSet` and changes nothing. The read-only stages run as before.
+- **Lock**: `lockBehavior: sequential` on the pipeline and on the `Apply` stage, and the Exclusive lock check of the one `operations` environment. That check is what keeps an update and a node reboot apart.
+- **Checks**: add Approvals, an Exclusive lock and a Branch control check to the environment. See [Azure DevOps: Approval environments](../../automation/02-cicd-pipelines/azure-devops-pipelines.mdx#approval-environments).
+- **Run parameters** with no default: `infrastructure_file`, `agent_pool` and `variable_group` in every pipeline, and `service_connection` in the check for updates and the node maintenance. Start the pipelines by hand (`trigger: none`).
+
+</TabItem>
+</Tabs>
+
+:::note No change without an approval environment
+On every platform, while `AZL_ENVIRONMENT_OPERATIONS` is empty, a run that would change the cluster changes nothing. A refusal fails with a message that names the variable: the job `approval-environment-not-set` on GitHub, the job `<pipeline>-approval-environment-not-set` on GitLab (for example `day2-update-approval-environment-not-set`), the stage `ApprovalEnvironmentNotSet` on Azure DevOps. Nothing is sent to any machine. The read-only jobs run as before. Run Task 05 to set the variable.
+:::
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 04: Cluster Operations](./task-04-cluster-operations.mdx) | [Part 8 Index](./index.mdx) | [Implementation Guide](../index.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-16 | Azure Local Cloud | Initial release: the day 2 scripts by hand and in the four day 2 pipelines, the `operations` approval environment, the lock and the schedule of the check for updates |

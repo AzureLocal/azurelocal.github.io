@@ -23,7 +23,7 @@ description: "GitHub Actions workflows for Azure Local automation"
 
 GitHub Actions workflow for Azure Local deployments. This is a sample equivalent of the primary GitLab CI/CD pipeline, adapted for GitHub-hosted and self-hosted runners with environment protection rules. **No value of a deployment is written in a workflow file**: every value a job needs is a key of `infrastructure.yml`, and Task 05 of the CI/CD setup (`Set-CicdVariables.ps1`) sets it as a repository variable (`vars.NAME`; the sign-in values also per environment) ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). Run Task 05 again after you change the file.
 
-`pipelines/github-actions/` is the only folder of GitHub deployment workflows in the toolkit: `azure-local-deploy.yml`, `cicd-infra.yml`, `discovery.yml`, `os-configuration.yml`, `pre-cluster-verification.yml` and `arm-deployment.yml`. The toolkit's own `.github/workflows` folder holds one workflow of the toolkit repository itself (`deploy-docs.yml`), not a deployment pipeline. The old archive folder of GitHub workflows is gone: its workflows were the toolkit's own repository checks, not deployment pipelines.
+`pipelines/github-actions/` is the only folder of GitHub deployment workflows in the toolkit: `azure-local-deploy.yml`, `cicd-infra.yml`, `discovery.yml`, `os-configuration.yml`, `pre-cluster-verification.yml`, `arm-deployment.yml`, the validation workflow `validation.yml` and the day 2 workflows `day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`. The toolkit's own `.github/workflows` folder holds one workflow of the toolkit repository itself (`deploy-docs.yml`), not a deployment pipeline. The old archive folder of GitHub workflows is gone: its workflows were the toolkit's own repository checks, not deployment pipelines.
 
 ## Workflow
 
@@ -77,7 +77,7 @@ Task 05 sets each variable below from its key. Every run step is PowerShell 7.
 | `AZL_AUTH_METHOD` | `devops.authentication.method`: `oidc` (a federated credential, no secret) or `client_secret` |
 | `ARM_CLIENT_SECRET` (a secret, only with `client_secret`) | `devops.authentication.client_secret` (Task 05 reads it from Key Vault) |
 | `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL` | `devops.runners[].os_type` of the general runner and `devops.pipelines.runner_label` |
-| `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT`, `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.*` |
+| `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT`, `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, `AZL_ENVIRONMENT_CICD_INFRA`, `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.*` (`operations` gates every validation and day 2 job that changes the cluster) |
 | `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` |
 | `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` |
 | `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` |
@@ -91,7 +91,11 @@ Task 05 sets each variable below from its key. Every run step is PowerShell 7.
 
 ### 2. Environment Protection
 
-Create the environment that `devops.pipelines.environments.terraform_deployment` names, with required reviewers (Task 04 of the CI/CD setup creates it). It gates the `terraform-apply` job and the on-premises jobs.
+Create the environment that `devops.pipelines.environments.terraform_deployment` names, with required reviewers (Task 04 of the CI/CD setup creates it). It gates the `terraform-apply` job and the on-premises jobs. The validation and day 2 workflows use the environment of `devops.pipelines.environments.operations` ([below](#validation-and-day-2-workflows)).
+
+#### No change without an approval environment {#no-change-without-an-approval-environment}
+
+Every job of the toolkit's workflows that changes something runs in the environment named by an `AZL_ENVIRONMENT_*` repository variable. While that variable is empty, the job does not run without an approval. Instead the job `approval-environment-not-set` runs. It fails with a message that names the variable and its `devops.pipelines.environments.*` key, and nothing is sent to any machine. This holds for the OS configuration, CI/CD infrastructure, Terraform, ARM deployment, validation (the storage load test) and day 2 workflows. The read-only jobs run as before. It is the same rule as the Azure DevOps stage `ApprovalEnvironmentNotSet`. Run Task 05 to set the variables.
 
 ### 3. Self-Hosted Runner
 
@@ -187,6 +191,32 @@ The identity needs Reader for the checks (Owner or Contributor for `fix`) and Ge
 | `deploy` | Runs for `ValidateAndDeploy` and `Deploy`, only after a reviewer of the environment in `AZL_ENVIRONMENT_ARM_DEPLOYMENT` (`devops.pipelines.environments.arm_deployment`) approves. It re-checks every precondition and that these parameters validated. `resume` resubmits a failed Deploy |
 
 The infrastructure file is the repository variable `AZL_INFRASTRUCTURE_FILE`, not an input. The Validate and Deploy jobs time out at `AZL_VALIDATE_JOB_TIMEOUT_MINUTES` and `AZL_DEPLOY_JOB_TIMEOUT_MINUTES` (`deployment.validate_timeout_minutes`, default 90, and `deployment.deploy_timeout_minutes`, default 360, each plus 60 minutes). Inputs: `mode` (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), `os_configuration_run_id` (the artifact `os-configuration-report` of the OS configuration workflow) or `os_configuration_report`, `handoff_file`, `resume`, `acknowledge_known_issues`. One ARM deployment runs at a time per repository. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+
+## Validation and Day 2 Workflows
+
+Five workflows run the scripts of Part 7 and Part 8 of the implementation guide, each the command an operator runs by hand and nothing else. Copy each to `.github/workflows/` in your repository. How to run each script by hand and in a workflow: [Run the Validation in a Pipeline](../../implementation/07-validation-handover/run-validation-in-a-pipeline.mdx) and [Run Day 2 Operations in a Pipeline](../../implementation/08-day2-operations/run-day2-in-a-pipeline.mdx).
+
+| File | Read-only job (no approval) | Approved job | Inputs |
+|---|---|---|---|
+| `pipelines/github-actions/validation.yml` | `validate`: the four validation scripts; the storage script without its load test | `storage-performance`: `Test-StoragePerformance.ps1 -RunPerformanceTest`, only when asked, after `validate` passed | `run_performance_test` (default off) |
+| `pipelines/github-actions/day2-check-updates.yml` | `check-azure` (Azure CLI, no node access) or `check-cluster` (PowerShell remoting) | none | `source` (`azure` or `cluster`) |
+| `pipelines/github-actions/day2-update.yml` | `plan`: `Start-AzureLocalSolutionUpdate.ps1 -WhatIf` | `apply`: `PrepareOnly` or `Install` | `action` (`Plan`, `PrepareOnly`, `Install`), `update_mode` (`AfterDeployment`, `OnDemand`) |
+| `pipelines/github-actions/day2-node-maintenance.yml` | `plan`: the node is checked against `nodes[]` with `-RequireNodeInFile`, then `-WhatIf` | `apply`: `Reboot` or `Resume` (`-ResumeOnly`) | `node` (one node), `action` (`Plan`, `Reboot`, `Resume`) |
+| `pipelines/github-actions/day2-cluster-operations.yml` | `read-only` (`HealthCheck`, `Alerts`, `Capacity`), or `plan-changes` (`-WhatIf`) for a change | `apply-changes`: `MaintenanceMode`, `LiveMigrate` or `Rebalance` | `action`, `node`, `enable` |
+
+- **Plan first.** The approved job needs the read-only job and starts only when it succeeded. With the action `Plan`, the run ends after the plan.
+- **One approval environment.** Every approved job runs in the GitHub environment named by the repository variable `AZL_ENVIRONMENT_OPERATIONS` (`devops.pipelines.environments.operations`). Give it required reviewers.
+- **One change at a time.** Every approved job has the concurrency group `azure-local-day2-changes-<infrastructure file>` with `cancel-in-progress: false`: a second change waits for the first. GitHub keeps only one waiting run per group, so a third run replaces the waiting second. The read-only jobs hold no lock.
+- **One node per run.** The node input is checked against `nodes[]` with `-RequireNodeInFile`. A name the file does not list ends the run with exit code 2 before anything is sent.
+- **A failed script fails the run.** The report, plan or log is published as an artifact even then.
+
+Repository variables set by Task 05: `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OPERATIONS`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`. `day2-check-updates.yml` and `day2-node-maintenance.yml` also sign in to Azure (`ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD`, and the secret `ARM_CLIENT_SECRET` with `client_secret`); the node maintenance also reads `AZL_AZ_POWERSHELL_VERSION` and `AZL_AZ_KEYVAULT_VERSION`. The other three workflows do not sign in to Azure.
+
+**The account.** The scripts connect to the cluster as the service account of the runner, which must be an administrator of the cluster. No workflow passes `-Credential` or holds a password. The node maintenance reads the node login from its secret reference in `infrastructure.yml` (`identity.local_admin`), from Key Vault, with the Azure sign-in of the job. The validation needs the Failover Clustering PowerShell module (RSAT Failover Clustering Tools) on the runner, so a Windows runner. The Azure view of the check for updates needs the Azure CLI on the runner.
+
+**The schedule.** `day2-check-updates.yml` runs on `on.schedule` and by hand. GitHub reads a `cron` expression only from the workflow file, never from a variable. The sample carries the default of `devops.pipelines.schedules.check_for_updates`, `17 4 * * *` (every day at 04:17 UTC), and a toolkit test keeps the two equal. When your key differs, change the `cron` line of your copy: Task 05 prints the value to use. A scheduled run has no inputs, so it takes the Azure view. The run fails when the cluster needs attention (exit code 1), so GitHub's notification of a failed run is the alert. The report is the artifact `day2-update-check`.
+
+**While `AZL_ENVIRONMENT_OPERATIONS` is empty, nothing is changed.** A run that would change something fails in the job `approval-environment-not-set`, with a message that names the variable, and nothing is sent to any machine. The read-only jobs run as before. See [No change without an approval environment](#no-change-without-an-approval-environment).
 
 ## Repository
 

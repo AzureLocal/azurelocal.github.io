@@ -106,6 +106,7 @@ In every pipeline on this page, a stage that changes a system is a deployment jo
 | `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `devops.pipelines.environments.arm_deployment` | `arm-deployment.yml`, stage `Deploy`; `pre-cluster-verification.yml`, stage `VerifyWithChanges` |
 | `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.cicd_infra` | `cicd-infra.yml`, stage `Apply` (when `apply` is on) |
 | `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` | `azure-local-deploy.yml`, stages `DeployFoundation`, `ConfigureOnPrem` and `ConfigureOperations` |
+| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` | `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`, stage `Apply`; `validation.yml`, stage `StoragePerformance` |
 
 The toolkit ships the variables empty, because no value of a deployment is written in the toolkit. [Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx) prints the value to write for each one. Write the values once, in a pull request. The names are the same as the GitHub repository variables and the GitLab project variables of the same purpose. When you copy a pipeline to your own repository, copy `approval-environments.yml` with it.
 
@@ -213,6 +214,47 @@ The service connection needs Reader for the checks (Owner or Contributor for `fi
 | `ApprovalEnvironmentNotSet` | Exists for mode ValidateAndDeploy and Deploy **instead of** `Deploy` while `AZL_ENVIRONMENT_ARM_DEPLOYMENT` is empty. It fails with a message that names the file to edit. Nothing is deployed |
 
 Run parameters with no default: `infrastructureFile` (`devops.pipelines.infrastructure_file`), `azureServiceConnection` (`devops.pipelines.service_connection`), `variableGroup` (`devops.pipelines.variable_group`) and `agentPool` (`devops.runners[].pool`). The approval environment is not a run parameter (see [3. Approval environments](#approval-environments)). Run choices: `mode` (default `Plan`), `osConfigurationPipelineId` and `osConfigurationRunId` (the OS configuration report artifact, default `none`) or `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`. The Validate and Deploy jobs have a fixed upper bound of 1500 minutes (the registry maximum of `deployment.validate_timeout_minutes` and `deployment.deploy_timeout_minutes`, 1440, plus 60), because a job timeout is read before any variable exists; the script's own wait is the real limit. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
+
+## Validation and Day 2 Pipelines
+
+Five pipelines run the scripts of Part 7 and Part 8 of the implementation guide, each the command an operator runs by hand and nothing else. Create a pipeline from each existing YAML file; none has a trigger (`trigger: none`). How to run each script by hand and in a pipeline: [Run the Validation in a Pipeline](../../implementation/07-validation-handover/run-validation-in-a-pipeline.mdx) and [Run Day 2 Operations in a Pipeline](../../implementation/08-day2-operations/run-day2-in-a-pipeline.mdx).
+
+| File | Read-only stage (no approval) | Approved stage | Run choices |
+|---|---|---|---|
+| `pipelines/azure-devops/validation.yml` | `Validate`: the four validation scripts; the storage script without its load test | `StoragePerformance`: `Test-StoragePerformance.ps1 -RunPerformanceTest`, only when asked, after `Validate` passed | `run_performance_test` (default off) |
+| `pipelines/azure-devops/day2-check-updates.yml` | `CheckAzure` (Azure CLI, no node access) or `CheckCluster` (PowerShell remoting) | none | `source` (`azure`, the default, or `cluster`) |
+| `pipelines/azure-devops/day2-update.yml` | `Plan`: `Start-AzureLocalSolutionUpdate.ps1 -WhatIf` | `Apply`: `PrepareOnly` or `Install` | `action` (default `Plan`), `update_mode` (default `AfterDeployment`) |
+| `pipelines/azure-devops/day2-node-maintenance.yml` | `Plan`: the node is checked against `nodes[]` with `-RequireNodeInFile`, then `-WhatIf` | `Apply`: `Reboot` or `Resume` (`-ResumeOnly`) | `node` (one node), `action` (default `Plan`) |
+| `pipelines/azure-devops/day2-cluster-operations.yml` | `ReadOnly` (`HealthCheck`, `Alerts`, `Capacity`), or `Plan` (`-WhatIf`) for a change | `Apply`: `MaintenanceMode`, `LiveMigrate` or `Rebalance` | `action`, `node`, `enable` |
+
+- **Plan first.** The approved stage depends on the read-only stage and starts only when it succeeded.
+- **One approval environment.** Every approved stage is a deployment job in the environment named by `AZL_ENVIRONMENT_OPERATIONS` of `pipelines/azure-devops/variables/approval-environments.yml` (`devops.pipelines.environments.operations`), bound when the pipeline is compiled (see [3. Approval environments](#approval-environments)). While it is empty, a run that would change something fails in the stage `ApprovalEnvironmentNotSet` and changes nothing; the read-only stages run as before. The Branch control check of [3. Approval environments](#approval-environments) applies to this environment too.
+- **One change at a time.** `lockBehavior: sequential` on the pipeline and on the approved stage, and the Exclusive lock check of the one `operations` environment. That check is what keeps an update and a node reboot apart. The read-only stages hold no lock.
+- **One node per run.** The parameter `node` is checked against `nodes[]` with `-RequireNodeInFile`. A name the file does not list ends the run with exit code 2 before anything is sent. The `infrastructure_file` run parameter can name any file on the branch, so the node check trusts the files of that branch: keep the infrastructure files under review (a branch policy on the protected default branch), and run the changing pipelines from that branch.
+- **A failed script fails the run.** The report, plan or log is published as a pipeline artifact even then.
+
+Run parameters with no default: `infrastructure_file`, `agent_pool` and `variable_group` in every pipeline, and `service_connection` in `day2-check-updates.yml` and `day2-node-maintenance.yml`, the two that sign in to Azure. The variable group gives `AZL_POWERSHELL_YAML_VERSION`, and for the node maintenance also `AZL_AZ_POWERSHELL_VERSION` and `AZL_AZ_KEYVAULT_VERSION`. For the check for updates (source `azure`) the service connection needs Azure Stack HCI Administrator or Reader on the cluster resource. For the node maintenance it needs Key Vault Secrets User on the vaults of the local administrator and the LCM user.
+
+**The account.** The scripts connect to the cluster as the account the agent runs as, which must be an administrator of the cluster. No pipeline passes `-Credential` or holds a password. The node maintenance reads the node login from its secret reference in `infrastructure.yml` (`identity.local_admin`), from Key Vault, through the service connection. The validation needs the Failover Clustering PowerShell module (RSAT Failover Clustering Tools) on the agent, so a Windows agent. The Azure view of the check for updates needs the Azure CLI on the agent.
+
+### The schedule of the check for updates {#day2-schedule}
+
+The check for updates fails the run when the cluster needs attention (exit code 1), so Azure DevOps' notification of a failed build is the alert. The report is the pipeline artifact `day2-update-check`. Its schedule is the key `devops.pipelines.schedules.check_for_updates`: a five-field cron expression in UTC, default `17 4 * * *` (every day at 04:17).
+
+:::warning The sample cannot be scheduled as it is
+An Azure DevOps schedule cannot use variables, and a scheduled run cannot supply run parameters ([Configure schedules for pipelines](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/scheduled-triggers)). The sample's parameters `infrastructure_file`, `agent_pool`, `service_connection` and `variable_group` have no default, because no value of a deployment is written in a pipeline file. So `day2-check-updates.yml` carries the `schedules` block only as a comment.
+:::
+
+To schedule the check, copy the file, give the four parameters the values of your deployment as defaults, and add the `schedules` block with the value of the key. Task 05 prints the value to use. Schedules set in the pipeline's Triggers settings take precedence over YAML schedules.
+
+```yaml
+schedules:
+  - cron: '17 4 * * *'   # devops.pipelines.schedules.check_for_updates (UTC)
+    displayName: Check for updates
+    branches:
+      include: ['*']
+    always: true
+```
 
 ## Repository
 

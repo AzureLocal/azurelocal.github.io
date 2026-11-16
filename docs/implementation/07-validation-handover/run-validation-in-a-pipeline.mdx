@@ -1,0 +1,148 @@
+---
+title: "Run the Validation in a Pipeline"
+sidebar_label: "Run It in a Pipeline"
+sidebar_position: 7
+description: "Run the four validation checks of Part 7 by hand, or in the validation pipeline on GitHub Actions, GitLab CI or Azure DevOps, with the storage load test behind an approval"
+category: "Runbook"
+scope: "The validation of a deployed Azure Local cluster (tasks 01 to 04), by hand and in a pipeline"
+purpose: "Run the same read-only checks every time, and keep the storage load test behind an approval and a lock"
+author: "Azure Local Cloud"
+created: 2026-11-16
+updated: 2026-11-16
+version: "1.0.0"
+tags:
+  - azure-local
+  - validation
+  - pipelines
+keywords:
+  - validation.yml
+  - Test-StoragePerformance
+  - RunPerformanceTest
+  - AZL_ENVIRONMENT_OPERATIONS
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Run the Validation in a Pipeline
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Validation](https://img.shields.io/badge/Part-07%20Validation%20%26%20Handover-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: Tasks 01 to 04 of Part 7, on a deployed Azure Local cluster   
+> **PURPOSE**: Run the four validation checks by hand or in a pipeline, and keep the storage load test behind an approval   
+> **MASTER REFERENCE**: [azurelocal-toolkit: Validation and day 2 operations](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/day2-and-validation.md)
+
+**Status**: Active
+
+Tasks 01 to 04 of this part are four checks. Each is a script that an operator runs by hand from a workstation or a jump server. The `validation` pipeline runs the same four scripts and nothing else, on GitHub Actions, GitLab CI or Azure DevOps. Run it before the handover, and again after a change such as an update or a node repair.
+
+| Task | Script | Reads or changes |
+|------|--------|------------------|
+| [Task 01: Cluster Health](./task-01-cluster-health-validation.mdx) | `Test-AzureLocalClusterHealth.ps1` | Read only |
+| [Task 02: Arc Connectivity](./task-02-arc-connectivity-validation.mdx) | `Test-ArcConnectivity.ps1` | Read only |
+| [Task 03: Network Configuration](./task-03-network-configuration-validation.mdx) | `Test-NetworkConfiguration.ps1` | Read only |
+| [Task 04: Storage Performance](./task-04-storage-performance-validation.mdx) | `Test-StoragePerformance.ps1` | Read only. With `-RunPerformanceTest` it puts load on the cluster |
+
+---
+
+## Run it
+
+Run the scripts from the root of the toolkit. The machine needs PowerShell 7, the `powershell-yaml` module, the Failover Clustering PowerShell module (the RSAT feature Failover Clustering Tools) and a route to the cluster (WinRM, TCP 5985 or 5986). The scripts connect as the account that runs them, which must be an administrator of the cluster.
+
+```powershell
+./scripts/deploy/07-validation-handover/task-01-cluster-health-validation/powershell/Test-AzureLocalClusterHealth.ps1 -InfrastructureFile ./infrastructure.yml -OutputFormat JSON -OutputPath ./reports/cluster-health
+./scripts/deploy/07-validation-handover/task-02-arc-connectivity-validation/powershell/Test-ArcConnectivity.ps1 -InfrastructureFile ./infrastructure.yml -OutputPath ./reports/arc-connectivity
+./scripts/deploy/07-validation-handover/task-03-network-configuration-validation/powershell/Test-NetworkConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -OutputPath ./reports/network
+./scripts/deploy/07-validation-handover/task-04-storage-performance-validation/powershell/Test-StoragePerformance.ps1 -InfrastructureFile ./infrastructure.yml -OutputPath ./reports/storage
+```
+
+:::warning The storage load test is not read only
+`Test-StoragePerformance.ps1 -RunPerformanceTest` creates a scratch file on every cluster shared volume, writes and reads it for `-DurationSeconds` (60 by default) and removes it again. The script's own help says it generates I/O on the cluster. Add `-RunPerformanceTest` only in a maintenance window, never during an update.
+:::
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Nothing failed (warnings are listed) |
+| `1` | A check failed, or the cluster could not be read |
+| `2` | A value of the file is missing or not usable. Nothing was sent |
+
+---
+
+## Run it in a pipeline
+
+The pipeline runs on the general self-hosted runner. Every value it needs is a key of `infrastructure.yml`, set on the platform by [Task 05 of the CI/CD setup](../../automation/01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx). The pipeline file holds no value of a deployment.
+
+| Platform | File |
+|----------|------|
+| GitHub Actions | `pipelines/github-actions/validation.yml` (copy it to `.github/workflows/` in your repository) |
+| GitLab CI | `pipelines/gitlab/stages/validation.yml` (it declares its own stage: include it from a pipeline file of its own) |
+| Azure DevOps | `pipelines/azure-devops/validation.yml` (create a pipeline from the existing YAML file) |
+
+### Two jobs
+
+| Job | GitHub Actions | GitLab CI | Azure DevOps | What it does |
+|-----|----------------|-----------|--------------|--------------|
+| Read-only validation | `validate` | `validation-read-only` | stage `Validate` | Runs the four scripts one after the other. The storage script runs **without** the load test, so it only reads the pools, the disks and the volumes. All four run even when an earlier one fails, so one run shows every problem. The job fails when any script ends with a code other than 0. No approval |
+| Storage load test | `storage-performance` | `validation-storage-performance` | stage `StoragePerformance` | Runs only when you ask for it, and only after the read-only job passed. It runs `Test-StoragePerformance.ps1 -RunPerformanceTest` behind the approval environment `devops.pipelines.environments.operations` |
+
+Ask for the load test with the input `run_performance_test` (GitHub), the run variable `VALIDATION_RUN_PERFORMANCE_TEST` set to `true` (GitLab) or the parameter `run_performance_test` (Azure DevOps). It is off by default.
+
+The reports are published as an artifact even when a check fails: `validation-reports`, and `storage-performance-report` for the load test (GitHub and Azure DevOps). GitHub and GitLab keep them for 90 days, the record that goes into the handover.
+
+### The approval and the lock
+
+The load test uses the same approval environment as every day 2 change: `devops.pipelines.environments.operations` (the variable `AZL_ENVIRONMENT_OPERATIONS`). It also takes the same lock, so the load test never runs beside an update or a node reboot. See [Part 8: Run Day 2 in a Pipeline](../08-day2-operations/run-day2-in-a-pipeline.mdx) for those pipelines.
+
+<Tabs groupId="scm-platform">
+<TabItem value="github" label="GitHub" default>
+
+- **Approval**: the job `storage-performance` runs in the GitHub environment named by the repository variable `AZL_ENVIRONMENT_OPERATIONS`. Give that environment required reviewers.
+- **Lock**: the job has the concurrency group `azure-local-day2-changes-<infrastructure file>` with `cancel-in-progress: false`. A second change waits for the first. GitHub keeps only one waiting run per group, so a third run replaces the waiting second.
+- **Variables** set by Task 05: `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OPERATIONS`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`. The pipeline does not sign in to Azure.
+- **Start**: by hand (`workflow_dispatch`).
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab">
+
+- **Approval**: the job `validation-storage-performance` is a manual job in the protected environment named by `AZL_ENVIRONMENT_OPERATIONS`. Someone allowed to run jobs there plays it. Approval rules on a protected environment need GitLab Premium or above.
+- **Lock**: the job has the `resource_group` `azure-local-day2-changes`, the same as the day 2 changes.
+- **Variables** set by Task 05: `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OPERATIONS`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`. The pipeline does not sign in to Azure.
+- **Start**: from the web form or the API only, never from a push or a merge request.
+
+</TabItem>
+<TabItem value="azdo" label="Azure DevOps">
+
+- **Approval**: the stage `StoragePerformance` is a deployment job in the environment named by `AZL_ENVIRONMENT_OPERATIONS` of `pipelines/azure-devops/variables/approval-environments.yml`. The name is bound when the pipeline is compiled, so the person who queues a run cannot choose it. While the variable is empty, a run that asks for the load test fails in the stage `ApprovalEnvironmentNotSet` and changes nothing. The stage `Validate` runs as before.
+- **Lock**: `lockBehavior: sequential` on the pipeline and on the stage, and the Exclusive lock check of the environment.
+- **Checks**: add Approvals, an Exclusive lock and a Branch control check to the environment. See [Azure DevOps: Approval environments](../../automation/02-cicd-pipelines/azure-devops-pipelines.mdx#approval-environments).
+- **Run parameters** with no default: `infrastructure_file`, `agent_pool`, `variable_group`. Start the pipeline by hand (`trigger: none`).
+
+</TabItem>
+</Tabs>
+
+:::note No load test without an approval environment
+On every platform, while `AZL_ENVIRONMENT_OPERATIONS` is empty, a run that asks for the load test does not run it. A refusal fails with a message that names the variable: the job `approval-environment-not-set` on GitHub, the job `validation-approval-environment-not-set` on GitLab, the stage `ApprovalEnvironmentNotSet` on Azure DevOps. Nothing is sent to any machine. The read-only validation runs as before. Run Task 05 to set the variable.
+:::
+
+### The runner
+
+The general self-hosted runner needs PowerShell 7, a route to the cluster (WinRM, TCP 5985 or 5986) and the Failover Clustering PowerShell module (RSAT Failover Clustering Tools), which the health, network and storage scripts use. That module needs a Windows runner. The scripts connect as the service account of the runner, which must be an administrator of the cluster. No pipeline passes `-Credential` or holds a password.
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 06: Customer Transfer](./task-06-customer-transfer.mdx) | [Part 7 Index](./index.mdx) | [Part 8: Day 2 Operations](../08-day2-operations/index.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-16 | Azure Local Cloud | Initial release: the validation by hand and in the `validation` pipeline, with the storage load test behind the `operations` approval environment |
