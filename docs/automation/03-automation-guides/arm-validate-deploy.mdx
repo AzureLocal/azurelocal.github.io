@@ -9,7 +9,7 @@ scope: "Automation of the ARM Validate and Deploy step of cluster deployment (Ph
 purpose: "Document how the toolkit's Invoke-AzureLocalArmDeployment.ps1 runs the cluster ARM deployment from a jump server or a CI/CD pipeline"
 author: "Azure Local Cloud"
 created: 2026-11-08
-updated: 2026-11-13
+updated: 2026-11-15
 version: "1.1.0"
 tags:
   - azure-local
@@ -150,6 +150,32 @@ $common = @{ InfrastructureFile = './infrastructure.yml'; OsConfigurationReport 
 | `-Offline` | Plan only: no Azure call at all |
 
 ---
+
+## Run it with the Azure CLI
+
+For a host that has the Azure CLI and not the Az PowerShell modules, the toolkit has an Azure CLI variant of the script: `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.azcli.ps1`. The two task scripts of phase 05 (`active-directory` and `local-identity`, task 01) call it with the identity of their folder and stop with exit code 2 when `scenario.identity` of the file is the other one. It reuses the toolkit's ARM deployment code for everything that is not a call to Azure (the template choice, the missing-value check, the parameter set and its check), so the parameters are the same. Only the Azure calls are `az` commands: `az deployment group validate`, then `az deployment group create`, and `az rest` for the state of the instance.
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+```powershell
+az login --tenant <tenant-id>
+
+$arm    = './scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.azcli.ps1'
+$common = @{ InfrastructureFile = './infrastructure.yml'; OsConfigurationReport = './osconfig-report' }
+
+& $arm @common -Mode Validate -WhatIf    # checks and pre-flight, submits nothing
+& $arm @common -Mode Validate            # 10 to 30 minutes
+& $arm @common -Mode Deploy              # only after a successful Validate of these parameters
+```
+
+What differs from the PowerShell script:
+
+- **Modes.** Only `Validate` (the default) and `Deploy`. There is no `Plan`, `ValidateAndDeploy` or approval step: the gate between Validate and Deploy is yours (run `-Mode Deploy` after it). `-WhatIf` does the checks and the pre-flight and says what it would submit. `-NoWait` submits and returns; run the script again to attach.
+- **Secrets.** The local administrator's password and the LCM user's password go to Azure as Key Vault references in the parameter file (the vault needs "Azure Resource Manager for template deployment" enabled). No secret value is read, written or put on a command line. A secret that is not a `keyvault://` reference (`env://`, `file://`, `command://`) and SBE partner credentials are refused with exit code 2: use the PowerShell script for them.
+- **Template.** Azure reads Microsoft's template from its address (`-TemplateFile` uses a local copy). The run setting `deploymentSettingsApiVersion`, which patches the api-version of the template's `deploymentSettings` resource in the PowerShell run, is not applied: the template is used as Microsoft publishes it.
+- **Re-running.** A Validate is refused when the instance is in a failed deployment state, unless `-AllowRevalidate`; a Deploy is refused unless the instance validated successfully; a failed Deploy is resubmitted only with `-Resume`. The wait runs up to the run settings' `validateTimeoutMinutes` (90) or `deployTimeoutMinutes` (360); `-TimeoutMinutes` overrides it.
+
+The Azure side of the verification has a read only script too, `Test-AzureLocalClusterDeployment.azcli.ps1` (the instance is `Succeeded`, the deployment status is `Success`, every Arc machine is `Connected`; it needs the Azure CLI extensions `stack-hci` and `connectedmachine`). The checks of the nodes stay with `Invoke-VerifyPostDeployment.ps1`.
 
 ## Run it from a pipeline
 

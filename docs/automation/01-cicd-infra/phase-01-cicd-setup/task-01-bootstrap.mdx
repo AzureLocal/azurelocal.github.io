@@ -8,7 +8,7 @@ scope: "Create the CI/CD service principal and configure Azure access"
 purpose: "Create the CI/CD service principal and configure Azure access"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -202,6 +202,11 @@ See procedure steps for Azure DevOps-specific configuration.
 The toolkit script for this task is PowerShell 7. It reads `infrastructure.yml` through the mandatory `-InfrastructureFile` parameter and never prompts. It ends with exit code 0, 1 or 2. Run it with `-WhatIf` first: the script reads what exists and lists what it would do.
 :::
 
+<Tabs groupId="deployment-method">
+<TabItem value="orchestrated" label="Orchestrated Script">
+
+### PowerShell
+
 #### Script
 
 | Script | What it does |
@@ -215,6 +220,35 @@ Requires: PowerShell 7.
 ```powershell
 ./New-CicdBootstrap.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-01-bootstrap/azurecli/New-CicdBootstrap.azcli.ps1` | Task 01, Azure CLI variant. Creates the CI/CD service principal and its Azure access with `az` commands. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+It does the Azure side of the PowerShell script and makes the same objects: the app registration and service principal (`azure.automation_identity.name`), the federated credentials of the platform (or, with `devops.authentication.method` `client_secret`, a client secret kept only in Key Vault), the role assignments on each subscription, and the `Microsoft.Compute` and `EncryptionAtHost` registrations. It creates nothing on GitHub, GitLab or Azure DevOps (tasks 02 to 05 do) and does not sign in. It is idempotent, and `-Platform` overrides `devops.platform`.
+
+Limits: with the client secret method the check that the secret is in Key Vault goes through the toolkit's secret resolver, which needs the `Az.KeyVault` module; every other Azure call is an `az` command. The secret goes to Key Vault from a temporary file that is removed at once, never on a command line, and is never printed. A client secret is not rotated: delete the Key Vault secret to have a new one issued.
+
+#### Run
+
+```powershell
+./New-CicdBootstrap.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-CicdBootstrap.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
+</Tabs>
 
 
 ---
