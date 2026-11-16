@@ -8,7 +8,7 @@ scope: "Verify all Phase 06 post-deployment tasks completed successfully"
 purpose: "Verify all Phase 06 post-deployment tasks completed successfully"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -159,7 +159,7 @@ It checks, in this order:
 
 The login is `-Credential`, else the account the file names: the LCM user (`identity.active_directory.lcm_user`) with Active Directory, the local administrator (`identity.local_admin`) with local identity. The password is a secret reference. The script never prompts: with neither it stops with exit code 2. Exit codes: 0 every check passed; 1 a check failed; 2 a value in the file is missing or there is no login.
 
-`Invoke-PostDeploymentVerification-Orchestrated.ps1` and the Azure CLI `az-verify-post-deployment.ps1` in the task folder are placeholders (exit code 3).
+`Invoke-PostDeploymentVerification-Orchestrated.ps1` in the task folder is a placeholder (exit code 3). The Azure CLI tab has a script for the checks that read Azure.
 
 Requires: PowerShell 7; modules FailoverClusters, Storage; the Azure CLI, signed in, for checks 7 and 8.
 
@@ -169,6 +169,31 @@ Requires: PowerShell 7; modules FailoverClusters, Storage; the Azure CLI, signed
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Check the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az` and only reads Azure.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/azurecli/Invoke-VerifyPostDeployment.azcli.ps1` | Verifies the Azure side of a deployed Azure Local instance against `infrastructure.yml` with the Azure CLI. Read only. Supports `-WhatIf` (lists the checks and runs none). |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extensions `connectedmachine`, `stack-hci`, `stack-hci-vm`, `customlocation` (`az extension add --name connectedmachine`, `az extension add --name stack-hci`, `az extension add --name stack-hci-vm`, `az extension add --name customlocation`); the script does not install them.
+
+It checks the Arc machines and their extensions (including `WindowsOpenSSH`), the instance, the custom location, the cloud witness account, and that the numbers of storage paths, VM images, logical networks and network security groups in Azure are not below the numbers in the file. It does not reach the nodes: the cluster state, domain membership, quorum, local groups, sshd, storage pool and cluster shared volumes are checked by the PowerShell script. `-TargetNode` limits the machine checks.
+
+#### Run
+
+```powershell
+./Invoke-VerifyPostDeployment.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-VerifyPostDeployment.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+./Invoke-VerifyPostDeployment.azcli.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode <node-name>
 ```
 
 </TabItem>

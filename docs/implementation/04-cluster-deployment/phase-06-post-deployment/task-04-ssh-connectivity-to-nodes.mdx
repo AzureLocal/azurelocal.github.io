@@ -8,7 +8,7 @@ scope: "Install the WindowsOpenSSH Arc extension on cluster nodes and enable Azu
 purpose: "Install the WindowsOpenSSH Arc extension on cluster nodes and enable Azure Arc SSH tunneled access via HybridConnectivity"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -188,7 +188,7 @@ az ssh arc `
 |---|---|
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1` | Deploys the WindowsOpenSSH Arc extension and configures HybridConnectivity SSH access on all Azure Local cluster nodes. It reads `nodes[]` and `nodes[].arc_machine_name`. |
 
-The earlier `Enable-SshConfiguration.ps1` is removed. The Azure CLI `az-configure-ssh.ps1` in the task folder is a placeholder (exit code 3). The script never prompts.
+The earlier `Enable-SshConfiguration.ps1` is removed. The script never prompts. The Azure CLI tab has a script that turns SSH on through Azure Arc from a host that has the Azure CLI.
 
 Requires: PowerShell 7.
 
@@ -198,6 +198,31 @@ Requires: PowerShell 7.
 ./Invoke-SSHConnectivity-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ./Invoke-SSHConnectivity-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
 ./Invoke-SSHConnectivity-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/azurecli/Enable-ArcSshConnectivity.azcli.ps1` | Turns on SSH access to the Azure Local machines through Azure Arc with the Azure CLI: the WindowsOpenSSH extension, the HybridConnectivity endpoint and the SSH service configuration. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `connectedmachine` (`az extension add --name connectedmachine`); the script does not install it.
+
+Nothing reaches the machines from here (no WinRM, no remoting): the Arc agent installs OpenSSH. The script registers `Microsoft.HybridConnectivity` when needed and waits for it (`-MaxWaitMinutes`). `-TargetNode` limits the run to some nodes; `-SshdPort` sets the port written to the SSH service configuration (default 22). After the task connect with `az ssh arc`. You need Contributor or Owner, or Azure Connected Machine Resource Administrator.
+
+#### Run
+
+```powershell
+./Enable-ArcSshConnectivity.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Enable-ArcSshConnectivity.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+./Enable-ArcSshConnectivity.azcli.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode <node-name>
 ```
 
 </TabItem>

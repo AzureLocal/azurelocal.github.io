@@ -8,7 +8,7 @@ scope: "Configure cluster quorum — validate and provision the cloud witness st
 purpose: "Configure cluster quorum — validate and provision the cloud witness storage account, then set quorum via Cloud Witness, File Share Witness, or Disk Witness"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -124,7 +124,7 @@ Before configuring quorum, ensure the storage account exists in Azure.
 
 ### PowerShell
 
-> **No script in this task folder.** `Invoke-ConfigureClusterQuorum-Orchestrated.ps1` and the Azure CLI `az-configure-cluster-quorum.ps1` are placeholders. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The deployment creates the witness from `cluster.witness` of `infrastructure.yml`. Use the steps in the other tab when you change the witness after the deployment.
+> **No PowerShell script that configures the quorum.** `Invoke-ConfigureClusterQuorum-Orchestrated.ps1` is a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The deployment creates the witness from `cluster.witness` of `infrastructure.yml`. Use the steps in the other tab when you change the witness after the deployment. The Azure CLI tab has a script for the storage account of a cloud witness.
 
 #### Check
 
@@ -136,6 +136,30 @@ Before configuring quorum, ensure the storage account exists in Azure.
 
 ```powershell
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/azurecli/New-CloudWitnessStorageAccount.azcli.ps1` | Creates, or checks, the Azure storage account of the cloud witness that cluster.witness of infrastructure.yml names, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Azure side only. An existing account is checked and never changed: a cloud witness supports only a Standard general-purpose v2 account with locally redundant storage, so an account of another kind or SKU is reported as `Failed`. A missing account is created (`StorageV2`, `Standard_LRS`) after the script checks that the name is free. It never reads, prints or stores an access key. Pointing the cluster at the account (`Set-ClusterQuorum -CloudWitness`) runs on a node and is not an Azure CLI task. For `cluster.witness.type` `none` or `file_share` it does nothing and exits 0. You need Storage Account Contributor (or Contributor) on the resource group.
+
+#### Run
+
+```powershell
+./New-CloudWitnessStorageAccount.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-CloudWitnessStorageAccount.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

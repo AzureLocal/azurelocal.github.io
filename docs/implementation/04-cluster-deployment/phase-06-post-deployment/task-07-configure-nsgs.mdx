@@ -8,7 +8,7 @@ scope: "Create Azure Local NSGs for logical network micro-segmentation"
 purpose: "Create Azure Local NSGs for logical network micro-segmentation before network provisioning"
 author: "Azure Local Cloud"
 created: 2025-07-25
-updated: 2025-07-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -178,6 +178,30 @@ Requires: PowerShell 7.
 
 ```powershell
 ./New-NetworkSecurityGroup.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/azurecli/New-NetworkSecurityGroup.azcli.ps1` | Creates the Azure Local network security groups, and their rules, that networking.network_security_groups of infrastructure.yml lists, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci-vm` (`az extension add --name stack-hci-vm`); the script does not install it.
+
+SDN enabled by Azure Arc must be on (`sdn.enabled` true), or the script stops with exit code 2 and creates nothing; it does not turn SDN on. A group needs at least one rule, and the script refuses a group without rules. Run it before the logical network script of [Task 08](./task-08-logical-network-creation.mdx). Nothing is deleted: an existing rule that differs from the file is reported.
+
+#### Run
+
+```powershell
+./New-NetworkSecurityGroup.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-NetworkSecurityGroup.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

@@ -3,6 +3,7 @@ title: "Active Directory - Via ARM Template"
 sidebar_label: "AD - ARM Template"
 sidebar_position: 2
 description: "Deploy Azure Local cluster with Active Directory authentication using ARM templates"
+updated: 2026-11-15
 ---
 
 import Tabs from '@theme/Tabs';
@@ -376,6 +377,33 @@ Requires PowerShell 7 and an Azure sign-in. The script does not sign in.
 Add `-WhatIf` to do everything except submit. Validate and Deploy go ahead only after the [pre-cluster verification](../../../../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate) passed for the same file. A Validate that already passed with the same parameters is not submitted again. The script refuses a second Validate when the instance is in a failed deployment state, because Microsoft says a second Validate resets the system properties.
 
 </TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Check the preconditions, then submit the ARM template in Validate mode, from a host that has the Azure CLI and not the Az PowerShell modules. The script calls `az deployment group validate` and `az deployment group create`.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template/azurecli/Invoke-AzureLocalArmDeployment.azcli.ps1` | Starts the ARM template deployment of an Azure Local instance with Active Directory identity, with the Azure CLI: validate, then deploy. It stops with exit code 2 before anything goes to Azure when `scenario.identity` is not `active_directory`. Supports `-WhatIf`. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.azcli.ps1` | The script that does the work; the task script calls it. It reuses the toolkit's ARM deployment code for the template, the parameters and the checks, and uses `az` only for the Azure calls. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. The script does not change the Azure CLI default subscription.
+
+The default `-Mode` is `Validate`. `-WhatIf` checks the preconditions, builds the parameters, runs the pre-flight `az deployment group validate` and submits nothing. A Validate is refused when the instance is in a failed deployment state, unless you pass `-AllowRevalidate` (support-guided recovery only).
+
+The local administrator password and the LCM user password go to Azure as Key Vault references in the parameter file: no secret value is read, written or put on a command line by this script. A secret that is not a `keyvault://` reference (`env://`, `file://`, `command://`) cannot be handed to Azure this way, so the script stops with exit code 2 and names the PowerShell script, which reads it on the machine that runs it. The template is Microsoft's, read by Azure from its address (`-TemplateFile` uses a local copy); the run setting `deploymentSettingsApiVersion` is not applied here.
+
+#### Run
+
+```powershell
+./Invoke-AzureLocalArmDeployment.azcli.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -HandoffFile ./ztp-handoff.json -Mode Validate -WhatIf
+./Invoke-AzureLocalArmDeployment.azcli.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -HandoffFile ./ztp-handoff.json -Mode Validate
+```
+
+</TabItem>
 </Tabs>
 
 :::tip Run the Validation Monitor
@@ -443,6 +471,31 @@ The `New-AzResourceGroupDeployment` command blocks until deployment completes (1
 The deployment takes about 2.5 to 3 hours. A running deployment is attached to. A failed one is submitted again only with `-Resume`. To run Validate and Deploy in one run, use `-Mode ValidateAndDeploy` with `-ApprovalMode stop` (the default: the run ends after a good Validate; run `-Mode Deploy` after the approval) or `-ApprovalMode none` (it continues at once). The same setting is `deployment.approval` in the file. Nothing asks on the console.
 
 The secrets (the local administrator and the LCM user, as `keyvault://` references) are read from Key Vault into memory and sent as secure parameters. They are never written to the parameter file or to the report. To watch the steps while it runs, use [Azure Local Sonar](../../../deployment-monitoring/index.mdx).
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: The real deployment, from a host that has the Azure CLI and not the Az PowerShell modules. It is a separate, explicit run and it needs a Validate that succeeded.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template/azurecli/Invoke-AzureLocalArmDeployment.azcli.ps1` | Starts the ARM template deployment of an Azure Local instance with Active Directory identity, with the Azure CLI: validate, then deploy. It stops with exit code 2 before anything goes to Azure when `scenario.identity` is not `active_directory`. Supports `-WhatIf`. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.azcli.ps1` | The script that does the work; the task script calls it. It reuses the toolkit's ARM deployment code for the template, the parameters and the checks, and uses `az` only for the Azure calls. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. The script does not change the Azure CLI default subscription.
+
+A Deploy is refused unless the instance validated successfully. The script waits for the outcome up to the timeout of the run settings (`validateTimeoutMinutes` 90, `deployTimeoutMinutes` 360; `-TimeoutMinutes` overrides it). `-NoWait` submits and returns: run the script again to attach to the running deployment. A deployment of the same name that succeeded is not submitted again, and a failed Deploy is resubmitted only with `-Resume`. The secrets are Key Vault references only, as for Validate.
+
+#### Run
+
+```powershell
+./Invoke-AzureLocalArmDeployment.azcli.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -HandoffFile ./ztp-handoff.json -Mode Deploy -WhatIf
+./Invoke-AzureLocalArmDeployment.azcli.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -HandoffFile ./ztp-handoff.json -Mode Deploy
+```
 
 </TabItem>
 </Tabs>
@@ -531,6 +584,31 @@ The login is `-Credential`, else the account the file names: the LCM user (`iden
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Verify in Azure that the deployment completed, from a host that has the Azure CLI and not the Az PowerShell modules. The scripts are read only.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/azurecli/Test-ClusterDeployment.azcli.ps1` | Verifies in Azure that the deployment of an Azure Local instance with Active Directory identity completed, with the Azure CLI. Read only. It stops with exit code 2 before anything goes to Azure when `scenario.identity` is not `active_directory`. Supports `-WhatIf` (lists the checks and runs none). |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Test-AzureLocalClusterDeployment.azcli.ps1` | The script that does the work; the task script calls it. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extensions `stack-hci`, `connectedmachine` (`az extension add --name stack-hci`, `az extension add --name connectedmachine`); the script does not install them.
+
+It checks that the Azure Local instance `cluster.name` is `Succeeded`, that its deployment status (`deploymentSettings/default`) is `Success` (a failed or unfinished deployment lists the steps that failed), and that every machine of `nodes[]` has an Arc machine with the status `Connected`. It does not reach the nodes or Active Directory: the checks of the nodes and of the domain run on premises, in `Invoke-VerifyPostDeployment.ps1` ([Task 09](../../../../phase-06-post-deployment/task-09-post-deployment-verification.mdx)).
+
+#### Run
+
+```powershell
+./Test-ClusterDeployment.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Test-ClusterDeployment.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

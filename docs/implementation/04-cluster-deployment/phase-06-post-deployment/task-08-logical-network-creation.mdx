@@ -8,7 +8,7 @@ scope: "Create Azure Local logical networks for Arc VM network connectivity"
 purpose: "Create Azure Local logical networks for Arc VM network connectivity"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -168,6 +168,30 @@ Requires: PowerShell 7.
 
 ```powershell
 ./New-LogicalNetwork.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/azurecli/New-LogicalNetwork.azcli.ps1` | Creates the Azure Local logical networks that networking.logical_networks of infrastructure.yml lists, with the Azure CLI only. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci-vm` (`az extension add --name stack-hci-vm`); the script does not install it.
+
+This script never reaches a node, so it cannot read the external virtual switch of the cluster the way the PowerShell script does: every enabled network must name its switch in `networking.logical_networks[].vm_switch_name`, or the script stops with exit code 2 before it sends anything. Read the name with `Get-VMSwitch -SwitchType External` on a node. A network with `nsg_name` needs the group of [Task 07](./task-07-configure-nsgs.mdx) first (the group is tied to the network when the network is created). An existing logical network is left alone: its gateway, IP pools, address space, VLAN ID and virtual switch cannot change after creation.
+
+#### Run
+
+```powershell
+./New-LogicalNetwork.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-LogicalNetwork.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

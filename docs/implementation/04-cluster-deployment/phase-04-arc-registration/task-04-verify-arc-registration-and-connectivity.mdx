@@ -8,7 +8,7 @@ scope: "Verify that Azure Arc registration is successful and connectivity is est
 purpose: "Verify that Azure Arc registration is successful and connectivity is established for all cluster nodes"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-15
 version: "1.0.0"
 tags:
   - azure-local
@@ -83,7 +83,7 @@ Get-Service himds | Format-Table Name, Status, StartType
 
 ### PowerShell
 
-> **No script in this task folder.** The folder holds only placeholders (`Invoke-ArcVerification-Orchestrated.ps1` and the Azure CLI `az-verify-arc-registration.ps1`). A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Confirm-ArcRegistration.ps1` and `Confirm-ArcRegistration-Orchestrated.ps1` are removed.
+> **No PowerShell script of its own in this task folder.** `Invoke-ArcVerification-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Confirm-ArcRegistration.ps1` and `Confirm-ArcRegistration-Orchestrated.ps1` are removed. The scripts below read the Arc machines, and the Azure CLI tab has a script that checks them in Azure.
 
 #### Script
 
@@ -98,6 +98,31 @@ Get-Service himds | Format-Table Name, Status, StartType
 ./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ArcRegistration
 
 ./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -Mode Plan -ReportDirectory ./arm-plan
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Check the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az` and only reads Azure.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity/azurecli/Test-ArcRegistration.azcli.ps1` | Verifies in Azure with the Azure CLI that the Azure Local machines of `nodes[]` are registered with Azure Arc and connected. Read only. Supports `-WhatIf` (lists the checks and runs none). |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `connectedmachine` (`az extension add --name connectedmachine`); the script does not install it.
+
+It checks that each machine exists in `azure.resource_group`, that its status is `Connected`, and that the extensions of the Azure Local registration are `Succeeded` (they install some time after the registration, so run it again when one is still `Creating`). `-TargetNode` limits the checks to some nodes. Whether the machines reach the Arc endpoints runs on the machines and is not an Azure CLI task.
+
+#### Run
+
+```powershell
+./Test-ArcRegistration.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Test-ArcRegistration.azcli.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>

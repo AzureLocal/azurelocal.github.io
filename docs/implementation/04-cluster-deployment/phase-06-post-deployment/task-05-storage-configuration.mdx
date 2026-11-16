@@ -8,7 +8,7 @@ scope: "Create S2D volumes on the Azure Local cluster and create storage paths i
 purpose: "Create S2D volumes on the Azure Local cluster and create storage paths in Azure for VM workload placement"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-11-13
+updated: 2026-11-15
 version: "2.0.0"
 tags:
   - azure-local
@@ -352,6 +352,23 @@ az stack-hci-vm storagepath create `
 ```
 
 You cannot rename a storage path after it is created.
+
+#### Toolkit script
+
+To create every path of `storage.paths` in one run from a host that has the Azure CLI and not the Az PowerShell modules, use the toolkit script. It is PowerShell 7 that calls `az stack-hci-vm storagepath`.
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/azurecli/New-StoragePath.azcli.ps1` | Creates the Azure Local storage paths that storage.paths of infrastructure.yml lists, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci-vm` (`az extension add --name stack-hci-vm`); the script does not install it.
+
+Like the PowerShell script it creates each storage path in `azure.resource_group`, on the custom location `azure.custom_location`, in `azure.location`, with the file-level `tags`. It does not touch the cluster: create the volume first. A path on the infrastructure volume is refused. A storage path that exists is reported as `AlreadyExists` and left alone; a different folder is reported, since a storage path cannot be moved. Storage paths the deployment made (Express mode) are not touched.
+
+```powershell
+./New-StoragePath.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-StoragePath.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
 
 </TabItem>
 </Tabs>

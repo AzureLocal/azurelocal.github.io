@@ -8,7 +8,7 @@ scope: "Validate identity, permissions, and connectivity before Arc registration
 purpose: "Validate identity, permissions, and connectivity before Arc registration"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-11-08
+updated: 2026-11-15
 version: "1.1.0"
 tags:
   - azure-local
@@ -155,7 +155,7 @@ if ($secret -and $secret.Enabled) {
 
 ### PowerShell
 
-> **No script in this task folder.** The folder holds only placeholders (`Invoke-ArcPrerequisites-Orchestrated.ps1` and the Azure CLI `az-test-arc-prerequisites.ps1`). A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Test-ArcPrerequisites.ps1` and `Test-ArcPrerequisites-Orchestrated.ps1` are removed. The pre-cluster verification checks the Azure side.
+> **No PowerShell script in this task folder.** `Invoke-ArcPrerequisites-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Test-ArcPrerequisites.ps1` and `Test-ArcPrerequisites-Orchestrated.ps1` are removed. The pre-cluster verification checks the Azure side, and the Azure CLI tab has a script for it.
 
 #### Script
 
@@ -170,6 +170,31 @@ if ($secret -and $secret.Enabled) {
 ```
 
 A run with `-Category` is partial: it ends with exit code 3 when nothing blocks, and it never passes the ARM precondition.
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Check the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az` and only reads Azure.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/azurecli/Test-ArcPrerequisites.azcli.ps1` | Checks the Azure side of the Arc registration with the Azure CLI: the subscription, the resource group, the resource providers and the roles of the signed-in account. Read only. Supports `-WhatIf` (lists the checks and runs none). |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+Azure side only: the Environment Checker of the next step runs on the machines and is not an Azure CLI task. It does not change the Azure CLI default subscription. Reading the role assignments of the account needs permission to read role assignments and, for a signed-in user, its own directory object.
+
+#### Run
+
+```powershell
+./Test-ArcPrerequisites.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Test-ArcPrerequisites.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
 
 </TabItem>
 
