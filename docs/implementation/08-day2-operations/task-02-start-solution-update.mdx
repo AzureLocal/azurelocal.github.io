@@ -1,0 +1,167 @@
+---
+title: "Task 02: Start the Solution Update"
+sidebar_label: "Task 02: Start the Solution Update"
+sidebar_position: 2
+description: "Start the Azure Local solution update after the deployment or for the monthly update, with the safety checks of Microsoft Learn, and return without waiting"
+category: "Runbook"
+scope: "Start (or only prepare) one solution update on a deployed Azure Local cluster"
+purpose: "Start the chosen solution update from PowerShell, once the check says it is ready, and leave the run to the update service"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - day-2
+  - updates
+keywords:
+  - Start-SolutionUpdate
+  - PrepareOnly
+  - monthly update
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 02: Start the Solution Update
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Day 2](https://img.shields.io/badge/Part-08%20Day%202%20Operations-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: A deployed Azure Local cluster that has an update in the state `Ready` or `ReadyToInstall`   
+> **PURPOSE**: Start the solution update that `infrastructure.yml` chooses, with the safety checks of Learn, and return   
+> **MASTER REFERENCE**: [Update Azure Local by using PowerShell](https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2)
+
+**Status**: Active
+
+Run [Task 01](./task-01-check-for-updates.mdx) first: it says whether an update is ready. If it says `AdditionalContentRequired`, do the [SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import.mdx) first. Microsoft supports two ways to install an update, PowerShell on the cluster and Azure Update Manager in the portal; this script is the PowerShell way, so this task has no Azure CLI script (the Azure CLI has no update command).
+
+The script reads the update environment and the discovered updates, chooses the solution update, refuses to start while the health of the update environment is `Failure`, `Error` or `Warning`, and calls `Start-SolutionUpdate`. It does not wait: an update takes about four hours for one machine and six for four, and the machines restart. It never resumes or retries an update that is in a failed state.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `cluster.name` | The cluster to connect to (or one node, with `-ComputerName`) |
+| `operations.updates.install_after_deployment` | Mode `AfterDeployment` only: `true` starts the first update, `false` (default) starts nothing and exits 0. Mode `OnDemand` does not read it |
+| `operations.updates.target_version` | `latest` (default: the highest solution update that is ready) or a solution version of four numbers, for example `12.2610.1004.50`, which the update service must list. Standalone SBE updates are never chosen |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="PowerShell on a cluster machine" default>
+
+### PowerShell on a cluster machine
+
+> **When to use**: You choose the update yourself and run the commands of Learn
+
+1. Sign in to a machine of the cluster as the deployment user and note the `ResourceId` of the update (`Get-SolutionUpdate`).
+2. Recommended: download the update and run the readiness checks before the window. When the state is `ReadyToInstall`, the update is prepared.
+3. Inside the window, start it and keep the returned instance id for troubleshooting.
+
+```powershell
+Get-SolutionUpdate -Id <ResourceId> | Start-SolutionUpdate -PrepareOnly
+Get-SolutionUpdate -Id <ResourceId> | Format-Table Version, State, UpdateStateProperties, HealthState
+$InstanceId = Get-SolutionUpdate -Id <ResourceId> | Start-SolutionUpdate
+```
+
+An update that was prepared with `-PrepareOnly` has to be installed from PowerShell, not from the portal (Learn).
+
+</TabItem>
+<TabItem value="orchestrated" label="PowerShell">
+
+### PowerShell
+
+> **When to use**: The first update after the deployment, or the monthly update, with the checks of the toolkit
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1` | Chooses the solution update, checks the health, starts it (or only prepares it) and returns. `-WhatIf` reads the cluster and starts nothing |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-Mode` | `AfterDeployment` (default): starts only when `install_after_deployment` is `true`. `OnDemand`: the monthly update, the switch is not read. Everything else is the same |
+| `-PrepareOnly` | Download and readiness checks only, nothing is installed. Run again without it to install |
+| `-ComputerName`, `-Credential` | One machine instead of `cluster.name`; the deployment user |
+| `-LogPath` | Also append the progress lines to this file |
+
+#### Run
+
+```powershell
+# the monthly update, step by step
+./Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -Mode OnDemand -WhatIf        # what would be started
+./Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -Mode OnDemand -PrepareOnly   # before the window
+./Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -Mode OnDemand               # inside the window
+```
+
+The script is idempotent. It reports and exits 0, starting nothing, when the switch is off (`AfterDeployment`), when the cluster already runs the target version or has no newer update ready, when an update is already `Downloading`, `Preparing`, `HealthChecking` or `Installing`, and, with `-PrepareOnly`, when the update is already `ReadyToInstall`.
+
+| Row `Action` | Meaning |
+|--------------|---------|
+| `Started`, `Prepared` | The call was made; the detail holds the run and the `ResourceId`. The update runs on its own |
+| `AlreadyRunning`, `AlreadyAtTarget`, `AlreadyPrepared` | Nothing was started (exit 0) |
+| `WouldStart`, `WouldPrepare` | `-WhatIf` plan |
+| `Failed` | The update is in a failed state, needs content or a prerequisite, the health blocks it, a newer update is stuck, or the call failed (exit 1) |
+
+Exit codes: `0` started, prepared, nothing to start, or planned; `1` the cluster could not be read, the system is not ready or the update cannot be started; `2` a value in the file is missing or not usable (nothing is sent).
+
+</TabItem>
+<TabItem value="portal" label="Azure portal">
+
+### Azure portal
+
+> **When to use**: The update was not prepared with `-PrepareOnly`, and you prefer the portal
+
+Go to **Azure Update Manager** > **Resources** > **Azure Local**, select the cluster, review the readiness checks, then **Install now** (or **Prepare** first, from release 12.2604 and later). Track it in **History**; it can take up to 15 minutes for the run to appear.
+
+</TabItem>
+</Tabs>
+
+---
+
+## Follow the update
+
+Run [Task 01](./task-01-check-for-updates.mdx) again (verdict `UpdateRunning`), or `Get-SolutionUpdate -Id <ResourceId> | Format-Table Version, State, UpdateStateProperties, HealthState` on a machine, or watch Update Manager. To monitor from PowerShell, connect to the last machine of the cluster: the sessions drop as machines restart. When the state is `Installed`, check `Get-SolutionUpdateEnvironment | Format-Table State, CurrentVersion` (`AppliedSuccessfully` is the goal).
+
+## Validation
+
+- [ ] The row says `Started` or `Prepared`, or the reason it did not
+- [ ] The update state moves through `Downloading`, `Preparing`, `HealthChecking` to `Installing`
+- [ ] After the run: state `Installed`, `CurrentVersion` is the target, the checks of [Part 7](../07-validation-handover/index.mdx) pass again
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `operations.updates.install_after_deployment is not true` | Mode `AfterDeployment` and the switch is off | Use `-Mode OnDemand`, or set the key to `true` |
+| The update environment health is `Warning` | A readiness check warns | `Get-SolutionHealthSummary`; fix it. To resume an update that failed on warnings, Learn names `Start-SolutionUpdate -IgnoreWarnings`; the script does not use it |
+| `AdditionalContentRequired` | The vendor content is missing | [SBE update import](../04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import.mdx) |
+| A newer update is in a failed state | The script never starts an older update past a failed newer one | Fix the newer update (Learn: Troubleshoot updates), or name the version to install in `operations.updates.target_version` |
+| The update service lists no update `<version>` | A feature update can take a week after its release to be visible | Check again later, or `Add-SolutionUpdate` imports one by hand |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 01: Check for Updates](./task-01-check-for-updates.mdx) | [Part 8 Index](./index.mdx) | [Task 03: Node Maintenance](./task-03-node-maintenance.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release. The script was `Start-SolutionUpdateAfterDeployment.ps1`; it now also runs the monthly update (`-Mode OnDemand`) and can prepare (`-PrepareOnly`) |

@@ -1,0 +1,136 @@
+---
+title: "Task 06: Customer Transfer"
+sidebar_label: "Task 06: Customer Transfer"
+sidebar_position: 6
+description: "Give the customer administrator access to the Azure Local resources in Azure and write the transfer record"
+category: "Runbook"
+scope: "The Azure access of the customer administrator for one Azure Local instance"
+purpose: "Contributor on the resource group, Reader on the subscription, and a record of the transfer"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - handover
+  - rbac
+keywords:
+  - role assignment
+  - handover
+  - customer transfer
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 06: Customer Transfer
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Part 7](https://img.shields.io/badge/Part-07%20Validation%20%26%20Handover-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: The Azure resources of one Azure Local instance   
+> **PURPOSE**: Give the customer administrator access in Azure and write the record of the transfer   
+> **MASTER REFERENCE**: [Assign Azure roles using Azure CLI](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-cli)
+
+**Status**: Active
+
+The script looks the customer administrator up in Microsoft Entra ID (by user principal name, then by mail for a guest), assigns the built-in role **Contributor** on the resource group and **Reader** on the subscription when the administrator does not have them, counts the role assignments, and writes the record (Markdown and JSON). It is idempotent: a role the administrator already has is reported, and the script never removes a role assignment. It does not touch the nodes: local access is the customer's decision (a domain group, `identity.active_directory.security_groups`), and the record says so. It does not sign in.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `cluster.name` | The instance that is handed over (in the record) |
+| `azure.tenant_id` | The tenant the sign-in must belong to |
+| `azure.subscription_id`, `azure.resource_group` | The scopes of the two role assignments |
+| `site.customer` | The customer named in the record |
+
+The customer's own tenant (`-CustomerTenantId`) and administrator (`-CustomerAdminUPN`) are parameters: they are not part of the deployment.
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="orchestrated" label="PowerShell" default>
+
+### PowerShell
+
+> **When to use**: The Az PowerShell modules are installed. Sign in first: `Connect-AzAccount -Tenant <azure.tenant_id>`, with an account that may create role assignments (Owner or User Access Administrator)
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/07-validation-handover/task-06-customer-transfer/powershell/Set-CustomerTransfer.ps1` | Entra lookup, two role assignments, the record. `-WhatIf` reads Azure, assigns nothing and writes no file |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-CustomerTenantId` | The customer's Entra tenant id (a GUID). It goes in the portal link of the record. Required |
+| `-CustomerAdminUPN` | The user principal name (or the mail of a guest) of the customer administrator. Required |
+| `-OutputPath` | The folder for the record. Without it nothing is written |
+
+```powershell
+./Set-CustomerTransfer.ps1 -InfrastructureFile ./infrastructure.yml -CustomerTenantId <customer-tenant-id> -CustomerAdminUPN admin@contoso.example -WhatIf
+./Set-CustomerTransfer.ps1 -InfrastructureFile ./infrastructure.yml -CustomerTenantId <customer-tenant-id> -CustomerAdminUPN admin@contoso.example -OutputPath ./handover
+```
+
+</TabItem>
+<TabItem value="azurecli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: The Azure CLI is installed. Sign in first: `az login --tenant <azure.tenant_id>`
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/07-validation-handover/task-06-customer-transfer/azurecli/Set-CustomerTransfer.azcli.ps1` | The same with `az ad user show`, `az role assignment list` and `az role assignment create --assignee-object-id --assignee-principal-type User`. Same parameters, same record |
+
+```powershell
+az login --tenant <tenant-id>
+./Set-CustomerTransfer.azcli.ps1 -InfrastructureFile ./infrastructure.yml -CustomerTenantId <customer-tenant-id> -CustomerAdminUPN admin@contoso.example -OutputPath ./handover
+```
+
+</TabItem>
+</Tabs>
+
+Exit codes (both): `0` the transfer is in place (assigned, already there, or planned under `-WhatIf`) and the record is written; `1` an Azure call failed or a precondition failed (not signed in, wrong tenant, the administrator not found, an assignment failed); `2` a value in the file or a parameter is missing or not usable.
+
+---
+
+## Validation
+
+- [ ] Exit code 0 and both roles are `Assigned` or `AlreadyAssigned`
+- [ ] The customer administrator sees the resource group in the Azure portal (the link is in the record)
+- [ ] The record is saved with the rest of the handover package
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `was not found in Microsoft Entra ID` | A guest has not been invited, or the name is wrong | Invite the guest first, then run again |
+| An assignment fails with `AuthorizationFailed` | The signed-in account cannot create role assignments | Sign in as Owner or User Access Administrator |
+| Signed in to the wrong tenant | `az` or `Connect-AzAccount` is in another tenant | Sign in to `azure.tenant_id` |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 05: Deployment Documentation](./task-05-deployment-documentation.mdx) | [Part 7 Index](./index.mdx) | [Part 8: Day 2 Operations](../08-day2-operations/index.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release (the script moved here from the old handover folder of the toolkit; adds the Azure CLI script) |

@@ -1,0 +1,121 @@
+---
+title: "Task 01: Cluster Health Validation"
+sidebar_label: "Task 01: Cluster Health"
+sidebar_position: 1
+description: "Validate the cluster service, the nodes, Storage Spaces Direct, the cluster networks, the quorum and the Arc agent from the cluster, read only"
+category: "Runbook"
+scope: "Cluster health evidence for the handover, repeatable at any time"
+purpose: "One run, one report: is the cluster healthy right now"
+author: "Azure Local Cloud"
+created: 2026-11-15
+updated: 2026-11-15
+version: "1.0.0"
+tags:
+  - azure-local
+  - validation
+  - handover
+keywords:
+  - cluster health
+  - Storage Spaces Direct
+  - quorum
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 01: Cluster Health Validation
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Part 7](https://img.shields.io/badge/Part-07%20Validation%20%26%20Handover-orange?style=flat-square)](./index.mdx)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: A deployed Azure Local cluster   
+> **PURPOSE**: Check the cluster service, every node, Storage Spaces Direct, the cluster networks, the quorum and the Arc agent of every node   
+> **MASTER REFERENCE**: [Validate an Azure Local deployment](https://learn.microsoft.com/en-us/azure/azure-local/deploy/validate)
+
+**Status**: Active
+
+Part 6 task 01 is the first acceptance run. This task is the same question asked again for the handover file, and after every update or maintenance. It changes nothing.
+
+---
+
+## Values from infrastructure.yml
+
+The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+| Key | What the script does with it |
+|-----|------------------------------|
+| `cluster.name` | The cluster to check |
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="PowerShell on a cluster machine" default>
+
+### PowerShell on a cluster machine
+
+```powershell
+Get-Cluster; Get-ClusterNode; Get-ClusterQuorum
+Get-ClusterStorageSpacesDirect
+Get-StoragePool -IsPrimordial $false; Get-VirtualDisk; Get-ClusterNetwork
+```
+
+</TabItem>
+<TabItem value="orchestrated" label="PowerShell">
+
+### PowerShell
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/07-validation-handover/task-01-cluster-health-validation/powershell/Test-ClusterHealth.ps1` | Runs the checks and prints `PASSED`, `WARNING` or `FAILED` for each. Needs the failover clustering tools (a cluster node, or a management server with RSAT) |
+
+| Parameter | Meaning |
+|-----------|---------|
+| `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
+| `-OutputFormat` | `Console` (default), `JSON` or `HTML` |
+| `-OutputPath` | The folder for the JSON or HTML report |
+
+```powershell
+./Test-ClusterHealth.ps1 -InfrastructureFile ./infrastructure.yml -OutputFormat JSON -OutputPath ./handover
+```
+
+Exit codes: `0` no check failed (warnings are listed), `1` a check failed, `2` `cluster.name` is missing or the file cannot be read.
+
+</TabItem>
+</Tabs>
+
+---
+
+## Validation
+
+- [ ] Overall status is `PASSED` (exit code 0)
+- [ ] Every node is `Up`, the storage pools and virtual disks are `Healthy`, the quorum type is the one you configured in Phase 06 task 02
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|-------|-------|------------|
+| `Cannot connect to cluster` | The cluster name does not resolve, or the account has no rights | Check `cluster.name` and DNS; run as a cluster administrator |
+| `WARNING` for the Arc agent | The agent reports a state other than `Connected` | [Task 02](./task-02-arc-connectivity-validation.mdx) |
+| A virtual disk is `Warning` after a reboot | A storage repair job is running | `Get-StorageJob`; wait for it to finish |
+
+---
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Part 7 Index](./index.mdx) | [Part 7 Index](./index.mdx) | [Task 02: Arc Connectivity](./task-02-arc-connectivity-validation.mdx) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release. The script reads `cluster.name` from `infrastructure.yml` (it was `-ClusterName`) |
