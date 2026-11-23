@@ -130,17 +130,17 @@ These issues are still open on the project board but the work has been done in t
 
 These issues are marked Done on the board but their acceptance criteria are **not fully checked**.
 
-### 3.1 — DOCS-24: [EPIC] Rewrite org-wide standards — remove all TierPoint references
+### 3.1 — DOCS-24: [EPIC] Rewrite org-wide standards — remove all company-specific references
 
 **Project Status:** Todo (not Done — confirmed re-checked)  
 **Actual State:**
-- ✅ `grep` across all `docs/standards/` returns 0 TierPoint/ProdTech/PCS refs
-- ✅ `grep` across all `docs/` returns 0 TierPoint refs
+- ✅ `grep` across all `docs/standards/` returns 0 company-specific refs
+- ✅ `grep` across all `docs/` returns 0 company-specific refs
 - ❌ Variable management suite (#15 acceptance criteria) — remaining checkbox unchecked in issue
 - ❌ "Every repo's README/CONTRIBUTING links to the clean standards" — unchecked
 
 **Verification Steps:**
-- [ ] Confirm `docs/standards/variable-management/` exists and has IIC-only examples with no TierPoint refs
+- [ ] Confirm `docs/standards/variable-management/` exists and has IIC-only examples with no company-specific refs
 - [ ] Check 5 solution repos each have README and CONTRIBUTING with link to `azurelocal.cloud/standards/`
   - [ ] azurelocal-avd
   - [ ] azurelocal-sofs-fslogix
@@ -509,7 +509,7 @@ Work in priority order within each repo:
 | DOCS-7 | Cross-repo CI/CD standardization — reusable workflows | Todo |
 | DOCS-8 | Vale linting — fix warnings and enforce in CI | Todo |
 | DOCS-9 | Add 'Under Active Development' warning to all MkDocs repos | Done |
-| DOCS-10 | Epic: Migrate TierPoint Azure Local content to org | Done |
+| DOCS-10 | Epic: Migrate company-specific Azure Local content to the org | Done |
 | DOCS-11 | Migrate Azure Local Anywhere docs | Done |
 | DOCS-12 | Create azurelocal-toolkit repo and migrate content | Done |
 | DOCS-13 | Project board custom fields not auto-populated on new issues | Done |
@@ -523,7 +523,7 @@ Work in priority order within each repo:
 | DOCS-21 | Fix: remove Azure Local Anywhere legacy branding | Done |
 | DOCS-22 | chore: release 1.1.0 (PR) | Todo |
 | DOCS-23 | Fix: merge intro.md into index.mdx | Done |
-| DOCS-24 | [EPIC] Rewrite org-wide standards — remove TierPoint refs | Todo |
+| DOCS-24 | [EPIC] Rewrite org-wide standards — remove company-specific refs | Todo |
 | DOCS-25 | [WIP] Brainstorm additional Azure Local solutions (**DUPLICATE of DOCS-5**) | Done |
 | DOCS-26 | Create and integrate 10 new Azure Local solution repos | Todo |
 | DOCS-27 | Automate standards sync from canonical docs to downstream repos | Todo |
