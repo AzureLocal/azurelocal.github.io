@@ -1,0 +1,254 @@
+---
+title: "Task 04: Create Cost Budgets"
+sidebar_label: "Task 04: Cost Budgets"
+sidebar_position: 4
+description: "Create Cost Management budgets with e-mail alerts on the subscriptions and resource groups of the landing zone."
+category: "Runbook"
+scope: "Cost Management budgets of the landing zone"
+purpose: "Get an e-mail before the Azure cost of the instance passes a set amount"
+author: "Hybrid Cloud Solutions"
+created: 2026-11-23
+updated: 2026-11-23
+version: "1.0.0"
+tags:
+ - azure-local
+ - phase-01
+ - cost-management
+ - budgets
+ - full-deployment
+keywords:
+ - cost management
+ - budgets
+ - budget alerts
+ - cost alerts
+status: "Active"
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Task 04: Create Cost Budgets
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook   
+> **SCOPE**: Cost Management budgets of the landing zone   
+> **PURPOSE**: Get an e-mail before the Azure cost of the instance passes a set amount   
+> **MASTER REFERENCE**: [Microsoft Learn — Tutorial: Create and manage budgets](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets)
+
+**Status**: Active
+
+## Overview
+
+A Cost Management budget tracks the Azure cost of a subscription or of one resource group over a period (a month, a quarter or a year) and sends an e-mail when the cost passes a percentage of the amount. The Azure side of an Azure Local instance can cost money (the Azure Local service fee per physical core unless Azure Hybrid Benefit waives it, the Arc-enabled services you turn on, Azure Monitor and Log Analytics ingestion, Key Vault, storage for the cloud witness), so a budget is a free early warning.
+
+:::info Free, and it never stops anything
+Budgets are part of Cost Management and cost nothing. A budget does not cap the spending or stop, limit or delete any resource by itself; the budgets of this task send e-mails only. A budget can also call an Azure Monitor action group whose automation acts on resources, which this task does not set up (Microsoft Learn: [Tutorial: Create and manage budgets](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets)).
+:::
+
+### What This Accomplishes
+
+- **Actual cost alerts** — an e-mail when the cost of the period passes each threshold (80% and 100% of the amount unless you set others)
+- **Forecast alerts** — optional: an e-mail when the forecast cost of the period is going to pass a threshold, before it happens
+- **Per subscription or per resource group** — one budget for the whole subscription, or one for the resource group of the instance
+- **Kept as written** — run the task again after a change in `infrastructure.yml`: the budget is updated to the file
+
+## Prerequisites
+
+| Prerequisite | Detail |
+|---|---|
+| **Subscriptions** | The subscriptions exist ([Task 02](./task-02-create-subscriptions)); for a resource group budget, the resource group exists ([Task 03](./task-03-create-resource-groups)) |
+| **Permissions** | Cost Management Contributor, Contributor or Owner on each subscription or resource group that gets a budget ([Microsoft Learn: Assign access to Cost Management data](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/assign-access-acm-data)) |
+| **Authenticated Azure session** | See [Authentication](../../../05-authentication.mdx) |
+| **`infrastructure.yml`** | `landing_zone.budgets` filled in (schema 5.6.30) |
+
+## Budget Plan
+
+The example below uses Improbability Cloud (IIC). Replace names and amounts with values from your `infrastructure.yml`. The amount is in the billing currency of the subscription.
+
+| Budget | Scope | Amount | Period | Alerts |
+|---|---|---|---|---|
+| `budget-iic-azl-monthly` | Subscription `sub-iic-azure-local` | 1000 | Monthly | 80% and 100% of the actual cost, 100% of the forecast cost |
+| `budget-iic-mgmt-quarterly` | Resource group `rg-iic-mgmt-01` of `sub-iic-management` | 600 | Quarterly | 90% of the actual cost |
+
+```yaml
+landing_zone:
+  budgets:
+    - name: "budget-iic-azl-monthly"
+      subscription: "sub-iic-azure-local"      # a name in landing_zone.subscriptions; empty: azure.subscription_id
+      amount: 1000
+      time_grain: Monthly                       # Monthly | Quarterly | Annually
+      thresholds: [80, 100]                     # percent of the amount, actual cost (default 80 and 100)
+      forecast_thresholds: [100]                # percent of the amount, forecast cost (optional)
+      contact_emails: ["cloud-costs@example.com"]
+    - name: "budget-iic-mgmt-quarterly"
+      scope: resource_group
+      subscription: "sub-iic-management"
+      resource_group: "rg-iic-mgmt-01"
+      amount: 600
+      time_grain: Quarterly
+      thresholds: [90]
+      contact_emails: ["cloud-costs@example.com"]
+```
+
+## Values from infrastructure.yml
+
+The scripts read these keys from `infrastructure.yml` (schema 5.6.30). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
+
+```text
+azure.tenant_id, azure.subscription_id
+landing_zone.subscriptions[].name, .id                     the subscription of each entry
+landing_zone.budgets[].name               1 to 63 letters, digits, hyphens and underscores; unique in its scope (required)
+landing_zone.budgets[].scope              subscription (default) or resource_group
+landing_zone.budgets[].subscription       a name in landing_zone.subscriptions; empty: azure.subscription_id
+landing_zone.budgets[].resource_group     the resource group, when scope is resource_group
+landing_zone.budgets[].amount             greater than 0, in the billing currency (required)
+landing_zone.budgets[].time_grain         Monthly (default), Quarterly or Annually (the Web Direct only grains BillingMonth, BillingQuarter and BillingAnnual are not offered by the toolkit)
+landing_zone.budgets[].start_date         YYYY-MM-01; empty: the first day of the current month
+landing_zone.budgets[].end_date           YYYY-MM-DD; empty: ten years after the start (set by Azure)
+landing_zone.budgets[].thresholds         percentages of the actual cost (default 80 and 100)
+landing_zone.budgets[].forecast_thresholds  percentages of the forecast cost (optional)
+landing_zone.budgets[].contact_emails     at least one address (required)
+```
+
+Rules from Microsoft Learn ([Budgets - Create Or Update](https://learn.microsoft.com/en-us/rest/api/consumption/budgets/create-or-update)): the start date is the first of a month, on or after 2017-06-01 and at most twelve months ahead; a budget has at most five notifications, so `thresholds` and `forecast_thresholds` together list at most five percentages; each percentage is greater than 0 and at most 1000. The scripts check these rules before they call Azure and stop with exit code 2 when a value breaks one.
+
+---
+
+## Execution Options
+
+<Tabs groupId="deployment-method">
+<TabItem value="manual" label="Azure Portal" default>
+
+### Azure Portal
+
+> **When to use**: One budget, or to look at what the scripts created
+
+#### Procedure
+
+1. In the Azure portal, open **Cost Management + Billing** and select **Cost Management**, then **Budgets**.
+2. Select the scope: the subscription (for example `sub-iic-azure-local`) or the resource group (for example `rg-iic-mgmt-01`).
+3. Select **+ Add**.
+4. **Create a budget**:
+ - **Name**: the `name` of the entry
+ - **Reset period**: Monthly, Quarterly or Annually (`time_grain`)
+ - **Creation date** and **Expiration date**: `start_date` and `end_date`
+ - **Amount**: `amount`
+5. **Set alerts**:
+ - One line per percentage of `thresholds` with type **Actual**, and one per percentage of `forecast_thresholds` with type **Forecasted**
+ - **Alert recipients (email)**: the `contact_emails`
+6. Select **Create**.
+
+#### Validation
+
+- [ ] Each budget of the file is listed under **Budgets** on its scope
+- [ ] Amount, reset period and alert percentages match `infrastructure.yml`
+- [ ] The alert recipients are the addresses of `contact_emails`
+
+#### Links
+
+- [Microsoft Learn — Tutorial: Create and manage budgets](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets)
+
+</TabItem>
+<TabItem value="orchestrated" label="PowerShell">
+
+### PowerShell
+
+> **When to use**: Run the task from a management workstation or a pipeline. The script reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-04-create-cost-budgets/powershell/Deploy-CostBudgets.ps1` | Creates the Cost Management budgets that landing_zone.budgets of infrastructure.yml lists, and keeps them as the file says. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Az.Accounts module, signed in with `Connect-AzAccount -Tenant <azure.tenant_id>`. The script calls the Microsoft.Consumption budgets REST API with `Invoke-AzRestMethod`: a GET to read each budget, a PUT to create or update it.
+
+#### Run
+
+```powershell
+./Deploy-CostBudgets.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Deploy-CostBudgets.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+#### What the script does
+
+- A budget that is not there is **created** with the values of the file.
+- A budget that matches the file (amount, period, end date when the file sets one, thresholds and e-mail addresses) is reported as **AlreadyExists** and left alone.
+- A budget of the same name that differs is **updated** to the file, with its eTag, so a change made in between is not overwritten. Its alerts become the ones of the file. Its start date is kept (a difference is reported, not changed), and so is a filter set in the portal.
+- Azure cannot change the period (time grain) of a budget. A budget whose period differs from the file is reported as **Failed** and left alone: delete it in the portal or give the entry another name, then run the task again.
+- Nothing is ever deleted. `-WhatIf` reads Azure and changes nothing.
+- Exit codes: 0 every budget is in place; 1 an Azure call failed (not signed in, wrong tenant, no permission, a write refused); 2 a value in the file is missing or not usable.
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-04-create-cost-budgets/azurecli/Deploy-CostBudgets.azcli.ps1` | Creates the Cost Management budgets that landing_zone.budgets of infrastructure.yml lists, and keeps them as the file says, with the Azure CLI. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`.
+
+The script uses `az rest` against the same REST API as the PowerShell script, and behaves the same way (create, AlreadyExists, update, never delete). `az consumption budget create` is not used: it cannot set the alert thresholds and the e-mail addresses. The request body goes through a temporary file (`--body @file`), so no quote crosses the command line of `az.cmd`.
+
+#### Run
+
+```powershell
+./Deploy-CostBudgets.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Deploy-CostBudgets.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
+</Tabs>
+
+---
+
+## Troubleshooting
+
+| Symptom | Error | Resolution |
+|---------|-------|------------|
+| Permission denied | `AuthorizationFailed` or `RBACAccessDenied` (HTTP 403) | Give the account Cost Management Contributor, Contributor or Owner on the subscription or resource group. Contributor and Cost Management Contributor can change every setting of their own budgets but only the amount of a budget someone else created; Owner can change any budget ([Microsoft Learn: Tutorial: Create and manage budgets](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets)) |
+| Start date refused | HTTP 400 that names the start date | The start date is the first of a month, not more than twelve months ahead; a past start date must fall in the current period of the time grain. Leave `start_date` out to use the first day of the current month |
+| New or unsupported subscription | `SubscriptionNotFound` or `SubscriptionTypeNotSupported` | A new subscription can take up to 48 hours before Cost Management features work; not every offer is supported ([Microsoft Learn: Troubleshoot common Cost Management errors](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/cost-management-error-codes)) |
+| No e-mail arrives | — | The alert fires when the cost passes the threshold; alerts are not real time: cost data usually arrives within 8 to 24 hours (sometimes later) and budgets are evaluated once a day, so an alert can come after the cost passed the threshold. Check the recipients of the budget in the portal |
+| Period cannot change | `Budget time grain cannot be updated` | The scripts stop before the write and say so. Delete the budget in the portal (Cost Management, Budgets) or give the entry another name |
+| Exit code 2 | A message names the key | Fix the value in `infrastructure.yml`; nothing was sent to Azure |
+
+## Next Steps
+
+- Proceed to [Phase 02 — Resource Providers](../../phase-02-resource-providers/)
+- Change an amount or a threshold in `infrastructure.yml` and run the task again: the budget is updated
+
+## References
+
+- [Microsoft Learn — Tutorial: Create and manage budgets](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets)
+- [Microsoft Learn — Budgets - Create Or Update (REST API)](https://learn.microsoft.com/en-us/rest/api/consumption/budgets/create-or-update)
+- [Microsoft Learn — Assign access to Cost Management data](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/assign-access-acm-data)
+- [Microsoft Learn — Naming rules and restrictions for Azure resources](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules)
+
+---
+
+## Alternatives
+
+The procedures in this task use the methods shown in the tabs above. The toolkit is PowerShell 7 only and has no Bash scripts. A few tasks that act on Azure also have an Azure CLI script written in PowerShell. The [script status](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/script-status.md) page of the toolkit lists which task has which script.
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Task 03 — Create Resource Groups](./task-03-create-resource-groups.mdx) | [Full Deployment Overview](./index.mdx) | [Phase 02 — Resource Providers](../../phase-02-resource-providers/) |
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-23 | Hybrid Cloud Solutions | Initial release: Deploy-CostBudgets.ps1 and Deploy-CostBudgets.azcli.ps1 (owner directive D128) |
