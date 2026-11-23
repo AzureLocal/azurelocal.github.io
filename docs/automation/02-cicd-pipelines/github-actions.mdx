@@ -34,9 +34,10 @@ GitHub Actions workflow for Azure Local deployments. This is a sample equivalent
 
 | Job | Runner | Trigger | Description |
 |---|---|---|---|
-| `terraform-validate` | `ubuntu-latest` | Auto (push/PR) | Terraform init, validate, fmt check |
-| `ansible-lint` | `ubuntu-latest` | Auto (push/PR) | Ansible lint, syntax check |
-| `terraform-plan` | `ubuntu-latest` | Auto (default branch only) | Writes the variable files, Terraform plan with artifact upload |
+| `config-validate` | `[self-hosted, AZL_RUNNER_OS, AZL_RUNNER_LABEL]` | By hand | `Test-InfrastructureFile.ps1` on the master file (the same check as GitLab `config:validate` and Azure DevOps `CheckInfrastructureFile`) |
+| `terraform-validate` | `ubuntu-latest` | By hand | Terraform init, validate, fmt check |
+| `ansible-lint` | `ubuntu-latest` | By hand | Ansible lint, syntax check |
+| `terraform-plan` | `ubuntu-latest` | By hand (default branch only) | Writes the variable files, Terraform plan with artifact upload |
 | `terraform-apply` | `[self-hosted, AZL_RUNNER_OS, AZL_RUNNER_LABEL]` | Manual (environment approval) | Terraform apply from plan artifact |
 | `configure-onprem` | `[self-hosted, AZL_RUNNER_OS, AZL_RUNNER_LABEL]` | After apply | Playbooks 05 (domain controllers), 01 (AD preparation), 02 (OS configuration), 03 (Arc registration) |
 | `configure-operations` | `[self-hosted, AZL_RUNNER_OS, AZL_RUNNER_LABEL]` | After on-prem | Playbook 04 (monitoring) |
@@ -49,19 +50,10 @@ Every Terraform and Ansible job writes its inputs from the infrastructure file f
 
 ```yaml
 on:
-  push:
-    paths:
-      - 'src/terraform/**'
-      - 'src/ansible/**'
-      - 'config/variables/**'
-  pull_request:
-    paths:
-      - 'src/terraform/**'
-      - 'src/ansible/**'
   workflow_dispatch:
 ```
 
-Every push and pull request that touches the code validates it. Plan, apply and the configuration run only on the default branch of the repository (`github.event.repository.default_branch`), because the branch filter of a trigger cannot read a variable.
+The workflow is started by hand, like the same pipeline on GitLab (the web form or the API) and Azure DevOps (`trigger: none` and `pr: none`): one design on the three platforms (owner directive D126), and a deployment is a decision, not a push. Plan, apply and the configuration run only on the default branch of the repository (`github.event.repository.default_branch`).
 
 ## Setup
 
@@ -123,7 +115,7 @@ git push
 - **Environment Protection**: Manual approval via GitHub environment rules
 - **Artifact Passing**: Terraform plan artifact uploaded/downloaded between jobs
 - **Self-Hosted Runner**: On-prem config stages run on runner with network access
-- **Path Filtering**: Only triggers on changes to IaC or config files
+- **Started by hand**: `workflow_dispatch` only, the same as GitLab and Azure DevOps
 
 ## OS Configuration Workflow
 
@@ -132,9 +124,10 @@ git push
 | Job | Description |
 |---|---|
 | `plan` | Read only. Publishes the plan report and the wipe list as an artifact and in the job summary |
-| `apply` | Runs for mode `Apply` only, after a reviewer of the environment in `AZL_ENVIRONMENT_OS_CONFIGURATION` (`devops.pipelines.environments.os_configuration`) approves it. The reviewer reads the plan job's summary, the wipe list included |
+| `confirm-storage-wipe` | Runs for mode `Apply` only when `os_configuration.clear_storage` is true in the master file: a second, separate approval in the environment in `AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE` (`devops.pipelines.environments.os_configuration_clear_storage`); it prints the wipe list. While that variable is empty, the job `storage-wipe-approval-environment-not-set` fails instead and `apply` does not run. The same two approvals as Azure DevOps and GitLab (D126) |
+| `apply` | Runs for mode `Apply` only, after a reviewer of the environment in `AZL_ENVIRONMENT_OS_CONFIGURATION` (`devops.pipelines.environments.os_configuration`) approves it, and for a wipe only after the second approval. The reviewer reads the plan job's summary, the wipe list included |
 
-Inputs: `mode` (`Plan` or `Apply`, default `Plan`), `handoff_run_id` (the artifact `ztp-handoff` of a ZTP run, in place of `AZL_HANDOFF_PATH`) and `approved_bootstrap` (approves the one-time WinRM bootstrap of `os_configuration.remoting.bootstrap_transport` for this run). Repository variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (`oidc` with a federated credential for the repository and the environment, or `client_secret` with the secret `ARM_CLIENT_SECRET`), `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_INFRASTRUCTURE_FILE`, `AZL_HANDOFF_PATH`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. The transport, the storage wipe and the bootstrap route come from the master file; the workflow overrides none of them. The runner needs a route to the nodes' management network for PowerShell remoting. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
+Inputs: `mode` (`Plan` or `Apply`, default `Plan`), `handoff_run_id` (the artifact `ztp-handoff` of a ZTP run, in place of `AZL_HANDOFF_PATH`) `approved_bootstrap` (approves the one-time WinRM bootstrap of `os_configuration.remoting.bootstrap_transport` for this run) and `confirm_wipe_deployed_cluster` (lets the wipe touch a node of a deployed cluster for this run). Repository variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (`oidc` with a federated credential for the repository and the environment, or `client_secret` with the secret `ARM_CLIENT_SECRET`), `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OS_CONFIGURATION`, `AZL_INFRASTRUCTURE_FILE`, `AZL_HANDOFF_PATH`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. The transport, the storage wipe and the bootstrap route come from the master file; the workflow overrides none of them. The runner needs a route to the nodes' management network for PowerShell remoting. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
 ## Discovery Workflow
 
@@ -214,7 +207,7 @@ Repository variables set by Task 05: `AZL_RUNNER_OS`, `AZL_RUNNER_LABEL`, `AZL_E
 
 **The account.** The scripts connect to the cluster as the service account of the runner, which must be an administrator of the cluster. No workflow passes `-Credential` or holds a password. The node maintenance reads the node login from its secret reference in `infrastructure.yml` (`identity.local_admin`), from Key Vault, with the Azure sign-in of the job. The validation needs the Failover Clustering PowerShell module (RSAT Failover Clustering Tools) on the runner, so a Windows runner. The Azure view of the check for updates needs the Azure CLI on the runner.
 
-**The schedule.** `day2-check-updates.yml` runs on `on.schedule` and by hand. GitHub reads a `cron` expression only from the workflow file, never from a variable. The sample carries the default of `devops.pipelines.schedules.check_for_updates`, `17 4 * * *` (every day at 04:17 UTC), and a toolkit test keeps the two equal. When your key differs, change the `cron` line of your copy: Task 05 prints the value to use. A scheduled run has no inputs, so it takes the Azure view. The run fails when the cluster needs attention (exit code 1), so GitHub's notification of a failed run is the alert. The report is the artifact `day2-update-check`.
+**The schedule.** `day2-check-updates.yml` runs on `on.schedule` and by hand. GitHub reads a `cron` expression only from the workflow file, never from a variable. The sample carries the default of `devops.pipelines.schedules.check_for_updates`, `17 4 * * *` (every day at 04:17 UTC), and a toolkit test keeps the two equal. Task 05 writes the value of your key into the `cron` line of your copy (`.github/workflows/` when the workflow is there); commit it. The same key schedules GitLab and Azure DevOps (D126). A scheduled run has no inputs, so it takes the Azure view. The run fails when the cluster needs attention (exit code 1), so GitHub's notification of a failed run is the alert. The report is the artifact `day2-update-check`.
 
 **While `AZL_ENVIRONMENT_OPERATIONS` is empty, nothing is changed.** A run that would change something fails in the job `approval-environment-not-set`, with a message that names the variable, and nothing is sent to any machine. The read-only jobs run as before. See [No change without an approval environment](#no-change-without-an-approval-environment).
 

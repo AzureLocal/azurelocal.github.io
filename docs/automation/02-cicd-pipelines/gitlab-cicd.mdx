@@ -26,7 +26,7 @@ GitLab CI/CD is the primary pipeline platform for Azure Local deployments. The p
 ## Pipeline Architecture
 
 ```
-validate → plan → deploy-foundation → configure-onprem → configure-operations → validate-deployment
+validate → plan → deploy-foundation → configure-onprem → configure-operations
 ```
 
 | Stage | Tool | Runner | Trigger |
@@ -36,7 +36,6 @@ validate → plan → deploy-foundation → configure-onprem → configure-opera
 | **deploy-foundation** | Terraform apply, output export | The tag in `AZL_RUNNER_LABEL` | Manual approval |
 | **configure-onprem** | Ansible playbooks 05, 01, 02, 03 (domain controllers, AD preparation, OS configuration, Arc registration) | Self-hosted | Manual, in the approval environment of `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` |
 | **configure-operations** | Ansible playbook 04 (monitoring) | Self-hosted | Manual, in the approval environment of `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` |
-| **validate-deployment** | Read-only Azure Policy and Defender for Cloud summary (`validate:compliance`) | Self-hosted | Manual |
 
 The Ansible plays change machines, so the configure stages use the same protected environment as `terraform:apply`, the same as on GitHub. While `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` is empty their jobs are not created, and `configure-onprem-approval-environment-not-set` and `configure-operations-approval-environment-not-set` fail and say why.
 
@@ -48,13 +47,12 @@ The Azure Local cluster itself is deployed by the [ARM Validate and Deploy pipel
 pipelines/gitlab/
 ├── .gitlab-ci.yml                  # Master pipeline definition (includes stages/*.yml)
 ├── Use-AzlGitLabTool.ps1           # Installs the tool versions of devops.pipelines.tool_versions
-├── os-configuration.gitlab-ci.yml  # OS configuration (plan, manual apply)
+├── os-configuration.gitlab-ci.yml  # OS configuration (plan, manual confirm of a wipe, manual apply)
 └── stages/
     ├── validate.yml                # Terraform validate, Ansible lint, infrastructure file check, Terraform plan
     ├── deploy-foundation.yml       # Terraform apply, outputs
     ├── configure-onprem.yml        # Playbooks 05, 01, 02, 03
     ├── configure-operations.yml    # Playbook 04
-    ├── validate-deployment.yml     # Read-only policy and Defender summary (validate:compliance)
     ├── deploy-cicd-infra.yml       # The runners (runs with CICD_INFRA=true)
     ├── discovery.yml               # Discovery (a pipeline of its own)
     ├── pre-cluster-verification.yml # The gate before the ARM Validate (a pipeline of its own)
@@ -148,10 +146,9 @@ The **configure-onprem** and **configure-operations** stages require the general
 #### Configure Operations Stage
 - `monitoring:setup` — `playbooks/04-monitoring-setup.yml`
 
-#### Validate Deployment Stage
-- `validate:compliance` — Manual, read only: the Azure Policy compliance summary and the first Defender for Cloud assessments of the subscription. It changes nothing
+The chain ends at Configure Operations, as on GitHub and Azure DevOps. The GitLab-only Validate Deployment stage (a policy and Defender for Cloud summary no other platform had) is removed: one design on the three platforms (owner directive D126). The post-deployment checks are the validation pipeline below.
 
-This stage has one job. The earlier connectivity job only ran the same file check as `config:validate` and printed a hint, so it is removed. The post-deployment checks of the cluster are `Invoke-VerifyPostDeployment.ps1` and the scripts of `scripts/deploy/06-testing-validation`: they need a jump server that reaches the cluster, so no job of this pipeline runs them.
+**Started by hand.** Every GitLab pipeline file of the toolkit has `workflow: rules: - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'`: GitLab creates a pipeline only from the web form or the API, never from a push or a merge request, as GitHub starts it with `workflow_dispatch` and Azure DevOps with `trigger: none` and `pr: none`. The one exception is the check for updates, whose rule is `/^(schedule|web|api)$/` so that its project schedule can start it.
 
 ## OS Configuration Pipeline
 
@@ -160,7 +157,8 @@ This stage has one job. The earlier connectivity job only ran the same file chec
 | Stage | Job type | Description |
 |---|---|---|
 | `plan` | Automatic | Read only. Publishes the plan report and the wipe list (the disks that would be wiped on each node when `os_configuration.clear_storage` is true) as artifacts |
-| `apply` | **Manual** | Someone allowed to run protected jobs reads the plan job's log and artifacts, then plays it. `resource_group` keeps two runs from working on the cluster at once |
+| `confirm` | **Manual** | The second approval of a storage wipe: `os-configuration-confirm-storage-wipe`, in the protected environment of `AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE` (`devops.pipelines.environments.os_configuration_clear_storage`). GitLab creates the jobs before the plan runs, so the job exists in every run that can apply; when `os_configuration.clear_storage` is false it says nothing is wiped and ends. While that variable is empty, `os-configuration-storage-wipe-approval-environment-not-set` takes its place and fails when the master file would wipe. The same two approvals as GitHub and Azure DevOps (D126) |
+| `apply` | **Manual** | Someone allowed to run protected jobs reads the plan job's log and artifacts, then plays it, after the second approval of a wipe. `resource_group` keeps two runs from working on the cluster at once |
 
 Variables: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (`oidc` through `id_tokens`, or `client_secret` with the masked `ARM_CLIENT_SECRET`), `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OS_CONFIGURATION` (the approval environment of the apply job), `AZL_INFRASTRUCTURE_FILE`, `AZL_HANDOFF_PATH` (a handoff file or a directory of `*.ztp-handoff.json`, or the artifact of the ZTP pipeline through `needs:`) and the tool versions `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`, all set by Task 05. The transport and the storage wipe come from the master file (`os_configuration.remoting.transport`, `os_configuration.clear_storage`); the pipeline overrides neither. No secret is stored in the file: the nodes' local administrator password is read from the Key Vault named by `identity.local_admin.password`. The runner needs a route to the nodes' management network for PowerShell remoting (WinRM), or `-Transport ArcRunCommand` for a site with no route. See [Automated OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/automated-os-configuration.mdx).
 
@@ -237,13 +235,13 @@ Five pipelines run the scripts of Part 7 and Part 8 of the implementation guide,
 - **One change at a time.** Every manual job has the `resource_group` `azure-local-day2-changes`, so two changes never run on the cluster together. The read-only jobs hold no lock.
 - **One node per run.** The node variable is checked against `nodes[]` with `-RequireNodeInFile`. A name the file does not list ends the job with exit code 2 before anything is sent.
 - **A failed script fails the job.** The report, plan or log is kept as an artifact even then (`when: always`).
-- **Start.** The jobs start only from the web form, the API or a schedule, never from a push or a merge request.
+- **Start.** The jobs start only from the web form or the API (the check for updates also from its project schedule), never from a push or a merge request (`workflow: rules:`).
 
 Project CI/CD variables set by Task 05: `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OPERATIONS`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`. The check for updates (source `azure`) and the node maintenance also sign in to Azure (`ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD`, and the masked `ARM_CLIENT_SECRET` with `client_secret`); the node maintenance also reads `AZL_AZ_POWERSHELL_VERSION` and `AZL_AZ_KEYVAULT_VERSION`. The other pipelines do not sign in to Azure.
 
 **The account.** The scripts connect to the cluster as the account the runner runs as, which must be an administrator of the cluster. No pipeline passes `-Credential` or holds a password. The node maintenance reads the node login from its secret reference in `infrastructure.yml` (`identity.local_admin`), from Key Vault, with the Azure sign-in of the job. The validation needs the Failover Clustering PowerShell module (RSAT Failover Clustering Tools) on the runner, so a Windows runner. The Azure view of the check for updates needs the Azure CLI on the runner.
 
-**The schedule.** GitLab keeps a schedule in the project, not in the file. Create one under **CI/CD > Schedules** for the default branch, with the cron expression of `devops.pipelines.schedules.check_for_updates` (UTC, default `17 4 * * *`: every day at 04:17). Task 05 prints the value to use. A scheduled pipeline takes the Azure view, the default of `UPDATECHECK_SOURCE`. The job fails when the cluster needs attention (exit code 1), so GitLab's notification of a failed pipeline is the alert. The report is the artifact `day2-update-check`.
+**The schedule.** GitLab keeps a schedule in the project, not in the file (**CI/CD > Schedules**). Task 05 creates or updates the schedule `Azure Local day 2: check for updates` for the default branch, with the cron expression of `devops.pipelines.schedules.check_for_updates` (UTC, default `17 4 * * *`: every day at 04:17), and deactivates it when the key is empty. The same key schedules GitHub and Azure DevOps (D126). A scheduled pipeline takes the Azure view, the default of `UPDATECHECK_SOURCE`. The job fails when the cluster needs attention (exit code 1), so GitLab's notification of a failed pipeline is the alert. The report is the artifact `day2-update-check`.
 
 **While `AZL_ENVIRONMENT_OPERATIONS` is empty, nothing is changed.** A run that would change something fails in the refusal job of its pipeline (`validation-approval-environment-not-set`, `day2-update-approval-environment-not-set`, `day2-node-maintenance-approval-environment-not-set` or `day2-cluster-operations-approval-environment-not-set`), with a message that names the variable, and nothing is sent to any machine.
 

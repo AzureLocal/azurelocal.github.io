@@ -59,7 +59,7 @@ Configure CI/CD pipeline environment variables for each target Azure subscriptio
 
 ### Every variable the pipelines read
 
-On GitHub each is a repository variable (`vars.NAME`; the sign-in values also per environment), on GitLab a project CI/CD variable (scope `*`; the sign-in values also per environment), on Azure DevOps an entry of the variable group `devops.pipelines.variable_group` (one per environment, `<name>-<environment>`), a run parameter, or (the approval environments) a variable of `pipelines/azure-devops/variables/approval-environments.yml`.
+On GitHub each is a repository variable (`vars.NAME`; the sign-in values also per environment), on GitLab a project CI/CD variable (scope `*`; the sign-in values also per environment), on Azure DevOps an entry of the variable group `devops.pipelines.variable_group` (the repository group the pipelines read, and one per environment, `<name>-<environment>`), or a compile-time variable the script writes into `pipelines/azure-devops/variables/pipeline-settings.yml` or `approval-environments.yml` (D126: no run parameter carries a deployment value).
 
 | Variable | Key in `infrastructure.yml` | GitHub | GitLab | Azure DevOps |
 |---|---|---|---|---|
@@ -69,11 +69,11 @@ On GitHub each is a repository variable (`vars.NAME`; the sign-in values also pe
 | `ARM_USE_OIDC` (method `oidc`) or `ARM_CLIENT_SECRET` (method `client_secret`, read from `devops.authentication.client_secret`) | `devops.authentication.method` | variable / secret | variable / masked | variable group (secret) |
 | `AZL_AUTH_METHOD` | `devops.authentication.method` (`oidc` or `client_secret`) | variable | variable | variable group |
 | `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` | variable | variable | variable group |
-| `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` | variable | variable | (the pool, a run parameter) |
+| `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` | variable | variable | (the pool: `AZL_AGENT_POOL` of `pipeline-settings.yml`, from `devops.runners[].pool`) |
 | `AZL_RUNNER_OS` | `devops.runners[].os_type` of the general runner | variable | | |
-| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_OS_CONFIGURATION_CLEAR_STORAGE` (Azure DevOps only), `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT`, `_OPERATIONS` | `devops.pipelines.environments.*` | variable | variable | the variable of the same name in `pipelines/azure-devops/variables/approval-environments.yml` (written once, in a pull request; see below) |
-| `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | variable | variable | (a run parameter) |
-| `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | variable | variable | (a run parameter) |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_OS_CONFIGURATION_CLEAR_STORAGE`, `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT`, `_OPERATIONS` | `devops.pipelines.environments.*` | variable | variable | the variable of the same name in `pipelines/azure-devops/variables/approval-environments.yml` (written once, in a pull request; see below) |
+| `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | variable | variable | `pipeline-settings.yml` |
+| `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | variable | variable | `pipeline-settings.yml` |
 | `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` | variable | variable | variable group |
 | `AZL_VALIDATE_JOB_TIMEOUT_MINUTES`, `AZL_DEPLOY_JOB_TIMEOUT_MINUTES` | `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, each plus 60 minutes | variable | | |
 | `AZL_DEFAULT_BRANCH` | `devops.repository.default_branch` | | | variable group |
@@ -97,9 +97,9 @@ From schema 5.6.25 the toolkit's pipeline files hold no runner label, agent pool
 
 Each environment value is the name of an entry of `devops.environments[]` that has `approval_required: true`. Two pipelines may use the same entry.
 
-The script sets them as GitHub repository variables or GitLab project CI/CD variables: `AZL_RUNNER_LABEL` and one `AZL_ENVIRONMENT_...` variable per pipeline. Azure DevOps reads the pool before any variable exists, so there it is a run parameter with no default, and the script prints the value to enter. A label that the general runner does not have, or an environment that `devops.environments[]` does not list with `approval_required: true`, stops the task.
+The script sets them as GitHub repository variables or GitLab project CI/CD variables: `AZL_RUNNER_LABEL` and one `AZL_ENVIRONMENT_...` variable per pipeline. Azure DevOps reads the pool before any variable exists, so there the script writes it as `AZL_AGENT_POOL` into `pipelines/azure-devops/variables/pipeline-settings.yml`. A label that the general runner does not have, or an environment that `devops.environments[]` does not list with `approval_required: true`, stops the task.
 
-**On Azure DevOps the approval environments are not run parameters.** With a run parameter, whoever queues a run could type the name of an environment with no approval check, and the change would run without an approval. So every Azure DevOps pipeline that changes something reads its environment from a variable of `pipelines/azure-devops/variables/approval-environments.yml`, a YAML file of the repository, when the pipeline is compiled. The toolkit ships the variables empty. The script cannot write that file. For each variable it lists the value to write there (action `Pipeline variable template`, status `Skipped`). Write them once, in a pull request:
+**On Azure DevOps the approval environments are not run parameters.** With a run parameter, whoever queues a run could type the name of an environment with no approval check, and the change would run without an approval. So every Azure DevOps pipeline that changes something reads its environment from a variable of `pipelines/azure-devops/variables/approval-environments.yml`, a YAML file of the repository, when the pipeline is compiled. The toolkit ships the variables empty. The script writes the value of each one into that file from `infrastructure.yml` (D126; an environment that is not set stays empty, so the pipeline refuses the change); commit the file in a pull request:
 
 | Variable in `approval-environments.yml` | Value the script lists | Used by |
 |---|---|---|
@@ -127,7 +127,7 @@ From schema 5.6.27 the Azure DevOps pipeline files hold no service connection or
 | `devops.pipelines.service_connection` | The name of the Azure Resource Manager service connection (workload identity federation) that task 05 creates and that the Azure DevOps pipelines sign in through. Task 01 puts the same name in the subject of the federated credential. Example: `iic-azure-local`. |
 | `devops.pipelines.variable_group` | The name of the variable group (Pipelines > Library) task 05 writes the sign-in values (`ARM_*`) and the state settings (`TF_BACKEND_*`) to. With entries in `devops.environments[]` there is one group per environment, named `<variable_group>-<environment>`. Example: `iic-azure-credentials`. |
 
-On Azure DevOps both keys are required: task 01 and task 05 stop with a message when one is missing. The pipelines take the names as run parameters with no default, and the script prints the values to enter. Before schema 5.6.27 the names were fixed (`AzureLocal-ServiceConnection` and `azure-credentials`). To keep what an earlier task 05 created, set the keys to those names.
+On Azure DevOps both keys are required: task 01 and task 05 stop with a message when one is missing. The pipelines read the names as `AZL_SERVICE_CONNECTION` and `AZL_VARIABLE_GROUP` of `pipelines/azure-devops/variables/pipeline-settings.yml`, which the script writes (D126: not run parameters). Before schema 5.6.27 the names were fixed (`AzureLocal-ServiceConnection` and `azure-credentials`). To keep what an earlier task 05 created, set the keys to those names.
 
 ### The paths, the tool versions and the state key
 
@@ -157,13 +157,15 @@ From schema 5.6.28 one key says when the scheduled day 2 pipeline runs:
 |-----|------------|---------|
 | `devops.pipelines.schedules.check_for_updates` | When the day 2 check for updates runs (`day2-check-updates.yml`). A five-field cron expression in UTC. Empty means no schedule | `17 4 * * *` (every day at 04:17 UTC) |
 
-No platform reads a schedule from a variable, so the script sets no variable for this key. It prints the value and where it goes, as the line `Pipeline schedule` (status `Skipped`):
+No platform reads a schedule from a variable, so the script applies the key where each platform keeps it (D126: the key works on all three; the line `Pipeline schedule` of the output says what it did):
 
-| Platform | Where the value goes |
+| Platform | What the script does |
 |----------|----------------------|
-| GitHub | The `cron` line of `on.schedule` in your copy of `.github/workflows/day2-check-updates.yml`. The sample carries the registry default |
-| GitLab | A pipeline schedule of the project (**CI/CD > Schedules**) for the default branch, which starts `pipelines/gitlab/stages/day2-check-updates.yml` |
-| Azure DevOps | A `schedules` entry in your copy of `pipelines/azure-devops/day2-check-updates.yml`, and a default for each run parameter of that copy. A scheduled run cannot ask for the parameters, and the sample has no defaults. See [Azure DevOps: the schedule](../../02-cicd-pipelines/azure-devops-pipelines.mdx#day2-schedule) |
+| GitHub | Writes the value into the `cron` line of `on.schedule` of `day2-check-updates.yml` (`.github/workflows/` when the workflow is there, else `pipelines/github-actions/`; `-GitHubWorkflowDirectory` names another folder). Commit it |
+| GitLab | Creates or updates the project pipeline schedule `Azure Local day 2: check for updates` (**CI/CD > Schedules**) on the default branch, in UTC; deactivates it when the key is empty |
+| Azure DevOps | Writes the value into the `cron` line, and `devops.repository.default_branch` into the branch, of the `schedules` block of `pipelines/azure-devops/day2-check-updates.yml`. Commit it. A scheduled run needs no parameter: see [Azure DevOps: the schedule](../../02-cicd-pipelines/azure-devops-pipelines.mdx#day2-schedule) |
+
+A value that is not a five-field cron expression (each field in its range) stops the script. An empty value means no schedule: remove the schedule block of the GitHub and Azure DevOps files in a pull request.
 
 ---
 
@@ -279,16 +281,33 @@ With OIDC (workload identity federation) the script also creates the service con
 
 ### Link to Pipeline
 
-The toolkit's Azure DevOps pipelines take the group as a run parameter (`variableGroup` in `azure-local-deploy.yml`, `variable_group` in `os-configuration.yml`), and the service connection as `serviceConnection`, `azureServiceConnection` or `service_connection`. Enter the values the script prints when you run the pipeline. The pipeline file links the group like this:
+The script writes the repository group `devops.pipelines.variable_group` (besides one group per environment) and names it, with the pool, the service connection, the infrastructure file and the handoff path, in `pipelines/azure-devops/variables/pipeline-settings.yml`, with a `- group:` entry. Every Azure DevOps pipeline of the toolkit includes that file, so no run form asks for these values (D126). Commit the file in a pull request. The written file looks like this (sample names of the improbability.cloud lab):
 
 ```yaml
 variables:
-  - group: ${{ parameters.variableGroup }}
+  - name: AZL_AGENT_POOL
+    value: 'pool-iic-azl'
+  - name: AZL_SERVICE_CONNECTION
+    value: 'iic-azure-local'
+  - name: AZL_VARIABLE_GROUP
+    value: 'iic-azure-credentials'
+  - name: AZL_INFRASTRUCTURE_FILE
+    value: 'config/infrastructure.yml'
+  - name: AZL_HANDOFF_PATH
+    value: 'ztp-state'
+  - group: 'iic-azure-credentials'
+```
+
+and each pipeline links it like this:
+
+```yaml
+variables:
+  - template: variables/pipeline-settings.yml
 ```
 
 ### Write the approval environments
 
-The approval environments are not in the variable group and are not run parameters. The script lists six values, one for each variable of `pipelines/azure-devops/variables/approval-environments.yml`:
+The approval environments are not in the variable group and are not run parameters. The script writes six values, one for each variable of `pipelines/azure-devops/variables/approval-environments.yml`:
 
 | Variable | Value |
 |----------|-------|
@@ -299,7 +318,7 @@ The approval environments are not in the variable group and are not run paramete
 | `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` |
 | `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` |
 
-Write each value in that file, once, in a pull request. The pipelines read the file when they are compiled, so whoever queues a run cannot choose the environment. The file links into each pipeline like this:
+Commit the written file in a pull request. The pipelines read the file when they are compiled, so whoever queues a run cannot choose the environment. The file links into each pipeline like this:
 
 ```yaml
 variables:
