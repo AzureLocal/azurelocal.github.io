@@ -124,17 +124,29 @@ Before configuring quorum, ensure the storage account exists in Azure.
 
 ### PowerShell
 
-> **No PowerShell script that configures the quorum.** `Invoke-ConfigureClusterQuorum-Orchestrated.ps1` is a placeholder. A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The deployment creates the witness from `cluster.witness` of `infrastructure.yml`. Use the steps in the other tab when you change the witness after the deployment. The Azure CLI tab has a script for the storage account of a cloud witness.
+> **When to use**: Check the witness against `cluster.witness` of `infrastructure.yml`, or set it when it was added or changed after the deployment. The script runs from a management host; every cluster command runs on a node over PowerShell remoting, so the host needs neither the failover clustering tools nor domain membership. It is idempotent.
 
-#### Check
+#### Script
 
 | Script | What it does |
 |---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1` | Sets the quorum witness from `cluster.witness.type`. `cloud`: it checks the storage account (an existing one is checked and never changed; a missing one is created as `StorageV2` with `Standard_LRS`), then runs `Set-ClusterQuorum -CloudWitness` on a node unless the cluster already uses that account. `file_share`: `Set-ClusterQuorum -FileShareWitness` with `cluster.witness.path`; the share and its permissions are not created. `none`: `Set-ClusterQuorum -NoWitness`; refused on a two-machine instance. A disk witness is not supported with Storage Spaces Direct, so the script has no disk witness step. Supports `-WhatIf`. |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Read only. Its quorum check: a quorum type is set and the quorum state is Normal. See [Task 09](./task-09-post-deployment-verification.mdx). |
+
+Parameters: `-InfrastructureFile` (required), `-ComputerName` (the node the cluster commands run on; default: the first node of `nodes[]`, then the next one), `-Credential`, `-AccessKeyName` (`key1`, the default, or `key2`), `-UpdateAccessKey` (set the cloud witness again with the current key, after a key rotation) and `-LogPath`. The access key is never printed, logged or returned: it goes to the node as a SecureString. The script never prompts.
+
+For a cloud witness, sign in to Azure first (`Connect-AzAccount -Tenant <azure.tenant_id>`); you need Storage Account Contributor on the resource group. The login for the nodes is `-Credential`, else the LCM user (`identity.active_directory.lcm_user`) with Active Directory or the local administrator (`identity.local_admin`) with local identity; the password is a secret reference. Exit 0: the witness is as the file says (set now, already so, or planned under `-WhatIf`). Exit 1: a call or a precondition failed. Exit 2: a value in the file is missing or there is no login; nothing is changed.
 
 #### Run
 
 ```powershell
+# Read Azure and the cluster, change nothing
+./Invoke-ConfigureClusterQuorum-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+# Set the witness
+./Invoke-ConfigureClusterQuorum-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+
+# Check the result (read only)
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 

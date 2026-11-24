@@ -40,10 +40,10 @@ status: "approved"
 Azure Local deployments use one configuration system:
 
 1. **The master registry**: `config/variables/schema/master-registry.yaml` defines every variable. It is the only master.
-2. **`infrastructure.yml`**: one file per environment (schema 5, current version 5.6.32). It holds your values. It is never committed to a public repository, and it never holds a secret value.
+2. **`infrastructure.yml`**: one file per environment (schema 5, current version 5.6.35). It holds your values. It is never committed to a public repository, and it never holds a secret value.
 3. **The generated schema and templates**: `config/variables/schema/infrastructure.schema.json` validates the file. `config/variables/templates/infrastructure.master.yml` has every key, and `config/variables/templates/tools/<tool>.yml` has one template per tool.
 
-The toolkit scripts, azurelocal-ztp, azurelocal-sonar, the ARM deployment, Terraform and Ansible read the same file. Trailwright writes it (Surveyor hands it a sizing file in the same key names). Ranger reads an older layout, and Beacon, S2D Cartographer and LoadTools do not read it yet; [The Tool Chain](./03-the-tool-chain.mdx) says which tool writes and reads what.
+Every tool of the set reads or writes the same file. The toolkit scripts, azurelocal-ztp, azurelocal-sonar, the ARM deployment, Terraform and Ansible read it; so do Beacon, Ranger (compare only, it never writes back), S2D Cartographer, LoadTools, Surveyor (for its as-built comparison) and Draftsman (for its guided setup). Trailwright writes it (Surveyor hands it a sizing file in the same key names), and hardware discovery fills in what only the hardware knows. [The Tool Chain](./03-the-tool-chain.mdx) says which tool writes and reads what, and which files pass between the steps.
 
 :::info Complete Documentation
 See [Variable Management](https://azurelocal.cloud/standards/variables) for the full standard, and [`infrastructure-file.md`](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/infrastructure-file.md) in the toolkit for how to fill in the file.
@@ -121,7 +121,7 @@ Start from `config/variables/templates/infrastructure.master.yml`, a scenario te
 
 ```yaml
 _metadata:
-  schema_version: 5.6.32
+  schema_version: 5.6.35
 
 scenario:
   identity: active_directory

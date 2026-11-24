@@ -2,14 +2,14 @@
 title: "Task 02: Hardware Discovery via Redfish"
 sidebar_label: "Task 02: Hardware Discovery"
 sidebar_position: 2
-description: "Discover all cluster node hardware using Dell iDRAC Redfish API, collecting hardware inventory, BIOS configuration, and iDRAC settings for use in subsequent tasks."
+description: "Discover all cluster node hardware through the Redfish API of each BMC (Dell iDRAC in the full discovery, any maker in the inventory), and write the serial numbers, BMC and port MAC addresses and the hardware facts back to infrastructure.yml."
 category: "Runbook"
 scope: Azure Local hardware provisioning
 purpose: Collect complete hardware inventory, BIOS configuration, and iDRAC configuration from all cluster nodes via Redfish API before OS installation
 author: Azure Local Cloud
 created: 2026-01-01
-updated: 2026-11-16
-version: "1.3.0"
+updated: 2026-11-24
+version: "1.4.0"
 tags:
   - azure-local
   - hardware-discovery
@@ -46,15 +46,21 @@ import TabItem from '@theme/TabItem';
 
 ## Overview
 
-Discover all cluster node hardware by connecting to each node's iDRAC via the Redfish API from the management server. This task collects everything needed for Tasks 03–05 in a single execution: hardware inventory, complete BIOS configuration, and complete iDRAC configuration.
+Discover all cluster node hardware by connecting to each node's BMC via the Redfish API from the management server. This task collects everything needed for Tasks 03–05 in a single execution: hardware inventory, complete BIOS configuration, and complete BMC configuration. It then writes the facts the automation needs back to `infrastructure.yml`: the serial numbers, the MAC address of every BMC and of every port, and the hardware facts.
+
+**Which script for which maker.** `Get-HardwareInventory.ps1` reads any maker over the standard Redfish API. `Invoke-HardwareDiscovery.ps1` is the full discovery and supports **Dell iDRAC only** in this version: any other BMC is reported as "Unsupported vendor in this version" for that node and the others carry on.
 
 **Data collected per node:**
 - Service tag, model, BIOS version, firmware versions
-- iDRAC MAC address
-- System NIC MAC addresses
+- BMC (iDRAC) MAC address
+- System NIC MAC addresses, with slot, port index, vendor, model and PCI location
 - All BIOS attributes (~256 settings) — used in Tasks 04 and 05
 - All iDRAC attributes (~1024 settings) — used in Tasks 04 and 05
-- CPU, memory, storage inventory
+- CPU, memory, storage inventory: drives (media, count, size, model), the boot drives (for example a Dell BOSS card) and GPUs
+
+**What becomes a key and what stays evidence.** A discovered fact that the automation needs is a key of `infrastructure.yml`: the serial number, the BMC MAC, the port MACs and facts, the drive media, count, size and model, the boot drives and the GPU. Firmware, BIOS and BMC versions, the TPM and Secure Boot state, and the serial number, firmware and bay of each drive stay in the discovery files and the inventory; nothing writes them into `infrastructure.yml`.
+
+**Azure Local 2611.** Nothing in this task depends on the release (the current one is `12.2611.1004.9` with OS `26100.33822`). What it writes is what the next steps use: ZTP finds the maintenance environment by the management MAC, and the OS configuration finds every port by MAC and takes its adapter name from the ZTP handoff.
 
 :::note No Node Access Required
 All scripts in this task run **from the management server** and connect to iDRAC over the network via HTTPS (port 443). No access to the nodes themselves is required.
@@ -78,12 +84,21 @@ All scripts in this task run **from the management server** and connect to iDRAC
 The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ```text
+Read:
 nodes[]: name, bmc.ip_address, bmc.type, bmc.username, bmc.password, serial_number
 hardware.bmc: username, password, verify_certificate
 hardware.inventory: output_directory, file_name_prefix, format, timeout_seconds
-hardware.vendor, hardware.model, hardware.cpu_cores, hardware.memory_gib, hardware.gpu (enabled, model, count_per_node),
-hardware.drives (capacity and cache: media, count, size_tb): compared with what the BMC reports
+hardware.discovery.output_directory: the folder the results are written to
+provisioning.simplified: evidence_path, site_name (the default folder when hardware.discovery has none)
 secrets, key_vaults: read by the secret resolver for the references above
+
+Written by Update-InfrastructureYml-FromDiscovery.ps1 -Apply (only into an entry that exists):
+nodes[]: serial_number, bmc.mac_address, bmc.type (from an inventory, when the file has none)
+nodes[].network_adapters[]: mac_address, port_index, vendor, model, pci_location (and speed_gbps, rdma and slot when missing)
+nodes[].management.mac_address: for a node described with management only, with -ManagementPort
+hardware: vendor (when missing), model, cpu_cores, memory_gib, gpu
+hardware.drives.capacity and hardware.drives.cache: media, count, size_tb, model
+hardware.boot_drives: type, count, size_gb, model
 ```
 
 ---
@@ -120,6 +135,7 @@ After collecting data from all nodes, manually update the following fields in `i
 | `nodes[].serial_number` | Service Tag | Dashboard → System Information |
 | `nodes[].network_adapters[].mac_address` | The MAC address of each port (the management port first) | System → Network Devices → MAC for each port |
 | `nodes[].network_adapters[].name` | NIC adapter name | System → Network Devices → adapter name (e.g., `Slot 3 Port 1` or `Embedded NIC 1`) |
+| `nodes[].bmc.mac_address` | The MAC address of the BMC's own port (the key of the DHCP reservation of the BMC address) | iDRAC Settings → Network → MAC Address |
 
 :::warning Save and commit infrastructure.yml after updating
 All subsequent tasks depend on these values. Do not proceed to Task 03 until `infrastructure.yml` is updated and committed.
@@ -137,8 +153,8 @@ All subsequent tasks depend on these values. Do not proceed to Task 03 until `in
 | Script | What it does |
 |---|---|
 | `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Get-HardwareInventory.ps1` | Reads the hardware of every node from its baseboard management controller (BMC) over the standard Redfish API and writes one inventory file. Supports `-WhatIf`. |
-| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1` | Phase 01, Task 02: hardware discovery of every node through the Redfish API of its BMC (read only). This version: Dell iDRAC. |
-| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Update-InfrastructureYml-FromDiscovery.ps1` | Writes the serial numbers and port MACs found by hardware discovery into infrastructure.yml. Supports `-WhatIf`. |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1` | Phase 01, Task 02: hardware discovery of every node through the Redfish API of its BMC (read only). This version: Dell iDRAC. Writes one `<ServiceTag>.json` per node, `discovery-summary.json` (the suggested management port of each node and why) and `infrastructure.discovered.yml` (the `nodes:` fragment to review). With `-UpdateInfrastructure` it then runs the update script with `-Apply` and ends with its exit code. |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Update-InfrastructureYml-FromDiscovery.ps1` | Writes what discovery found into `infrastructure.yml`: a **preview** by default, the real edit only with `-Apply`. Reads the Dell discovery files and the `Get-HardwareInventory.ps1` inventory (any maker). |
 
 The BMC login comes from `hardware.bmc` (a node's `nodes[].bmc` wins) in `infrastructure.yml`. The password is a secret reference. `-Credential` overrides it. The script never prompts: without either, it stops with exit code 2.
 
@@ -150,17 +166,48 @@ Requires: PowerShell 7.
 # Any maker, standard Redfish only: one inventory file. -WhatIf shows what it would read.
 ./Get-HardwareInventory.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-# Dell iDRAC: writes <ServiceTag>.json per node and discovery-summary.json into .\discovery (-OutputPath)
-.\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
+# Dell iDRAC: writes <ServiceTag>.json per node, discovery-summary.json and infrastructure.discovered.yml
+# into the discovery folder (see "The default output folder" below). Nothing is changed on any BMC.
+./Invoke-HardwareDiscovery.ps1 -InfrastructureFile ./infrastructure.yml
 
-# Preview: shows what would change in infrastructure.yml and writes nothing
-.\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -DiscoveryPath .\discovery
+# Preview: places every change on a copy in memory, lists what would change in infrastructure.yml
+# and any value it cannot place. Writes nothing.
+./Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile ./infrastructure.yml
 
-# Write it: saves a backup (<file>.bak.<time>), asks you to confirm (-Force skips the question) and edits only those lines
-.\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -DiscoveryPath .\discovery -Apply
+# Apply: saves a backup (<file>.bak.<time>), asks you to confirm and edits only those lines
+./Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile ./infrastructure.yml -Apply
+
+# Apply without the question (a pipeline), and name the management port of every node
+./Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile ./infrastructure.yml -ManagementPort 'Slot 3 Port 1' -Apply -Force
+
+# Discovery and write-back in one call (the same as the two above with -Apply)
+./Invoke-HardwareDiscovery.ps1 -InfrastructureFile ./infrastructure.yml -ManagementPort 'Slot 3 Port 1' -UpdateInfrastructure -Force
 ```
 
-The update writes `nodes[].serial_number` and `nodes[].network_adapters[].mac_address` for the entry with the same name as the discovered port. It never creates a missing parent, so a file that has no `nodes[].network_adapters` entries (for example a Trailwright export) needs them added first. For a node described with management only, give `-ManagementPort` (the suggested name or the MAC) so the script knows which port is the management port. Roles, IP assignment and addresses are never written: discovery cannot read them from hardware.
+**Preview, `-Apply`, `-Force`, `-ManagementPort`.**
+
+| Switch | What it does |
+|---|---|
+| (none) | A preview. Nothing is written. |
+| `-Apply` | Writes the changes: a backup `<file>.bak.<time>` first, then a confirmation, then only the changed lines. Comments, order and quoting stay, and a flow-style entry (`{ name: ..., mac_address: ... }`) is edited inside its braces. A key that is not in the file is inserted under its existing parent (the `hardware.*` parents are created when missing). A missing node or list entry is never created. |
+| `-Force` | With `-Apply`: no confirmation question. |
+| `-ManagementPort` | The management port of every node, by suggested name (for example `Slot 3 Port 1`) or by MAC. A node described with management only needs it (or a MAC already in the file that is on a port of the machine); a management MAC that is on no port of the machine is replaced only with `-ManagementPort`. Without it the guess of `discovery-summary.json` is shown and never written. |
+| `-UpdateInfrastructure` | On `Invoke-HardwareDiscovery.ps1`: runs the update script with `-Apply` after the discovery. `-Force` skips its question. |
+
+**How a port is paired.** An entry of `nodes[].network_adapters[]` is paired with a discovered port by MAC, then by the same name, then by slot and port index, then as the only free port of its slot. Roles, IP assignment and addresses are never written: discovery cannot read them from hardware. Ports the file does not list are notes in `infrastructure.discovered.yml`.
+
+**Exit codes of the update script.** 0: every value is placed and every MAC in the file is on its machine. 1: at least one value cannot be placed (the key or its parent is not in the file), an entry keeps a MAC that is on no port of its machine (a placeholder), or a wrong management MAC needs `-ManagementPort`; with `-Apply` the values that can be placed are still written. 2: the file cannot be read, or the folder holds no discovery file.
+
+**The default output folder.** `-OutputPath` (discovery) and `-DiscoveryPath` (write-back) default to the first of these that exists:
+1. `hardware.discovery.output_directory` of the file (the folder is created when it is missing);
+2. the `discovery` folder inside `provisioning.simplified.evidence_path` (the folder the Sonar Discovery view reads);
+3. for simplified provisioning, `%ProgramData%\AzureLocalZtp\<provisioning.simplified.site_name>\evidence\discovery`;
+4. `.\discovery`.
+
+The BMC login comes from `hardware.bmc` (a node's `nodes[].bmc` wins) in `infrastructure.yml`. The password is a secret reference. `-Credential` overrides it. The script never prompts: without either, it stops with exit code 2. The BMC certificate is not checked by default (BMCs ship self-signed); `-VerifyCertificate`, or `hardware.bmc.verify_certificate`, turns the check on.
+
+The update never creates a missing parent entry, so a file that has no `nodes[].network_adapters` entry for a port (an export from Trailwright lists the ports it knows; a planning file has no MACs) needs the entry first. Run the preview: it lists every value it cannot place. For a node described with management only, give `-ManagementPort`.
+
 </TabItem>
 </Tabs>
 
@@ -202,7 +249,8 @@ Platform details: [GitHub Actions](../../../automation/02-cicd-pipelines/github-
 | File | Written by | Location |
 |------|-------------|---------|
 | `<prefix>-<UTC time>.json` (or `.yml`): the inventory of every node | `Get-HardwareInventory.ps1` | `hardware.inventory.output_directory` (default `hardware-inventory`) |
-| `<service-tag>.json` per node, `discovery-summary.json`, `infrastructure.discovered.yml` (the proposal for `nodes[]`) | `Invoke-HardwareDiscovery.ps1` | `-OutputPath` (default `.\discovery`) |
+| `<service-tag>.json` per node, `discovery-summary.json`, `infrastructure.discovered.yml` (the proposal for `nodes[]`) | `Invoke-HardwareDiscovery.ps1` | `-OutputPath` (default: `hardware.discovery.output_directory`, else the `discovery` folder inside `provisioning.simplified.evidence_path`, else `.\discovery`) |
+| `infrastructure.yml.bak.<time>` (the backup before an edit) | `Update-InfrastructureYml-FromDiscovery.ps1 -Apply` | Next to `infrastructure.yml` |
 | `discovery-report.json`, `summary.md`, a folder per step | `Invoke-AzlDiscoveryRun.ps1` (the pipeline) | `-OutputDirectory` |
 
 Keep these folders out of git: they hold serial numbers and MAC addresses.
@@ -215,8 +263,11 @@ Keep these folders out of git: they hold serial numbers and MAC addresses.
 |-------|-------|------------|
 | `Connection refused` | iDRAC not accessible | Verify iDRAC IP and port 443 reachable from management server |
 | `Authentication failed` | Incorrect credentials | Verify iDRAC password; check `root` account is enabled |
-| `Certificate error` | Self-signed cert | Ensure PowerShell 7+ and `-SkipCertificateCheck` is used |
-| `Timeout` | Slow iDRAC response | Check iDRAC is responsive via web UI; increase script timeout |
+| `Certificate error` | The certificate check is on (`-VerifyCertificate` or `hardware.bmc.verify_certificate`) and the BMC has a self-signed certificate | Leave the check off (the default), or install a certificate the management server trusts |
+| `Timeout` | Slow iDRAC response | Check iDRAC is responsive via web UI; raise `-TimeoutSeconds` (default 60) or `-NodeBudgetSeconds` (default 900) |
+| The update exits 1 with `cannot be placed` | The key or its parent entry (`nodes[].network_adapters[]` for a port, a node) is not in the file | Add the entry (name and roles), run the preview again, then `-Apply` |
+| The update exits 1 and names a MAC that is on no port of its machine | A placeholder MAC in the file, or a wrong management MAC | Run with `-ManagementPort` (the suggested name or the real MAC) |
+| The update exits 2 | The file cannot be read, or the folder holds no discovery file | Check `-DiscoveryPath`, or the default folder above, and run the discovery first |
 
 ---
 
@@ -244,3 +295,4 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | 1.2 | 2026-03-04 | Azure Local Cloud | Add infrastructure.yml update instructions to all three tabs; document Update-InfrastructureYml-FromDiscovery.ps1 integration |
 | 1.3 | 2026-11-16 | Azure Local Cloud | The discovery run refuses a file that cannot be read as YAML (exit code 2, nothing runs) |
 | 1.3 | 2026-11-15 | Azure Local Cloud | Add the discovery pipeline (GitHub Actions, GitLab CI, Azure DevOps) and the write-back to a copy; correct the output files |
+| 1.4 | 2026-11-24 | Azure Local Cloud | The update script is a preview unless `-Apply` is given (`-Force`, `-ManagementPort`, `-UpdateInfrastructure`); it writes the BMC MAC (`nodes[].bmc.mac_address`), the drive models, `hardware.boot_drives` and the port facts, and pairs a port by MAC, name, slot and port index; the default output folder (`hardware.discovery.output_directory`); BMC certificate default; Azure Local 2611 note; the page is vendor-neutral where the script is |

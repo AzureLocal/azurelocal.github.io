@@ -211,17 +211,21 @@ Repeat on every cluster node. Verify the account exists with identical credentia
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | Its **LocalAdmin** step makes sure the local administrator of `identity.local_admin` (a name other than `Administrator`) exists on every node, is in the Administrators group and has the password of its secret reference. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1` | The wrapper. It runs `Invoke-AzureLocalOsConfiguration.ps1` with `-Step LocalAdmin`. It takes `-InfrastructureFile` (required), `-Node`, `-Mode` (`Plan`, the default, or `Apply`), `-ReportDirectory`, `-SettingsFile` and `-Credential`. `-WhatIf` prints the command line and runs nothing. Exit 0: passed or planned. Exit 1: a check failed or a node did not converge. Exit 2: bad input, including a missing file. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The script that does the work. Its **LocalAdmin** step makes sure the local administrator of `identity.local_admin` (a name other than `Administrator`) exists on every node, is in the Administrators group and has the password of its secret reference. |
 
-The earlier `Deploy-CreateLocalAdmin.ps1` is removed. `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1` in the task folder is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The script never prompts.
+The earlier `Deploy-CreateLocalAdmin.ps1` is removed. `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1` in the task folder is a thin wrapper of the OS configuration step above. The script never prompts.
 
 #### Run
 
 ```powershell
 # Plan (the default): read every node and list what would change
-./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step LocalAdmin
+./Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
 
 # Apply
+./Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -Mode Apply
+
+# The script it runs, called directly
 ./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step LocalAdmin -Mode Apply
 ```
 
@@ -536,7 +540,7 @@ Write-Host "`n[DONE] Cluster health check complete on $env:COMPUTERNAME" -Foregr
 |---|---|
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Verifies the deployed instance against `infrastructure.yml`. Read only. It checks, in order: every node is a cluster node and Up; the identity (with local identity every node is in a workgroup and the cluster name resource has `ADAware` 2); the quorum; SSH; storage; the VM images and the logical networks in Azure. Supports `-WhatIf`. |
 
-The earlier verification scripts of this task folder (`Test-ClusterHealth.ps1`, `Test-LocalIdentityConfig.ps1`, `Invoke-VerifyClusterHealth-Orchestrated.ps1` and the `-Standalone` copies) are removed. `Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. See [Task 09: Post-deployment verification](../../../../phase-06-post-deployment/task-09-post-deployment-verification.mdx).
+The earlier verification scripts of this task folder (`Test-ClusterHealth.ps1`, `Test-LocalIdentityConfig.ps1`, `Invoke-VerifyClusterHealth-Orchestrated.ps1` and the `-Standalone` copies) are removed. `Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1` in the `powershell` folder of this task is a thin wrapper: it keeps the file name of this page and runs `Invoke-PostDeploymentVerification-Orchestrated.ps1` of Task 09 (the node checks, the Azure checks, the solution health summary and, with an external SAN, the SAN disks; the local identity checks are part of the node checks). It takes `-InfrastructureFile` (required), `-Credential`, `-TargetNode`, `-SkipAzure` and `-LogPath`, and supports `-WhatIf`. Exit 0: passed. Exit 1: a check failed. Exit 2: bad input, including a missing file. See [Task 09: Post-deployment verification](../../../../phase-06-post-deployment/task-09-post-deployment-verification.mdx).
 
 The login is `-Credential`, else the local administrator of `identity.local_admin` (the password is a secret reference). The script never prompts: with neither it stops with exit code 2.
 

@@ -1,0 +1,116 @@
+---
+title: "Monitor the Toolkit Run with Sonar"
+sidebar_label: "Monitor with Sonar"
+sidebar_position: 7
+description: "Follow the hardware discovery, OS configuration, pre-cluster verification, Validate, Deploy and update stages of the toolkit with azurelocal-sonar, one stage at a time (-Monitor), and where Sonar reads each event file."
+category: "Runbook"
+scope: "azurelocal-sonar with the toolkit's runs"
+purpose: "Start Sonar for one stage, say which file it reads, and set the one events folder that the toolkit and Sonar share"
+author: "Azure Local Cloud"
+created: 2026-11-24
+updated: 2026-11-24
+version: "1.0.0"
+tags: ["azure-local", "sonar", "monitoring", "automation", "events"]
+keywords: ["Sonar", "Start-AzlSonar.ps1", "-Monitor", "events_directory", "os-configuration-events.jsonl", "precluster-verification-events.jsonl", "arm-deployment-events.jsonl", "update-events.jsonl"]
+status: "Active"
+---
+
+# Monitor the Toolkit Run with Sonar
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Runbook
+> **SCOPE**: Watching the toolkit's runs with azurelocal-sonar
+> **PURPOSE**: Start Sonar for one stage, know which file it reads, and share one events folder with the toolkit
+> **MASTER REFERENCE**: [azurelocal-sonar documentation](https://azurelocal.cloud/azurelocal-sonar/)
+
+**Status**: Active. Checked on 2026-11-24 against the `main` branch of azurelocal-sonar and the toolkit, and Azure Local 2611 (`12.2611.1004.9`).
+
+[azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/) is a local, read-only web page. It reads the files that the toolkit and azurelocal-ztp write, and, when you sign in, what Azure reports. It never changes Azure or a machine. For a ZTP run see [Monitor the run with Sonar](../../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/automation/monitor-with-sonar.mdx); this page covers the stages after it.
+
+---
+
+## One file, one folder
+
+Start Sonar from the same `infrastructure.yml` the toolkit uses:
+
+```powershell
+Connect-AzAccount -Tenant <azure.tenant_id>
+./Start-AzlSonar.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+With `-Monitor Auto` (the default) Sonar follows the whole flow. To watch one stage, name it with `-Monitor`. Only that tile shows, only the sources that stage needs are read, and the page title names the stage.
+
+| Launch line | Shows | Reads | Azure sign-in |
+| --- | --- | --- | --- |
+| `-Monitor Discovery` | The hardware discovery: a card per machine with its service tag, ports and MACs, the suggested management port and the BOSS card. Beacon's results and the inventory files are shown here too | The discovery folder: `hardware.discovery.output_directory`, else the `discovery` folder inside `provisioning.simplified.evidence_path` (and `<discovery folder>\beacon`) | No |
+| `-Monitor Provisioning` | The ZTP run, or the OS image route | Azure, the ZTP event file (`ztp-events.jsonl`) | Yes |
+| `-Monitor OsConfiguration` | The OS configuration: a card per machine, the step it is on, converged, failed or retrying | `os-configuration-events.jsonl` in the events folder, and Azure Arc run commands | Yes |
+| `-Monitor Verification` | The pre-cluster gate: the verdict, the counts, the checks by category, and a Plan before the gate has run | `precluster-verification-events.jsonl` in the gate's report directory, and `precluster-plan-events.jsonl` in the events folder | No |
+| `-Monitor Validate`, `-Monitor Deployment` | Azure's validation and deployment step trees, plus the toolkit's own checks, results and elapsed time | The resources in Azure, the seed node's log, and `arm-deployment-events.jsonl` in the events folder | Yes |
+| `-Monitor Update` | The solution update: what Azure offers, the pre-update checks, the run's steps | `update-events.jsonl` in the events folder, and Azure when you sign in | Optional |
+
+Examples:
+
+```powershell
+# No Azure sign-in needed: the discovery files only
+./Start-AzlSonar.ps1 -InfrastructureFile ./infrastructure.yml -Monitor Discovery
+
+# The pre-cluster gate, Plan or Verify: its event files only
+./Start-AzlSonar.ps1 -InfrastructureFile ./infrastructure.yml -Monitor Verification
+
+# OS configuration (the Arc run commands need an Azure sign-in)
+Connect-AzAccount -Tenant <azure.tenant_id>
+./Start-AzlSonar.ps1 -InfrastructureFile ./infrastructure.yml -Monitor OsConfiguration
+
+# An update, with no Azure sign-in: it follows the toolkit's update events only
+./Start-AzlSonar.ps1 -InfrastructureFile ./infrastructure.yml -Monitor Update
+```
+
+## The events folder
+
+The toolkit runs write their event feeds into one folder, and Sonar reads the same folder. The toolkit picks it in this order:
+
+1. `deployment.events_directory` of `infrastructure.yml` (environment variables such as `%ProgramData%` are expanded; a relative path is relative to the folder of the file);
+2. the `-ReportDirectory` of the run, when you pass one;
+3. `%ProgramData%\AzureLocalToolkit\<cluster.name>\events`.
+
+Sonar uses the first and the third. A run that you give `-ReportDirectory` and no `deployment.events_directory` writes its events into that report directory, where Sonar does not look, and the toolkit says so. **Set `deployment.events_directory` once** and the OS configuration, the gate Plan, the ARM run and the update scripts all write where Sonar reads.
+
+| File | Written by | Folder |
+| --- | --- | --- |
+| `os-configuration-events.jsonl` | `Invoke-AzureLocalOsConfiguration.ps1` | The events folder |
+| `precluster-plan-events.jsonl` | `Invoke-AzureLocalPreClusterVerification.ps1 -Mode Plan` | The events folder |
+| `precluster-verification-events.jsonl` | The same script, `-Mode Verify` | The gate's report directory (`deployment.pre_cluster_verification_report_directory`, else `arm-report\verification\live` next to the evidence folder) |
+| `arm-deployment-events.jsonl` | `Invoke-AzureLocalArmDeployment.ps1` | The events folder |
+| `update-events.jsonl` | `Get-AvailableSolutionUpdate.ps1`, `Start-AzureLocalSolutionUpdate.ps1` | The events folder |
+
+Each line is one JSON object: `timestamp, node, stage, step, state, evidence, level, nextAction` and the data of the event. No line holds a secret.
+
+## What to expect
+
+- **The gate Plan** reads nothing and has no verdict. Sonar shows it as *Planned* (grey): which checks would run, and how many of them block. Run the gate in `-Mode Verify` for a verdict. A result older than its expiry reads *Pass expired*.
+- **The Update monitor without a sign-in** reads the event file only. It shows the verdict of a check (`UpToDate`, `UpdateAvailable`, `AdditionalContentRequired`, `UpdateRunning`, `AttentionNeeded`) and the stages of an install, and marks the Azure live poll as not connected. That is a fact, not an error. Sign in first and Sonar shows Azure's view as well.
+- **A gate result for another file** shows "not for this file" and blocks.
+- **Beacon's results** (`<discovery folder>\beacon`) and the hardware inventory files are shown in the Discovery view, with their age.
+
+## Access
+
+Read access to the event files' folders is enough for `Discovery` and `Verification`. The other monitors need Reader on the resource group; for the node logs of Validate and Deploy, an account in the seed node's local Administrators (the deployment local administrator, not the built-in `Administrator`, which deployment renames). See [Sonar: Log access](https://azurelocal.cloud/azurelocal-sonar/log-access).
+
+## Related pages
+
+- [The Tool Chain](../../implementation/03-the-tool-chain.mdx)
+- [ARM Validate and Deploy](./arm-validate-deploy.mdx)
+- [Automated OS configuration](./os-configuration/automated-os-configuration.mdx)
+- [Observability](../../implementation/08-day2-operations/observability.mdx)
+- [Sonar: Run Sonar, by purpose](https://azurelocal.cloud/azurelocal-sonar/run)
+
+---
+
+## Version Control
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-11-24 | Azure Local Cloud | Initial page |

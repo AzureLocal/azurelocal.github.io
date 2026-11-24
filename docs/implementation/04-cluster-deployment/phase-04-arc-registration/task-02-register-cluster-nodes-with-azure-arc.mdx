@@ -177,13 +177,14 @@ Invoke-AzStackHciArcInitialization `
 
 ### PowerShell
 
-> **No script in this task folder.** The folder holds only a placeholder (`Invoke-ArcRegistration-Orchestrated.ps1`). A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The task has no Azure CLI script: the registration runs on each node, and the Azure CLI has no command that registers an Azure Local machine. The Azure side is checked in [Task 01](./task-01-pre-registration-validation.mdx) and [Task 04](./task-04-verify-arc-registration-and-connectivity.mdx), which have Azure CLI scripts. The earlier `Register-NodesWithArc.ps1` and `Register-AzureLocalArc-Remote.ps1` are removed. The OS configuration registers a machine that was installed from an ISO in its **ArcRegistration** step. A machine that ZTP provisioned is already registered.
+> **A thin wrapper.** `Invoke-ArcRegistration-Orchestrated.ps1` in the task folder keeps the file name of this page and runs the **ArcRegistration** step of the OS configuration (Plan by default). The task has no Azure CLI script: the registration runs on each node, and the Azure CLI has no command that registers an Azure Local machine. The Azure side is checked in [Task 01](./task-01-pre-registration-validation.mdx) and [Task 04](./task-04-verify-arc-registration-and-connectivity.mdx), which have Azure CLI scripts. The earlier `Register-NodesWithArc.ps1` and `Register-AzureLocalArc-Remote.ps1` are removed. The OS configuration registers a machine that was installed from an ISO in its **ArcRegistration** step. A machine that ZTP provisioned is already registered.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The **ArcRegistration** step looks the Arc machine up in Azure. When it is missing or not Connected, it runs `Invoke-AzStackHciArcInitialization` on the node over WinRM, with an ARM token from the run's own Azure sign-in. |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1` | The wrapper. It runs `Invoke-AzureLocalOsConfiguration.ps1` with `-Step ArcRegistration`. It takes `-InfrastructureFile` (required), `-Node`, `-Mode` (`Plan`, the default, or `Apply`), `-ReportDirectory`, `-SettingsFile` and `-Credential`. In Plan mode it reads each machine and lists whether its Arc machine exists and is Connected; it changes nothing. `-WhatIf` prints the command line and runs nothing. Exit 0: passed or planned. Exit 1: a check failed or a node did not converge. Exit 2: bad input, including a missing file. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | The script that does the work. Its **ArcRegistration** step looks the Arc machine up in Azure. When it is missing or not Connected, it runs `Invoke-AzStackHciArcInitialization` on the node over WinRM, with an ARM token from the run's own Azure sign-in. |
 
 The step reads `azure.subscription_id`, `azure.resource_group`, `deployment.solution_version` (passed as `TargetSolutionVersion`, so the cmdlet never asks), and the proxy and bypass list of the outbound path (`networking.outbound.proxy` or `networking.outbound.private_path`). When the path needs a value the file does not give, the node is Blocked in the plan. The nodes' local administrator comes from `identity.local_admin` (a secret reference) or `-Credential`. The script never prompts.
 
@@ -200,9 +201,12 @@ The tries and the wait are run settings (registry 5.0.60), given in the JSON fil
 Connect-AzAccount   # the run uses this sign-in for the ARM token
 
 # Plan (the default): which machines would be registered
-./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ArcRegistration
+./Invoke-ArcRegistration-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
 
 # Apply
+./Invoke-ArcRegistration-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -Mode Apply
+
+# The script it runs, called directly
 ./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ArcRegistration -Mode Apply
 ```
 

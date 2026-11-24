@@ -53,9 +53,9 @@ Select the diagram to open it full screen and zoom. The full walk-through of eve
 
 | Requirement | Detail |
 |-------------|--------|
-| The OS is installed | By azurelocal-ztp (ended at the Handoff) or by hand. See [Which method did I use?](./which-method-then-os-configuration.mdx#which-method-did-i-use) |
+| The OS is installed | By azurelocal-ztp (ended at the Handoff) or by hand. See [Which method did I use?](./which-method-then-os-configuration.mdx#which-method-did-i-use). On a machine installed from an ISO the run checks the OS build: Azure Local 2611 needs OS build 26100 or later (`12.2611.1004.9` runs `26100.33822`); the 23H2 build 25398 is no longer a valid node OS |
 | A filled-in master file | `infrastructure.yml`, schema 5, kept **outside** any repository clone if it holds environment data. Keys below |
-| The ZTP handoff (ZTP route) | `<run>.ztp-handoff.json`, schema 2. Optional: without it the Arc machines are found by name in `azure.resource_group` |
+| The ZTP handoff (ZTP route) | `<run>.ztp-handoff.json`, schema 2 (`-HandoffPath`). Optional: without it the Arc machines are found by name in `azure.resource_group`. Its `networkAdapters` name the ports by MAC for the ARM run |
 | The SBE package (a requirement) | Your hardware vendor's Solution Builder Extension package for your model and the Azure Local version you deploy, downloaded before you start and available on a share the automation can read (`hardware.sbe.source_path`). It is checked before the cluster is created; see [the pre-cluster checks](#the-sbe-package-and-the-pre-cluster-checks). To install it during the build (and get the OEM drivers), also choose a delivery route: [the SBE delivery route](#the-sbe-delivery-route) |
 | Operator host | PowerShell 7.4 or later, `powershell-yaml`, `Az.Accounts` (and `Az.KeyVault` for the `keyvault://` secrets), signed in with `Connect-AzAccount` |
 | Access | The roles and network paths in [Access and connectivity](#access-and-connectivity) |
@@ -80,8 +80,9 @@ Connect-AzAccount -Tenant <tenant-id>
 
 ./scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1 `
     -InfrastructureFile ./infrastructure.yml `
-    -HandoffFile ./ztp-handoff.json `
-    -Mode Plan
+    -HandoffPath ./ztp-handoff.json `
+    -Mode Plan `
+    -ReportDirectory ./osconfig-plan
 ```
 
 Read the table. Each row is one item on one node: the step, the item, what the node has now, what the file wants and the action. **Ok** means it matches and nothing will run. **Change** will be changed. **Blocked** is wrong and the tool will not fix it. **Info** is reported only. **Skipped** waits on an earlier step.
@@ -102,9 +103,9 @@ A person reads the plan. When you run by hand, this is you. In a [pipeline](#fro
 ```powershell
 ./scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1 `
     -InfrastructureFile ./infrastructure.yml `
-    -HandoffFile ./ztp-handoff.json `
+    -HandoffPath ./ztp-handoff.json `
     -Mode Apply `
-    -ReportPath ./os-configuration-report.json
+    -ReportDirectory ./osconfig-report
 ```
 
 Apply changes only the items marked **Change**, in step order, restarts a node once when an action asks for it, delivers the SBE package last, reads the node again and repeats until it matches (at most three passes). Then a **verification pass** reads every node once more.
@@ -113,7 +114,9 @@ To limit a run, add `-Node <name>[,<name>]`. To keep nodes from restarting, add 
 
 ### Step 4: Verify
 
-A good run ends with every node matching the file and exit code `0`. The JSON report (no secrets) lists the changes made, the final plan, the ports by MAC with their OS names, and the SAN disks. The ARM parameter generator reads it.
+A good run ends with every node matching the file and exit code `0`. The JSON report (`report.json` and `summary.md` in the `-ReportDirectory`, no secrets) lists the changes made, the final plan, the ports by MAC with their OS names, and the SAN disks. The ARM parameter generator reads it.
+
+**The report of the Apply run is the one the ARM run needs.** Pass its folder (`./osconfig-report`) as `-OsConfigurationReport` to the pre-cluster gate and to `Invoke-AzureLocalArmDeployment.ps1`. The ARM run accepts "OS configuration converged" only from a report whose mode is `Apply`, whose run ended with exit code `0` and in which every node says `converged`. The report of a Plan run proves nothing was applied and never counts, even when it has nothing left to change. The OS names of the ports (found by MAC) come from this report; without it they come from the `networkAdapters` of the ZTP handoff, by MAC.
 
 Run apply again at any time. On a node that matches, it changes nothing.
 

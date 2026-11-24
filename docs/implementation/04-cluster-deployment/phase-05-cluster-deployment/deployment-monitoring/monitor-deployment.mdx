@@ -59,6 +59,8 @@ The deployment takes about 2.5 to 3 hours. Watch it with [Azure Local Sonar](htt
    ./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -HandoffFile ./ztp-handoff.json -Mode Deploy -ReportDirectory ./arm-deploy
    ```
 
+   `./osconfig-report` is the report folder of the OS configuration **Apply** run (mode `Apply`, exit code 0, every node converged); the report of a Plan run does not count. The toolkit writes `arm-deployment-events.jsonl` into the events folder: `deployment.events_directory` of `infrastructure.yml`, else the `-ReportDirectory` of the run when you pass one, else `%ProgramData%\AzureLocalToolkit\<cluster.name>\events`. Sonar reads the folder without the `-ReportDirectory` step, so set `deployment.events_directory` (or leave out `-ReportDirectory`) when you want Sonar to follow the run; the toolkit warns when `-ReportDirectory` hides the feed from Sonar.
+
 3. Leave Sonar open until the deployment ends. If a step fails, read the step and the known failures that Sonar shows before you act.
 
 ---

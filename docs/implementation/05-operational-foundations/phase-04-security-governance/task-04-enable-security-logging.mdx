@@ -8,8 +8,8 @@ scope: "Configure security event collection via Data Collection Rules for Azure 
 purpose: "Configure security event collection via Data Collection Rules for Azure Local"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-24
+version: "1.1.0"
 tags:
   - azure-local
   - operational-foundations
@@ -32,21 +32,25 @@ import TabItem from '@theme/TabItem';
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: Security event collection   
 > **PURPOSE**: Configure Data Collection Rules for security logs   
-> **MASTER REFERENCE**: [Microsoft Learn - DCR](https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/data-collection-rule-overview)
+> **MASTER REFERENCE**: [Microsoft Learn - DCR](https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/data-collection-rule-overview) and [Collect Windows events](https://learn.microsoft.com/azure/azure-monitor/vm/data-collection-windows-events#configure-windows-event-data-source)
 
 **Status**: Active
 
-Security logging provides visibility into security events across your Azure Local infrastructure. This step configures Data Collection Rules (DCR) to collect security events from Arc-enabled servers and send them to Log Analytics.
+Security logging provides visibility into security events across your Azure Local infrastructure. This step configures a Data Collection Rule (DCR) that collects the Windows Security, System and Application event logs from the Arc-enabled machines and sends them to the **Event** table of a Log Analytics workspace.
 
 :::info Azure Monitor Agent
 Azure Monitor Agent (AMA) is the recommended agent for log collection, replacing the legacy Log Analytics agent (MMA). DCRs define what data to collect and where to send it.
+:::
+
+:::note The Event table, not SecurityEvent
+Learn: when you select the **Security** log in a data collection rule, the events go to the [Event](https://learn.microsoft.com/azure/azure-monitor/reference/tables/event) table with the events of the other logs ([Collect Windows events from virtual machine with Azure Monitor](https://learn.microsoft.com/azure/azure-monitor/vm/data-collection-windows-events#configure-windows-event-data-source)). Learn names a different route to the `SecurityEvent` table: the *Windows Security Events via AMA* connector of Microsoft Sentinel, which uses the same agent and collects the same events but sends them to `SecurityEvent`. Sentinel is a separate product that this task does not set up. Query the Security log with `Event | where EventLog == "Security"`.
 :::
 
 ## Overview
 
 | Log Type | Source | Purpose |
 |----------|--------|---------|
-| **Windows Security Events** | Windows Event Log | Authentication, authorization, policy changes |
+| **Windows event logs** (Security, System, Application) | Windows Event Log | Authentication, authorization, policy changes, system and application errors |
 | **Syslog** | Linux systems | System and security events |
 | **Performance Counters** | OS metrics | Resource utilization and anomaly detection |
 | **Custom Logs** | Application logs | Application-specific security events |
@@ -61,13 +65,16 @@ Azure Monitor Agent (AMA) is the recommended agent for log collection, replacing
 
 The values for this task come from `infrastructure.yml` (schema 5). Every key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
-## Security Event Tiers
+## What the rule collects
 
-| Tier | Events Collected | Use Case |
-|------|------------------|----------|
-| **Minimal** | Critical security events only | Cost-sensitive environments |
-| **Common** | Important events (recommended) | Standard security monitoring |
-| **All** | Complete security log | Compliance, forensics |
+A plain data collection rule has no Minimal, Common or All tiers: those event sets belong to the Microsoft Sentinel connector ([Windows security event sets that can be sent to Microsoft Sentinel](https://learn.microsoft.com/azure/sentinel/windows-security-event-id-reference)). A rule that you create here chooses the logs and, for each, what it collects:
+
+| Log | Choice in the portal | Key in `infrastructure.yml` |
+|-----|----------------------|-------------------------------|
+| **Security** | Audit success and Audit failure, or Audit failure only | `operations.security_logging.security_audit`: `success_and_failure` (the default) or `failure` |
+| **System** and **Application** | The levels Critical, Error, Warning, Information, Verbose | `operations.security_logging.event_levels`: any of `critical`, `error`, `warning`, `information`, `verbose` (the default is `critical`, `error`, `warning`) |
+
+Learn recommends at least Critical, Error and Warning for System and Application, and Information when you want trends. Verbose events are rarely useful. Every node is billed for the data its events add to the workspace, so collect only what you need. For finer filtering by event ID, use a custom rule with XPath queries.
 
 ## Procedure
 
@@ -141,7 +148,49 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 ### PowerShell
 
-> **No script in this task folder.** `Invoke-SecurityLogging-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The task has no Azure CLI script: the audit policy and the Security log size are part of the security baseline on the nodes. The earlier `Set-SecurityLogging.ps1` is removed: Microsoft Learn documents no supported way to change the audit policies of Azure Local with a script. The security baseline is changed with `Set-AzsSecurity` (see [Task 03: Configure security baselines](./task-03-configure-security-baselines.mdx)).
+> **When to use**: Create the rule and associate it with the Arc machine of every node, from a management host. The script is idempotent. The earlier `Set-SecurityLogging.ps1` is removed: Microsoft Learn documents no supported way to change the audit policies of Azure Local with a script. The audit policy itself belongs to the security baseline on the nodes, which is changed with `Set-AzsSecurity` (see [Task 03: Configure security baselines](./task-03-configure-security-baselines.mdx)).
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/powershell/Invoke-SecurityLogging-Orchestrated.ps1` | Creates the data collection rule `operations.security_logging.data_collection_rule` (a `windowsEventLogs` data source on the `Microsoft-Event` stream, sent to the Log Analytics workspace of `operations.monitoring`, so into the Event table) and one association with the Arc machine of every node, named `<machine>-<rule>`. First it checks, read only, that `operations.monitoring.enabled` is true, that the workspace exists and that the Azure Monitor Agent extension is on the instance. A rule that exists is checked and never changed: when it sends to another workspace or collects other queries than the file says, the run fails and no node is associated. Supports `-WhatIf`. |
+
+Parameters: `-InfrastructureFile` (required) and `-LogPath`. With `operations.security_logging.enabled` false or absent the script does nothing and exits 0. It does not sign in: run `Connect-AzAccount -Tenant <azure.tenant_id>` first. You need Monitoring Contributor on the workspace resource group and on the Arc machines, and Log Analytics Contributor on the workspace. Exit 0: the rule and every association are in place (created now, already there, planned under `-WhatIf`, or not asked for). Exit 1: an Azure call or a precondition failed. Exit 2: a value in the file is missing or not usable; nothing is sent to Azure.
+
+The keys it reads: `operations.security_logging.enabled`, `data_collection_rule`, `security_audit` and `event_levels`, with `operations.monitoring.log_analytics_workspace` and `workspace_resource_group`.
+
+#### Run
+
+```powershell
+Connect-AzAccount -Tenant <azure.tenant_id>
+
+./Invoke-SecurityLogging-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-SecurityLogging-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/azurecli/Invoke-SecurityLogging-Orchestrated.azcli.ps1` | The Azure CLI twin of the script in the PowerShell tab: the same rule, the same checks and the same results. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci` (`az extension add --name stack-hci`); the script does not install it.
+
+#### Run
+
+```powershell
+./Invoke-SecurityLogging-Orchestrated.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Invoke-SecurityLogging-Orchestrated.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
 
 </TabItem>
 </Tabs>
@@ -176,9 +225,10 @@ if ($dcr) {
 }
 
 # Query Log Analytics for security events (after data starts flowing)
+# The Security log lands in the Event table (Learn), not in SecurityEvent
 $query = @"
-SecurityEvent
-| where TimeGenerated > ago(1h)
+Event
+| where TimeGenerated > ago(1h) and EventLog == "Security"
 | summarize count() by EventID
 | order by count_ desc
 | take 10
@@ -193,7 +243,8 @@ Write-Host "`nQuerying for security events..." -ForegroundColor Cyan
 After Arc-enabled servers are registered and associated with the DCR:
 
 ```
-SecurityEvent
+Event
+| where EventLog == "Security"
 | summarize count() by EventID
 
 EventID count_
@@ -230,7 +281,7 @@ New-AzDataCollectionRuleAssociation `
 | Issue | Cause | Resolution |
 |-------|-------|------------|
 | DCR creation fails with `WorkspaceId invalid` | Log Analytics workspace not found or wrong region | Verify workspace exists with `Get-AzOperationalInsightsWorkspace`; ensure DCR and workspace are in the same region |
-| Security events not appearing in Log Analytics | AMA not installed or DCR association missing | Verify AMA extension: `az connectedmachine extension list`; check DCR association: `Get-AzDataCollectionRuleAssociation` |
+| Security events not appearing in Log Analytics | AMA not installed or DCR association missing, or the query reads `SecurityEvent` (the rule here writes to `Event`; `SecurityEvent` is the table of the Microsoft Sentinel connector) | Verify AMA extension: `az connectedmachine extension list`; check DCR association: `Get-AzDataCollectionRuleAssociation` |
 | Partial event collection (some event types missing) | DCR XPath queries don't cover required event channels | Update DCR data sources to include all required Windows event channels (Security, System, Application) |
 
 ## Next Steps
@@ -269,3 +320,4 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-24 | Azure Local Cloud | Corrected to Learn (https://learn.microsoft.com/azure/azure-monitor/vm/data-collection-windows-events#configure-windows-event-data-source and https://learn.microsoft.com/azure/sentinel/windows-security-event-id-reference): a plain rule writes the Security log to the Event table; SecurityEvent and the Minimal, Common and All sets belong to the Microsoft Sentinel connector. The script and its Azure CLI twin are real |

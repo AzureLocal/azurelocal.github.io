@@ -8,8 +8,8 @@ scope: "Verify network intent compatibility and requirements before enabling SDN
 purpose: "Verify network intent compatibility and requirements before enabling SDN on Azure Local"
 author: "AzureLocal"
 created: 2025-03-25
-updated: 2026-04-01
-version: "1.1.0"
+updated: 2026-11-24
+version: "1.2.0"
 tags:
   - azure-local
   - operational-foundations
@@ -31,7 +31,7 @@ import TabItem from '@theme/TabItem';
 > **DOCUMENT CATEGORY**: Runbook   
 > **SCOPE**: SDN prerequisite validation   
 > **PURPOSE**: Verify cluster meets SDN requirements   
-> **MASTER REFERENCE**: [Microsoft Learn - SDN Overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/sdn-overview)
+> **MASTER REFERENCE**: [Microsoft Learn - SDN Overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/sdn-overview?view=azloc-2611)
 
 **Status**: Active
 
@@ -45,9 +45,11 @@ Before enabling SDN on Azure Local, you must verify that your cluster meets all 
 
 | Requirement | Minimum Version |
 |-------------|-----------------|
-| Azure Local | 2601 |
-| OS Build | 26100.xxxx |
+| Azure Local | 2506 |
+| OS Build | 26100.xxxx or later |
 | Arc Agent | Latest |
+
+Learn: SDN enabled by Arc is available with Azure Local 2506 with OS version 26100.xxxx or later ([SDN overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/sdn-overview?view=azloc-2611)). The current release, 12.2611.1004.9 (OS 26100.33822), meets both.
 
 ### Network Intent Compatibility
 
@@ -65,7 +67,7 @@ SDN enabled by Arc only supports specific Network ATC configurations. Verify you
 |----------|----------------|
 | Azure Local VMs (deployed from Azure) | ✅ Yes |
 | Hyper-V VMs (deployed locally) | ❌ No - Use on-premises SDN |
-| AKS on Azure Local | ❌ No |
+| AKS on Azure Local | ✅ Yes, with one limit: an NSG on the logical network that AKS workloads use, or on an AKS workload VM NIC, is not supported |
 | Multi-cast applications | ❌ No |
 
 ---
@@ -80,7 +82,7 @@ SDN enabled by Arc only supports specific Network ATC configurations. Verify you
 1. Navigate to **Azure Portal** → **Azure Arc** → **Azure Local**
 2. Select your cluster resource
 3. Go to **Overview** and verify:
- - **Version**: 2601 or later
+ - **Version**: 2506 or later
  - **Connection Status**: Connected
 
 :::warning Portal Limitation
@@ -90,13 +92,13 @@ Network ATC intent configuration and OS build version are **not visible in the A
 ### Verification (Portal Only)
 
 Document the following from the portal:
-- [ ] Cluster version is 2601+
+- [ ] Cluster version is 2506+
 - [ ] Arc connection is active
 
 **For full validation**, use the Direct Script or Orchestrated Script tab to also verify:
 - OS build (26100.xxxx+)
 - Network intent compatibility
-- AKS workload check
+- AKS check: no NSG on the AKS logical network or on AKS workload VM NICs
 
 </TabItem>
 
@@ -104,17 +106,24 @@ Document the following from the portal:
 
 ### PowerShell
 
-> **No script in this task folder.** `Invoke-SdnPrerequisites-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Test-SdnPrerequisites.ps1` is removed. `Enable-ArcSdn.ps1` checks the prerequisites Microsoft Learn lists and plans under `-WhatIf`.
+> **When to use**: Check the prerequisites from a management host before you enable SDN. `Invoke-SdnPrerequisites-Orchestrated.ps1` is read only: it asks one node over PowerShell remoting and changes nothing. The earlier `Test-SdnPrerequisites.ps1` is removed.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1` | Turns on SDN enabled by Azure Arc when `sdn.enabled` of `infrastructure.yml` is true. Under `-WhatIf` it checks the OS build, the DNS record and the intent layout, and changes nothing. See [Deploy SDN](../../04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn.mdx). |
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1` | Checks, from Microsoft Learn: the OS build is 26100 or later; the Azure Local version is 2506 or later (a version it cannot read is a warning); the instance is registered and Connected; the network intents of the file (`networking.intents[]`) and of the machine (`Get-NetIntent`) are a layout that SDN enabled by Arc supports; whether SDN by Arc is already on (reported, not a failure); a sign of SDN managed by on-premises tools (a warning, because the script cannot prove it); and AKS (information: AKS is supported, an NSG on the AKS logical network or its VM NICs is not). Supports `-WhatIf` (lists the checks and runs none). |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1` | Turns on SDN enabled by Azure Arc when `sdn.enabled` of `infrastructure.yml` is true. Under `-WhatIf` it checks the OS build, the DNS record and the intent layout, and changes nothing. It uses the same intent rules (`scripts/common/sdn/AzlSdn.psm1`). See [Deploy SDN](../../04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn.mdx). |
+
+Parameters of the check: `-InfrastructureFile` (required), `-ComputerName` (default: the first node of `nodes[]` that answers), `-Credential` and `-LogPath`. The login is `-Credential`, else the LCM user (`identity.active_directory.lcm_user`) with Active Directory or the local administrator (`identity.local_admin`) with local identity; the password is a secret reference. The script never prompts. Exit 0: every check passed (warnings and information allowed) or the checks were listed under `-WhatIf`. Exit 1: a check failed or no node answered. Exit 2: a value in the file is missing or there is no login; nothing was checked.
 
 #### Run
 
 ```powershell
+./Invoke-SdnPrerequisites-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-SdnPrerequisites-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+
+# Then the plan of the enablement
 ./Enable-ArcSdn.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ```
 
@@ -129,21 +138,21 @@ Complete this checklist before proceeding to SDN enablement:
 
 | Requirement | Status | Notes |
 |-------------|--------|-------|
-| Azure Local version 2601+ | ☐ | |
+| Azure Local version 2506+ | ☐ | |
 | OS build 26100.xxxx+ | ☐ | |
 | Arc connection active | ☐ | |
 | Network intent compatible | ☐ | Document pattern used |
-| No AKS workloads | ☐ | |
+| No NSG on the AKS logical network or on AKS workload VM NICs | ☐ | AKS itself is supported |
 | No existing on-premises SDN | ☐ | |
 
 ## Troubleshooting
 
 | Issue | Resolution |
 |-------|------------|
-| Version too old | Upgrade Azure Local to 2601+ |
+| Version too old | Update Azure Local to 2506 or later |
 | Arc not connected | Run `Sync-AzureStackHCI` and verify connectivity |
 | Incompatible network intent | Reconfigure Network ATC before enabling SDN |
-| AKS workloads present | Cannot enable SDN - AKS not supported |
+| AKS workloads present | SDN enabled by Arc supports AKS. Do not associate an NSG with the logical network used for AKS workload deployment or with AKS workload VM NICs |
 | Existing SDN via WAC/SDN Express | Cannot migrate - choose one method |
 
 ## Next Steps
@@ -191,3 +200,4 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | AzureLocal | Initial release |
 | 1.1.0 | 2026-04-01 | AzureLocal | Align naming conventions, remove consulting language |
+| 1.2.0 | 2026-11-24 | Azure Local Cloud | Corrected to Learn (https://learn.microsoft.com/en-us/azure/azure-local/concepts/sdn-overview?view=azloc-2611): SDN enabled by Arc needs Azure Local 2506 and OS 26100 or later, not 2601; AKS is supported, only an NSG on the AKS logical network or on AKS workload VM NICs is not. The read only check script is real |

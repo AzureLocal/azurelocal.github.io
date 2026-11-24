@@ -8,8 +8,8 @@ scope: "Configure diagnostic level, streaming data client, and EU location setti
 purpose: "Configure diagnostic level, streaming data client, and EU location settings for Azure Local telemetry"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-24
+version: "1.1.0"
 tags:
   - azure-local
   - operational-foundations
@@ -38,9 +38,11 @@ Enhanced telemetry settings enable comprehensive diagnostics, proactive support,
 ## Overview
 
 Telemetry configuration includes three key settings:
-- **diagnosticLevel**: Controls the amount of diagnostic data sent to Microsoft
-- **streamingDataClient**: Enables real-time streaming of telemetry data
-- **isEULocation**: Configures EU data residency compliance
+- **diagnosticLevel**: Controls the amount of diagnostic data the instance sends to Microsoft. The values are `Off`, `Basic` and `Enhanced` ([Learn: DiagnosticLevel](https://learn.microsoft.com/en-us/javascript/api/@azure/arm-azurestackhci/diagnosticlevel))
+- **streamingDataClient**: Enables streaming of telemetry data. A deployment setting
+- **euLocation**: Keeps diagnostic data in the EU. A deployment setting
+
+The diagnostic level is the only one of the three that Learn documents as a setting you can change after the deployment (the desired property `diagnosticLevel` of the instance, [Learn: DesiredPropertyDiagnosticLevel](https://learn.microsoft.com/en-us/dotnet/api/microsoft.azure.powershell.cmdlets.stackhci.models.iclusterproperties.desiredpropertydiagnosticlevel?view=az-ps-latest)). `streamingDataClient`, `euLocation` and `episodicDataUpload` are parameters of the deployment ([Learn: ARM template parameters reference](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault-template?view=azloc-2611#arm-template-parameters-reference)); Learn documents no way to change them afterwards.
 
 ## Prerequisites
 
@@ -67,18 +69,20 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 3. Go to **Settings** → **Configuration**
 4. Locate the **Diagnostics** section
 5. Configure the following settings:
- - **Diagnostic Level**: Select `Enhanced` or `Full`
- - **Streaming Data**: Toggle to **Enabled**
- - **EU Data Boundary**: Set based on cluster location
+ - **Diagnostic Level**: Select `Off`, `Basic` or `Enhanced`
 6. Click **Save**
+
+The streaming data and EU location settings are set when the cluster is deployed (the portal and the ARM template ask for them there). `infrastructure.yml` carries them as `security.telemetry.streaming_data`, `episodic_data_upload` and `eu_location`.
 
 ### Diagnostic Levels
 
-| Level | Data Sent |
+| Level | Data Sent (Learn: [DiagnosticLevel](https://learn.microsoft.com/en-us/javascript/api/@azure/arm-azurestackhci/diagnosticlevel)) |
 |-------|-----------|
-| Required | Minimum data for cluster health |
-| Enhanced | Additional data for proactive support |
-| Full | Complete diagnostics for troubleshooting |
+| Off | No diagnostic data is emitted |
+| Basic | Basic diagnostic data, including essential health metrics |
+| Enhanced | Enhanced diagnostic data, including detailed performance and usage metrics |
+
+There is no `Full` level.
 
 </TabItem>
 
@@ -86,7 +90,47 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 ### PowerShell
 
-> **No script in this task folder.** `Invoke-TelemetryConfiguration-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The task has no Azure CLI script: Microsoft Learn documents the diagnostic data settings only as deployment settings. The earlier `Set-TelemetryConfiguration.ps1` is removed: Microsoft Learn documents no supported way to do what it did. The deployment sets the diagnostic data from `security.telemetry` of `infrastructure.yml` (`streaming_data`, `episodic_data_upload`, `eu_location`).
+> **When to use**: Set the diagnostic level of the instance from `security.telemetry.diagnostic_level` of `infrastructure.yml`, from a management host. The script is idempotent. The earlier `Set-TelemetryConfiguration.ps1` is removed: Microsoft Learn documents no supported way to do what it did.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/powershell/Invoke-TelemetryConfiguration-Orchestrated.ps1` | Reads the instance (`Get-AzStackHciCluster`). When its desired diagnostic level is the one of the file, nothing is changed. Otherwise it runs `Update-AzStackHciCluster -DesiredPropertyDiagnosticLevel <level>`, reads the instance again and runs `Sync-AzureStackHCI` on one node, so the machines take the setting now and not at their next daily sync (`-SkipSync` leaves that out). It also shows the diagnostic data settings of the deployment (streaming data, episodic data upload, EU location), which it cannot change. Supports `-WhatIf` (reads Azure, changes nothing, no sync). |
+
+Parameters: `-InfrastructureFile` (required), `-ComputerName` (the node for the sync; default: the first node of `nodes[]`), `-Credential`, `-SkipSync` and `-LogPath`. With `security.telemetry.diagnostic_level` absent the script does nothing and exits 0; it refuses `scenario.connectivity` `disconnected` (exit 2). It does not sign in: run `Connect-AzAccount -Tenant <azure.tenant_id>` first, with Contributor or Owner on the instance. The login for the sync is `-Credential`, else the account the file names (the LCM user with Active Directory, the local administrator with local identity; the password is a secret reference). A sync that fails is a warning, not a failure: the machines sync on their own. Exit 0: the level is as the file says (set now, already so, planned, or not asked for). Exit 1: an Azure call or a precondition failed. Exit 2: a value in the file is missing or not usable.
+
+#### Run
+
+```powershell
+Connect-AzAccount -Tenant <azure.tenant_id>
+
+./Invoke-TelemetryConfiguration-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-TelemetryConfiguration-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
+</TabItem>
+<TabItem value="azure-cli" label="Azure CLI">
+
+### Azure CLI
+
+> **When to use**: Run the task from a host that has the Azure CLI and not the Az PowerShell modules. The script is PowerShell 7 that calls `az`; it reads `infrastructure.yml` and carries no values of its own.
+
+#### Script
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/azurecli/Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1` | The Azure CLI twin: reads the instance (`az stack-hci cluster show`) and, when the desired level differs from the file, runs `az stack-hci cluster update --desired-properties diagnostic-level=<level>`. Azure side only: it does not run the sync on a node, so the machines take the setting at their next daily sync. Supports `-WhatIf`. |
+
+Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`, with Contributor or Owner on the instance. Needs the Azure CLI extension `stack-hci` (`az extension add --name stack-hci`); the script does not install it.
+
+#### Run
+
+```powershell
+./Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+./Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
 
 </TabItem>
 </Tabs>
@@ -95,50 +139,29 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 ## Diagnostic Level Details
 
-### Basic (Required)
-- Cluster health status
-- Node connectivity information
-- Critical error reporting
-- Minimum data for Azure billing
+### Off
+- No diagnostic data is emitted
 
-### Enhanced (Recommended)
-- All Basic data plus:
-- Performance metrics
-- Feature usage statistics
-- Proactive issue detection
-- Support case acceleration
+### Basic
+- Basic diagnostic data, including essential health metrics
 
-### Full (Troubleshooting)
-- All Enhanced data plus:
-- Detailed diagnostic logs
-- Memory dumps (on request)
-- Complete event logs
-- Deep troubleshooting capability
+### Enhanced
+- Enhanced diagnostic data, including detailed performance and usage metrics
+
+Source: [Learn: DiagnosticLevel](https://learn.microsoft.com/en-us/javascript/api/@azure/arm-azurestackhci/diagnosticlevel). There is no `Full` level, and Learn does not say which individual data items each level carries, so this page does not list any.
 
 ## EU Data Boundary
 
-For clusters deployed in European Union member states:
-
-```powershell
-# Enable EU data boundary on the cluster
-Set-AzStackHCI -IsEULocation $true
-
-# This ensures:
-# - Telemetry data stays within EU boundaries
-# - Compliance with GDPR requirements
-# - Data processed in EU Azure regions
-```
+Whether diagnostic data stays in the EU is the `euLocation` setting of the deployment: "Specifies whether to send and store telemetry and diagnostic data within the European Union (EU)" ([Learn: ARM template parameters reference](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault-template?view=azloc-2611#arm-template-parameters-reference)). In `infrastructure.yml` it is `security.telemetry.eu_location`. Learn documents no command that changes it after the deployment, so plan it before you deploy: this task does not change it.
 
 ## Verification
 
 ```powershell
-# On the cluster node
-Get-AzStackHCI | Select-Object DiagnosticLevel, StreamingDataClient
+# The desired and the reported diagnostic level of the instance
+Get-AzStackHciCluster -ResourceGroupName <azure.resource_group> -Name <cluster.name> |
+ Select-Object DesiredPropertyDiagnosticLevel, ReportedPropertyDiagnosticLevel
 
-# Verify telemetry service
-Get-Service -Name "HciClusterAgentService" | Select-Object Status, StartType
-
-# Check telemetry connectivity
+# Check telemetry connectivity (from a node)
 Test-NetConnection -ComputerName "dc.services.visualstudio.com" -Port 443
 ```
 
@@ -147,9 +170,9 @@ Test-NetConnection -ComputerName "dc.services.visualstudio.com" -Port 443
 | Issue | Resolution |
 |-------|------------|
 | Telemetry not sending | Verify firewall allows HTTPS to telemetry endpoints |
-| Streaming data failing | Check HciClusterAgentService is running |
-| EU setting not applying | Verify cluster region is set correctly |
-| Diagnostic level reset | Re-apply after cluster updates |
+| Reported level differs from the desired level | The machines take the setting at the next sync: run `Sync-AzureStackHCI` on a node, or wait for the daily sync |
+| Streaming data or EU location differ from the plan | They are deployment settings; Learn documents no way to change them afterwards |
+| Diagnostic level reset | Run the script again |
 
 ## Telemetry Endpoints
 
@@ -162,7 +185,8 @@ Ensure firewall allows outbound HTTPS (443) to:
 ## Related Documentation
 
 - [Telemetry and Diagnostics Overview](https://learn.microsoft.com/en-us/azure/azure-local/concepts/telemetry-and-diagnostics-overview)
-- [Configure Diagnostic Data](https://learn.microsoft.com/en-us/azure/azure-local/concepts/telemetry-and-diagnostics-overview)
+- [DiagnosticLevel (Off, Basic, Enhanced)](https://learn.microsoft.com/en-us/javascript/api/@azure/arm-azurestackhci/diagnosticlevel)
+- [ARM template parameters reference (streamingDataClient, euLocation, episodicDataUpload)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault-template?view=azloc-2611#arm-template-parameters-reference)
 - [EU Data Boundary](https://learn.microsoft.com/en-us/privacy/eudb/eu-data-boundary-learn)
 
 ---
@@ -197,3 +221,4 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-24 | Azure Local Cloud | Corrected to Learn (https://learn.microsoft.com/en-us/javascript/api/@azure/arm-azurestackhci/diagnosticlevel, https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault-template?view=azloc-2611#arm-template-parameters-reference): the diagnostic levels are Off, Basic and Enhanced (not Required, Enhanced, Full); streaming data and EU location are deployment settings; no Learn page documents Set-AzStackHCI -IsEULocation, so the page no longer shows it. The script and its Azure CLI twin are real |

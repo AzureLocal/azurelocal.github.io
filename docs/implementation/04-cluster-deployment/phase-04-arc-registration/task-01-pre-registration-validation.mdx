@@ -155,17 +155,21 @@ if ($secret -and $secret.Enabled) {
 
 ### PowerShell
 
-> **No PowerShell script in this task folder.** `Invoke-ArcPrerequisites-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Test-ArcPrerequisites.ps1` and `Test-ArcPrerequisites-Orchestrated.ps1` are removed. The pre-cluster verification checks the Azure side, and the Azure CLI tab has a script for it.
+> **A thin wrapper.** `Invoke-ArcPrerequisites-Orchestrated.ps1` in the task folder keeps the file name of this page and runs the pre-cluster verification (Verify mode, `azure` category), read only. The earlier `Test-ArcPrerequisites.ps1` and `Test-ArcPrerequisites-Orchestrated.ps1` are removed. The Azure CLI tab has a script that checks the same side with `az`.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Its `azure` category checks the subscription, the resource group, the resource providers, the Key Vault references and the Arc endpoints. |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1` | The wrapper. It runs `Invoke-AzureLocalPreClusterVerification.ps1` with `-Mode Verify -Category azure`. It takes `-InfrastructureFile` (required), `-ReportDirectory` and `-SettingsFile`. `-WhatIf` prints the command line and runs nothing. Exit 0: passed (a partial run with no blocking result counts as 0). Exit 1: a check failed. Exit 2: bad input, including a missing file. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate) that does the work. Read only. Its `azure` category checks the subscription, the resource group, the resource providers, the Key Vault references and the Arc endpoints. |
 
 #### Run
 
 ```powershell
+./Invoke-ArcPrerequisites-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+
+# The script it runs, called directly
 ./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category azure
 ```
 

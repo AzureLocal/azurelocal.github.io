@@ -8,8 +8,8 @@ scope: "Activate Windows Server Subscription for Azure Local to enable automatic
 purpose: "Activate Windows Server Subscription for Azure Local to enable automatic VM licensing"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-24
+version: "1.1.0"
 tags:
   - azure-local
   - operational-foundations
@@ -87,11 +87,11 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 1. Navigate to the **Azure portal** → **Azure Arc** → **Azure Local**
 2. Select your cluster resource
-3. Go to **Settings** → **Configuration**
-4. Locate **Windows Server Subscription** section
-5. Toggle **Enable Windows Server Subscription** to **On**
-6. Review the pricing information
-7. Click **Save**
+3. Go to the **Configuration** screen
+4. Under the feature **Windows Server subscription add-on**, select **Purchase**
+5. In the context pane, select **Purchase** again to confirm
+
+For Azure Hybrid Benefit, activate the benefit first and then select **Activate benefit**. Source: [Learn: Activate Windows Server VMs on Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/vm-activate?view=azloc-2611).
 
 ### Verification
 
@@ -111,13 +111,14 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 | Script | What it does |
 |---|---|
+| `scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Invoke-WindowsServerSubscription-Orchestrated.ps1` | The whole task in one run. Step 1 runs `Enable-WindowsServerSubscription.ps1` of the same folder (below); its exit code 1 or 2 ends the run with the same code. Step 2 runs `Sync-AzureStackHCI` on one node, so the machines take the subscription now and not at their next daily sync (`-SkipSync` leaves that out). Step 3 checks every node with `Get-AzureStackHCISubscriptionStatus` (the Windows Server subscription row) and `Get-VMAutomaticActivation` (AVMA set up). A node that is not Active yet is reported as Pending, a warning, because the setting arrives with the next sync; a node that cannot be reached is Failed. When `operations.licensing.windows_server_subscription` is not `true`, step 1 does nothing and steps 2 and 3 are left out. Under `-WhatIf` step 1 reads Azure and changes nothing, and steps 2 and 3 are not run. |
 | `scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Enable-WindowsServerSubscription.ps1` | Turns on the Windows Server subscription add-on of the Azure Local instance when `operations.licensing.windows_server_subscription` is `true`. Reads the instance with `Get-AzStackHciCluster`, does nothing when the add-on is already Enabled, otherwise runs `Update-AzStackHciCluster -DesiredPropertyWindowsServerSubscription Enabled` and reads the instance again. Supports `-WhatIf`. |
 
 When the key is `false` or missing, the script does nothing and says so. It never turns the add-on off. It refuses `scenario.connectivity` `disconnected` (exit 2).
 
 The script reads `azure.tenant_id`, `azure.subscription_id`, `azure.resource_group`, `cluster.name`, `scenario.connectivity` and `operations.licensing.windows_server_subscription`. It does not sign in and asks nothing: run `Connect-AzAccount` to the tenant of `azure.tenant_id` first, with Contributor or Owner on the instance. Exit codes: 0 Enabled (or not asked for); 1 an Azure call or a precondition failed; 2 a value in the file is missing or not usable.
 
-`Invoke-WindowsServerSubscription-Orchestrated.ps1` in the task folder is a placeholder (exit code 3). The Azure CLI tab has a script that does the same as `Enable-WindowsServerSubscription.ps1` with `az`.
+`Invoke-WindowsServerSubscription-Orchestrated.ps1` takes `-InfrastructureFile` (required), `-Credential`, `-SkipSync` and `-LogPath`. Sign in first (step 1). The login for the machines is `-Credential`, else the account the file names (the LCM user with Active Directory, the local administrator with local identity; the password is a secret reference). Each node is asked at its own management address. Exit 0: the add-on is on (or not asked for, or planned under `-WhatIf`) and every node answered. Exit 1: step 1 failed or a node could not be checked. Exit 2: a value in the file is missing or there is no login for the machines. The Azure CLI tab has a script that does what `Enable-WindowsServerSubscription.ps1` does with `az`.
 
 Requires: PowerShell 7; modules Az.Accounts, Az.StackHCI.
 
@@ -125,6 +126,12 @@ Requires: PowerShell 7; modules Az.Accounts, Az.StackHCI.
 
 ```powershell
 Connect-AzAccount -Tenant 00000000-0000-0000-0000-000000000000
+
+# The whole task: turn on, sync, check every node
+./Invoke-WindowsServerSubscription-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-WindowsServerSubscription-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+
+# Only the Azure step
 ./Enable-WindowsServerSubscription.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ./Enable-WindowsServerSubscription.ps1 -InfrastructureFile ./infrastructure.yml
 ```
@@ -176,12 +183,15 @@ slmgr /dlv
 After enabling Windows Server Subscription:
 
 ```powershell
-# On the cluster node
-Get-AzStackHCI | Select-Object ClusterName, WindowsServerSubscription
+# On each machine (Learn: check the subscription status for each machine)
+Get-AzureStackHCISubscriptionStatus
 
-# From management server
-$cluster = Get-AzResource -ResourceId $ClusterResourceId
-$cluster.Properties.windowsServerSubscription
+# On each machine: AVMA is set up with the subscription
+Get-VMAutomaticActivation
+
+# From the management host: the desired state on the instance
+Get-AzStackHciCluster -ResourceGroupName <azure.resource_group> -Name <cluster.name> |
+ Select-Object Name, DesiredPropertyWindowsServerSubscription
 
 # Check VM activation (from within a VM)
 cscript //nologo C:\Windows\System32\slmgr.vbs /dlv
@@ -247,3 +257,4 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-24 | Azure Local Cloud | Corrected to Learn (https://learn.microsoft.com/en-us/azure/azure-local/manage/vm-activate?view=azloc-2611): the portal steps are Configuration, Windows Server subscription add-on, Purchase; the checks are Get-AzureStackHCISubscriptionStatus and Get-VMAutomaticActivation. The orchestrated script is real: it enables, syncs and checks every node |

@@ -39,7 +39,7 @@ Trailwright validation is release-aware, with each finding linked to its Microso
 Trailwright exports include:
 
 - Design handoff in Markdown and PDF
-- `infrastructure.yml` in schema 5, the master environment file that the [Azure Local Toolkit](https://github.com/AzureLocal/azurelocal-toolkit) validates and its automation, including zero-touch provisioning, reads
+- `infrastructure.yml` in schema 5, the master environment file that the [Azure Local Toolkit](https://github.com/AzureLocal/azurelocal-toolkit) validates and its automation, including zero-touch provisioning, reads. It replaces the separate environment file that Trailwright exported earlier (`environment.yml` is retired; it stays one more release with a deprecation notice)
 - ARM parameter files for the Active Directory and Local Identity templates
 - A Bicep parameter file
 - Schedules in CSV and Excel
@@ -53,12 +53,12 @@ Secrets appear only as references.
 1. Collect the workload inventory with RVTools, or note the values to type in.
 2. Assess and size the workloads in Surveyor, including storage design.
 3. Export **Sizing handoff for Trailwright** from the Reports page of Surveyor.
-4. Import the handoff into Trailwright. Review the conflict preview before applying anything. The import takes the machines, topology, cores and memory per machine, drive layout and volumes; it does not take a volume's thin or fixed provisioning, and it names the machines `node1`, `node2` and so on without addresses.
+4. Import the handoff into Trailwright. Review the conflict preview before applying anything. The import takes the machines, topology, cores and memory per machine, drive layout and volumes; and from handoff `schemaVersion` 1.1 also the volume's thin or fixed provisioning (`storage.volumes[].provisioning_type`; version 1.0 files carry it as `provisioning`). A new design names the machines `node1`, `node2` and so on without addresses. Importing into a design that already has data keeps each machine's name, address, serial number, BMC, management MAC and zone, and the preview lists every change before you apply it.
 5. Record the deployment design in Trailwright. You can also start from a saved Trailwright project.
 6. Review the release-aware findings and their linked Microsoft Learn sources.
 7. Export the design handoff and `infrastructure.yml`.
-8. **Run hardware discovery before you validate the file.** A design cannot know the serial numbers and the MAC addresses of the machines' ports, and Trailwright writes no `nodes[].network_adapters` entries. [Hardware discovery](../implementation/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api.mdx) reads them from the BMCs. `Update-InfrastructureYml-FromDiscovery.ps1 -Apply` writes serial numbers and MACs only into entries that already exist and name the discovered ports (it never creates a missing parent), so add the `nodes[].network_adapters` entries (name and roles) first, then apply.
-9. Check the file with the toolkit's `Test-InfrastructureFile.ps1`. Trailwright's `landing_zone.networks` table has no `address_space` column, so a design that includes the Azure foundation fails this check until you add `address_space` to each network by hand.
+8. **Run hardware discovery before you deploy.** A design cannot know the serial numbers, the BMC MAC addresses and the MAC addresses of the machines' ports. The file Trailwright exports has `_metadata.scope: trailwright`, a planning scope in which those MACs are optional; it lists every port of every machine in `nodes[].network_adapters[]` (name, slot, port index, make, model, speed, RDMA, roles), and the management port carries the machine's address and MAC. [Hardware discovery](../implementation/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api.mdx) reads the rest from the BMCs. Run `Update-InfrastructureYml-FromDiscovery.ps1` first as a preview, then with `-Apply`: it writes serial numbers, BMC MACs and port MACs into entries that exist (it never creates a missing machine or port entry), and the deployment scopes of the toolkit still require the MACs.
+9. Check the file with the toolkit's `Test-InfrastructureFile.ps1`. Trailwright's Azure virtual network table asks for the address space (`landing_zone.networks[].address_space`), which the schema requires.
 10. Follow the Implementation section of this site.
 
 ## What the tools do not do

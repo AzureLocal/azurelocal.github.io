@@ -162,17 +162,21 @@ if ($aces.Count -gt 0 -and -not $missing) {
 
 ### PowerShell
 
-> **When to use**: Check Active Directory from the management host before you deploy. `Invoke-VerifyADPrerequisites-Orchestrated.ps1` in the task folder is a placeholder (it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3). The pre-cluster verification does the checks.
+> **When to use**: Check Active Directory from the management host before you deploy. `Invoke-VerifyADPrerequisites-Orchestrated.ps1` in the task folder is a thin wrapper: it keeps the file name of this page and runs the pre-cluster verification (Verify mode, `identity` category), read only.
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Its `identity` category checks the OU, the LCM user and its rights (for example `ID-AD-003`, `ID-AD-004`, `ID-AD-007`, `ID-AD-010`). |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template/powershell/Invoke-VerifyADPrerequisites-Orchestrated.ps1` | The wrapper. It runs `Invoke-AzureLocalPreClusterVerification.ps1` with `-Mode Verify -Category identity`. It takes `-InfrastructureFile` (required), `-ReportDirectory` and `-SettingsFile`. `-WhatIf` prints the command line and runs nothing. Exit 0: passed (a partial run with no blocking result counts as 0). Exit 1: a check failed. Exit 2: bad input, including a missing file. |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate) that does the work. Read only. Its `identity` category checks the OU, the LCM user and its rights (for example `ID-AD-003`, `ID-AD-004`, `ID-AD-007`, `ID-AD-010`). |
 
 #### Run
 
 ```powershell
+./Invoke-VerifyADPrerequisites-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+
+# The script it runs, called directly
 ./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category identity
 ```
 
@@ -374,6 +378,8 @@ Requires PowerShell 7 and an Azure sign-in. The script does not sign in.
 ./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -HandoffFile ./ztp-handoff.json -Mode Validate -ReportDirectory ./arm-validate
 ```
 
+`./osconfig-report` is the report folder of the OS configuration **Apply** run (`Invoke-AzureLocalOsConfiguration.ps1 -Mode Apply -ReportDirectory ./osconfig-report`): a report whose mode is `Apply`, whose run ended with exit code 0 and in which every node says `converged`. The report of a Plan run does not count. `./ztp-handoff.json` is the handoff of the ZTP run (omit it when the machines were installed from an ISO). The same report gives the OS names of the ports (found by MAC); without it they come from the `networkAdapters` of the handoff.
+
 Add `-WhatIf` to do everything except submit. Validate and Deploy go ahead only after the [pre-cluster verification](../../../../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate) passed for the same file. A Validate that already passed with the same parameters is not submitted again. The script refuses a second Validate when the instance is in a failed deployment state, because Microsoft says a second Validate resets the system properties.
 
 </TabItem>
@@ -574,7 +580,7 @@ Invoke-Command -ComputerName $nodeIP -Credential $cred -ScriptBlock {
 |---|---|
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Verifies the deployed instance against `infrastructure.yml`. Read only. It checks, in order: every node is a cluster node and Up; the identity (with Active Directory every node is joined to `identity.active_directory.domain_fqdn` and its secure channel works; with local identity every node is in a workgroup); the quorum; the security groups; SSH; storage; the VM images and the logical networks in Azure. Supports `-WhatIf`. |
 
-The earlier verification scripts of this task folder (`Test-ClusterHealth.ps1`, `Invoke-VerifyClusterHealth-Orchestrated.ps1` and the `-Standalone` copies) are removed. The other scripts in the folder are placeholders: they print `NOT IMPLEMENTED`, change nothing and exit with code 3. See [Task 09: Post-deployment verification](../../../../phase-06-post-deployment/task-09-post-deployment-verification.mdx).
+The earlier verification scripts of this task folder (`Test-ClusterHealth.ps1`, `Invoke-VerifyClusterHealth-Orchestrated.ps1` and the `-Standalone` copies) are removed. The `powershell` folder of this task holds only a `.gitkeep` file: the script above does the work. For the whole Phase 06 verification in one run, `Invoke-PostDeploymentVerification-Orchestrated.ps1` of Task 09 runs it, runs the Azure CLI script of that task and adds the solution health summary and, with an external SAN, the SAN disk checks. See [Task 09: Post-deployment verification](../../../../phase-06-post-deployment/task-09-post-deployment-verification.mdx).
 
 The login is `-Credential`, else the account the file names: the LCM user (`identity.active_directory.lcm_user`) with Active Directory, the local administrator (`identity.local_admin`) with local identity. The password is a secret reference. The script never prompts: with neither it stops with exit code 2.
 

@@ -83,19 +83,23 @@ Get-Service himds | Format-Table Name, Status, StartType
 
 ### PowerShell
 
-> **No PowerShell script of its own in this task folder.** `Invoke-ArcVerification-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Confirm-ArcRegistration.ps1` and `Confirm-ArcRegistration-Orchestrated.ps1` are removed. The scripts below read the Arc machines, and the Azure CLI tab has a script that checks them in Azure.
+> **A thin wrapper.** `Invoke-ArcVerification-Orchestrated.ps1` in the task folder keeps the file name of this page and runs the two read only scripts below, one after the other. The earlier `Confirm-ArcRegistration.ps1` and `Confirm-ArcRegistration-Orchestrated.ps1` are removed. The Azure CLI tab has a script that checks the machines in Azure with `az`.
 
 #### Script
 
 | Script | What it does |
 |---|---|
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity/powershell/Invoke-ArcVerification-Orchestrated.ps1` | The wrapper, read only. Step 1: `Invoke-AzureLocalOsConfiguration.ps1` in Plan mode with the `ArcRegistration` step. Step 2: `Invoke-AzureLocalArmDeployment.ps1` in Plan mode with that report as `-OsConfigurationReport`; it runs only when step 1 ended with 0. Without `-ReportDirectory` the reports go to a new folder under the temp path of the account, and the progress lines name it. It takes `-InfrastructureFile` (required), `-Node`, `-ReportDirectory`, `-SettingsFile` and `-Credential`. `-WhatIf` prints the command line of each step and runs none. Exit 0: passed or planned. Exit 1: a check failed or a node did not converge. Exit 2: bad input, including a missing file. |
 | `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | In Plan mode the **ArcRegistration** step reports, per machine, whether its Arc machine exists and is Connected. It changes nothing. |
 | `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1` | In `-Mode Plan` it runs the [checks](../../../automation/03-automation-guides/arm-validate-deploy.mdx#what-it-checks-first) before Validate, read only. `ArcMachinesConnected`: each Arc machine exists, is Connected and is in the instance's resource group. `ArcMachineNaming`: each Arc machine is named after the host. |
 
 #### Run
 
 ```powershell
-./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ArcRegistration
+./Invoke-ArcVerification-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -ReportDirectory ./out
+
+# The two scripts it runs, called directly
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -Step ArcRegistration -ReportDirectory ./osconfig-report
 
 ./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -Mode Plan -ReportDirectory ./arm-plan
 ```

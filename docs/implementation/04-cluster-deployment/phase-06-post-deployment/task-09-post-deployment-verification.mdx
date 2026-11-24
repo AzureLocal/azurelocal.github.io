@@ -144,9 +144,19 @@ logical networks show provisioning state **Succeeded** and VLAN IDs match the si
 
 | Script | What it does |
 |---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1` | The whole verification in one run, read only. It runs `Invoke-VerifyPostDeployment.ps1` (below), then the Azure CLI script of this task, then two checks that neither covers: the solution health summary and, with an external SAN, the SAN disks. Each step runs even when an earlier one failed, so one run shows every problem. Supports `-WhatIf`. |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Verifies a deployed Azure Local instance against `infrastructure.yml`. Read only. Supports `-WhatIf` (lists the checks and runs none). |
 
-It checks, in this order:
+`Invoke-PostDeploymentVerification-Orchestrated.ps1` runs four steps:
+
+1. `Invoke-VerifyPostDeployment.ps1` (the eight checks below).
+2. `azurecli/Invoke-VerifyPostDeployment.azcli.ps1` (the Azure CLI tab). `-SkipAzure` leaves this step out, for a host without the Azure CLI.
+3. Solution health on one node: `Get-SolutionHealthSummary` (Azure Local 2610 and later; a status of FAILED fails, WARNING warns, SUCCESS passes), else `Get-SolutionUpdateEnvironment`. See Learn: [Use the Get-SolutionHealthSummary command](https://learn.microsoft.com/en-us/azure/azure-local/manage/use-get-solution-health-summary-powershell-command?view=azloc-2611).
+4. Only when `scenario.storage_architecture` is `san` or `hybrid`, on every node: every Fibre Channel or iSCSI disk is Healthy, every MPIO disk has at least two paths, and the set of SAN disk unique IDs is the same on every node.
+
+It takes `-InfrastructureFile` (required), `-Credential`, `-TargetNode`, `-SkipAzure` and `-LogPath`. The login is `-Credential`, else the account the file names (the LCM user with Active Directory, the local administrator with local identity). Exit 0: every step passed (warnings allowed) or the checks were listed under `-WhatIf`. Exit 1: a step or a check failed. Exit 2: a value in the file is missing or there is no login.
+
+`Invoke-VerifyPostDeployment.ps1` checks, in this order:
 
 1. **Cluster nodes**: every node of `nodes[]` is a cluster node and its state is Up.
 2. **Identity**: with `scenario.identity` `active_directory`, every node is joined to `identity.active_directory.domain_fqdn` and its secure channel works. With `local_identity`, every node is in a workgroup and the cluster name resource has `ADAware` 2.
@@ -159,13 +169,18 @@ It checks, in this order:
 
 The login is `-Credential`, else the account the file names: the LCM user (`identity.active_directory.lcm_user`) with Active Directory, the local administrator (`identity.local_admin`) with local identity. The password is a secret reference. The script never prompts: with neither it stops with exit code 2. Exit codes: 0 every check passed; 1 a check failed; 2 a value in the file is missing or there is no login.
 
-`Invoke-PostDeploymentVerification-Orchestrated.ps1` in the task folder is a placeholder (exit code 3). The Azure CLI tab has a script for the checks that read Azure.
+The Azure CLI tab has a script for the checks that read Azure.
 
 Requires: PowerShell 7; modules FailoverClusters, Storage; the Azure CLI, signed in, for checks 7 and 8.
 
 #### Run
 
 ```powershell
+# Everything in one run (nodes, Azure, solution health, SAN)
+./Invoke-PostDeploymentVerification-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Invoke-PostDeploymentVerification-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+
+# The node checks alone
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml
 ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
@@ -203,7 +218,7 @@ It checks the Arc machines and their extensions (including `WindowsOpenSSH`), th
 
 ## Phase 06 Completion Criteria
 
-All of the following must be true before proceeding to Phase 17:
+All of the following must be true before proceeding to [Part 5: Operational Foundations](../../05-operational-foundations/index.mdx):
 
 - [ ] Cluster quorum configured and state is `Normal`
 - [ ] Security groups applied to all cluster nodes (`Administrators` + `Remote Management Users`)

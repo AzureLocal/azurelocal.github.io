@@ -92,18 +92,26 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 
 ### PowerShell
 
-> **No script in this task folder.** The folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-16-phase03-verification` holds only placeholders (`Invoke-Phase03Verification-Orchestrated.ps1`, `Test-Phase03Verification.ps1`). A placeholder prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. Two schema 5 scripts verify the phase.
+> **Two thin wrappers.** The task folder `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-16-phase03-verification/powershell` holds `Invoke-Phase03Verification-Orchestrated.ps1` and `Test-Phase03Verification.ps1` (the same job under a `Test-` name). They keep the file names this page and the task folder use and run the two schema 5 scripts below, one after the other, both read only. Each step runs even when the other failed.
 
 #### Script
 
 | Script | What it does |
 |---|---|
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-16-phase03-verification/powershell/Invoke-Phase03Verification-Orchestrated.ps1` | The wrapper. Step 1: `Invoke-AzureLocalOsConfiguration.ps1` in Plan mode with `-FailOnPendingChanges`. Step 2: `Invoke-AzureLocalPreClusterVerification.ps1` in Verify mode with the `nodes` category. With `-ReportDirectory` the reports go to its `os-configuration` and `pre-cluster` folders. `-WhatIf` prints the command line of each step and runs none. Exit 0: passed (a partial pre-cluster run with no blocking result counts as 0). Exit 1: a check failed or a node did not converge. Exit 2: bad input, including a missing file. |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-16-phase03-verification/powershell/Test-Phase03Verification.ps1` | The same wrapper under a `Test-` name. It runs `Invoke-Phase03Verification-Orchestrated.ps1` with the same arguments. |
 | `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` | In Plan mode (the default) it reads every node and lists what still differs from `infrastructure.yml`. It changes nothing. `-FailOnPendingChanges` makes it exit 1 when any change is still pending. |
 | `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1` | The [pre-cluster verification](../../../automation/03-automation-guides/arm-validate-deploy.mdx#pre-cluster-verification-gate). Read only. Checks `ND-001` to `ND-012` cover the nodes after this phase. |
+
+The wrapper takes `-InfrastructureFile` (required), `-Node`, `-ReportDirectory`, `-SettingsFile` and `-Credential`. It never prompts.
 
 #### Run
 
 ```powershell
+# Both checks in one call (read only)
+./Invoke-Phase03Verification-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -ReportDirectory ./out
+
+# Or the two scripts one by one
 ./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -FailOnPendingChanges -ReportDirectory ./out
 
 ./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -Mode Verify -Category nodes

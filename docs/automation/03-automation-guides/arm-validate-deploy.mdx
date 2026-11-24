@@ -99,6 +99,8 @@ $gate = './scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invo
 
 `./osconfig-report` stands for the report of your OS configuration run: its report directory, its `report.json`, or a node-level report. The gate and the ARM run read the operating system names of the adapters (found by MAC address) from it, and the ARM intents use those names. The parameter is optional. Use the folder you gave `Invoke-AzureLocalOsConfiguration.ps1 -ReportDirectory`.
 
+**Pass the report of the Apply run.** The ARM run accepts "OS configuration converged" only from an applied run: the report's mode is `Apply` (a node-level report says `executed` true), the run ended with exit code 0 and the node says `converged` true. The report of a Plan run proves that nothing was applied, so it never counts, even when it has nothing left to change (see `OsConfigurationConverged` below).
+
 - **Verdict.** Each check is Passed, Failed, Warning, Skipped, NotApplicable or Fixed. The verdict is **Pass** only when nothing blocks. A Skipped check (the run could not ask, for example no route to a domain controller) blocks, unless you name its id in `-AcceptSkipped`; the report records that you did.
 - **Exit codes.** 0 Plan done, or Verify with the verdict Pass; 1 the verdict Fail, or a run that failed after it started; 2 bad input; 3 a partial run (`-Category`), which never satisfies the ARM run.
 - **Changes.** Without `-Fix` and `-InstallEnvironmentChecker`, nothing is changed anywhere. `-Fix` (Verify only) only registers the mandatory resource providers and waits until they are Registered.
@@ -163,7 +165,7 @@ $common = @{ InfrastructureFile = './infrastructure.yml'; OsConfigurationReport 
 |-----------|---------|
 | `-InfrastructureFile` | The master file (schema 5). Required |
 | `-OsConfigurationReport` | The OS configuration run's `report.json`, a node-level report, or its report directory. Gives the OS names of the network ports (found by MAC), the SAN disks (a LUN number becomes the disk's UniqueId), and proves every node converged |
-| `-HandoffFile` | The ZTP handoff: Arc machine resource IDs and the solution build |
+| `-HandoffFile` | The ZTP handoff: Arc machine resource IDs and the solution build. Its `networkAdapters` give the OS names of the ports (found by MAC) when the OS configuration report has none |
 | `-Mode` | `Plan` (default), `Validate`, `Deploy`, `ValidateAndDeploy` |
 | `-ReportDirectory` | Where the events, report, summary and parameter files go. Not for a repository |
 | `-Resume` | Resubmit a failed Deploy (and attach to a running one) |
@@ -237,10 +239,10 @@ All checks are read-only. Each is `Passed`, `Failed` (stops the run, exit 1), `W
 | `NamesAvailable` | Diagnostic and witness storage account names and the new Key Vault's name are free | Pick another name; a soft-deleted vault keeps its name |
 | `KeyVaultSecrets` | Every `keyvault://` reference points at a listed vault and an existing secret (the value is not read) | Create the secret; grant `Get` |
 | `ArcMachinesConnected` | Each node's Arc machine exists, is Connected, is in the instance's resource group | Finish ZTP or Arc registration |
-| `ArcMachineNaming` | The Arc machine is named after the host. A device-ID name (`<id>-1`) fails the Deploy at step 0.41 on build 2690 | See the known issue below |
-| `OsConfigurationConverged` | The OS configuration report says every node converged, for this cluster | Run the OS configuration with `-Mode Apply` |
+| `ArcMachineNaming` | The Arc machine is named after the host. A device-ID name (`<id>-1`) is a Warning in every phase. A Deploy failure at step 0.41 with a device-ID name was seen on a lab run against an earlier build and has not been reproduced by the toolkit | Nothing unless the Deploy hits it; see the known issue below |
+| `OsConfigurationConverged` | The OS configuration report comes from an applied run (mode `Apply`, or a node-level report with `executed` true), the run ended with exit code 0 and the node says `converged` true, for this cluster. A Plan report proves nothing was applied: it is a Warning in `-Mode Plan` and Failed in Validate and Deploy, also when it has nothing left to change. A node with errors, or a failed node, is Failed in every mode | Run the OS configuration with `-Mode Apply` until every node converges, and pass that report |
 | `OsBuildConsistent` | Every node runs the same OS build | Install the same build everywhere |
-| `SbeConsistent`, `SbeValidatedWithSolution` | The package must be on the share ([SB-001 to SB-006](#the-sbe-package-checks)), but passing an SBE to the ARM deployment is opt-in. With no `hardware.sbe.version` both pass with "deploying without a Solution Builder Extension". With a version the family must be set too, and the SBE must be validated with the solution version the nodes run | Set `hardware.sbe.family`, or remove the version to deploy without an SBE |
+| `SbeConsistent`, `SbeValidatedWithSolution` | The package must be on the share ([SB-001 to SB-006](#the-sbe-package-checks)), but passing an SBE to the ARM deployment is opt-in. With no `hardware.sbe.version` both pass with "deploying without a Solution Builder Extension". With a version the family and the publisher must be set too (missing either is a Warning in Validate and a problem in Deploy), and the SBE must be validated with the solution version the nodes run | Set `hardware.sbe.family` and `hardware.sbe.publisher`, or remove the version to deploy without an SBE |
 | `DnsAndTime` | DNS servers set and valid, NTP set, no pending Dns or Time change in the OS report | Fix `networking.management.dns_servers` and `ntp_servers` |
 | `ActiveDirectoryPrepared` | The OU is not at the top of the domain; the LCM user name is 20 characters or fewer; the OU and user exist | Run Microsoft's Active Directory preparation |
 | `LocalIdentityPrerequisites` | `identity.local_identity.dns_zone` is set | Set it |
@@ -253,9 +255,13 @@ The 13 providers are the list in Microsoft Learn, [Assign required permissions f
 
 **Registration is opt in.** By default the run reads and never changes Azure. Pass `-RegisterResourceProviders` (or set `deployment.register_resource_providers: true`) to let a Validate or Deploy run register what is missing. It asks once per provider and reads their state every 10 seconds for up to 15 minutes. Plan mode and `-WhatIf` never change Azure. It needs Owner or Contributor on the subscription.
 
+### The adapter names in the intents
+
+The ARM intents name the adapters as the operating system does. The names come from the OS configuration report (ports found by MAC), else from the `networkAdapters` of the ZTP handoff, matched by MAC. A port that an intent uses and that `nodes[].network_adapters` does not list is a Warning in Validate and a problem in Deploy; the warning names what was read (the report or the handoff). Add the port to the file (name, MAC and roles), or run hardware discovery and the write-back, then run again.
+
 ### Passing the Solution Builder Extension to the deployment is opt-in
 
-The SBE package must be downloaded and available on the share (see [the SBE package checks](#the-sbe-package-checks)); what is optional is handing an SBE to the ARM deployment and side-loading it at build time. A deployment without an SBE is a normal deployment. When `hardware.sbe` is absent, or has no `version`, the run passes none of the seven SBE parameters of Microsoft's template (`sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource`, `sbeManifestCreationDate`, `partnerProperties`, `partnerCredentiallist`). An SBE is passed only when `hardware.sbe.version` is set. If Azure still names an SBE problem in a run without an SBE (the nodes carry a package in `C:\SBE`), the known issue `sbe-referenced-but-not-configured` says so and offers both ways out.
+The SBE package must be downloaded and available on the share (see [the SBE package checks](#the-sbe-package-checks)); what is optional is handing an SBE to the ARM deployment and side-loading it at build time. A deployment without an SBE is a normal deployment. With a `version`, `hardware.sbe.family` and `hardware.sbe.publisher` must be set as well: a version without either is a Warning in Validate and a problem in Deploy. When `hardware.sbe` is absent, or has no `version`, the run passes none of the seven SBE parameters of Microsoft's template (`sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource`, `sbeManifestCreationDate`, `partnerProperties`, `partnerCredentiallist`). An SBE is passed only when `hardware.sbe.version` is set. If Azure still names an SBE problem in a run without an SBE (the nodes carry a package in `C:\SBE`), the known issue `sbe-referenced-but-not-configured` says so and offers both ways out.
 
 Two keys (schema 5.6.24) fill `partnerProperties` and `partnerCredentiallist` when an SBE is passed. Leave both out unless the vendor's SBE documentation names a property or a credential; the deployment then sends empty lists.
 
@@ -363,7 +369,7 @@ Add an entry when you understand a new failure; the run then explains it the nex
 
 | File | For |
 |------|-----|
-| `arm-deployment-events.jsonl` | One JSON line per event (`timestamp, node, stage, step, state, evidence, level, nextAction` plus data). Sonar can follow it. It is written to the events folder: `deployment.events_directory` of `infrastructure.yml`, else `-ReportDirectory` when given, else `%ProgramData%AzureLocalToolkit<cluster.name>events`, the folder the OS configuration run and Sonar use too |
+| `arm-deployment-events.jsonl` | One JSON line per event (`timestamp, node, stage, step, state, evidence, level, nextAction` plus data). Sonar can follow it. It is written to the events folder: `deployment.events_directory` of `infrastructure.yml`, else `-ReportDirectory` when given, else `%ProgramData%\AzureLocalToolkit\<cluster.name>\events`, the folder the OS configuration run and Sonar use too. The update stage (`Get-AvailableSolutionUpdate.ps1`, `Start-AzureLocalSolutionUpdate.ps1`) appends `update-events.jsonl` to the same folder, and the gate in `-Mode Plan` writes `precluster-plan-events.jsonl` there (see below). The gate's verdict feed, `precluster-verification-events.jsonl`, stays in the gate's report directory |
 | `report.json` | Result, state history, every precondition, validation and deployment sections, failing steps, known issue, approval |
 | `summary.md` | The same for a person; the job summary in a pipeline |
 | `<cluster>.parameters.json` | The ARM parameter file. Secrets are null in it |

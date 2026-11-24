@@ -8,8 +8,8 @@ scope: "Day 2 management of Network Security Groups on Azure Local"
 purpose: "Day 2 management of Network Security Groups on Azure Local"
 author: "AzureLocal"
 created: 2025-03-25
-updated: 2026-11-15
-version: "2.0.0"
+updated: 2026-11-24
+version: "2.1.0"
 tags:
   - azure-local
   - operational-foundations
@@ -221,18 +221,32 @@ See procedure steps above for manual execution guidance.
 
 ### PowerShell
 
-> **No PowerShell script of its own in this task folder.** `Invoke-SdnIntegration-Orchestrated.ps1` is a placeholder: it prints `NOT IMPLEMENTED`, changes nothing and exits with code 3. The earlier `Set-SdnIntegration.ps1` is removed: SDN enabled by Azure Arc has no load balancer or gateway to configure. The Day 2 work on the rules of a group has an Azure CLI script: see the Azure CLI tab.
+> **One run for the whole task.** `Invoke-SdnIntegration-Orchestrated.ps1` holds no logic of its own: it runs the three scripts below in order. The earlier `Set-SdnIntegration.ps1` is removed: SDN enabled by Azure Arc has no load balancer or gateway to configure, so the Day 2 work is the network security groups and their rules. Microsoft documents those groups for the Azure CLI only (`az stack-hci-vm network nsg`), which is why two of the three steps are Azure CLI scripts (see the Azure CLI tab).
 
 #### Script
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1` | Creates the network security groups of `networking.network_security_groups[]` with their rules. Needs `sdn.enabled: true`. Refuses a group without rules. |
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/powershell/Invoke-SdnIntegration-Orchestrated.ps1` | Runs the three steps in order. A step that ends with exit code 1 or 2 stops the run. `-WhatIf` goes to steps 1 and 2, which read Azure and change nothing; step 3 is not run under `-WhatIf`, because it would report the groups that the plan has not created. `-RemoveUnlistedRules` goes to step 2. It takes `-InfrastructureFile` (required), `-RemoveUnlistedRules` and `-LogPath`. Exit 0: every step ended with 0. Exit 1: a step failed. Exit 2: a value in the file is missing or SDN is off. |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1` | Step 1. Creates the network security groups of `networking.network_security_groups[]` and the rules a group lacks. Needs `sdn.enabled: true`. Refuses a group without rules. |
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/azurecli/Set-NetworkSecurityGroupRule.azcli.ps1` | Step 2. Updates the rules that differ from the file. |
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/azurecli/Test-NetworkSecurityGroupRule.azcli.ps1` | Step 3. Checks every group and rule against the file. Read only. |
+
+Prerequisites: SDN enabled by Azure Arc (`sdn.enabled` true; `Enable-ArcSdn.ps1` of the post-deployment SDN task), the Azure CLI with the `stack-hci-vm` extension, signed in with `az login --tenant <azure.tenant_id>`.
 
 #### Run
 
 ```powershell
-./New-NetworkSecurityGroup.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+az login --tenant <azure.tenant_id>
+
+# Show what each step would create or change
+./Invoke-SdnIntegration-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+# Create, bring in line, verify
+./Invoke-SdnIntegration-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+
+# Also remove the rules the file does not list
+./Invoke-SdnIntegration-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -RemoveUnlistedRules
 ```
 
 </TabItem>
@@ -294,3 +308,4 @@ The values for this task come from `infrastructure.yml` (schema 5). Every key, w
 | 1.0.0 | 2025-03-25 | AzureLocal | Initial release |
 | 1.1.0 | 2026-04-01 | AzureLocal | Align naming conventions, remove consulting language |
 | 2.0.0 | 2025-07-25 | AzureLocal | Repurpose as Day 2 management — initial creation moved to Phase 06 Task 07 |
+| 2.1.0 | 2026-11-24 | Azure Local Cloud | The script of this task is real: it runs the NSG scripts in order. The page no longer calls it a placeholder |

@@ -8,8 +8,8 @@ scope: "Download Azure Marketplace VM images to the Azure Local cluster for Arc 
 purpose: "Download Azure Marketplace VM images to the Azure Local cluster for Arc VM deployment"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-24
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -52,7 +52,7 @@ appendix or in the custom image management section of this documentation.
 - CSV volumes created and healthy (Task 05 complete)
 - Azure identity authenticated: `az login` or Az PowerShell `Connect-AzAccount`
 - `az stack-hci-vm` CLI extension installed (`az extension add --name stack-hci-vm`)
-- `marketplace_images` block populated in `infrastructure.yml`
+- `storage.vm_images[]` populated in `infrastructure.yml`
 
 ---
 
@@ -96,6 +96,10 @@ or when CLI access is unavailable.
  | Windows Server 2025 Datacenter Azure Edition Gen 2 | `Windows Server 2025 Datacenter Azure Edition` |
  | Windows Server 2022 Datacenter Azure Edition Hotpatch Gen 2 | `Windows Server 2022 Datacenter Azure Edition` |
  | Windows 11 Enterprise Multi-Session 25H2 + Microsoft 365 Apps Gen 2 | `Windows 11 Enterprise multi-session` |
+
+ :::note The offer of Windows Server 2022 Azure Edition
+ Learn lists every Windows Server image under the offer `windowsserver` ([Create Azure Local VM image using Azure Marketplace images](https://learn.microsoft.com/en-us/azure/azure-local/manage/virtual-machine-image-azure-marketplace?view=azloc-2611)). On the Edge Marketplace of an Azure Local instance, Windows Server 2022 Datacenter: Azure Edition is offered as `windowsserver2022`, so a `storage.vm_images[]` entry for it with `offer: windowsserver` finds nothing. Read the publisher, offer and SKU from the **Image to download** list in the portal before you fill in `storage.vm_images[]`. Windows Server 2025 Datacenter: Azure Edition is `windowsserver`, as Learn says.
+ :::
 
  :::warning Select the correct generation
  Confirm **Gen 2** in the image name before selecting. Gen 1 images are not supported on
@@ -236,3 +240,4 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-24 | Azure Local Cloud | The offer of Windows Server 2022 Datacenter: Azure Edition on the Edge Marketplace of an instance is windowsserver2022; Learn's table (https://learn.microsoft.com/en-us/azure/azure-local/manage/virtual-machine-image-azure-marketplace?view=azloc-2611) lists windowsserver. The key is storage.vm_images[], not marketplace_images |
