@@ -152,15 +152,20 @@ The pre-cluster verification gate checks the package on the share with six check
 
 #### Vendors differ: check your vendor's page
 
-The table is a summary from Microsoft Learn (release 2610) and vendor pages. It is **not yet verified cell by cell**, so check your vendor's own page, and do not assume "download first" applies in the same way to every vendor. See [Solution Builder Extension updates](https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610) on Microsoft Learn.
+Do not assume "download first" works the same way for every vendor. The first two columns follow the hardware update table on Microsoft Learn, [Solution Builder Extension updates](https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610) (release 2610); the delivery column follows the vendor page in the last column. Each cell was checked against those pages on 2026-11-23. Where a vendor page does not say something, the cell says so; check your vendor's page for your model and version before the build.
 
-| Vendor | What to expect |
-|--------|----------------|
-| Dell (AX, MC) | An SBE package. The download is behind a login. You side-load it unless the cluster has Dell support credentials |
-| HPE | A Standard SBE from HPE's licence portal on some Gen11 models. Other models use a Minimal SBE plus a Windows Admin Center extension |
-| Lenovo ThinkAgile MX Premier | Automatic download and staging |
-| DataON | An SBE on S2D6, S2D7, AZS6 and AZS7. Otherwise a Windows Admin Center extension |
-| Older hardware, Validated Nodes | Hardware older than 2311.2, and Validated Nodes, may have no SBE |
+| Vendor and models | Hardware update method (Learn) | How the package arrives (vendor page) | Source |
+|-------------------|--------------------------------|---------------------------------------|--------|
+| Dell AX integrated systems, 14G to 17G (AX-740xd, AX-640, AX-650, AX-750, AX-6515, AX-7525, AX-4510c, AX-4520c, AX-660, AX-760, AX-670, AX-770) | SBE ("once available" for the older generations) | The Dell golden image places the SBE files in `C:\SBE` and the package installs with the cluster deployment. From SBE 4.1.2505.1501, the Download Connector lets the update service fetch later SBEs itself (outbound 443 to `dl.dell.com` and `downloads.dell.com`); without it, an offline update follows Dell's release notes. The golden image download needs a Dell Support account. Dell's guide does not say whether the SBE download itself needs a login | [Dell deployment and operations guide](https://www.dell.com/en-us/infohub/articles/deployment-and-operations-guide-with-scalable-networking), [Dell SBE release notes](https://www.dell.com/support/kbdoc/en-us/000224407) (moved to the [Dell support matrix](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/)) |
+| Dell APEX Cloud Platform MC-660, MC-760 (Premier) | APEX Cloud Platform hardware updates (SBE) | See Dell's support matrix for APEX Cloud Platform | [Dell APEX Cloud Platform for Microsoft Azure](https://www.dell.com/support/product-details/en-us/product/apex-cloud-pf-ms-azure/docs) |
+| HPE DL380 Gen11 (SKU P65984-B21 only), DL145 Gen11 (SKU P78955-B21 only) | SBE | Install the Standard SBE from HPE's My Enterprise License portal (free software). HPE sells these SKUs as Premier Solutions for Azure Local | Learn table; [HPE SBE download](https://myenterpriselicense.hpe.com/cwp-ui/product-details/SBE_UPDATES/-/sw_free) |
+| HPE, other models | SBE and a Windows Admin Center extension | Install the Minimal SBE from the same portal, then the hardware updates through Windows Admin Center | Learn table |
+| Lenovo ThinkAgile MX Premier (MX455 V3 Edge PR, MX650 V3 PR) | SBE | The SBE appears as an update in the Azure portal by itself; no files to import | [Lenovo SBE overview](https://pubs.lenovo.com/thinkagile-mx/mx_sbe_overview) |
+| Lenovo ThinkAgile MX Standard (MX455 V3 Edge IS, MX650 V3 IS, MX650 V3 CN, MX450 Edge IS, MX630 V3 IS, MX630 V3 CN) | SBE | Download from the Lenovo Updates Repository and import (the update shows `AdditionalContentRequired` until you do). After SBE 4.2.2510.1005 is installed, later SBEs download from the Azure portal; Lenovo says you no longer side-load from SBE 5.0.2512.1000 | [Lenovo SBE overview](https://pubs.lenovo.com/thinkagile-mx/mx_sbe_overview) |
+| Lenovo, other integrated systems and Validated Nodes | Windows Admin Center extension (XClarity Integrator), no SBE | Not applicable | Learn table |
+| DataON models starting with S2D6, S2D7, AZS6, AZS7 | SBE | Download the package from DataON's SBE download site; the password comes from DataON support. DataON's page gives no import steps | [DataON MUST: stay up to date](https://www.dataonstorage.com/dataon-must/must-stay-up-to-date/) |
+| DataON, other integrated systems and Validated Nodes | Windows Admin Center extension (DataON MUST), no SBE | Not applicable | Learn table |
+| Hardware added to the catalog before 2311.2, or bought as a Validated Node | May have no SBE | Ask the vendor | Learn note |
 
 Where your hardware has no SBE, or the cluster downloads it itself, set `hardware.sbe.requirement` to `not_applicable` and give the reason.
 
