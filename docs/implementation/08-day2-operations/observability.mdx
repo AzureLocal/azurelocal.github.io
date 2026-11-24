@@ -1,0 +1,168 @@
+---
+title: "Day 2 Observability"
+sidebar_label: "Day 2 Observability"
+sidebar_position: 6
+description: "Keep watching a deployed Azure Local cluster with Azure Local Insights and the Log Analytics workspace: check the Azure Monitor Agent and the data collection rule association, read the Insights workbook, and follow deployments and updates with Sonar."
+category: "Runbook"
+scope: "Observability of a deployed Azure Local cluster: Azure Local Insights, the Log Analytics workspace, the Azure Monitor Agent, the data collection rule association, and Sonar for deployments and updates"
+purpose: "Know what to check on day 2, where to look, and what to do when the monitoring itself stops working"
+author: "Azure Local Cloud"
+created: 2026-11-23
+updated: 2026-11-23
+version: "1.0.0"
+tags:
+  - azure-local
+  - day-2
+  - monitoring
+  - insights
+keywords:
+  - Azure Local Insights
+  - Log Analytics workspace
+  - Azure Monitor Agent
+  - AzureMonitorWindowsAgent
+  - data collection rule association
+  - Needs update
+  - Sonar
+status: "Active"
+---
+
+# Day 2 Observability
+
+[![Implementation](https://img.shields.io/badge/Type-Implementation-blue?style=flat-square)](../index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Implementation Runbook   
+> **SCOPE**: A deployed and handed-over Azure Local cluster   
+> **PURPOSE**: Keep the cluster's monitoring working and read it: Insights, the Log Analytics workspace, the Azure Monitor Agent, the data collection rule association, and Sonar   
+> **MASTER REFERENCE**: [Monitor a single Azure Local system with Insights](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-single-23h2?view=azloc-2610)
+
+**Status**: Active
+
+## Scope
+
+This page covers only what the toolkit sets up for monitoring, and nothing else:
+
+| In scope | Out of scope |
+|----------|--------------|
+| Azure Local Insights (the Azure Monitor workbook on the cluster resource) | Third-party monitoring agents of any kind |
+| The Log Analytics workspace that holds the Insights data | Paid add-on plans and products beyond the workspace's own data charges |
+| The Azure Monitor Agent (AMA) extension on every machine | Prometheus, Grafana and other dashboards |
+| The association of the Insights data collection rule (DCR) with every machine | Windows Admin Center, OEM hardware monitoring and network device logging (parked) |
+| [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/) for deployments and solution updates | Workload and guest VM monitoring |
+
+The workspace, the agent and Insights are set up once, after the deployment, in [Part 5, Phase 02: Monitoring and Observability](../05-operational-foundations/phase-02-monitoring-observability/index.mdx) (Tasks 01 to 03). This page is what you do with them afterwards.
+
+## What is collected
+
+Insights uses the Azure Monitor Agent and one data collection rule. Microsoft Learn lists what that rule must hold for the workbook to work:
+
+| Data | Source |
+|------|--------|
+| Windows event channels | `Microsoft-Windows-Health/Operational` and `Microsoft-Windows-SDDC-Management/Operational` |
+| Performance counters | `Memory(*)\Available Bytes`, `Network Interface(*)\Bytes Total/sec`, `Processor(_Total)\% Processor Time`, `RDMA Activity(*)\RDMA Inbound Bytes/sec`, `RDMA Activity(*)\RDMA Outbound Bytes/sec` |
+| Destination | The Log Analytics workspace named in the rule |
+
+Learn recommends the rule Insights creates (its name starts with `AzureStackHCI-`) over a rule of your own, because it carries a data stream Insights needs. You can add more data to that rule, but every addition is billed (see [Cost](#cost)).
+
+## Daily check
+
+Do these in order. Each check is read only.
+
+| # | Check | Where | Healthy |
+|---|-------|-------|---------|
+| 1 | The Insights tile | Azure portal: the cluster resource, **Capabilities** tab | **Configured**. **Needs update** means the rule or the workspace changed (see [Insights shows Needs update](#insights-shows-needs-update)) |
+| 2 | The Health view of the workbook | The cluster resource, **Insights** | No open health faults, or only faults you already track. Faults are the Health Service faults, for example `PoolCapacityThresholdExceeded` |
+| 3 | The Nodes, Virtual machines and Storage views | The same workbook | Every node `Healthy` with a recent **Last updated** time; volumes `Healthy`; no unexpected `Failed` VMs |
+| 4 | The Azure Monitor Agent on every machine | Each machine's **Extensions** page, or the command below | `AzureMonitorWindowsAgent` with provisioning state `Succeeded` on every machine |
+| 5 | The rule association on every machine | The command below | Every machine is associated with the Insights rule |
+| 6 | Data is arriving | The workspace, **Logs**, the query below | A heartbeat from every machine in the last 15 minutes |
+
+The checks with Azure CLI, from a management machine signed in with read access (values from `infrastructure.yml`: `azure.subscription_id`, `azure.resource_group`, `nodes[].arc_machine_name`, `operations.monitoring.workspace_resource_group`, `operations.monitoring.data_collection_rule`):
+
+```powershell
+#Requires -Version 7.0
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# The values come from infrastructure.yml; the names below are examples.
+$resourceGroup = 'rg-iic-azl-01'
+$machines      = @('iic-azl-n01', 'iic-azl-n02')
+
+foreach ($machine in $machines) {
+    # Check 4: the agent extension and its state
+    az connectedmachine extension show --resource-group $resourceGroup --machine-name $machine `
+        --name AzureMonitorWindowsAgent --query '{name:name, state:provisioningState}' --output table
+
+    # Check 5: the data collection rule associations of the machine
+    $machineId = az connectedmachine show --resource-group $resourceGroup --name $machine --query id --output tsv
+    az monitor data-collection rule association list --resource $machineId `
+        --query '[].{association:name, rule:dataCollectionRuleId}' --output table
+}
+```
+
+Check 6, in the workspace (**Logs**):
+
+```kusto
+Heartbeat
+| where TimeGenerated > ago(1h)
+| summarize LastHeartbeat = max(TimeGenerated) by Computer, Category
+| extend MinutesAgo = datetime_diff('minute', now(), LastHeartbeat)
+| order by MinutesAgo desc
+```
+
+Every machine should appear with `MinutesAgo` under 15. A machine that is missing, or far behind, has an agent or a rule problem (checks 4 and 5) or cannot reach Azure.
+
+To see the health events that feed the workbook:
+
+```kusto
+Event
+| where TimeGenerated > ago(24h)
+| where EventLog in ('Microsoft-Windows-Health/Operational', 'Microsoft-Windows-SDDC-Management/Operational')
+| summarize Events = count() by Computer, EventLog
+```
+
+## Repair the setup
+
+The deployment scripts of Part 5 also serve as the repair. Run them with `-WhatIf` first: they read `infrastructure.yml` and change only what differs.
+
+| Symptom | Run |
+|---------|-----|
+| The workspace or the data collection endpoint is gone or changed | [Task 01: Configure Log Analytics Workspace](../05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace.mdx) |
+| The agent is missing or not `Succeeded` on a machine (for example after a node was added or repaired) | [Task 02: Configure Azure Monitor Agent](../05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent.mdx) |
+| A machine is not associated with the Insights rule, or the rule lacks a counter or a channel | [Task 03: Enable HCI Insights](../05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights.mdx) |
+
+### Insights shows Needs update
+
+Learn names three causes: the data collection rule was changed, a health event channel was removed from it, or one of the five performance counters was removed. Restore the rule (Task 03 stops and says which counter, channel or workspace is wrong), then select **Update** on the Insights tile.
+
+### The workbook is blank
+
+Right after Insights is enabled, the first data can take up to 15 minutes, and Learn says to allow up to an hour for the agent to gather data. After that, check that the rule holds the event channels and the counters listed above, then run checks 4 to 6. See [Troubleshooting guidance for the Azure Monitor Agent](https://learn.microsoft.com/en-us/azure/azure-monitor/agents/azure-monitor-agent-troubleshoot-windows-arc).
+
+### A node was added or repaired
+
+A new or repaired machine needs the agent and the rule association like the others. Run Tasks 02 and 03 again after the node joins, then check 4 to 6.
+
+## Deployments and updates: Sonar
+
+Insights shows the cluster's health. It does not follow a deployment or a solution update step by step. For that, use [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/), a local, read-only web page:
+
+- **Deployments**: the provisioning, Validate and Deploy of a cluster. See [Monitor the run with Sonar](../04-cluster-deployment/phase-02-os-installation/simplified-provisioning/automation/monitor-with-sonar.mdx).
+- **Solution updates**: while Azure reports an update installing (`UpdateInProgress`), Sonar shows the update's step tree, times and errors. Sonar's own documentation notes that this view is built from the Microsoft Learn REST reference and was not yet checked against a live update run.
+
+Start an update with [Task 02: Start the Solution Update](./task-02-start-solution-update.mdx) and follow it with Sonar or with [Task 01: Check for Updates](./task-01-check-for-updates.mdx).
+
+## Cost
+
+Insights itself has no separate charge. Learn: you are billed for the amount of data ingested into the Log Analytics workspace and for its retention, with pay-as-you-go pricing and the first 5 GB per billing account per month free. The Insights rule collects only the two event channels and five counters above, so it stays small. Every channel or counter you add to the rule adds to the bill; see the [Azure Monitor pricing](https://azure.microsoft.com/pricing/details/monitor/) page for your region.
+
+## Navigation
+
+| Previous | Up | Next |
+|----------|-----|------|
+| [Run Day 2 Operations in a Pipeline](./run-day2-in-a-pipeline.mdx) | [Part 8: Day 2 Operations](./index.mdx) | [Implementation Guide](../index.mdx) |
+
+---
+
+*Document maintained by Azure Local Cloud Team.*
+*Part of the [Azure Local Implementation Guide](../index.mdx).*
