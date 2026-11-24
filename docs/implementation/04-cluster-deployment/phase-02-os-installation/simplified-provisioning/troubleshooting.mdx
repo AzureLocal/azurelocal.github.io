@@ -24,7 +24,7 @@ status: Active
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Troubleshooting simplified machine provisioning, portal and automated routes
 > **PURPOSE**: Known issues, causes, and recovery
-> **MASTER REFERENCE**: [Microsoft Learn — Troubleshoot Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2610)
+> **MASTER REFERENCE**: [Microsoft Learn — Troubleshoot Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2611)
 
 **Status**: Active
 
@@ -117,7 +117,7 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 
 **Why Validate doesn't catch it.** Validate runs the readiness checks only. The deployment content that runs this step is downloaded when Deploy starts, so it isn't on the machines during Validate. Validate's Arc checks use the resource IDs you pass in, and those are correct. The ISO route never hits this, because there the Arc machine carries the host name.
 
-**What you do.** Give cluster deployment each machine's `arcMachineResourceId` and Arc machine name from the handoff file. That's needed, but on an affected build it doesn't prevent the failure, and no workaround is known. Check Microsoft's [known issues](https://learn.microsoft.com/en-us/azure/azure-local/known-issues?view=azloc-2610) for your build, or use the ISO route for that build. The handoff reads them after the Ready stage, so they point at the service-created `<device-id>-1` machine. See [Output and handoff](./automation/output-and-handoff.mdx#what-to-hand-to-os-configuration-and-cluster-deployment). Check the names before Deploy.
+**What you do.** Give cluster deployment each machine's `arcMachineResourceId` and Arc machine name from the handoff file. That's needed, but on an affected build it doesn't prevent the failure, and no workaround is known. Check Microsoft's [known issues](https://learn.microsoft.com/en-us/azure/azure-local/known-issues?view=azloc-2611) for your build, or use the ISO route for that build. The handoff reads them after the Ready stage, so they point at the service-created `<device-id>-1` machine. See [Output and handoff](./automation/output-and-handoff.mdx#what-to-hand-to-os-configuration-and-cluster-deployment). Check the names before Deploy.
 
 ### A resubmitted job keeps the earlier error
 
@@ -155,7 +155,7 @@ The iDRAC's USB link to the operating system (Remote NDIS, `169.254.0.x`) appear
 2. Run the script that Learn provides. It reads the provisioned machine's `userDetails` and `osProfile`, then sends a PUT for the `jobs/ProvisionOs` resource with those values. You supply your subscription ID, resource group, and the provisioned machine name.
 3. Wait. The retry takes up to 30 minutes.
 
-The full script is on Learn: [Reattempt a failed OS provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2610#reattempt-a-failed-os-provisioning). Use Learn's current version, because it uses a preview API version.
+The full script is on Learn: [Reattempt a failed OS provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2611#reattempt-a-failed-os-provisioning). Use Learn's current version, because it uses a preview API version.
 
 **In the automation.** The Ready stage runs this resubmit once, automatically.
 
@@ -163,7 +163,7 @@ The full script is on Learn: [Reattempt a failed OS provisioning](https://learn.
 
 **Learn.** If the BIOS setting `Boot USB Devices First` is set, the machine boots the USB media again after every restart. It reinstalls the maintenance environment and reboots, about every 10 minutes.
 
-**Learn's recovery.** Boot from the USB device only once to install the maintenance environment, then set the machine to boot from the internal disk. See [Prepare machines](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#step-2-prepare-machines) and your hardware vendor's documentation for the boot order.
+**Learn's recovery.** Boot from the USB device only once to install the maintenance environment, then set the machine to boot from the internal disk. See [Prepare machines](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2611#step-2-prepare-machines) and your hardware vendor's documentation for the boot order.
 
 **In the automation.** The Boot stage sets a one-time boot, not a permanent boot order. If you still see a loop, check the `Boot USB Devices First` setting in BIOS.
 
@@ -173,7 +173,7 @@ The full script is on Learn: [Reattempt a failed OS provisioning](https://learn.
 
 **Cause (Learn).** The `Microsoft.AzureStackHCI` resource provider registration is missing.
 
-**Learn's recovery.** Register the resource provider. See the [Azure prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#azure-prerequisites). The automation checks the providers in the Bootstrap stage, before the claim.
+**Learn's recovery.** Register the resource provider. See the [Azure prerequisites](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2611#azure-prerequisites). The automation checks the providers in the Bootstrap stage, before the claim.
 
 ### ARM template validation fails when you provision
 
@@ -206,7 +206,7 @@ The full script is on Learn: [Reattempt a failed OS provisioning](https://learn.
 
 ### Inbox drivers and default gateways after a fresh OS
 
-**Learn.** [Inbox drivers aren't supported for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements). An adapter uses an inbox driver if its `DriverProvider` property is `Microsoft`. Install the latest driver from your OEM. Also, [network validation fails if it detects more than one physical adapter with a default gateway](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network).
+**Learn.** [Inbox drivers aren't supported for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2611#driver-requirements). An adapter uses an inbox driver if its `DriverProvider` property is `Microsoft`. Install the latest driver from your OEM. Also, [network validation fails if it detects more than one physical adapter with a default gateway](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2611#decision-8-determine-management-ips-and-infrastructure-network).
 
 **What was seen.** **Proven on Dell AX-760 / iDRAC 7.30.** After a fresh OS, a machine has inbox drivers, DHCP and a default gateway on more than one port, and an empty `C:\SBE`. Dell states that the SBE can't install drivers or firmware during deployment, so the drivers must go on before Validate and Deploy.
 
@@ -230,7 +230,7 @@ Get-NetIPConfiguration | Select-Object InterfaceAlias, IPv4Address, IPv4DefaultG
 | Azure Stack HCI | `C:\Windows\System32\Bootstrap\Logs` |
 | Maintenance environment | `/var/log/bootstrap`, `/var/log/provisioningextension`, `/var/log/trident-full.log`, `/var/log/messages`, `/var/log/bootstraprestservice` |
 
-In the Configurator app, **Support + troubleshooting** can run diagnostic tests and create a support package. See [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2610).
+In the Configurator app, **Support + troubleshooting** can run diagnostic tests and create a support package. See [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2611).
 
 For the automation, the event file `ztp-events.jsonl` in the `ztp-state` folder records each stage with a timestamp. [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/) can read it live.
 
@@ -246,10 +246,10 @@ For the automation, the event file `ztp-events.jsonl` in the `ztp-state` folder 
 
 ## References
 
-- [Microsoft Learn — Troubleshoot Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2610)
-- [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
-- [Microsoft Learn — Host network requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610)
-- [Microsoft Learn — Network considerations for cloud deployments](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610)
+- [Microsoft Learn — Troubleshoot Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/troubleshoot-simplified-machine-provisioning?view=azloc-2611)
+- [Microsoft Learn — Simplified Machine Provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2611)
+- [Microsoft Learn — Host network requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2611)
+- [Microsoft Learn — Network considerations for cloud deployments](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2611)
 - [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp)
 
 ---

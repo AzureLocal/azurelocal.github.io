@@ -71,10 +71,10 @@ Prerequisites: a registered system with the `AzureEdgeTelemetryAndDiagnostics` e
 ## Resources
 
 - **Repository**: [azurelocal-monitoring](https://github.com/AzureLocal/azurelocal-monitoring)
-- **Microsoft Docs**: [What is Azure Local monitoring?](https://learn.microsoft.com/en-us/azure/azure-local/concepts/monitoring-overview?view=azloc-2610)
-- **Health alerts**: [Respond to Azure Local health alerts](https://learn.microsoft.com/en-us/azure/azure-local/manage/health-alerts-via-azure-monitor-alerts?view=azloc-2610)
-- **Recommended alerts**: [Enable recommended alert rules](https://learn.microsoft.com/en-us/azure/azure-local/manage/set-up-recommended-alert-rules?view=azloc-2610)
-- **Metrics**: [Monitor with metrics](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-cluster-with-metrics?view=azloc-2610)
+- **Microsoft Docs**: [What is Azure Local monitoring?](https://learn.microsoft.com/en-us/azure/azure-local/concepts/monitoring-overview?view=azloc-2611)
+- **Health alerts**: [Respond to Azure Local health alerts](https://learn.microsoft.com/en-us/azure/azure-local/manage/health-alerts-via-azure-monitor-alerts?view=azloc-2611)
+- **Recommended alerts**: [Enable recommended alert rules](https://learn.microsoft.com/en-us/azure/azure-local/manage/set-up-recommended-alert-rules?view=azloc-2611)
+- **Metrics**: [Monitor with metrics](https://learn.microsoft.com/en-us/azure/azure-local/manage/monitor-cluster-with-metrics?view=azloc-2611)
 - **Azure Monitor Agent**: [Overview](https://learn.microsoft.com/en-us/azure/azure-monitor/agents/azure-monitor-agent-overview)
 
 > Data verified with Microsoft Azure Local documentation, October 2026.

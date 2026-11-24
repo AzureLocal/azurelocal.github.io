@@ -23,7 +23,7 @@ status: Active
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: Choosing the OS installation route, and the OS steps each route needs
 > **PURPOSE**: Know which phases and tasks to run before cluster Validate
-> **MASTER REFERENCE**: [Microsoft Learn — Install the OS](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610) and [Simplified machine provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
+> **MASTER REFERENCE**: [Microsoft Learn — Install the OS](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2611) and [Simplified machine provisioning](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2611)
 
 **Status**: Active
 
@@ -41,7 +41,7 @@ Every machine has to reach the same state before cluster **Validate**: the Azure
 Simplified provisioning does **not** do everything Phase 03 does, and azurelocal-ztp ends at the Handoff. They leave Microsoft's inbox network drivers, an empty `C:\SBE`, DHCP and a default gateway on more than one adapter, and (in management Modes B and C) no static management address. Those still have to be fixed before Validate, by [Phase 03 OS configuration](./phase-03-os-configuration/index.mdx), preferably the [automated run](../../automation/03-automation-guides/os-configuration/automated-os-configuration.mdx). The [decision matrix](#decision-matrix) below lists each step.
 
 :::warning Check Microsoft and your OEM before Validate
-OS requirements change between Azure Local releases and between OEM images. Before you run Validate, check [Microsoft Learn's OS installation steps](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610) and your OEM's deployment guide for your build and hardware, for example Dell's [deployment and operations guide](https://www.dell.com/en-us/infohub/articles/deployment-and-operations-guide-with-scalable-networking). This page is a map, not a replacement for them.
+OS requirements change between Azure Local releases and between OEM images. Before you run Validate, check [Microsoft Learn's OS installation steps](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2611) and your OEM's deployment guide for your build and hardware, for example Dell's [deployment and operations guide](https://www.dell.com/en-us/infohub/articles/deployment-and-operations-guide-with-scalable-networking). This page is a map, not a replacement for them.
 :::
 
 ---
@@ -76,7 +76,7 @@ Select the diagram to open it full screen and zoom. Source: [`cluster-deployment
 | Question | ISO or OEM image | Simplified provisioning |
 |----------|------------------|------------------------|
 | Production deployment today | ✅ Use this | ⚠️ Preview |
-| Hardware on Microsoft's validated list for simplified provisioning | Any [catalog](https://aka.ms/AzureStackHCICatalog) hardware | Dell AX-650 and AX-750, Lenovo ThinkAgile MX650 V3 and V4, HPE ProLiant DL360 Gen11 ([Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#hardware-prerequisites)) |
+| Hardware on Microsoft's validated list for simplified provisioning | Any [catalog](https://aka.ms/AzureStackHCICatalog) hardware | Dell AX-650 and AX-750, Lenovo ThinkAgile MX650 V3 and V4, HPE ProLiant DL360 Gen11 ([Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2611#hardware-prerequisites)) |
 | Arc gateway | ✅ Supported | ❌ Not supported in the preview |
 | Region of the provisioning resources | Any supported region | East US only |
 | No one at the console | Needs BMC console work per machine | Azure does the install. With [azurelocal-ztp](https://azurelocal.cloud/azurelocal-ztp/), no USB stick either |
@@ -100,18 +100,18 @@ On the portal path, [Simplified Provisioning Task 06: Prepare Machines for Valid
 
 | Step | ISO / OEM image | Simplified, portal | Simplified, azurelocal-ztp | Source |
 |------|-----------------|-------------------|---------------------------|--------|
-| BIOS settings: virtualization, Secure Boot, TPM, system profile | You ([Phase 01](./phase-01-hardware-provisioning/index.mdx)) | You. Secure Boot and TPM are required | ZTP applies `hardware.bios` and an install-only `bios_during_provisioning` (an FC card slot off during the install) and restores it afterwards. It doesn't check the rest | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610#step-2-prepare-machines), [Dell BIOS and iDRAC](https://dell.github.io/azurestack-docs/docs/hci/biosandidrac/) |
+| BIOS settings: virtualization, Secure Boot, TPM, system profile | You ([Phase 01](./phase-01-hardware-provisioning/index.mdx)) | You. Secure Boot and TPM are required | ZTP applies `hardware.bios` and an install-only `bios_during_provisioning` (an FC card slot off during the install) and restores it afterwards. It doesn't check the rest | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2611#step-2-prepare-machines), [Dell BIOS and iDRAC](https://dell.github.io/azurestack-docs/docs/hci/biosandidrac/) |
 | NIC settings for RDMA, for example "NIC + RDMA Mode" on Intel E810 | You (Phase 01) | You | You | Dell deployment guide |
-| Firmware at the OEM support-matrix level | You. Some OEM images update firmware during imaging | You | You. ZTP doesn't update firmware | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#install-drivers-and-firmware), [Dell SBE release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/): the SBE can't update firmware or drivers during deployment |
-| Active Directory: OU and LCM user | You ([Part 3](../03-onprem-readiness/index.mdx)) | You | You | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610) |
-| DHCP reservation for each management MAC | Optional | Recommended | You. Mode A (a reservation per management MAC) is the only mode where ZTP ends with every management address right | [Learn decision 8](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network) |
+| Firmware at the OEM support-matrix level | You. Some OEM images update firmware during imaging | You | You. ZTP doesn't update firmware | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2611#install-drivers-and-firmware), [Dell SBE release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/): the SBE can't update firmware or drivers during deployment |
+| Active Directory: OU and LCM user | You ([Part 3](../03-onprem-readiness/index.mdx)) | You | You | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2611) |
+| DHCP reservation for each management MAC | Optional | Recommended | You. Mode A (a reservation per management MAC) is the only mode where ZTP ends with every management address right | [Learn decision 8](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2611#decision-8-determine-management-ips-and-infrastructure-network) |
 
 ### Install and Arc
 
 | Step | ISO / OEM image | Simplified, portal | Simplified, azurelocal-ztp | Source |
 |------|-----------------|-------------------|---------------------------|--------|
 | Install the OS | You ([Phase 02](./phase-02-os-installation/index.mdx)) | Microsoft | Microsoft, started by ZTP | Learn |
-| Local administrator password, the same on every machine | You | Microsoft, from the site's Key Vault secret | Microsoft, from the site's Key Vault secret | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#configure-the-operating-system-using-sconfig) |
+| Local administrator password, the same on every machine | You | Microsoft, from the site's Key Vault secret | Microsoft, from the site's Key Vault secret | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2611#configure-the-operating-system-using-sconfig) |
 | Host name | You ([task 10](./phase-03-os-configuration/task-10-configure-hostname.mdx)) | Microsoft, from the machine name you give | Microsoft, from `nodes[].name` | Learn, seen on live runs |
 | Remove virtual media | You | You: take out the USB stick, disable USB boot in the BIOS | ZTP ejects the virtual USB | Learn |
 | Register with Azure Arc and install the mandatory extensions | You ([Phase 04](./phase-04-arc-registration/index.mdx)) | Microsoft. **Skip Phase 04** | Microsoft. **Skip Phase 04** | Learn |
@@ -123,10 +123,10 @@ On the ISO route the automated run can do every **You** row in this table. On th
 | Step | ISO / OEM image | Simplified, portal | Simplified, azurelocal-ztp | Source |
 |------|-----------------|-------------------|---------------------------|--------|
 | WinRM for remote management | You ([task 01](./phase-03-os-configuration/task-01-enable-winrm-for-remote-management.mdx)) | Already on | Already on | Seen on live runs |
-| OEM drivers | You, unless your OEM image includes them | **You**. Provisioning leaves Microsoft's inbox drivers | OS config run: the network drivers from the SBE | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#install-drivers-and-firmware), [inbox drivers aren't supported](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610#driver-requirements) |
+| OEM drivers | You, unless your OEM image includes them | **You**. Provisioning leaves Microsoft's inbox drivers | OS config run: the network drivers from the SBE | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2611#install-drivers-and-firmware), [inbox drivers aren't supported](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2611#driver-requirements) |
 | SBE files in `C:\SBE` | You, unless your OEM image includes them | **You** | OS config run: delivered by `hardware.sbe.delivery`, hash checked against the OEM's manifest | Learn, Dell SBE release notes |
 | Static management IP | You ([task 03](./phase-03-os-configuration/task-03-configure-static-ip-address.mdx)) | **You**. Provisioning uses DHCP | Mode A: ZTP verifies the reserved address. Modes B and C: OS config run sets it by MAC (the OS install reset it) | Learn |
-| One default gateway, on the management adapter only | You ([task 04](./phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter.mdx)) | **You**. Live runs had a gateway on two adapters | OS config run | [Learn decision 8](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610#decision-8-determine-management-ips-and-infrastructure-network) |
+| One default gateway, on the management adapter only | You ([task 04](./phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter.mdx)) | **You**. Live runs had a gateway on two adapters | OS config run | [Learn decision 8](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2611#decision-8-determine-management-ips-and-infrastructure-network) |
 | DNS servers that resolve your domain | You ([tasks 05 and 06](./phase-03-os-configuration/task-05-configure-dns-servers.mdx)) | Check: provisioning takes them from DHCP | OS config run | Learn. DNS can't change after deployment |
 | Time server | You ([task 07](./phase-03-os-configuration/task-07-configure-time-synchronization-ntp.mdx)) | Set the site's time server, or set it on each machine | OS config run sets `networking.ntp_servers` | Learn |
 | Keep the iDRAC USB NIC (Remote NDIS) enabled, with DHCP | Leave it alone | Leave it alone | Left alone | [Dell SBE release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/): SBE health checks need it |
@@ -134,7 +134,7 @@ On the ISO route the automated run can do every **You** row in this table. On th
 | RDP | Optional ([task 02](./phase-03-os-configuration/task-02-enable-rdp.mdx)) | Optional | Optional, not done | Learn, Dell |
 | ICMP (ping) | Optional ([task 08](./phase-03-os-configuration/task-08-enable-icmp-ping.mdx)) | Optional | Optional, not done | Dell |
 | Clean non-OS drives | You, on reused hardware ([task 11](./phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional.mdx)) | Check on reused hardware | Check on reused hardware. The OS config run wipes them only with `os_configuration.clear_storage` | Learn |
-| Don't install Windows updates before deployment | Don't | Don't | ZTP doesn't | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610#configure-the-operating-system-using-sconfig) |
+| Don't install Windows updates before deployment | Don't | Don't | ZTP doesn't | [Learn](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2611#configure-the-operating-system-using-sconfig) |
 | Domain join before deployment | Optional from 2604 | Optional | Not done. Deployment joins the machines | Learn |
 | Deployment admin account | You | You | OS config run creates `identity.local_admin` | Learn ARM template parameters |
 
@@ -148,7 +148,7 @@ Rows marked that way were read from two Dell AX-760 machines right after simplif
 
 Simplified provisioning names each Azure Arc machine `<device-id>-1`, not after the host. On build `12.2690.1003.15`, cluster Deploy failed at **Deploy Arc infrastructure components** with `ParentResourceNotFound`: that step installs an Arc extension on the Arc machine named after the host, and no such machine exists. Validate passes, because the deployment content that runs this step is only downloaded when Deploy starts, and Validate's Arc checks use the resource IDs you pass in.
 
-Before you deploy on the simplified route, check [the troubleshooting page](./phase-02-os-installation/simplified-provisioning/troubleshooting.mdx#arc-machine-names-are-device-ids) and Microsoft's [known issues](https://learn.microsoft.com/en-us/azure/azure-local/known-issues?view=azloc-2610) for your build. The ISO route isn't affected, because the Arc machine carries the host name.
+Before you deploy on the simplified route, check [the troubleshooting page](./phase-02-os-installation/simplified-provisioning/troubleshooting.mdx#arc-machine-names-are-device-ids) and Microsoft's [known issues](https://learn.microsoft.com/en-us/azure/azure-local/known-issues?view=azloc-2611) for your build. The ISO route isn't affected, because the Arc machine carries the host name.
 
 ---
 
@@ -162,10 +162,10 @@ Before you deploy on the simplified route, check [the troubleshooting page](./ph
 
 ## References
 
-- [Microsoft Learn — Install the Azure Stack HCI OS by using SConfig](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610)
-- [Microsoft Learn — Simplified machine provisioning (preview)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2610)
-- [Microsoft Learn — Prepare Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2610)
-- [Microsoft Learn — Deploy via ARM template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610)
+- [Microsoft Learn — Install the Azure Stack HCI OS by using SConfig](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2611)
+- [Microsoft Learn — Simplified machine provisioning (preview)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/simplified-machine-provisioning?view=azloc-2611)
+- [Microsoft Learn — Prepare Active Directory](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-prep-active-directory?view=azloc-2611)
+- [Microsoft Learn — Deploy via ARM template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2611)
 - [Dell — Deployment and operations guide with scalable networking](https://www.dell.com/en-us/infohub/articles/deployment-and-operations-guide-with-scalable-networking)
 - [Dell — BIOS and iDRAC settings for Azure Local](https://dell.github.io/azurestack-docs/docs/hci/biosandidrac/)
 - [Dell — SBE 2606 release notes](https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/)

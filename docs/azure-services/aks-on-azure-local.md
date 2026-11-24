@@ -42,7 +42,7 @@ AKS on Azure Local is included with Azure Local release 2402 and later. Microsof
 
 ## Deployment Notes
 
-- Requires Azure Local (the 12.x release train; these docs track 12.2610). Azure Stack HCI 23H2 reached end of support in April 2026, so move to 24H2 builds first
+- Requires Azure Local (the 12.x release train; these docs track 12.2611). Azure Stack HCI 23H2 reached end of support in April 2026, so move to 24H2 builds first
 - Clusters are provisioned via Azure Arc. An Azure subscription is required
 - Check the Kubernetes versions supported by your Azure Local release before you update Azure Local. Release 2604 supports 1.31.12, 1.31.13, 1.32.8, 1.32.9, 1.33.4, and 1.33.5. Kubernetes 1.30 is no longer supported
 - KMS v1 is deprecated soon and KMS v2 is included. Plan to redeploy clusters that use KMS v1
@@ -62,7 +62,7 @@ AKS on Azure Local is included with Azure Local release 2402 and later. Microsof
 - [Compare AKS features across cloud, edge, and on-premises — Microsoft Learn](https://learn.microsoft.com/en-us/azure/aks-hybrid-edge/aks-platforms-compare)
 - [Scale requirements for AKS on Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/aks-hybrid-edge/local/hyperconverged/scale-requirements)
 - [What's new in AKS Hybrid and Edge on Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/aks-hybrid-edge/local/aks-whats-new-local)
-- [What's new in Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/whats-new?view=azloc-2610)
+- [What's new in Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/whats-new?view=azloc-2611)
 - [Azure Arc-enabled Kubernetes — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-arc/kubernetes/overview)
 - **Docs site**: [azurelocal-aks](https://azurelocal.cloud/azurelocal-aks/)
 

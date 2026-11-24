@@ -42,7 +42,7 @@ The [automated OS configuration run](../../../automation/03-automation-guides/os
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: SAN LUN pre-deployment verification
 > **PURPOSE**: Confirm all required LUNs are visible and infrastructure LUNs remain RAW
-> **MASTER REFERENCE**: [Microsoft Learn — Install the Azure Local operating system for disaggregated deployments (Connect to SAN)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610#connect-to-san)
+> **MASTER REFERENCE**: [Microsoft Learn — Install the Azure Local operating system for disaggregated deployments (Connect to SAN)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2611#connect-to-san)
 
 **Status**: Active
 
@@ -50,7 +50,7 @@ The [automated OS configuration run](../../../automation/03-automation-guides/os
 | Storage design | This task |
 |---|---|
 | **Disaggregated (SAN only)** | Run it now, on every node, before Arc registration. |
-| **Hybrid (Storage Spaces Direct + SAN)** | Not at initial deployment. SAN LUNs are attached after the deployment (2604 or later; FC WWNs are not zoned until then), and the post-deployment verification in Learn's [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610) (steps 7 to 10) applies instead. |
+| **Hybrid (Storage Spaces Direct + SAN)** | Not at initial deployment. SAN LUNs are attached after the deployment (2604 or later; FC WWNs are not zoned until then), and the post-deployment verification in Learn's [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2611) (steps 7 to 10) applies instead. |
 | **Storage Spaces Direct only** | Skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx). |
 :::
 
@@ -83,17 +83,17 @@ This task confirms that all required SAN LUNs are correctly presented to all clu
 
 | Requirement | Details |
 |-------------|---------|
-| Tasks 12 and 13 complete | HBA drivers (FC) and MPIO (verified, vendor registered and claimed) configured. iSCSI on 2610: connected by the deployment wizard, see the iSCSI note below |
+| Tasks 12 and 13 complete | HBA drivers (FC) and MPIO (verified, vendor registered and claimed) configured. iSCSI on 2610 and later: connected by the deployment wizard, see the iSCSI note below |
 | FC zoning complete (disaggregated only) | The FC fabric administrator has zoned the node HBAs to the array target ports (Learn's rack aware SAN article says "redundant single-initiator zoning according to the fabric and array vendor design"; Learn does not describe single-target zoning, so follow your fabric and array vendor design) so the LUNs are visible **before** Arc registration. For a **hybrid** design, do not zone until after the deployment. |
 | SAN LUNs provisioned | Only the two system LUNs are required before deployment: infrastructure (250 GB or larger) and performance history (20 GB or larger), created on the array and unmasked to all nodes with consistent LUN IDs |
 | FC fabric connectivity | HBA ports visible in the fabric; zones active |
 
 :::note Coordinate with your SAN administrator
-LUN presentation timing must be coordinated with the SAN array administrator. The infrastructure and performance history LUNs are provisioned **before** this step but left uninitialized. Learn: "Workload LUNs are configured after deployment" ([portal deployment, advanced settings](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2610#specify-advanced-settings-and-apply-tags)); presenting them early is optional and only raises the risk that someone initializes them by accident.
+LUN presentation timing must be coordinated with the SAN array administrator. The infrastructure and performance history LUNs are provisioned **before** this step but left uninitialized. Learn: "Workload LUNs are configured after deployment" ([portal deployment, advanced settings](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2611#specify-advanced-settings-and-apply-tags)); presenting them early is optional and only raises the risk that someone initializes them by accident.
 :::
 
-:::info iSCSI on Azure Local 2610
-On 2610 the deployment wizard's **iSCSI Configuration** connects the targets, so do not enable iSCSI on the machines first (see [Task 12](./task-12-install-fc-hba-drivers-conditional.mdx#iscsi-adapters-disaggregated-iscsi-san)); there is nothing to verify here yet. On 2604 to 2609, after you connect the targets manually, run the same checks below with `BusType` `iSCSI`.
+:::info iSCSI on Azure Local 2610 and later
+On 2610 and later the deployment wizard's **iSCSI Configuration** connects the targets, so do not enable iSCSI on the machines first (see [Task 12](./task-12-install-fc-hba-drivers-conditional.mdx#iscsi-adapters-disaggregated-iscsi-san)); there is nothing to verify here yet. On 2604 to 2609, after you connect the targets manually, run the same checks below with `BusType` `iSCSI`.
 :::
 
 ---
@@ -219,3 +219,4 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 |---------|------|--------|---------|
 | 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |
 | 1.1.0 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610: FC zoning is a disaggregated prerequisite before Arc registration (hybrid zones only after deployment); single-initiator wording follows Learn; only the infrastructure and performance history LUNs are required before deployment; checks cover Fibre Channel and iSCSI bus types; iSCSI 2610 wizard note; fixed Learn links |
+| 1.2.0 | 2026-11-23 | Azure Local Cloud | Azure Local 2611: the 2610 iSCSI wizard rule applies to 2610 and later |

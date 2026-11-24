@@ -44,7 +44,7 @@ The [automated OS configuration run](../../../automation/03-automation-guides/os
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: MPIO and MSDSM configuration
 > **PURPOSE**: Verify MPIO and configure vendor MSDSM so Windows claims SAN disks as multi-path volumes
-> **MASTER REFERENCE**: [Microsoft Learn — Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610)
+> **MASTER REFERENCE**: [Microsoft Learn — Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2611)
 
 **Status**: Active
 
@@ -52,7 +52,7 @@ The [automated OS configuration run](../../../automation/03-automation-guides/os
 | Storage design | This task |
 |---|---|
 | **Disaggregated (SAN only)** | Run it now, on every node, after Task 12 and before you confirm the LUNs in Task 14. |
-| **Hybrid (Storage Spaces Direct + SAN)** | Not part of the initial deployment. SAN is attached after the initial deployment (version 2604 or later). The same Learn steps apply then; follow [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610) after the cluster is deployed. |
+| **Hybrid (Storage Spaces Direct + SAN)** | Not part of the initial deployment. SAN is attached after the initial deployment (version 2604 or later). The same Learn steps apply then; follow [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2611) after the cluster is deployed. |
 | **Storage Spaces Direct only** | Skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx). |
 :::
 
@@ -87,7 +87,7 @@ Learn's step is registering the vendor with MSDSM (`New-MSDSMSupportedHW`). On a
 
 | Requirement | Details |
 |-------------|---------|
-| Task 12 complete | FC HBA drivers installed (or OEM iSCSI adapter drivers on 2604 to 2609; on 2610 the wizard configures iSCSI, see Task 12) |
+| Task 12 complete | FC HBA drivers installed (or OEM iSCSI adapter drivers on 2604 to 2609; on 2610 and later the wizard configures iSCSI, see Task 12) |
 | SAN array vendor | Vendor and model confirmed (hardware IDs needed) |
 | FC fabric | **Disaggregated:** zoning in place and the infrastructure and performance history LUNs unmasked to the HBAs, so the disks are visible before Arc registration. **Hybrid:** do not zone until after the deployment. |
 
@@ -311,7 +311,7 @@ For iSCSI arrays on Azure Local **2604 to 2609**, also enable MPIO automatic cla
 Enable-MSDSMAutomaticClaim -BusType iSCSI
 ```
 
-If you enable auto-claim after LUNs are already visible, restart the node so MSDSM can re-enumerate the devices. On **2610**, do not enable iSCSI on the machines before deployment; the deployment wizard's **iSCSI Configuration** does this (see [Task 12](./task-12-install-fc-hba-drivers-conditional.mdx#iscsi-adapters-disaggregated-iscsi-san)). Fibre Channel LUNs are claimed through the registered hardware IDs; Learn does not use `Enable-MSDSMAutomaticClaim -BusType FC`, so this runbook no longer runs it.
+If you enable auto-claim after LUNs are already visible, restart the node so MSDSM can re-enumerate the devices. On **2610 and later**, do not enable iSCSI on the machines before deployment; the deployment wizard's **iSCSI Configuration** does this (see [Task 12](./task-12-install-fc-hba-drivers-conditional.mdx#iscsi-adapters-disaggregated-iscsi-san)). Fibre Channel LUNs are claimed through the registered hardware IDs; Learn does not use `Enable-MSDSMAutomaticClaim -BusType FC`, so this runbook no longer runs it.
 
 ---
 
@@ -363,3 +363,4 @@ mpclaim -s -d
 |---------|------|--------|---------|
 | 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |
 | 1.1.0 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610 (Learn "Connect an external storage array"): MPIO verified, not installed (enabled by default from 2604); corrected vendor IDs (DellEMC, 3PARdata/VV, NETAPP "LUN C-Mode", Hitachi via mpclaim); Pure renamed Everpure with wildcard removal; load balance policy RR instead of LQD; added the MSDSM claim step (lab-verified on Pure FlashArray) with padded vendor and product strings; per-vendor MPIO timers; Lenovo entry; dropped the FC auto-claim line; iSCSI auto-claim for 2604 to 2609 |
+| 1.2.0 | 2026-11-23 | Azure Local Cloud | Azure Local 2611: the 2610 iSCSI wizard rule applies to 2610 and later |

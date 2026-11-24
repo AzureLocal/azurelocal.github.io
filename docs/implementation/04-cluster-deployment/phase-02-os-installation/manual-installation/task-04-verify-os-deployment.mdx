@@ -48,8 +48,8 @@ import TabItem from '@theme/TabItem';
 
 Verify that Azure Stack HCI OS was installed correctly on every cluster node before moving to Phase 03: OS Configuration. Checks cover OS version, build number, boot drive assignment, network driver provider, and SConfig accessibility.
 
-:::info Expected OS build for Azure Local 2610
-Microsoft Learn 2610 lists solution version 12.2610.1004.50 with OS build **26100.33650**, and states that all new and existing deployments run that OS version (download it from the Azure portal). Drivers must be compatible with OS 26100.33650 (Windows Server 2025). `Get-ComputerInfo` returns only the major build (`26100`), so the checks below also read the update build revision (UBR) to get the full `26100.xxxxx` build. Media from an earlier release (for example 2604 to 2609) shows a lower revision and should be replaced with 2610 media. Integrated System or Premier solution hardware ships with the OS preinstalled: work with the OEM for a compatible OS image and driver.
+:::info Expected OS build for Azure Local 2611
+Microsoft Learn 2611 lists solution version 12.2611.1004.9 with OS build **26100.33822**, and states that all new and existing deployments run that OS version (download it from the Azure portal). Drivers must be compatible with OS 26100.33822 (Windows Server 2025). Source: [What's new in 2611](https://learn.microsoft.com/en-us/azure/azure-local/whats-new?view=azloc-2611#features-and-improvements-in-2611). `Get-ComputerInfo` returns only the major build (`26100`), so the checks below also read the update build revision (UBR) to get the full `26100.xxxxx` build. Media from an earlier release (for example 2610 media, `26100.33650`) shows a lower revision and should be replaced with 2611 media. Integrated System or Premier solution hardware ships with the OS preinstalled: work with the OEM for a compatible OS image and driver.
 :::
 
 :::info Prerequisites Recap
@@ -112,15 +112,15 @@ Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumb
 (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR
 ```
 
-**Expected Output** (Azure Local 2610):
+**Expected Output** (Azure Local 2611):
 ```
 WindowsProductName : Azure Stack HCI
 WindowsVersion : 24H2
 OsBuildNumber : 26100
-33650
+33822
 ```
 
-The full build is `26100.<UBR>`; for 2610 media it is `26100.33650`. A lower revision means older media.
+The full build is `26100.<UBR>`; for 2611 media it is `26100.33822`. A lower revision means older media.
 
 ### Step 3 — Verify Boot Drive (BOSS Card)
 
@@ -185,10 +185,10 @@ All nodes should produce consistent results:
 
 | Node | OS | Build | Boot Drive | Status |
 |------|-----|-------|------------|--------|
-| azlocal-node01 | Azure Stack HCI | 26100.33650 | ~238 GB | ✅ PASS |
-| azlocal-node02 | Azure Stack HCI | 26100.33650 | ~238 GB | ✅ PASS |
-| azlocal-node03 | Azure Stack HCI | 26100.33650 | ~238 GB | ✅ PASS |
-| azlocal-node04 | Azure Stack HCI | 26100.33650 | ~238 GB | ✅ PASS |
+| azlocal-node01 | Azure Stack HCI | 26100.33822 | ~238 GB | ✅ PASS |
+| azlocal-node02 | Azure Stack HCI | 26100.33822 | ~238 GB | ✅ PASS |
+| azlocal-node03 | Azure Stack HCI | 26100.33822 | ~238 GB | ✅ PASS |
+| azlocal-node04 | Azure Stack HCI | 26100.33822 | ~238 GB | ✅ PASS |
 
 ---
 
@@ -202,7 +202,7 @@ All nodes should produce consistent results:
 | Boot drive correct | OS on Dell BOSS card M.2 RAID-1 volume (~238 GB) | ☐ |
 | Passwords secured | Administrator passwords stored in Key Vault | ☐ |
 | Server Core prompt | All nodes boot to Server Core / SConfig | ☐ |
-| Build number | 26100.33650 (Azure Local 2610 media) on all nodes | ☐ |
+| Build number | 26100.33822 (Azure Local 2611 media) on all nodes | ☐ |
 | NIC drivers | No physical adapter uses an inbox driver (`DriverProvider` is not `Microsoft`) | ☐ |
 | No Windows Updates installed | Updates were not installed through SConfig or Azure Update Manager (install happens during deployment) | ☐ |
 
@@ -215,7 +215,7 @@ All criteria met — Phase 02 is complete. Proceed to Phase 03: OS Configuration
 | Issue | Cause | Resolution |
 |-------|-------|------------|
 | Wrong OS version / product name | Incorrect ISO used in Task 02 | Reinstall with the correct Dell gold image |
-| Build number below 26100.33650 | Media from an earlier release | Obtain the 2610 OS image (Azure portal download or OEM image) and reinstall |
+| Build number below 26100.33822 | Media from an earlier release | Obtain the 2611 OS image (Azure portal download or OEM image) and reinstall |
 | `DriverProvider` is `Microsoft` | Inbox NIC driver in use (not supported) | Install the latest OEM driver per the OEM's instructions |
 | Can't connect remotely (WinRM) | WinRM not yet configured | Use Direct Script tab; enable WinRM manually: `winrm quickconfig -q` |
 | Cannot connect via iDRAC console | iDRAC network issue | Verify iDRAC IP and OOB connectivity |
@@ -247,3 +247,4 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | 1.0 | 2026-01-31 | Azure Local Cloud | Initial document |
 | 1.1 | 2026-03-04 | Azure Local Cloud | Full frontmatter, Azure badge, add tabs, Stage 12 → Phase 03, Phase 13 → Phase 03, Step 4.x → sequential steps, Step 2/3 → Task 01/03, consolidate checklists, key vault credential references, Navigation table, Version Control footer |
 | 1.2 | 2026-11-08 | Azure Local Cloud | Expect OS build 26100.33650 (Azure Local 2610); add UBR read and inbox NIC driver check |
+| 1.3 | 2026-11-23 | Azure Local Cloud | Expect OS build 26100.33822 (Azure Local 2611) |

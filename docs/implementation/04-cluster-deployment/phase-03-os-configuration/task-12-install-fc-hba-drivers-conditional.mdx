@@ -44,7 +44,7 @@ The [automated OS configuration run](../../../automation/03-automation-guides/os
 > **DOCUMENT CATEGORY**: Runbook
 > **SCOPE**: FC HBA and iSCSI adapter driver installation
 > **PURPOSE**: Install and verify FC HBA drivers so nodes present WWPNs to the FC fabric, and time the zoning correctly for your storage design
-> **MASTER REFERENCE**: [Microsoft Learn — Install the Azure Local operating system for disaggregated deployments (Connect to SAN)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610#connect-to-san)
+> **MASTER REFERENCE**: [Microsoft Learn — Install the Azure Local operating system for disaggregated deployments (Connect to SAN)](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2611#connect-to-san)
 
 **Status**: Active
 
@@ -52,7 +52,7 @@ The [automated OS configuration run](../../../automation/03-automation-guides/os
 | Storage design | This task |
 |---|---|
 | **Disaggregated (SAN only)** | Run it now, on every node, before Arc registration. |
-| **Hybrid (Storage Spaces Direct + SAN)** | Not part of the initial deployment. SAN is attached after the initial deployment (version 2604 or later). Do the initial deployment with local storage, then follow [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610). If the FC HBAs are already installed, **do not zone** their WWNs until after the deployment (see the zoning timing below). |
+| **Hybrid (Storage Spaces Direct + SAN)** | Not part of the initial deployment. SAN is attached after the initial deployment (version 2604 or later). Do the initial deployment with local storage, then follow [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2611). If the FC HBAs are already installed, **do not zone** their WWNs until after the deployment (see the zoning timing below). |
 | **Storage Spaces Direct only** | Skip to [Task 15: Complete Combined Script](./task-15-complete-combined-script-all-steps.mdx). |
 :::
 
@@ -80,7 +80,7 @@ Learn's disaggregated page requires that the LUNs are unmasked and visible befor
 | Scenario | Run? |
 |---|---|
 | SAN disaggregated deployment, Fibre Channel | ✅ Yes — all nodes, FC tab |
-| SAN disaggregated deployment, iSCSI | ✅ Yes — all nodes, iSCSI section (driver step only on 2610) |
+| SAN disaggregated deployment, iSCSI | ✅ Yes — all nodes, iSCSI section (driver step only on 2610 and later) |
 | Hybrid (S2D + SAN) | ❌ Not at initial deployment — attach SAN after deployment per Learn |
 | Storage Spaces Direct (S2D) deployment | ❌ Skip |
 | HBA drivers already installed from OEM image | ✅ Yes — verify and collect WWPNs |
@@ -201,13 +201,13 @@ For a **hybrid** design (S2D + SAN), keep the WWPNs on file but **do not zone** 
 
 Learn: "Azure Local only supports dedicated adapters for iSCSI." The steps depend on the version you deploy.
 
-:::warning Azure Local 2610: do not enable iSCSI on the machines before deployment
-"Starting with Azure Local version 2610, for connected and disconnected deployments, don't manually enable iSCSI on the machines before deployment. The deployment wizard now includes iSCSI configuration as part of the deployment process. For earlier versions, follow the steps in this section to enable iSCSI manually." (Learn, [Connect to SAN](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2610#connect-to-san)). In the 2610 portal wizard you turn on **iSCSI Configuration**, then enter the authentication type and the iSCSI network details ([Deploy Azure Local using the Azure portal for disaggregated deployments](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2610#specify-configuration-settings)).
+:::warning Azure Local 2610 and later: do not enable iSCSI on the machines before deployment
+"Starting with Azure Local version 2610, for connected and disconnected deployments, don't manually enable iSCSI on the machines before deployment. The deployment wizard now includes iSCSI configuration as part of the deployment process. For earlier versions, follow the steps in this section to enable iSCSI manually." (Learn, [Connect to SAN](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os-disaggregated?view=azloc-2611#connect-to-san)). In the 2610 portal wizard you turn on **iSCSI Configuration**, then enter the authentication type and the iSCSI network details ([Deploy Azure Local using the Azure portal for disaggregated deployments](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-portal-disaggregated?view=azloc-2611#specify-configuration-settings)).
 :::
 
 | Version you deploy | What to do in this task |
 |---|---|
-| **2610** (connected or disconnected) | Install the OEM drivers for the dedicated iSCSI network adapters (**not** the inbox drivers). Learn says not to manually enable iSCSI on the machines before deployment because the wizard now configures it, so this runbook does not run the manual iSCSI steps (addresses, `MSiSCSI`, auto-claim, target connections) on 2610. Enter the iSCSI network details in the wizard instead; Learn does not spell out each manual step as unsupported, so confirm anything beyond the drivers with your OEM. |
+| **2610 and later** (connected or disconnected) | Install the OEM drivers for the dedicated iSCSI network adapters (**not** the inbox drivers). Learn says not to manually enable iSCSI on the machines before deployment because the wizard now configures it, so this runbook does not run the manual iSCSI steps (addresses, `MSiSCSI`, auto-claim, target connections) on 2610. Enter the iSCSI network details in the wizard instead; Learn does not spell out each manual step as unsupported, so confirm anything beyond the drivers with your OEM. |
 | **2604 to 2609** | Follow Learn's manual iSCSI steps on every node: install the OEM adapter drivers (not inbox), assign each adapter an IP address and disable DNS client registration, validate connectivity with `ping -S`, add static routes only if routing is required, set `MSiSCSI` to start automatically, run `Enable-MSDSMAutomaticClaim -BusType iSCSI`, add the target portal for each path, collect the IQNs (the `NodeAddress` of the iSCSI initiator ports from `Get-InitiatorPort`) for LUN masking\| Where-Object ConnectionType -eq 'iSCSI').NodeAddress`) for LUN masking, connect each target with `-IsPersistent $true -IsMultipathEnabled $true`, then confirm the LUNs with `Get-PhysicalDisk`. |
 
 Check that the iSCSI adapters are not on an inbox driver (Learn: an adapter uses an inbox driver if `DriverProvider` is `Microsoft`):
@@ -216,7 +216,7 @@ Check that the iSCSI adapters are not on an inbox driver (Learn: an adapter uses
 Get-NetAdapter -Name "<AdapterName>" | Select-Object Name, DriverProvider, DriverVersion, DriverDate
 ```
 
-For hybrid (S2D + SAN) with iSCSI, Learn requires dedicated physical ports for iSCSI (vNICs are not supported) and a node with identical NIC configurations; see [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2610).
+For hybrid (S2D + SAN) with iSCSI, Learn requires dedicated physical ports for iSCSI (vNICs are not supported) and a node with identical NIC configurations; see [Connect an external storage array to Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-external-storage?view=azloc-2611).
 
 ---
 
@@ -259,3 +259,4 @@ For initial pre-cluster deployment (Phase 03), simply reboot each node and confi
 |---------|------|--------|---------|
 | 1.0.0 | 2026-05-02 | Azure Local Cloud | Initial release |
 | 1.1.0 | 2026-11-08 | Azure Local Cloud | Aligned to Azure Local 2610: zoning timing split by design (disaggregated before Arc registration, hybrid after deployment); removed the claim that zoning waits for Arc registration; added iSCSI section with the 2610 wizard rule; inbox driver check; fixed Learn links and platform badge |
+| 1.2.0 | 2026-11-23 | Azure Local Cloud | Azure Local 2611: the 2610 iSCSI wizard rule applies to 2610 and later |

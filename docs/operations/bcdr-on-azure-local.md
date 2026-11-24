@@ -81,9 +81,9 @@ Primary Site (Azure Local Cluster)
 
 - **Repository**: [azurelocal-bcdr](https://github.com/AzureLocal/azurelocal-bcdr)
 - **Docs site**: [azurelocal-bcdr](https://azurelocal.cloud/azurelocal-bcdr/)
-- **Microsoft Docs**: [Disaster recovery for Azure Local VMs](https://learn.microsoft.com/en-us/azure/azure-local/manage/disaster-recovery-overview?view=azloc-2610)
-- **VM resiliency**: [Virtual machine resiliency for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/disaster-recovery-vm-resiliency?view=azloc-2610)
-- **Azure Site Recovery**: [Protect VM workloads with Azure Site Recovery on Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/azure-site-recovery?view=azloc-2610)
+- **Microsoft Docs**: [Disaster recovery for Azure Local VMs](https://learn.microsoft.com/en-us/azure/azure-local/manage/disaster-recovery-overview?view=azloc-2611)
+- **VM resiliency**: [Virtual machine resiliency for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/disaster-recovery-vm-resiliency?view=azloc-2611)
+- **Azure Site Recovery**: [Protect VM workloads with Azure Site Recovery on Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/azure-site-recovery?view=azloc-2611)
 - **Azure Backup**: [Overview](https://learn.microsoft.com/en-us/azure/backup/backup-overview)
 
 > Data verified with Microsoft Azure Local documentation, October 2026.
