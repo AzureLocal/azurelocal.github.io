@@ -67,7 +67,7 @@ AVD session hosts need a performant storage layer for user profiles. The compani
 
 ## Deployment Notes
 
-- Requires Azure Local registered with Azure and running 23H2 or later. 23H2 (OS 25398) reached end of support in April 2026, so target the current 12.x release (12.2609)
+- Requires Azure Local registered with Azure and running 23H2 or later. 23H2 (OS 25398) reached end of support in April 2026, so target a supported 12.x release (these docs track 12.2610)
 - Supported session host images: Windows 11 and Windows 10 Enterprise (single and multi-session), and Windows Server 2025, 2022, and 2019. Check the AVD prerequisites for the licensing method per OS
 - Activate Windows 10 and 11 Enterprise multi-session and Windows Server 2022 Datacenter: Azure Edition with Azure verification for VMs. Use existing activation methods for other images
 - A host pool contains session hosts on Azure or on Azure Local, never both

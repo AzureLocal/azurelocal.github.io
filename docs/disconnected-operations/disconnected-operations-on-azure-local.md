@@ -79,12 +79,12 @@ To get access, work with your Microsoft account team or submit the prequalificat
 
 ## External References
 
-- [Disconnected operations for Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-overview?view=azloc-2609)
-- [Plan your network for disconnected operations — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-network?view=azloc-2609)
-- [PKI for disconnected operations — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-pki?view=azloc-2609)
-- [Dedicated management cluster for disconnected operations — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-control-plane-appliance?view=azloc-2609)
-- [Acquire disconnected operations — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-acquire?view=azloc-2609)
-- [Deploy disconnected operations and the management cluster — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-deploy?view=azloc-2609)
+- [Disconnected operations for Azure Local — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-overview?view=azloc-2610)
+- [Plan your network for disconnected operations — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-network?view=azloc-2610)
+- [PKI for disconnected operations — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-pki?view=azloc-2610)
+- [Dedicated management cluster for disconnected operations — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-control-plane-appliance?view=azloc-2610)
+- [Acquire disconnected operations — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-acquire?view=azloc-2610)
+- [Deploy disconnected operations and the management cluster — Microsoft Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-deploy?view=azloc-2610)
 - [AKS on Azure Local with disconnected operations — Microsoft Learn](https://learn.microsoft.com/en-us/azure/aks/aksarc/disconnected-operations-aks)
 
 > Data verified with Microsoft Azure Local documentation, October 2026.

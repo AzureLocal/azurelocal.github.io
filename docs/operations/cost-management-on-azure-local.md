@@ -64,8 +64,8 @@ Azure Local Cluster
 
 - **Repository**: [azurelocal-cost](https://github.com/AzureLocal/azurelocal-cost)
 - **Microsoft Docs**: [Azure Cost Management overview](https://learn.microsoft.com/en-us/azure/cost-management-billing/cost-management-billing-overview)
-- **Azure Local billing**: [Billing and payment](https://learn.microsoft.com/en-us/azure/azure-local/concepts/billing?view=azloc-2609)
-- **Disconnected operations billing**: [Billing for disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-billing?view=azloc-2609)
+- **Azure Local billing**: [Billing and payment](https://learn.microsoft.com/en-us/azure/azure-local/concepts/billing?view=azloc-2610)
+- **Disconnected operations billing**: [Billing for disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-billing?view=azloc-2610)
 - **Pricing**: [Azure Local pricing](https://azure.microsoft.com/pricing/details/azure-local/)
 
 :::note Work in Progress
