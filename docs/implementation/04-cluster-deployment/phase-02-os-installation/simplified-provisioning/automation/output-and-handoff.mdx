@@ -84,7 +84,7 @@ The handoff and cluster inputs hold environment-specific names and resource IDs.
 
 ## What to hand to OS configuration and cluster deployment
 
-OS configuration reads the **handoff file** (`-HandoffFile`) for each machine's `arcMachineResourceId`, the installed build and the management address result, and the master `infrastructure.yml` for everything else. Cluster deployment needs **each machine's `arcMachineResourceId`** and the `arc_machine_names` map in the cluster inputs file.
+OS configuration reads the **handoff file** (`Invoke-AzureLocalOsConfiguration.ps1 -HandoffPath`; it also finds every `*.ztp-handoff.json` in the folders it is given, and the per-machine script `Set-AzureLocalNodeConfiguration.ps1` takes `-HandoffFile`) for each machine's `arcMachineResourceId`, the installed build and the management address result, and the master `infrastructure.yml` for everything else. Cluster deployment needs **each machine's `arcMachineResourceId`**. The ARM run reads the Arc machine name from `nodes[].arc_machine_name` of the infrastructure file (the node name when the key is not set), so copy the names from the handoff into that key.
 
 :::caution Use the Arc names from the handoff, not the node names
 Simplified machine provisioning creates two resources for each machine:
@@ -97,9 +97,9 @@ The `arcMachineResourceId` that the claim sets is overwritten by the service. Th
 On build 12.2690.1003.15, an earlier Deploy failed at "Deploy Arc infrastructure components" with `ParentResourceNotFound` because the Arc machine names are device IDs. Check the names before Deploy.
 :::
 
-To convert a handoff file into the cluster inputs block yourself, the repository has `Convert-ZtpHandoffToClusterInputs.ps1`. It takes `-HandoffPath`, an optional `-Only` of `arc_machine_names`, `sbe` or `release`, and `-Format` of `Yaml` or `Json`. See the script's help for the full parameters.
+To print the Arc machine names of a handoff file as a block, the repository has `Convert-ZtpHandoffToClusterInputs.ps1`. It takes `-HandoffPath`, an optional `-Only` of `arc_machine_names` or `release`, and `-Format` of `Yaml` or `Json`. See the script's help for the full parameters.
 
-Check the `release` value against your cluster deployment environment schema before you paste it. Only `arc_machine_names` is needed by the cluster deployment inputs.
+No toolkit script reads that block, and the environment file it was written for is retired. Use it only as a list to copy each Arc machine name into `nodes[].arc_machine_name` of `infrastructure.yml`.
 
 ---
 

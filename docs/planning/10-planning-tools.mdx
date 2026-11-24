@@ -23,14 +23,14 @@ description: 'Assess and size workloads with Azure Local Surveyor, then record t
 
 Use [Azure Local Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) to assess workload fit, sizing, and storage design. Then use [Azure Local Trailwright](https://azurelocal.cloud/azurelocal-trailwright/) to record the deployment design and review its findings.
 
-Surveyor takes the values you type and RVTools exports (an `.xlsx` workbook or its vInfo tab as `.csv`); it has no Azure Migrate import. Its plan can be exported as a JSON plan manifest (`schemaVersion` 1.0, Surveyor 2.9.0). Trailwright can import that plan, with a conflict preview before anything is applied.
+Surveyor takes the values you type and RVTools exports (an `.xlsx` workbook or its vInfo tab as `.csv`); it has no Azure Migrate import. For Trailwright it writes **Sizing handoff for Trailwright** (Reports page), a file named `azure-local-sizing-handoff-YYYY-MM-DD.json` that holds only the sized cluster (machines, topology, cores and memory per machine, drives and volumes) in the key names of `infrastructure.yml`. The full JSON plan manifest (`schemaVersion` 1.0, Surveyor 2.9.0) and the saved project also import. Trailwright shows a conflict preview before anything is applied.
 
 ## The two tools
 
 | Tool                                                                                  | Question it answers | Input                                          | Output                                                                                                                                                                                    |
 | ------------------------------------------------------------------------------------- | ------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Azure Local Surveyor](https://azurelocal.cloud/azurelocal-surveyor/)                 | Does it fit?        | Typed values or RVTools exports                | Workload assessment, sizing, and storage design. A plan can be exported as a JSON plan manifest (`schemaVersion` 1.0). See the [Surveyor documentation](https://azurelocal.cloud/azurelocal-surveyor/docs/). |
-| [Azure Local Trailwright](https://azurelocal.cloud/azurelocal-trailwright/) | How is it built?    | A Surveyor plan or a saved Trailwright project | A recorded design, release-aware validation findings, and data-only handoffs.                                                                                                             |
+| [Azure Local Surveyor](https://azurelocal.cloud/azurelocal-surveyor/)                 | Does it fit?        | Typed values or RVTools exports                | Workload assessment, sizing, and storage design. Exports the **Sizing handoff for Trailwright** (`azure-local-sizing-handoff-*.json`) and a JSON plan manifest (`schemaVersion` 1.0). See the [Surveyor documentation](https://azurelocal.cloud/azurelocal-surveyor/docs/). |
+| [Azure Local Trailwright](https://azurelocal.cloud/azurelocal-trailwright/) | How is it built?    | A Surveyor sizing handoff or plan, or a saved Trailwright project | A recorded design, release-aware validation findings, and data-only handoffs.                                                                                                             |
 
 Trailwright records nodes and topology; identity route using Active Directory or Local Identity with Key Vault; networking including VLANs, Network ATC intents, switched or switchless storage, and an IP plan; connectivity using a direct, proxy, Arc gateway, or private path; Azure landing zone resources; storage volumes and resiliency; and operations.
 
@@ -52,12 +52,14 @@ Secrets appear only as references.
 
 1. Collect the workload inventory with RVTools, or note the values to type in.
 2. Assess and size the workloads in Surveyor, including storage design.
-3. Export the Surveyor plan as JSON.
-4. Import the plan into Trailwright. Review the conflict preview before applying anything.
+3. Export **Sizing handoff for Trailwright** from the Reports page of Surveyor.
+4. Import the handoff into Trailwright. Review the conflict preview before applying anything. The import takes the machines, topology, cores and memory per machine, drive layout and volumes; it does not take a volume's thin or fixed provisioning, and it names the machines `node1`, `node2` and so on without addresses.
 5. Record the deployment design in Trailwright. You can also start from a saved Trailwright project.
 6. Review the release-aware findings and their linked Microsoft Learn sources.
-7. Export the design handoff and other data-only outputs as needed.
-8. Follow the Implementation section of this site.
+7. Export the design handoff and `infrastructure.yml`.
+8. **Run hardware discovery before you validate the file.** A design cannot know the serial numbers and the MAC addresses of the machines' ports, and Trailwright writes no `nodes[].network_adapters` entries. [Hardware discovery](../implementation/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api.mdx) reads them from the BMCs. `Update-InfrastructureYml-FromDiscovery.ps1 -Apply` writes serial numbers and MACs only into entries that already exist and name the discovered ports (it never creates a missing parent), so add the `nodes[].network_adapters` entries (name and roles) first, then apply.
+9. Check the file with the toolkit's `Test-InfrastructureFile.ps1`. Trailwright's `landing_zone.networks` table has no `address_space` column, so a design that includes the Azure foundation fails this check until you add `address_space` to each network by hand.
+10. Follow the Implementation section of this site.
 
 ## What the tools do not do
 

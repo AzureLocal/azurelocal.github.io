@@ -1,0 +1,84 @@
+---
+title: "The Tool Chain"
+sidebar_label: "The Tool Chain"
+sidebar_position: 3.5
+description: "How the Azure Local tools hand work to each other, from planning to day 2: who writes and who reads infrastructure.yml, and which file passes between each step."
+category: "REFERENCE"
+scope: "Azure Local tool set"
+purpose: "Show the route from planning to day 2, the file each tool writes or reads, and where the chain is not connected yet"
+author: "Azure Local Cloud"
+created: 2026-11-24
+updated: 2026-11-24
+version: "1.0.0"
+---
+
+# The Tool Chain
+
+> **DOCUMENT CATEGORY**: Reference
+> **SCOPE**: Azure Local tool set, planning to day 2
+> **PURPOSE**: Show which tool writes and which tool reads each file on the route
+> **MASTER REFERENCE**: [Key Inputs and Variables](./03-key-inputs-and-variables.mdx)
+
+**Status**: Active. Checked on 2026-11-24 against the `main` branch of each tool repository and the Azure Local 2611 release (solution `12.2611.1004.9`, OS `26100.33822`).
+
+---
+
+## The route
+
+```text
+Surveyor -> Trailwright -> hardware discovery -> ZTP -> OS configuration -> pre-cluster gate -> ARM Validate -> ARM Deploy -> day 2
+                               (Beacon before ZTP; Sonar watches ZTP to Deploy; Draftsman beside the design)
+```
+
+One variable system sits under the whole route. The master registry in the toolkit (`config/variables/schema/master-registry.yaml`) defines every variable. One `infrastructure.yml` per environment holds the values, and a tool that needs a smaller input gets a template generated from the registry. No tool defines a variable of its own that the registry already has. See [Key Inputs and Variables](./03-key-inputs-and-variables.mdx).
+
+## Who writes and who reads `infrastructure.yml`
+
+| Tool | Reads | Writes | Status on `main` |
+| --- | --- | --- | --- |
+| [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) | Nothing | The **sizing handoff** `azure-local-sizing-handoff-*.json` (kind `azurelocal-sizing-handoff`, `schemaVersion` 1.0), in the key names of `infrastructure.yml` | Connected: Trailwright imports it |
+| [Trailwright](https://azurelocal.cloud/azurelocal-trailwright/) | The sizing handoff, a Surveyor plan manifest or its own project file | `infrastructure.yml` with `_metadata.schema_version: 5.6.28` | Connected, with two gaps: no MAC addresses, and `landing_zone.networks` has no `address_space`, so the toolkit validator rejects an export that includes the Azure foundation until you add it |
+| Hardware discovery (toolkit: `Invoke-HardwareDiscovery.ps1`, `Get-HardwareInventory.ps1`) | Redfish on each BMC, plus the BMC addresses in the file | `<ServiceTag>.json`, `discovery-summary.json` and `hardware-inventory-*.json` in the discovery folder | Connected through the write-back below |
+| Discovery write-back (`Update-InfrastructureYml-FromDiscovery.ps1`) | The discovery files | Serial numbers and port MAC addresses, into entries of `infrastructure.yml` that already exist. Nothing is written without `-Apply` | Connected, but it never creates a missing `nodes[].network_adapters` entry |
+| [ZTP](https://azurelocal.cloud/azurelocal-ztp/) | `infrastructure.yml` (schema 5) | `ztp-handoff.json` (Arc machine names, `arcMachineResourceId`, the adapters Azure reports) | Connected. Start from the ZTP-only example; a `-Cut ztp` file is not accepted yet |
+| OS configuration (toolkit: `Invoke-AzureLocalOsConfiguration.ps1`) | `infrastructure.yml` and the ZTP handoff | `report.json`, `summary.md` and `os-configuration-events.jsonl` | Connected |
+| Pre-cluster gate (toolkit: `Invoke-AzureLocalPreClusterVerification.ps1`) | `infrastructure.yml` and the OS configuration report | `report.json`, `summary.md` and `precluster-verification-events.jsonl` | Connected: the ARM run refuses to go on without a passing, current result |
+| ARM Validate and Deploy (toolkit: `Invoke-AzureLocalArmDeployment.ps1`) | `infrastructure.yml`, the gate result, the ZTP handoff | `arm-deployment-events.jsonl` and the run report | Connected |
+| [Sonar](https://azurelocal.cloud/azurelocal-sonar/) | `infrastructure.yml` (a reader of its own), every event file above (`deployment.events_directory`), the discovery folder and Azure | Nothing | Connected. A file cut for ZTP has no `cluster.name` or `scenario.identity`, so use the full file |
+| [Beacon](https://azurelocal.cloud/azurelocal-beacon/) | Its own validation configuration | A results file (`validation-*.json`) | **Not connected to `infrastructure.yml` yet.** Sonar shows its results file in the Discovery view |
+| [Ranger](https://azurelocal.cloud/azurelocal-ranger/) | The deployed cluster; a design record in the schema 4 layout for the comparison | `as-built-snapshot.v1` and the audit manifest | Compare only: it never writes back. It does not read a schema 5 file yet |
+| [S2D Cartographer](https://azurelocal.cloud/azurelocal-s2d-cartographer/) | A running cluster; the cluster name is a parameter | Capacity reports | **Not connected yet** |
+| [LoadTools](https://azurelocal.cloud/azurelocal-loadtools/) | Its own `config/clusters/cluster.yml` | Test results | **Not connected yet** |
+| [Draftsman](https://azurelocal.cloud/azurelocal-draftsman/) | Nothing | A cabling and VLAN diagram | A separate visual design; it does not exchange files with the others |
+
+## The files that pass between the steps
+
+| Step | File | Where it is | Who reads it next |
+| --- | --- | --- | --- |
+| Surveyor to Trailwright | `azure-local-sizing-handoff-*.json` | You download it on the Reports page | Trailwright, on **Review and export**, **Import** |
+| Trailwright to everything else | `infrastructure.yml` | You keep it outside any git repository | Every toolkit script, ZTP and Sonar |
+| Discovery to the file | discovery files | `hardware.discovery.output_directory` when the file has it, else the `discovery` folder inside `provisioning.simplified.evidence_path` | The write-back script, and Sonar's Discovery view |
+| ZTP to OS configuration | `ztp-handoff.json` | The evidence folder of the ZTP run | OS configuration, ARM Validate |
+| OS configuration to the gate | `report.json` | The OS configuration report directory | The gate (`-OsConfigurationReport`) |
+| The gate to ARM Validate | `report.json` of the gate | `deployment.pre_cluster_verification_report_directory`, else `arm-report\verification\live` next to the evidence folder | The ARM run |
+| Every run to Sonar | `os-configuration-events.jsonl`, `precluster-verification-events.jsonl`, `arm-deployment-events.jsonl` | The events folder: `deployment.events_directory`, else `%ProgramData%\AzureLocalToolkit\<cluster.name>\events`. The gate writes into its own report folder | Sonar (`-Monitor OsConfiguration`, `Verification`, `Deployment`, `Discovery`, `Update`) |
+| Day 2 as-built | `as-built-snapshot.v1` | The Ranger output folder | Ranger's `Compare-RangerDesign` |
+
+## What is not connected yet
+
+These are the places where a person still carries a value from one tool to the next.
+
+1. **MAC addresses.** A planner cannot know them. Trailwright writes no `nodes[].network_adapters`, so add the entries (name and roles) before you run the discovery write-back.
+2. **The ZTP cut.** `New-InfrastructureArtifacts.ps1 -Cut ztp` does not set `_metadata.scope` and leaves out sections ZTP requires. Start ZTP from `config/variables/examples/infrastructure.ztp.example.yml`.
+3. **Beacon, S2D Cartographer and LoadTools** read their own configuration, not `infrastructure.yml`.
+4. **Ranger** compares against a schema 4 design record, so the schema 5 file gives few or no rows.
+5. **The update events.** Sonar follows `update-events.jsonl` when it exists, but no toolkit script writes it yet, so the Update view comes from the cluster.
+6. **The Arc machine names.** `Convert-ZtpHandoffToClusterInputs.ps1` prints a block that no toolkit script reads. Copy each machine's Arc machine name into `nodes[].arc_machine_name`.
+
+## Related pages
+
+- [Key Inputs and Variables](./03-key-inputs-and-variables.mdx)
+- [Planning Tools](../planning/10-planning-tools.mdx)
+- [Hardware discovery](./04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api.mdx)
+- [ARM Validate and Deploy (with the pre-cluster gate)](../automation/03-automation-guides/arm-validate-deploy.mdx)
+- [Observability](./08-day2-operations/observability.mdx)

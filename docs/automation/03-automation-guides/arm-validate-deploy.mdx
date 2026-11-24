@@ -97,6 +97,8 @@ $gate = './scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invo
 & $gate -InfrastructureFile ./infrastructure.yml -Mode Verify -InstallEnvironmentChecker              # the Environment Checker on the nodes for this run, removed at the end
 ```
 
+`./osconfig-report` stands for the report of your OS configuration run: its report directory, its `report.json`, or a node-level report. The gate and the ARM run read the operating system names of the adapters (found by MAC address) from it, and the ARM intents use those names. The parameter is optional. Use the folder you gave `Invoke-AzureLocalOsConfiguration.ps1 -ReportDirectory`.
+
 - **Verdict.** Each check is Passed, Failed, Warning, Skipped, NotApplicable or Fixed. The verdict is **Pass** only when nothing blocks. A Skipped check (the run could not ask, for example no route to a domain controller) blocks, unless you name its id in `-AcceptSkipped`; the report records that you did.
 - **Exit codes.** 0 Plan done, or Verify with the verdict Pass; 1 the verdict Fail, or a run that failed after it started; 2 bad input; 3 a partial run (`-Category`), which never satisfies the ARM run.
 - **Changes.** Without `-Fix` and `-InstallEnvironmentChecker`, nothing is changed anywhere. `-Fix` (Verify only) only registers the mandatory resource providers and waits until they are Registered.
@@ -128,7 +130,7 @@ The gate checks SB-001 to SB-006, and all of them block:
 | SB-003 | The three files are present: `SBE_Discovery_<Vendor>.xml`, `SBE_<Vendor>_<Family>_<Version>.xml` and the payload zip |
 | SB-004 | The hashes show the files are unmodified |
 | SB-005 | The hardware model of every node is listed in the package's own supported models (a 17G Intel package fails on AX-760 nodes; the right one is `16G-45n0c-Intel` 5.0.2609.1611) |
-| SB-006 | The version is validated for the target solution version (Dell on 2610: `12.2610.1004.x`) |
+| SB-006 | The version is validated for the target solution version (the package's discovery manifest lists the target solution version, for example `12.2611.1004.9`) |
 
 The update later reuses the same share: `Add-SolutionUpdate`, then `Start-SolutionUpdate` (see [Import and rediscover updates](https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2611#step-3-import-and-rediscover-updates) on Microsoft Learn). The keys, the vendor differences and the full wording are in [the SBE package prerequisite](../../implementation/04-prerequisites-and-assumptions.mdx#sbe-package).
 
@@ -361,7 +363,7 @@ Add an entry when you understand a new failure; the run then explains it the nex
 
 | File | For |
 |------|-----|
-| `arm-deployment-events.jsonl` | One JSON line per event (`timestamp, node, stage, step, state, evidence, level, nextAction` plus data). Sonar can follow it |
+| `arm-deployment-events.jsonl` | One JSON line per event (`timestamp, node, stage, step, state, evidence, level, nextAction` plus data). Sonar can follow it. It is written to the events folder: `deployment.events_directory` of `infrastructure.yml`, else `-ReportDirectory` when given, else `%ProgramData%AzureLocalToolkit<cluster.name>events`, the folder the OS configuration run and Sonar use too |
 | `report.json` | Result, state history, every precondition, validation and deployment sections, failing steps, known issue, approval |
 | `summary.md` | The same for a person; the job summary in a pipeline |
 | `<cluster>.parameters.json` | The ARM parameter file. Secrets are null in it |

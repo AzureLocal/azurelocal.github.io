@@ -1,5 +1,5 @@
 ﻿---
-title: "Task 02: Hardware Discovery via Dell Redfish API"
+title: "Task 02: Hardware Discovery via Redfish"
 sidebar_label: "Task 02: Hardware Discovery"
 sidebar_position: 2
 description: "Discover all cluster node hardware using Dell iDRAC Redfish API, collecting hardware inventory, BIOS configuration, and iDRAC settings for use in subsequent tasks."
@@ -31,7 +31,7 @@ status: "Active"
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Task 02: Hardware Discovery via Dell Redfish API
+# Task 02: Hardware Discovery via Redfish
 
 [![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
@@ -147,13 +147,20 @@ Requires: PowerShell 7.
 #### Run
 
 ```powershell
+# Any maker, standard Redfish only: one inventory file. -WhatIf shows what it would read.
 ./Get-HardwareInventory.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
+# Dell iDRAC: writes <ServiceTag>.json per node and discovery-summary.json into .\discovery (-OutputPath)
 .\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
 
-.\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
+# Preview: shows what would change in infrastructure.yml and writes nothing
+.\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -DiscoveryPath .\discovery
+
+# Write it: saves a backup (<file>.bak.<time>), asks you to confirm (-Force skips the question) and edits only those lines
+.\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -DiscoveryPath .\discovery -Apply
 ```
 
+The update writes `nodes[].serial_number` and `nodes[].network_adapters[].mac_address` for the entry with the same name as the discovered port. It never creates a missing parent, so a file that has no `nodes[].network_adapters` entries (for example a Trailwright export) needs them added first. For a node described with management only, give `-ManagementPort` (the suggested name or the MAC) so the script knows which port is the management port. Roles, IP assignment and addresses are never written: discovery cannot read them from hardware.
 </TabItem>
 </Tabs>
 
