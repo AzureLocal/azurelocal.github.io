@@ -94,8 +94,10 @@ There is **no** `storageConfiguration` parameter and no generic `azuredeploy.jso
 The toolkit can fill both SAN templates from `infrastructure.yml`: `create-cluster-san` for Fibre Channel and `create-cluster-san-iscsi` for iSCSI (with Active Directory). For iSCSI it builds the `nodes` array from the node's Arc machine ID, address, initiator name (`nodes[].san.initiator_iqn`) and iSCSI ports. The keys `storage.san.iscsi.networks[]`, `storage.san.iscsi.jumbo_packet`, `storage.san.iscsi.chap.mutual` and `networking.cluster_network_properties` feed the network and CHAP parameters. An iSCSI SAN with local identity is refused. See [SAN values in the master file](../../../../../../automation/03-automation-guides/arm-validate-deploy.mdx#san-values-in-the-master-file).
 :::
 
-:::info Solution Builder Extension (SBE) is opt-in only
-The `sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource` and `sbeManifestCreationDate` parameters exist in the template. Per Learn, an SBE is used "only if your hardware partner provides" one. **Leave the SBE parameters empty or omitted by default.** Fill them in only when a hardware partner's SBE is explicitly in scope (Azure Local Cloud decision D46).
+:::info The SBE package is a requirement; passing it to the template is a separate choice
+Your hardware vendor's Solution Builder Extension package for your model and the Azure Local version you deploy is a **requirement**: download it before you start and make it available on a share the automation can read (`hardware.sbe.source_path`), or set `hardware.sbe.requirement` to `not_applicable` with a reason. See [the SBE package prerequisite](../../../../../04-prerequisites-and-assumptions.mdx#sbe-package).
+
+The `sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource` and `sbeManifestCreationDate` parameters exist in the template. **Leave them empty or omitted unless you deploy with an SBE** (`hardware.sbe.version` set); without them the package is imported with the first update.
 :::
 
 ---
@@ -194,5 +196,5 @@ After cluster deployment completes:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.1 | 2026-11-08 | Azure Local Cloud | Updated to Azure Local 2610: real templates (`create-cluster-san`, `create-cluster-san-iscsi`), removed non-existent `storageConfiguration`, added `infraVolLunId`, `infraPerfLunId`, iSCSI `nodes`, SBE opt-in only, Learn troubleshooting items |
+| 1.1 | 2026-11-08 | Azure Local Cloud | Updated to Azure Local 2610: real templates (`create-cluster-san`, `create-cluster-san-iscsi`), removed non-existent `storageConfiguration`, added `infraVolLunId`, `infraPerfLunId`, iSCSI `nodes`, SBE parameters empty unless an SBE is passed, Learn troubleshooting items |
 | 1.0 | 2026-05-01 | Azure Local Cloud | Initial release |
