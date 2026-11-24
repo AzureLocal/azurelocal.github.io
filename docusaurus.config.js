@@ -68,7 +68,17 @@ const config = {
             from: '/docs/implementation/04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import',
             to: '/docs/implementation/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import',
           },
-        ]),
+        ]).concat(
+          // The automated OS configuration pages moved to the Automation guide (D19).
+          [
+            'automated-os-configuration',
+            'how-the-run-works',
+            'which-method-then-os-configuration',
+          ].map((page) => ({
+            from: `/docs/implementation/04-cluster-deployment/phase-03-os-configuration/${page}`,
+            to: `/docs/automation/03-automation-guides/os-configuration/${page}`,
+          })),
+        ),
         // Docs used to be versioned (2411 and next). Keep the old URLs working.
         createRedirects(existingPath) {
           if (existingPath === '/docs' || existingPath.startsWith('/docs/')) {
