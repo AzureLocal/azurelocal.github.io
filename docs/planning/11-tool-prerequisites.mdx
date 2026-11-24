@@ -1,0 +1,55 @@
+---
+title: 'Tool Prerequisites'
+sidebar_label: 'Tool Prerequisites'
+sidebar_position: 12
+description: 'What each Azure Local Cloud tool needs before you run it: the toolkit, ZTP, Sonar, Trailwright, Loadtools, Ranger, Surveyor, Draftsman and Beacon, with a link to each tool''s full list'
+---
+
+# Tool Prerequisites
+
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
+[![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
+
+> **DOCUMENT CATEGORY**: Reference
+> **SCOPE**: The tools used with this guide
+> **PURPOSE**: Know what each tool needs on the machine that runs it, in Azure and on the network, before the day you use it
+> **MASTER REFERENCE**: Each tool's own prerequisites list, linked in the last column
+
+**Status**: Active
+
+---
+
+Every tool keeps its full prerequisites list in its own repository, and that list is the one to follow. This page is a summary to plan with. The deployment's own prerequisites (hardware, network, Azure, the SBE package) are in [Prerequisites and Assumptions](../implementation/04-prerequisites-and-assumptions.mdx).
+
+## At a glance
+
+| Tool | Runs on | Needs Azure access | Needs access to the nodes or BMCs |
+|------|---------|--------------------|-----------------------------------|
+| [Azure Local Toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | A Windows jump server (PowerShell 7), or a pipeline runner | Yes | Yes: WinRM to the nodes (or Arc Run Command), Redfish to the BMCs for discovery |
+| [ZTP](https://azurelocal.cloud/azurelocal-ztp/) | A Windows management host (PowerShell 7, elevated) | Yes | Yes: Redfish and virtual media on each BMC |
+| [Sonar](https://azurelocal.cloud/azurelocal-sonar/) | A Windows workstation or jump server (PowerShell 7.4) | Yes, Reader | Only for live logs: WinRM or SSH to the seed node |
+| [Trailwright](https://azurelocal.cloud/azurelocal-trailwright/) | A browser (Node.js 22.13 or later to build) | No | No |
+| [Loadtools](https://azurelocal.cloud/azurelocal-loadtools/) | A Windows management station (PowerShell 7.2) | When Key Vault or Azure Monitor is used | Yes: WinRM to every node, SSH to Linux test VMs |
+| [Ranger](https://azurelocal.cloud/azurelocal-ranger/) | A Windows management workstation (PowerShell 7) | Yes, Reader | Yes: WinRM to every node, Redfish only with hardware discovery |
+| [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) | A browser (Node.js 22 to build) | No | No |
+| [Draftsman](https://azurelocal.cloud/azurelocal-draftsman/) | A browser (Node.js 22 to build) | No | No |
+| [Beacon](https://azurelocal.cloud/azurelocal-beacon/) | Built on a Windows machine with the Windows ADK; boots on the node from BMC virtual media or USB | Tests the node's path to Azure | It runs on the node itself |
+
+## Per tool
+
+| Tool | What it needs | Full list |
+|------|---------------|-----------|
+| Azure Local Toolkit | PowerShell 7.0 or later (7.4 recommended); `powershell-yaml`, `Az.Accounts`, `Az.KeyVault`, `Az.Resources` and per-script Az modules; Pester 5.9.1 only for the tests; the Azure roles of each step; the SBE package on a share; every secret as a `keyvault://` reference; HTTPS to Azure, WinRM 5985/5986 to the nodes, TCP 443 to each BMC | [Toolkit README, Prerequisites](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/README.md#prerequisites) and its [access and connectivity](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/docs/access-and-connectivity.md) page |
+| ZTP | PowerShell 7.0 or later in an elevated session on Windows; `powershell-yaml`, `Az.Accounts`, `Az.Resources`, `Az.KeyVault`, `Az.ConnectedMachine`, the Azure CLI with Bicep and a toolkit clone; the `Microsoft.DeviceOnboarding/AzureLocalZTP` feature and the resource providers registered; East US for the provisioning resources (preview); an ownership voucher per machine; BMCs with Redfish and virtual media; BMC TCP 443, SMB 445 from each BMC back to the host | [ZTP prerequisites](https://azurelocal.cloud/azurelocal-ztp/prerequisites) |
+| Sonar | PowerShell 7.4 or later; `Az.Accounts` signed in with Reader on the resource group; `Az.KeyVault` only with Key Vault credentials; `Posh-SSH` only when WinRM is blocked; a browser on the same machine (the page listens on localhost) | [Sonar README, Requirements](https://github.com/AzureLocal/azurelocal-sonar/blob/main/README.md#requirements) |
+| Trailwright | A current Edge, Chrome or Firefox; Node.js 22.13 or later with npm to build; no Azure, PowerShell or credentials for Trailwright itself (the toolkit's hardware discovery needs PowerShell 7 and TCP 443 to each BMC) | [Trailwright README, Prerequisites](https://github.com/AzureLocal/azurelocal-trailwright/blob/main/README.md#prerequisites) |
+| Loadtools | A registered Azure Local cluster; PowerShell 7.2 or later on Windows; `powershell-yaml` (plus `VMFleet` for VMFleet runs); WinRM to every node; SSH and Ansible 2.14 or later for the Linux tools (fio, iPerf3, HammerDB, stress-ng); credentials from a parameter, an environment variable or Key Vault | [Loadtools prerequisites](https://azurelocal.cloud/azurelocal-loadtools/getting-started/prerequisites) |
+| Ranger | PowerShell 7.0 or later; `Az.Accounts`, `Az.Resources`, `Az.KeyVault`, `Az.ConnectedMachine`; Reader on the subscription or resource group; WinRM to every node; LDAP to a domain controller for Active Directory collection; `Test-AzureLocalRangerPrerequisites` checks the machine | [Ranger prerequisites](https://azurelocal.cloud/azurelocal-ranger/prerequisites/) |
+| Surveyor | A current desktop browser; Node.js 22 and npm to build; no Azure, PowerShell or credentials; no network calls once loaded | [Surveyor README, Prerequisites](https://github.com/AzureLocal/azurelocal-surveyor/blob/main/README.md#prerequisites) |
+| Draftsman | A current desktop browser; Node.js 22 and npm to build; no Azure, PowerShell or credentials | [Draftsman README, Prerequisites](https://github.com/AzureLocal/azurelocal-draftsman/blob/main/README.md#prerequisites) |
+| Beacon | To build: the Windows ADK and its WinPE add-on, PowerShell 7.4 or later, administrator rights; NIC drivers for your hardware (Dell AX 16G drivers are bundled) | [Beacon README, Prerequisites](https://github.com/AzureLocal/azurelocal-beacon/blob/main/README.md#prerequisites) |
+
+## Related pages
+
+- [Planning Tools](./10-planning-tools.mdx)
+- [Prerequisites and Assumptions](../implementation/04-prerequisites-and-assumptions.mdx)
