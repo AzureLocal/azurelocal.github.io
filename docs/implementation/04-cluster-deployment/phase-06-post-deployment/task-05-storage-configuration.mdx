@@ -214,7 +214,7 @@ $script = '.\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-
 | `-LogPath` | Optional. Also append the progress lines to this file. Keep it out of the repository. |
 | `-WhatIf` | Read the cluster and change nothing. |
 
-**What you see.** One line per item with an action: `Created`, `AlreadyExists`, `Set`, `AlreadySet`, `WouldCreate`, `WouldSet` or `Failed`. Run it again: volumes that exist are reported as `AlreadyExists`. Exit code 1 means a step failed or the cluster could not be reached. Exit code 2 means a value in the file is missing or not usable.
+**What you see.** One line per item with an action: `Created`, `AlreadyExists`, `Set`, `AlreadySet`, `WouldCreate`, `WouldSet`, `Verified` or `Failed`. After the creation the script checks the result and adds the rows `check storage pool ...` and `check volume ...` (they also appear under `-WhatIf` for volumes that exist): the pool is `Healthy` and `OK`, and each volume has a `Healthy` virtual disk of the size (within 1 GiB), the provisioning type and the resiliency of the file, and an `Online` cluster shared volume. A volume that exists with another size, type or resiliency is `Failed`: the script never changes it. Run it again: volumes that exist are reported as `AlreadyExists`. Exit code 1 means a step failed or the cluster could not be reached. Exit code 2 means a value in the file is missing or not usable.
 
 :::note Tiered volumes and provisioning
 For the tier-based resiliency types the provisioning type comes from the tier templates of the pool. The script sets it on the templates for this one volume and puts the old value back afterwards, also when the creation fails.
@@ -568,7 +568,7 @@ storage:
 
 Portal alternative: the Azure Local resource, **Storage paths**, **+ Create storage path**, then enter the CSV folder (for example `C:\ClusterStorage\Volume1\vms`).
 
-The script that creates the SAN volumes themselves does not exist yet. Formatting the LUNs and adding them as CSVs stays manual (Steps 1 to 3 above).
+`New-SanVolume.ps1` (in the same toolkit folder, `powershell/`) does Steps 1 to 3 from `storage.san.luns` of the file. It rescans every node, finds each LUN by `unique_id`, refuses a LUN a node does not see or a disk that is not empty, and creates the NTFS volume (64 KB units) and the CSV. It then checks the disk is `Healthy`, MPIO reports two or more paths, and the CSV is `Online` (`check LUN ...` rows). Run it with `-WhatIf` first. `Test-Cluster -Include Storage` stays manual.
 
 ### SAN Storage Validation
 
