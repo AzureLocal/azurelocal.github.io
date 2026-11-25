@@ -57,6 +57,7 @@ pipelines/gitlab/
     ├── discovery.yml               # Discovery (a pipeline of its own)
     ├── pre-cluster-verification.yml # The gate before the ARM Validate (a pipeline of its own)
     ├── arm-deployment.yml          # ARM Validate and Deploy (a pipeline of its own)
+    ├── post-deployment.yml         # Post-deployment, Phase 06 (a pipeline of its own)
     ├── validation.yml              # Validation before the handover (a pipeline of its own)
     ├── day2-check-updates.yml      # Day 2: check for updates, on a schedule (a pipeline of its own)
     ├── day2-update.yml             # Day 2: start the solution update (a pipeline of its own)
@@ -64,7 +65,7 @@ pipelines/gitlab/
     └── day2-cluster-operations.yml # Day 2: cluster operations (a pipeline of its own)
 ```
 
-`.gitlab-ci.yml` includes only the stages of the Terraform and Ansible chain and `deploy-cicd-infra.yml`. `discovery.yml`, `pre-cluster-verification.yml`, `arm-deployment.yml`, `validation.yml` and the four `day2-*.yml` files declare their own stages, so they are **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own (`include: local: pipelines/gitlab/stages/<file>`), or copy it.
+`.gitlab-ci.yml` includes only the stages of the Terraform and Ansible chain and `deploy-cicd-infra.yml`. `discovery.yml`, `pre-cluster-verification.yml`, `arm-deployment.yml`, `post-deployment.yml`, `validation.yml` and the four `day2-*.yml` files declare their own stages, so they are **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own (`include: local: pipelines/gitlab/stages/<file>`), or copy it.
 
 The reusable templates `templates/terraform-plan-apply.yml` and `templates/ansible-playbook.yml` are gone: each job is one `pwsh` block of its own.
 
@@ -218,8 +219,20 @@ The runner needs a route to the nodes (WinRM, TCP 5985 or 5986), to a domain con
 
 Project CI/CD variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (and the masked `ARM_CLIENT_SECRET` with `client_secret`), `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_ARM_DEPLOYMENT`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. Run variables (the web form offers them): `ARM_MODE` (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`; default `Plan`), `OS_CONFIGURATION_REPORT` (GitLab fetches another pipeline's artifact only through `needs: pipeline:` or `needs: project:`), `HANDOFF_FILE`, `ARM_ACKNOWLEDGE`. The Validate and Deploy jobs have a fixed upper bound of 1500 minutes (the registry maximum of `deployment.validate_timeout_minutes` and `deployment.deploy_timeout_minutes`, 1440, plus 60); the runner's own maximum job timeout must allow it. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
-## Validation and Day 2 Pipelines
+## Post-Deployment Pipeline
 
+**File**: `pipelines/gitlab/stages/post-deployment.yml`. It declares its own stages (`post-deployment-validate`, `post-deployment-plan`, `post-deployment-apply`), so include it from a pipeline file of its own, **not** from `.gitlab-ci.yml`. Run it after the ARM deployment succeeded. It runs `Invoke-AzureLocalPostDeployment.ps1`, the eleven tasks of [Phase 06](../../implementation/04-cluster-deployment/phase-06-post-deployment/index.mdx) in one run, and nothing else.
+
+| Job | Stage | Description |
+|---|---|---|
+| `post-deployment-validate` | `post-deployment-validate` | Read only. `Test-InfrastructureFile.ps1` checks the master file. Always runs |
+| `post-deployment-plan` | `post-deployment-plan` | Read only. `-Mode Plan`: every selected step with `-WhatIf`. Always runs after the validate job; the person who plays the apply job reads its report |
+| `post-deployment-apply` | `post-deployment-apply` | **Manual** job for `POST_DEPLOYMENT_MODE` `Apply`, in the protected environment in `AZL_ENVIRONMENT_OPERATIONS` (`devops.pipelines.environments.operations`). `-Mode Apply`, the same selection. It holds the `resource_group` `azure-local-day2-changes` with the update, the node maintenance and the other changes to the cluster |
+| `post-deployment-approval-environment-not-set` | `post-deployment-apply` | Runs for `Apply` while `AZL_ENVIRONMENT_OPERATIONS` is empty, instead of the apply job: it fails with a message that names the variable, and nothing is changed |
+
+Run variables (the web form offers them): `POST_DEPLOYMENT_MODE` (`Plan` or `Apply`, default `Plan`), `POST_DEPLOYMENT_ONLY` (steps or tasks, comma-separated, for example `task-05` or `storage-paths`), `POST_DEPLOYMENT_FROM` and `POST_DEPLOYMENT_TO` (a range), `POST_DEPLOYMENT_CONTINUE_ON_WARNING` (`false` or `true`). Empty selection variables run every step the file turns on. Project CI/CD variables set by Task 05: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `AZL_AUTH_METHOD` (and the masked `ARM_CLIENT_SECRET` with `client_secret`), `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OPERATIONS`, `AZL_INFRASTRUCTURE_FILE`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION`. The artifacts are `post-deployment-plan` and `post-deployment-report`. How to run one task, the SDN gate and the exit codes: [Post-Deployment Pipeline](./index.mdx#post-deployment-pipeline-phase-06).
+
+## Validation and Day 2 Pipelines
 Five pipelines run the scripts of Part 7 and Part 8 of the implementation guide, each the command an operator runs by hand and nothing else. Each file declares its own stage: include it from a pipeline file of its own (`include: local: pipelines/gitlab/stages/<file>`), **not** from `.gitlab-ci.yml`. How to run each script by hand and in a pipeline: [Run the Validation in a Pipeline](../../implementation/07-validation-handover/run-validation-in-a-pipeline.mdx) and [Run Day 2 Operations in a Pipeline](../../implementation/08-day2-operations/run-day2-in-a-pipeline.mdx).
 
 | File | Read-only job (no approval) | Manual job (approval) | Run variables |
@@ -243,7 +256,7 @@ Project CI/CD variables set by Task 05: `AZL_RUNNER_LABEL`, `AZL_ENVIRONMENT_OPE
 
 **The schedule.** GitLab keeps a schedule in the project, not in the file (**CI/CD > Schedules**). Task 05 creates or updates the schedule `Azure Local day 2: check for updates` for the default branch, with the cron expression of `devops.pipelines.schedules.check_for_updates` (UTC, default `17 4 * * *`: every day at 04:17), and deactivates it when the key is empty. The same key schedules GitHub and Azure DevOps (D126). A scheduled pipeline takes the Azure view, the default of `UPDATECHECK_SOURCE`. The job fails when the cluster needs attention (exit code 1), so GitLab's notification of a failed pipeline is the alert. The report is the artifact `day2-update-check`.
 
-**While `AZL_ENVIRONMENT_OPERATIONS` is empty, nothing is changed.** A run that would change something fails in the refusal job of its pipeline (`validation-approval-environment-not-set`, `day2-update-approval-environment-not-set`, `day2-node-maintenance-approval-environment-not-set` or `day2-cluster-operations-approval-environment-not-set`), with a message that names the variable, and nothing is sent to any machine.
+**While `AZL_ENVIRONMENT_OPERATIONS` is empty, nothing is changed.** A run that would change something fails in the refusal job of its pipeline (`post-deployment-approval-environment-not-set`, `validation-approval-environment-not-set`, `day2-update-approval-environment-not-set`, `day2-node-maintenance-approval-environment-not-set` or `day2-cluster-operations-approval-environment-not-set`), with a message that names the variable, and nothing is sent to any machine.
 
 :::warning Keep the approval environment out of reach of the run form
 A person who starts a pipeline by hand can override a variable in the run form, `AZL_ENVIRONMENT_OPERATIONS` included. Restrict who may set pipeline variables (project **Settings > CI/CD > Variables**, the minimum role to use pipeline variables) and protect the environment.

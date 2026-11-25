@@ -67,14 +67,43 @@ One pipeline per piece of the route, in the order a deployment runs them. Each e
 | OS configuration (Phase 03) | `Invoke-AzureLocalOsConfiguration.ps1` | `pipelines/github-actions/os-configuration.yml` | `pipelines/gitlab/os-configuration.gitlab-ci.yml` | `pipelines/azure-devops/os-configuration.yml` |
 | Pre-cluster verification (the gate) | `Invoke-AzureLocalPreClusterVerification.ps1` | `pipelines/github-actions/pre-cluster-verification.yml` | `pipelines/gitlab/stages/pre-cluster-verification.yml` | `pipelines/azure-devops/pre-cluster-verification.yml` |
 | ARM Validate and Deploy | `Invoke-AzureLocalArmDeployment.ps1` | `pipelines/github-actions/arm-deployment.yml` | `pipelines/gitlab/stages/arm-deployment.yml` | `pipelines/azure-devops/arm-deployment.yml` |
+| Post-deployment (Phase 06, the eleven tasks in one run) | `Invoke-AzureLocalPostDeployment.ps1` | `pipelines/github-actions/post-deployment.yml` | `pipelines/gitlab/stages/post-deployment.yml` | `pipelines/azure-devops/post-deployment.yml` |
 | Terraform foundation and Ansible configuration (the older chain) | Terraform, `ansible-playbook` | `pipelines/github-actions/azure-local-deploy.yml` | `pipelines/gitlab/.gitlab-ci.yml` with `stages/*.yml` | `pipelines/azure-devops/azure-local-deploy.yml` |
 
-On GitLab, `discovery.yml`, `pre-cluster-verification.yml` and `arm-deployment.yml` declare their own stages and are **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own. On GitHub, `pipelines/github-actions/` is the only folder of deployment workflows; copy a file to `.github/workflows/` in your repository.
+On GitLab, `discovery.yml`, `pre-cluster-verification.yml`, `arm-deployment.yml` and `post-deployment.yml` declare their own stages and are **not** included from `.gitlab-ci.yml`: include each from a pipeline file of its own. On GitHub, `pipelines/github-actions/` is the only folder of deployment workflows; copy a file to `.github/workflows/` in your repository.
 
-Order for a new instance: discovery -> provisioning (azurelocal-ztp or an ISO) -> OS configuration pipeline -> the **pre-cluster verification gate** -> ARM Validate and Deploy pipeline. The OS configuration pipeline publishes the artifact `os-configuration-report`, which the gate and the ARM pipeline take as their OS configuration report. The gate writes its result to a folder the ARM run reads (`deployment.pre_cluster_verification_report_directory`, else the environment data folder of the master file), not to the artifact, so run the ARM pipeline on the same runner or point that key at a folder both runs reach.
+Order for a new instance: discovery -> provisioning (azurelocal-ztp or an ISO) -> OS configuration pipeline -> the **pre-cluster verification gate** -> ARM Validate and Deploy pipeline -> post-deployment pipeline. The OS configuration pipeline publishes the artifact `os-configuration-report`, which the gate and the ARM pipeline take as their OS configuration report. The gate writes its result to a folder the ARM run reads (`deployment.pre_cluster_verification_report_directory`, else the environment data folder of the master file), not to the artifact, so run the ARM pipeline on the same runner or point that key at a folder both runs reach.
+
+## Post-Deployment Pipeline (Phase 06)
+
+After the ARM deployment succeeded, the [post-deployment phase](../../implementation/04-cluster-deployment/phase-06-post-deployment/index.mdx) (SDN, witness, security groups, SSH, storage, VM images, network security groups, logical networks, verification, external storage, SBE import) is one automated run: `Invoke-AzureLocalPostDeployment.ps1`. Each platform has one thin pipeline that calls that script and nothing else. The steps, their order and what makes each one apply are in the script's step table (`PostDeploymentSteps.psd1`), not in the pipeline. Every task script also runs alone.
+
+| Stage | What it does | Approval |
+|---|---|---|
+| Validate | `Test-InfrastructureFile.ps1` checks the master file against the schema. Read only | none |
+| Plan | The orchestrator with `-Mode Plan`: every selected step runs with `-WhatIf`, reads Azure and the cluster and changes nothing. Always runs, and the approver reads its summary | none |
+| Apply | The orchestrator with `-Mode Apply`, the same selection as the plan. Runs only for the mode `Apply` | the `operations` environment (`AZL_ENVIRONMENT_OPERATIONS`) |
+
+| Run choice | What it does | GitHub input | GitLab variable | Azure DevOps parameter |
+|---|---|---|---|---|
+| Mode | `Plan` (default) stops after the plan. `Apply` also runs the apply behind the approval | `mode` | `POST_DEPLOYMENT_MODE` | `mode` |
+| One task or step | Runs only these steps or tasks, comma-separated: a task such as `task-05` (both storage steps) or a step id such as `storage-paths`. Maps to `-Only` | `only` | `POST_DEPLOYMENT_ONLY` | `only` |
+| A range | The first and the last step or task, both ends included. Either may stay empty. Maps to `-From` and `-To` | `from`, `to` | `POST_DEPLOYMENT_FROM`, `POST_DEPLOYMENT_TO` | `from`, `to` |
+| Continue after warnings | Keeps going after a step that ended with warnings; by default the run stops there so a person reads them. Maps to `-ContinueOnWarning` | `continue_on_warning` | `POST_DEPLOYMENT_CONTINUE_ON_WARNING` | `continue_on_warning` |
+
+Leave the selection empty (`none` on Azure DevOps) to run every step the master file turns on. The infrastructure file is never a run choice: it is the variable `AZL_INFRASTRUCTURE_FILE` that Task 05 sets.
+
+**How to run one task.** Start the pipeline with `mode` `Plan` and `only` `task-08` (the logical networks). Read the plan summary. Start it again with `mode` `Apply` and the same `only`: the apply job waits for the approval, then runs the same step for real. After a failed run, repeat it from the step that failed with `from` set to that step, and `mode` `Apply`.
+
+- **Plan first, then the approval.** The apply job needs the plan and starts only when it succeeded. The approver reads the plan's summary: the table of what each step found, planned or skipped, and why.
+- **One approval environment, one lock.** The apply runs behind `devops.pipelines.environments.operations` (the variable `AZL_ENVIRONMENT_OPERATIONS`), the environment of every change to the cluster, so its lock keeps the SBE import and the SDN change from running beside an update or a node reboot. While the variable is empty, a run in the mode `Apply` fails in a refusal job (GitHub `approval-environment-not-set`, GitLab `post-deployment-approval-environment-not-set`) or the Azure DevOps stage `ApprovalEnvironmentNotSet`, and nothing is changed.
+- **SDN is gated by the file.** SDN enabled by Azure Arc cannot be undone. The script refuses the run (exit code 2, in the plan too) unless the master file carries `sdn.acknowledge_maintenance_window` (and `sdn.acknowledge_dns_record` with static DNS). The pipeline overrides none of it.
+- **The report.** `report.json`, `summary.md`, `run.log`, the log of each step and `post-deployment-events.jsonl` (the events of the run, the feed azurelocal-sonar reads) are published as the artifact `post-deployment-plan` (30 days) or `post-deployment-report` (90 days), also when the run failed. Exit codes: 0 every selected step passed, was planned or was skipped; 1 a step failed; 2 bad input or a refusal; 3 the run stopped after a step with warnings.
+- **The runner.** The general runner with PowerShell 7, a route to the nodes (WinRM, TCP 5985 or 5986) and to Azure (HTTPS). The jobs sign in by `devops.authentication.method` and install `powershell-yaml`, `Az` and `Az.KeyVault` at the versions of `devops.pipelines.tool_versions`. The node login is the secret reference of the master file, read from Key Vault at run time; no pipeline passes a credential.
+
+On GitLab, `post-deployment.yml` declares its own stages and is **not** included from `.gitlab-ci.yml`: include it from a pipeline file of its own.
 
 ## Validation and Day 2 Pipelines
-
 After the deployment come the validation pipeline and the four day 2 pipelines. Each exists once per platform and runs the script an operator runs by hand, and nothing else. How to run each one by hand and in a pipeline: [Run the Validation in a Pipeline](../../implementation/07-validation-handover/run-validation-in-a-pipeline.mdx) and [Run Day 2 Operations in a Pipeline](../../implementation/08-day2-operations/run-day2-in-a-pipeline.mdx).
 
 | Pipeline | Entry point | GitHub Actions | GitLab CI | Azure DevOps |

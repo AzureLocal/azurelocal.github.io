@@ -107,7 +107,7 @@ In every pipeline on this page, a stage that changes a system is a deployment jo
 | `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `devops.pipelines.environments.arm_deployment` | `arm-deployment.yml`, stage `Deploy`; `pre-cluster-verification.yml`, stage `VerifyWithChanges` |
 | `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.cicd_infra` | `cicd-infra.yml`, stage `Apply` (when `apply` is on) |
 | `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` | `azure-local-deploy.yml`, stages `DeployFoundation`, `ConfigureOnPrem` and `ConfigureOperations` |
-| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` | `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`, stage `Apply`; `validation.yml`, stage `StoragePerformance` |
+| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` | `day2-update.yml`, `day2-node-maintenance.yml`, `day2-cluster-operations.yml` and `post-deployment.yml`, stage `Apply`; `validation.yml`, stage `StoragePerformance` |
 
 The toolkit ships the variables empty, because no value of a deployment is written in the toolkit. [Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx) writes the value of each one from `infrastructure.yml` (D126); commit the file in a pull request. The names are the same as the GitHub repository variables and the GitLab project variables of the same purpose. When you copy a pipeline to your own repository, copy `approval-environments.yml` with it.
 
@@ -216,8 +216,20 @@ The service connection needs Reader for the checks (Owner or Contributor for `fi
 
 The infrastructure file, the service connection, the variable group and the pool are the variables of `pipeline-settings.yml` that Task 05 writes (D126), and the approval environment is not a run parameter either (see [3. Approval environments](#approval-environments)). Run choices: `mode` (default `Plan`), `osConfigurationPipelineId` and `osConfigurationRunId` (the OS configuration report artifact, default `none`) or `osConfigurationReport`, `handoffFile`, `resume`, `acknowledgeKnownIssues`. The Validate and Deploy jobs have a fixed upper bound of 1500 minutes (the registry maximum of `deployment.validate_timeout_minutes` and `deployment.deploy_timeout_minutes`, 1440, plus 60), because a job timeout is read before any variable exists; the script's own wait is the real limit. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
-## Validation and Day 2 Pipelines
+## Post-Deployment Pipeline
 
+**File**: `pipelines/azure-devops/post-deployment.yml`. Run it after the ARM deployment succeeded. It runs `Invoke-AzureLocalPostDeployment.ps1`, the eleven tasks of [Phase 06](../../implementation/04-cluster-deployment/phase-06-post-deployment/index.mdx) in one run, and nothing else. No trigger (`trigger: none`).
+
+| Stage | Description |
+|---|---|
+| `Validate` | Read only. `Test-InfrastructureFile.ps1` checks the master file. Always runs |
+| `Plan` | Read only. `-Mode Plan`: every selected step with `-WhatIf`. Always runs after `Validate`; its summary is what the approver reads |
+| `Apply` | Runs for the parameter `mode` `Apply`. A deployment job in the environment named by `AZL_ENVIRONMENT_OPERATIONS` of `pipelines/azure-devops/variables/approval-environments.yml` (`devops.pipelines.environments.operations`); add an Approvals check and an Exclusive lock to that environment. `-Mode Apply`, the same selection. `lockBehavior: sequential` keeps it from running beside an update or a node reboot |
+| `ApprovalEnvironmentNotSet` | Exists for `Apply` **instead of** `Apply` while `AZL_ENVIRONMENT_OPERATIONS` is empty. It fails with a message that names the file to edit. Nothing is changed |
+
+Run choices: `mode` (`Plan` or `Apply`, default `Plan`), `only` (steps or tasks, comma-separated, for example `task-05` or `storage-paths`; default `none`), `from` and `to` (a range; default `none`), `continue_on_warning` (default off). `none` for all three selection parameters runs every step the file turns on. The infrastructure file, the service connection, the variable group and the pool are the variables of `pipeline-settings.yml` that Task 05 writes (D126); the approval environment is not a run parameter (see [3. Approval environments](#approval-environments)). The artifacts are `post-deployment-plan` and `post-deployment-report`. How to run one task, the SDN gate and the exit codes: [Post-Deployment Pipeline](./index.mdx#post-deployment-pipeline-phase-06).
+
+## Validation and Day 2 Pipelines
 Five pipelines run the scripts of Part 7 and Part 8 of the implementation guide, each the command an operator runs by hand and nothing else. Create a pipeline from each existing YAML file; none has a trigger (`trigger: none`). How to run each script by hand and in a pipeline: [Run the Validation in a Pipeline](../../implementation/07-validation-handover/run-validation-in-a-pipeline.mdx) and [Run Day 2 Operations in a Pipeline](../../implementation/08-day2-operations/run-day2-in-a-pipeline.mdx).
 
 | File | Read-only stage (no approval) | Approved stage | Run choices |

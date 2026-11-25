@@ -23,7 +23,7 @@ description: "GitHub Actions workflows for Azure Local automation"
 
 GitHub Actions workflow for Azure Local deployments. This is a sample equivalent of the primary GitLab CI/CD pipeline, adapted for GitHub-hosted and self-hosted runners with environment protection rules. **No value of a deployment is written in a workflow file**: every value a job needs is a key of `infrastructure.yml`, and Task 05 of the CI/CD setup (`Set-CicdVariables.ps1`) sets it as a repository variable (`vars.NAME`; the sign-in values also per environment) ([Task 05](../01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables.mdx)). Run Task 05 again after you change the file.
 
-`pipelines/github-actions/` is the only folder of GitHub deployment workflows in the toolkit: `azure-local-deploy.yml`, `cicd-infra.yml`, `discovery.yml`, `os-configuration.yml`, `pre-cluster-verification.yml`, `arm-deployment.yml`, the validation workflow `validation.yml` and the day 2 workflows `day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`. The toolkit's own `.github/workflows` folder holds one workflow of the toolkit repository itself (`deploy-docs.yml`), not a deployment pipeline. The old archive folder of GitHub workflows is gone: its workflows were the toolkit's own repository checks, not deployment pipelines.
+`pipelines/github-actions/` is the only folder of GitHub deployment workflows in the toolkit: `azure-local-deploy.yml`, `cicd-infra.yml`, `discovery.yml`, `os-configuration.yml`, `pre-cluster-verification.yml`, `arm-deployment.yml`, `post-deployment.yml`, the validation workflow `validation.yml` and the day 2 workflows `day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`. The toolkit's own `.github/workflows` folder holds one workflow of the toolkit repository itself (`deploy-docs.yml`), not a deployment pipeline. The old archive folder of GitHub workflows is gone: its workflows were the toolkit's own repository checks, not deployment pipelines.
 
 ## Workflow
 
@@ -185,8 +185,20 @@ The identity needs Reader for the checks (Owner or Contributor for `fix`) and Ge
 
 The infrastructure file is the repository variable `AZL_INFRASTRUCTURE_FILE`, not an input. The Validate and Deploy jobs time out at `AZL_VALIDATE_JOB_TIMEOUT_MINUTES` and `AZL_DEPLOY_JOB_TIMEOUT_MINUTES` (`deployment.validate_timeout_minutes`, default 90, and `deployment.deploy_timeout_minutes`, default 360, each plus 60 minutes). Inputs: `mode` (`Plan`, `Validate`, `ValidateAndDeploy`, `Deploy`), `os_configuration_run_id` (the artifact `os-configuration-report` of the OS configuration workflow) or `os_configuration_report`, `handoff_file`, `resume`, `acknowledge_known_issues`. One ARM deployment runs at a time per repository. Details: [ARM Validate and Deploy automation](../03-automation-guides/arm-validate-deploy.mdx).
 
-## Validation and Day 2 Workflows
+## Post-Deployment Workflow
 
+**File**: `pipelines/github-actions/post-deployment.yml` (copy to `.github/workflows/post-deployment.yml`). Run it after the ARM deployment succeeded. It runs `Invoke-AzureLocalPostDeployment.ps1`, the eleven tasks of [Phase 06](../../implementation/04-cluster-deployment/phase-06-post-deployment/index.mdx) in one run, and nothing else.
+
+| Job | Description |
+|---|---|
+| `validate` | Read only. `Test-InfrastructureFile.ps1` checks the master file. Always runs |
+| `plan` | Read only. `-Mode Plan`: every selected step with `-WhatIf`. Always runs after `validate`; its job summary is what the reviewer reads |
+| `apply` | Runs for the input `mode` `Apply`, after `plan`, only after a reviewer of the environment in `AZL_ENVIRONMENT_OPERATIONS` (`devops.pipelines.environments.operations`) approves it. `-Mode Apply`, the same selection. It holds the concurrency group `azure-local-day2-changes-<infrastructure file>` with the update, the node maintenance and the other changes to the cluster |
+| `approval-environment-not-set` | Runs for `Apply` while `AZL_ENVIRONMENT_OPERATIONS` is empty, instead of `apply`: it fails with a message that names the variable, and nothing is changed |
+
+Inputs: `mode` (`Plan` or `Apply`, default `Plan`), `only` (steps or tasks, comma-separated, for example `task-05` or `storage-paths`), `from` and `to` (a range), `continue_on_warning` (default off). Empty `only`, `from` and `to` run every step the file turns on. The infrastructure file is the repository variable `AZL_INFRASTRUCTURE_FILE`, not an input. The artifacts are `post-deployment-plan` and `post-deployment-report`: `report.json`, `summary.md`, the logs and `post-deployment-events.jsonl`. The jobs sign in by `AZL_AUTH_METHOD` and read `AZL_AZ_POWERSHELL_VERSION`, `AZL_AZ_KEYVAULT_VERSION` and `AZL_POWERSHELL_YAML_VERSION`. How to run one task, the SDN gate and the exit codes: [Post-Deployment Pipeline](./index.mdx#post-deployment-pipeline-phase-06).
+
+## Validation and Day 2 Workflows
 Five workflows run the scripts of Part 7 and Part 8 of the implementation guide, each the command an operator runs by hand and nothing else. Copy each to `.github/workflows/` in your repository. How to run each script by hand and in a workflow: [Run the Validation in a Pipeline](../../implementation/07-validation-handover/run-validation-in-a-pipeline.mdx) and [Run Day 2 Operations in a Pipeline](../../implementation/08-day2-operations/run-day2-in-a-pipeline.mdx).
 
 | File | Read-only job (no approval) | Approved job | Inputs |
