@@ -80,7 +80,7 @@ The steps below are also one script. It reads everything from `infrastructure.ym
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1` | Checks, collects the initiator identifiers, runs Steps 1 to 3 and 5 (MPIO, MSDSM, the iSCSI network, iSCSI), the restarts of Step 6, the disk check of Step 7, the SAN volumes of Steps 8 and 9, `Test-Cluster -Include Storage`, and the storage paths of Step 10 |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1` | Checks, collects the initiator identifiers, runs Steps 1 to 3 and 5 (MPIO, MSDSM, the iSCSI network, iSCSI), the restarts of Step 6, the disk check of Step 7, the SAN volumes of Steps 8 and 9, `Test-Cluster -Include Storage` (only with `-ValidateStorage`), and the storage paths of Step 10 |
 
 ```powershell
 ./Invoke-ExternalStorageHybrid-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf   # plan: reads, changes nothing
@@ -97,7 +97,7 @@ The steps below are also one script. It reads everything from `infrastructure.ym
 | Initiator identifiers (Step 1.3) | Read from every node and printed, for the storage administrator of Step 4 |
 | Rolling restart (Step 6) | Only when `operations.post_cluster.allow_node_restarts` is `true` (or `-RollingRestart` for one run). Without it a node that needs a restart stops the run with exit code 1 and the message says what to set |
 | SAN volumes (Steps 8 and 9) | `storage.san.luns[]` (`name`, `unique_id`, `size_gib`); a disk is found only by `unique_id` |
-| Storage validation (Step 9) | `Test-Cluster -Include Storage` runs by default; `-SkipStorageValidation` leaves it out |
+| Storage validation (Step 9) | Opt-in: `-ValidateStorage` runs `Test-Cluster -Include Storage` on a node after the volumes exist. It is off by default because the storage tests can touch disks of a live cluster; without the switch the plan lists the step as not selected |
 | Storage paths (Step 10) | `storage.paths[]` |
 
 Step 4 (zoning, LUN masking, creating the LUNs) happens on the array and is not scripted. Exit codes: 0 done (or planned, or not hybrid), 1 a check or a step failed or a restart is needed and not approved, 2 a value in the file is missing or the design does not allow this task.
@@ -422,4 +422,4 @@ To collect SAN diagnostics (MPIO, FC and iSCSI initiators, disks, volumes, CSVs,
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-11-08 | Azure Local Cloud | Initial release, written from Learn 2610 "Connect an external storage array to Azure Local" |
-| 1.1.0 | 2026-11-24 | Azure Local Cloud | The script that runs the steps is named; Step 3 (iSCSI network) and the restarts and the storage validation are automated from infrastructure.yml |
+| 1.1.0 | 2026-11-24 | Azure Local Cloud | The script that runs the steps is named; Step 3 (iSCSI network) and the restarts are automated from infrastructure.yml; the storage validation runs with -ValidateStorage |
