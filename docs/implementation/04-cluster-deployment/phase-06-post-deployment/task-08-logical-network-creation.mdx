@@ -8,7 +8,7 @@ scope: "Create Azure Local logical networks for Arc VM network connectivity"
 purpose: "Create Azure Local logical networks for Arc VM network connectivity"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2026-11-15
+updated: 2026-11-24
 version: "1.0.0"
 tags:
   - azure-local
@@ -162,12 +162,13 @@ details, or when CLI access is unavailable.
 |---|---|
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1` | Creates the Azure Local logical networks that networking.logical_networks of infrastructure.yml lists. Supports `-WhatIf`. |
 
-Requires: PowerShell 7.
+Requires: PowerShell 7 and the Azure CLI with the `stack-hci-vm` extension. A logical network with `nsg_name` needs SDN enabled by Azure Arc (`sdn.enabled` true, [Task 01](./task-01-deploy-sdn.mdx)), the group listed in `networking.network_security_groups`, the group created by [Task 07](./task-07-configure-nsgs.mdx), and at least one rule in that group. The script checks this in Azure and stops before it creates the network when the group is missing or has no rule; run `New-NetworkSecurityGroup.ps1` again to create the rules.
 
 #### Run
 
 ```powershell
 ./New-LogicalNetwork.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-LogicalNetwork.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>
@@ -185,7 +186,7 @@ Requires: PowerShell 7.
 
 Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci-vm` (`az extension add --name stack-hci-vm`); the script does not install it.
 
-This script never reaches a node, so it cannot read the external virtual switch of the cluster the way the PowerShell script does: every enabled network must name its switch in `networking.logical_networks[].vm_switch_name`, or the script stops with exit code 2 before it sends anything. Read the name with `Get-VMSwitch -SwitchType External` on a node. A network with `nsg_name` needs the group of [Task 07](./task-07-configure-nsgs.mdx) first (the group is tied to the network when the network is created). An existing logical network is left alone: its gateway, IP pools, address space, VLAN ID and virtual switch cannot change after creation.
+This script never reaches a node, so it cannot read the external virtual switch of the cluster the way the PowerShell script does: every enabled network must name its switch in `networking.logical_networks[].vm_switch_name`, or the script stops with exit code 2 before it sends anything. Read the name with `Get-VMSwitch -SwitchType External` on a node. A network with `nsg_name` needs the group of [Task 07](./task-07-configure-nsgs.mdx) first: the group must exist in Azure and must have at least one rule (an empty group denies all inbound traffic, so the script stops instead of tying it to the network), and the group is tied to the network when the network is created. An existing logical network is left alone: its gateway, IP pools, address space, VLAN ID and virtual switch cannot change after creation.
 
 #### Run
 

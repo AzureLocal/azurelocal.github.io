@@ -8,7 +8,7 @@ scope: "Create Azure Local NSGs for logical network micro-segmentation"
 purpose: "Create Azure Local NSGs for logical network micro-segmentation before network provisioning"
 author: "Azure Local Cloud"
 created: 2025-07-25
-updated: 2026-11-15
+updated: 2026-11-24
 version: "1.0.0"
 tags:
   - azure-local
@@ -87,6 +87,38 @@ azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, az
 networking.network_security_groups[]: name
     rules[]: name, priority, direction, access, protocol, source_address_prefixes, destination_address_prefixes,
              source_port_ranges, destination_port_ranges, description
+networking.management.subnet, networking.vlans[] (name, subnet, purpose), networking.logical_networks[] (name, address_prefix)
+    only when a rule names a network instead of an address
+```
+
+### Rule addresses: literal values or a network reference
+
+`source_address_prefixes` and `destination_address_prefixes` take, per entry, a literal value (`*`, an IPv4 address such as `192.0.2.25`, or a CIDR such as `192.0.2.0/24`) or a **reference** that the script replaces with the subnet the file already holds. You write the network once, in the network variables, and the rule follows it.
+
+| Entry | Resolved from |
+|-------|---------------|
+| `management` | `networking.management.subnet` |
+| `oob`, `automation`, `compute`, `storage` | every `networking.vlans[]` entry with that `purpose` and a `subnet` (all of them when there are several) |
+| `vlan:<name>` | the `subnet` of the `networking.vlans[]` entry with that `name` |
+| `logical-network:<name>` | the `address_prefix` of the `networking.logical_networks[]` entry with that `name` |
+
+The words are matched without regard to case. Each run prints one line per reference with the address it became and the variable it came from. A reference that the file cannot answer (no such network, a network without a subnet, a name that two entries share) is never guessed: the script stops with exit code 2 and sends nothing to Azure. Literal CIDRs keep working exactly as before.
+
+```yaml
+networking:
+  management:
+    subnet: 192.0.2.0/24
+  network_security_groups:
+    - name: nsg-iic-management
+      rules:
+        - name: Allow-RDP-Management
+          priority: 100
+          direction: Inbound
+          access: Allow
+          protocol: Tcp
+          source_address_prefixes: [management]   # becomes 192.0.2.0/24
+          destination_address_prefixes: ["*"]
+          destination_port_ranges: ["3389"]
 ```
 
 ---
@@ -172,12 +204,13 @@ NSGs will be associated with logical networks in [Task 08 — Logical Network Cr
 |---|---|
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1` | Creates the Azure Local network security groups, and their rules, that networking.network_security_groups of infrastructure.yml lists. Supports `-WhatIf`. |
 
-Requires: PowerShell 7.
+Requires: PowerShell 7 and the Azure CLI with the `stack-hci-vm` extension (Microsoft documents these groups for the Azure CLI only), signed in with `az login --tenant <azure.tenant_id>`. SDN enabled by Azure Arc must be on (`sdn.enabled` true), or the script stops with exit code 2 and creates nothing. A group needs at least one rule, and the script refuses a group without rules.
 
 #### Run
 
 ```powershell
 ./New-NetworkSecurityGroup.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-NetworkSecurityGroup.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>
@@ -272,6 +305,20 @@ az stack-hci-vm network nsg rule list --nsg-name nsg-iic-management --resource-g
 
 ---
 
+### Keep the rules in line with the file, and check them
+
+Two Azure CLI scripts of the SDN operations phase work on the same `networking.network_security_groups` list and read the same address references as above:
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/azurecli/Set-NetworkSecurityGroupRule.azcli.ps1` | Keeps the rules of groups that exist in line with the file: creates a missing rule, updates a rule that differs, and removes a rule the file does not list only with `-RemoveUnlistedRules`. Never creates a group. Supports `-WhatIf`. |
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/azurecli/Test-NetworkSecurityGroupRule.azcli.ps1` | Read only. Checks that every group and rule of the file exists in Azure with the same priority, direction, access, protocol, addresses and ports. Exits with code 1 when one is missing or differs. |
+
+```powershell
+./Set-NetworkSecurityGroupRule.azcli.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./Test-NetworkSecurityGroupRule.azcli.ps1 -InfrastructureFile ./infrastructure.yml
+```
+
 ## Day 2 Operations
 
 For ongoing NSG management (adding/removing rules, associating/dissociating from networks,
@@ -290,6 +337,8 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 
 | Issue | Possible Cause | Resolution |
 |-------|----------------|------------|
+| Exit code 2: a rule address reference is not usable | `management`, `oob`, `vlan:<name>` or `logical-network:<name>` names a network that is not in the file, or has no subnet | Add the network to `networking.vlans[]`, `networking.logical_networks[]` or `networking.management.subnet`, or write a literal CIDR |
+| Exit code 2: SDN is off | `sdn.enabled` is not true | Turn SDN on first ([Task 01](./task-01-deploy-sdn.mdx)); the script does not do it |
 | Configuration fails | Incorrect parameters | Verify variable values in infrastructure.yml |
 | Permission denied | Insufficient RBAC role | Check Azure role assignments |
 

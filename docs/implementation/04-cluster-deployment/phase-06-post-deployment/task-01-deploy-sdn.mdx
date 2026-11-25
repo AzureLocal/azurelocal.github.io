@@ -8,7 +8,7 @@ scope: "Enable Software Defined Networking (SDN) on Azure Local via Arc integrat
 purpose: "Enable Software Defined Networking (SDN) on Azure Local via Arc integration — Network Controller as Failover Cluster service, enabling logical network NSG management"
 author: "Azure Local Cloud"
 created: 2025-03-25
-updated: 2025-03-25
+updated: 2026-11-24
 version: "1.0.0"
 tags:
   - azure-local
@@ -115,12 +115,21 @@ The prefix must satisfy all of the following:
 |------|-------------|
 | Length | 1–8 characters |
 | Characters | Lowercase letters, uppercase letters, digits only |
-| Hyphens | Allowed, but no two consecutive hyphens (`--`), and must not end with a hyphen |
+| Hyphens | Allowed, but no two consecutive hyphens (`--`), and must not end with a hyphen (the scripts also refuse a hyphen at the start) |
 | Uniqueness | Must be unique across all Azure Local instances on the same domain |
 
-**Example**: prefix `iic01` → NC REST URL `https://iic01-NC.azurelocal.cloud/`
+**Example**: prefix `iic01` → NC REST URL `https://iic01-NC.improbability.cloud/`
 
-If the prefix does not meet these requirements, `Add-EceFeature` will fail immediately.
+If the prefix does not meet these requirements, `Add-EceFeature` will fail immediately. The script checks the same rules first and stops with exit code 2 before it connects to anything.
+
+### Where the prefix comes from
+
+`sdn.prefix` is **optional**. The scripts take the prefix like this:
+
+1. `sdn.prefix`, when the file sets it, is used as written (it must pass the rules above).
+2. When `sdn.prefix` is not set, the prefix is **derived from `cluster.name`**: lowercase, every character that is not a letter or a digit removed (hyphens too), and the first 8 characters kept. A cluster named `iic-clus01` gives `iicclus0`.
+
+Either way the result must pass the rules above. The plan line says which variable the prefix came from: `prefix (sdn.prefix): <value>` or `prefix (derived from cluster.name): <value>`. When the derived prefix was cut to 8 characters the script warns you: another instance of the same domain whose name starts with the same 8 letters and digits would get the same prefix, so set `sdn.prefix` on one of them. `Test-ArcSdn.ps1` derives the prefix with the same rule, so both scripts always use the same one.
 
 ---
 
@@ -131,7 +140,8 @@ The script reads these keys from `infrastructure.yml` (schema 5). Every key, wit
 | Key | Required | What it does |
 |-----|----------|--------------|
 | `sdn.enabled` | Yes | Must be `true`. With `false` or missing the script does nothing and exits 0. |
-| `sdn.prefix` | Yes | The SDN prefix (at most 8 characters). |
+| `sdn.prefix` | No | The SDN prefix (at most 8 characters). When it is not set, the prefix is derived from `cluster.name` (see [Where the prefix comes from](#where-the-prefix-comes-from)). |
+| `cluster.name` | When `sdn.prefix` is not set | The source of the derived prefix. |
 | `sdn.dns_records` | Yes | `dynamic` or `static`. |
 | `sdn.acknowledge_maintenance_window` | Yes | Must be `true`. It is your answer to the maintenance window question that `Add-EceFeature` asks. |
 | `sdn.acknowledge_dns_record` | With static DNS | Your answer to the DNS record confirmation. |
@@ -140,7 +150,8 @@ The script reads these keys from `infrastructure.yml` (schema 5). Every key, wit
 | `scenario.identity`, `identity.active_directory.domain_fqdn`, `identity.local_identity.dns_zone` | Yes | The domain of the REST URL. |
 | `scenario.storage_architecture`, `scenario.storage_connectivity` | Yes | Used in the intent layout check. |
 | `nodes[].name`, `nodes[].management.ip_address` | Yes | The machine the script connects to. |
-| `identity.local_admin.username`, `identity.local_admin.password` | Yes | The account for the remoting session. The password is a secret reference, never a value. |
+| `identity.active_directory.netbios_name`, `identity.active_directory.lcm_user.username` and `.password` | With Active Directory identity | The login: the deployment user, as `NETBIOS\user`. Microsoft Learn runs `Add-EceFeature` as the deployment user. The password is a secret reference, never a value. |
+| `identity.local_admin.username`, `identity.local_admin.password` | With local identity, or when the file has no deployment user | The login when there is no deployment user. The password is a secret reference, never a value. |
 
 ---
 
@@ -158,25 +169,34 @@ The script reads these keys from `infrastructure.yml` (schema 5). Every key, wit
 
 ## Execution
 
-One script does the whole task. It connects to a machine of the instance with PowerShell remoting, checks the prerequisites that Microsoft Learn lists, and runs `Add-EceFeature -Name NC` with the prefix and the two confirmations from `infrastructure.yml`. There are no separate steps for the virtual switch name or for DNS: the script checks the DNS name itself and reports a record that points at the wrong address.
+One script turns SDN on and a second one checks the result. `Enable-ArcSdn.ps1` connects to a machine of the instance with PowerShell remoting, checks the prerequisites that Microsoft Learn lists, and runs `Add-EceFeature -Name NC` with the prefix and the two confirmations from `infrastructure.yml`. There are no separate steps for the virtual switch name or for DNS: the script checks the DNS name itself and reports a record that points at the wrong address. `Test-ArcSdn.ps1` then reads the instance and reports the [Validation Summary](#validation-summary) below as a table. It changes nothing.
 
 | Script | What it does |
 |---|---|
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1` | Turns on SDN enabled by Azure Arc (Network Controller as a Failover Cluster service) when `sdn.enabled` is true. **This cannot be undone.** |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Test-ArcSdn.ps1` | Read only. Checks the OS build, the Network Controller cluster group and its resources, and the DNS name of the Network Controller, and prints one row per check. Supports `-WhatIf` (lists the checks and connects to nothing). |
 
 Requires PowerShell 7. Run it first with `-WhatIf`: it reads the machine, checks every prerequisite, prints the plan and the warnings, and changes nothing.
 
 ```powershell
 ./Enable-ArcSdn.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-./Enable-ArcSdn.ps1 -InfrastructureFile ./infrastructure.yml
+./Enable-ArcSdn.ps1 -InfrastructureFile ./infrastructure.yml -LogPath ./out/sdn.log
+
+./Test-ArcSdn.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
-Run it again later and it reports `AlreadyEnabled`. The action plan takes up to 20 minutes. Use `-ComputerName` to pick the machine and `-Credential` to give the account; without them the script uses the first machine of `nodes[]` and `identity.local_admin`.
+Run `Enable-ArcSdn.ps1` again later and it reports `AlreadyEnabled`. The action plan takes up to 20 minutes. Use `-ComputerName` to pick the machine and `-Credential` to give the account; without them the script uses the first machine of `nodes[]`.
+
+**The login.** Without `-Credential` the scripts connect as the **deployment user**: with Active Directory identity the `identity.active_directory.lcm_user` account, written as `NETBIOS\user` (the NetBIOS name comes from `identity.active_directory.netbios_name`); with local identity, or when the file has no deployment user, the local administrator `identity.local_admin`. Microsoft Learn runs `Add-EceFeature` as the deployment user. The password is always a secret reference, read through the toolkit secret resolver; the script never prompts.
+
+**The output of the action plan.** `Add-EceFeature` prints the table of its steps and the outcome of each action. The script keeps all of that text in the file you give with `-LogPath` and shows the status of each action plan on the screen. An action plan that did not complete fails the run (exit code 1), and so does an error from `Add-EceFeature`; fix the cause and run the script again, as Learn says to run the action plan again.
 
 **What the script checks before it sends anything** (exit code 2 when a value or the design is not usable): the prefix rules above, `sdn.dns_records`, the management infrastructure pool, the intent layout, and the two acknowledgements.
 
 **What it checks on the machine** (exit code 1 when a prerequisite is not met, nothing is changed): `Add-EceFeature` exists, the OS build is 26100 or later, and the Network Controller DNS name resolves the way the DNS mode says. It cannot check the Azure Stack HCI Administrator role or that dynamic updates are on for the DNS zone. Check those yourself.
+
+**As one step of the phase.** `Invoke-AzureLocalPostDeployment.ps1` (see the [phase 06 index](./index.mdx#run-the-whole-phase-with-one-script)) runs `Enable-ArcSdn.ps1` as step `sdn` and then `Test-ArcSdn.ps1` as step `sdn-test`, so the check always follows the enablement. The orchestrator refuses the run (exit code 2, in Plan mode too) unless `sdn.acknowledge_maintenance_window` is true, and `sdn.acknowledge_dns_record` with static DNS.
 
 **Where you go next.** After SDN is enabled, create logical networks and network security groups with `New-LogicalNetwork.ps1` and `New-NetworkSecurityGroup.ps1` (Tasks 07 and 08). They read `sdn.enabled`. Nothing else comes with SDN enabled by Arc: no virtual networks, no software load balancer, no gateways.
 
@@ -184,17 +204,22 @@ Run it again later and it reports `AlreadyEnabled`. The action plan takes up to 
 
 ## Validation Summary
 
-| Check | Command | Expected Result |
-|-------|---------|-----------------|
-| OS build | `systeminfo.exe \| Select-String "OS Version"` | `10.0.26100` |
-| NC cluster group | `Get-ClusterGroup \| Where-Object Name -match "Network Controller"` | `State: Online` |
-| NC cluster resources | `Get-ClusterResource \| Where-Object ResourceType -match "Network"` | All `State: Online` |
-| DNS resolution | `Resolve-DnsName "<SDNPrefix>-NC.<domain>"` | Resolves to reserved IP |
-| Azure portal | Navigate to Azure Local instance → **Networking** | Network Controller listed |
+`Test-ArcSdn.ps1` runs the first four checks of this table on a machine of the instance and prints one row per check (`Pass`, `Fail` or `Warn`). It exits with code 0 when no check failed and 1 when one did. The Azure portal check is a view, not a command, so the script does not do it.
+
+| Check | Command | Expected Result | Checked by `Test-ArcSdn.ps1` |
+|-------|---------|-----------------|------------------------------|
+| OS build | `systeminfo.exe \| Select-String "OS Version"` | `10.0.26100` | Yes: build 26100 or later |
+| NC cluster group | `Get-ClusterGroup \| Where-Object Name -match "Network Controller"` | `State: Online` | Yes: the group exists and is `Online` (the owner node is shown) |
+| NC cluster resources | `Get-ClusterGroup <NCGroupName> \| Get-ClusterResource` | All `State: Online` | Yes: every resource of the group is `Online` |
+| DNS resolution | `Resolve-DnsName "<SDNPrefix>-NC.<domain>"` | Resolves to the reserved IP: the fifth address of `networking.management.infrastructure_pool` | Yes: `<prefix>-NC.<domain>` resolves to that address |
+| Azure portal | Navigate to Azure Local instance → **Networking** | Network Controller listed | No: look at it yourself |
+
+Example: with an infrastructure pool that starts at `192.0.2.10`, the fifth address is `192.0.2.14`, and `iic01-NC.improbability.cloud` must resolve to it.
 
 ### Validation Checklist
 
-- [ ] `sdn.enabled`, `sdn.prefix` and the two acknowledgements are set in `infrastructure.yml`
+- [ ] `sdn.enabled` and the two acknowledgements are set in `infrastructure.yml` (set `sdn.prefix` only when the prefix derived from `cluster.name` is not the one you want)
+- [ ] `Test-ArcSdn.ps1` ends with exit code 0 and no `Fail` row
 - [ ] DNS record resolves correctly (`Resolve-DnsName <SDNPrefix>-NC.<domain>`)
 - [ ] `Add-EceFeature` completes with a successful action plan outcome
 - [ ] `Get-ClusterGroup | Where-Object Name -match "Network Controller"` — state `Online`
@@ -213,8 +238,10 @@ See [Configuration Variables](#configuration-variables) above. The `sdn` keys we
 
 | Issue | Cause | Resolution |
 |-------|-------|------------|
+| The script stops with exit code 2 and says the SDN prefix is not usable | `sdn.prefix`, or the prefix derived from `cluster.name`, breaks the prefix rules (more than 8 characters, a character that is not a letter, digit or hyphen, two hyphens in a row, a hyphen at the start or the end) | Set `sdn.prefix` to a value that follows the rules; the message names the variable the prefix came from |
 | `Add-EceFeature` fails with action plan error | OS build mismatch or missing prerequisites | Verify OS build is `10.0.26100` with `systeminfo`; ensure all nodes are Arc-registered and cluster is healthy |
 | Network Controller cluster group shows `Offline` | NC VMs failed to start or quorum lost | Check NC VM status: `Get-ClusterGroup \| Where-Object Name -match "Network Controller"`; restart the group: `Start-ClusterGroup <NCGroupName>` |
+| `Test-ArcSdn.ps1` reports the DNS name as `Fail` | The name does not resolve, or it points at an address other than the fifth address of the infrastructure pool | Fix the record so it points at the fifth address of `networking.management.infrastructure_pool`; with dynamic DNS check that dynamic updates are on for the zone |
 | DNS resolution fails for NC FQDN | DNS record not created or propagated | Create the DNS record manually: `Add-DnsServerResourceRecordA -Name "<SDNPrefix>-NC" -ZoneName "<domain>" -IPv4Address "<NC-IP>"` |
 | SDN feature not visible in Azure portal | Arc resource bridge not synced | Wait 10-15 minutes for sync; verify bridge health: `az arcappliance show --resource-group <rg> --name <appliance>` |
 

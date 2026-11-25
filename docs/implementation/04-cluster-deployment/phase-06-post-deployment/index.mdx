@@ -17,7 +17,7 @@ description: "Complete post-deployment cluster configuration including managemen
 
 **Status**: Active 
 **Applies To**: Azure Local clusters following cluster deployment (Phase 05) 
-**Last Updated**: 2026-11-08
+**Last Updated**: 2026-11-24
 
 ---
 
@@ -34,6 +34,63 @@ description: "Complete post-deployment cluster configuration including managemen
 - [Task 09 – Post-Deployment Verification](./task-09-post-deployment-verification.mdx)
 - [Task 10 – Enable External Storage (Hybrid S2D plus SAN)](./task-10-enable-external-storage-hybrid.mdx) (only when a SAN is attached to a hyperconverged cluster)
 - [Task 11 – SBE Update Import](./task-11-sbe-update-import.mdx) (only when an update reports AdditionalContentRequired)
+
+---
+
+## Run the whole phase with one script
+
+`Invoke-AzureLocalPostDeployment.ps1` runs the eleven tasks of this phase together, in the order of the pages, or one task (or a range) at a time. It is the same command on a workstation and in a pipeline.
+
+| Item | Where |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1` | The orchestrator. It reads `infrastructure.yml`, decides for each step whether it applies, and calls the task script of the step with its public parameters only. No state passes from one step to the next. |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/PostDeploymentSteps.psd1` | The step table: the steps, their order, the script of each one (and its Azure CLI twin), and the keys of `infrastructure.yml` that make a step apply. A test compares it with these pages, so the pages and the orchestrator cannot drift apart. |
+
+| Parameter | What it does |
+|---|---|
+| `-Mode Plan` (default) | Passes `-WhatIf` to every step: each reads Azure and the cluster and changes nothing. |
+| `-Mode Apply` | Makes the changes. |
+| `-Only <step or task>` | Runs only the named steps. `-Only task-05` runs both storage steps. |
+| `-From <step or task>` and `-To <step or task>` | Run a range, both ends included. After a failed run, repeat it from the step that failed with `-From <step>`. |
+| `-LogPath <folder>` | Receives `run.log`, one log per step, `report.json` (what each step found) and `summary.md`. Keep it out of the repository. |
+| `-ContinueOnWarning` | Keep going after a step that ended with warnings. |
+| `-Route AzureCli` | Use the Azure CLI twin of the steps that have one (the Azure CLI tab of the page). |
+| `-ComputerName`, `-Credential` | Passed to the steps that connect to a node. Default: each script chooses, as it does alone. |
+
+```powershell
+# Plan the whole phase: reads Azure and the cluster, changes nothing
+./Invoke-AzureLocalPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -LogPath ./out -Mode Plan
+
+# Apply one task
+./Invoke-AzureLocalPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -LogPath ./out -Mode Apply -Only task-08
+
+# Apply a range, for example after a failed run
+./Invoke-AzureLocalPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -LogPath ./out -Mode Apply -From storage-paths -To logical-networks
+```
+
+### The steps
+
+| Step | Task | Runs when |
+|---|---|---|
+| `sdn` | [Task 01](./task-01-deploy-sdn.mdx), `Enable-ArcSdn.ps1` | `sdn.enabled` is true. Irreversible: the file must carry `sdn.acknowledge_maintenance_window` (and `sdn.acknowledge_dns_record` with static DNS), or the whole run is refused with exit code 2, in Plan mode too. |
+| `sdn-test` | [Task 01](./task-01-deploy-sdn.mdx), `Test-ArcSdn.ps1` | `sdn.enabled` is true. Runs after `sdn` and changes nothing. |
+| `quorum` | [Task 02](./task-02-cluster-quorum-configuration.mdx) | `cluster.witness.type` is set |
+| `security-groups` | [Task 03](./task-03-security-groups-applied-to-nodes.mdx) | a security group lists `local_groups` |
+| `ssh` | [Task 04](./task-04-ssh-connectivity-to-nodes.mdx) | always |
+| `storage-volumes` | [Task 05](./task-05-storage-configuration.mdx) | `storage.volumes` is not empty |
+| `storage-paths` | [Task 05](./task-05-storage-configuration.mdx) | `storage.paths` is not empty |
+| `vm-images` | [Task 06](./task-06-image-downloads.mdx) | `storage.vm_images` is not empty |
+| `nsgs` | [Task 07](./task-07-configure-nsgs.mdx) | `networking.network_security_groups` is not empty and `sdn.enabled` is true |
+| `logical-networks` | [Task 08](./task-08-logical-network-creation.mdx) | `networking.logical_networks` is not empty |
+| `verification` | [Task 09](./task-09-post-deployment-verification.mdx) | always (read only) |
+| `external-storage` | [Task 10](./task-10-enable-external-storage-hybrid.mdx) | `scenario.storage_architecture` is `hybrid` |
+| `sbe-import-plan` | [Task 11](./task-11-sbe-update-import.mdx) | `hardware.sbe.requirement` is not `not_applicable` and an SBE source or bundle path is set |
+
+A step that does not apply is reported as `Skipped` with the reason, never run. `operations.post_cluster.skip_steps` leaves a step out on purpose, and `operations.post_cluster.enabled` set to false makes the run do nothing.
+
+The run stops at the first failed step (the steps after it are `NotRun`) and, unless `-ContinueOnWarning` is given, after the first step that ended with warnings. It never prompts, and secrets are read only through the toolkit secret resolver. Exit codes: 0 every selected step passed, was planned or was skipped; 1 a step failed; 2 bad input, a refusal, a missing script or a cluster that does not answer; 3 the run stopped after a step with warnings.
+
+Every task script also runs alone with its own parameters (`-InfrastructureFile`, `-WhatIf`, `-LogPath`, `-ComputerName`, `-Credential`), exactly as the pages describe.
 
 ---
 
