@@ -5,11 +5,11 @@ sidebar_position: 11
 description: "Import the OEM Solution Builder Extension files into the cluster's update service when an update reports AdditionalContentRequired"
 category: "Runbook"
 scope: "Import the OEM Solution Builder Extension (SBE) package into the update service of a deployed cluster"
-purpose: "List the SBE files on the share and the commands that import them, then import them on a cluster machine"
+purpose: "List the SBE files on the share and the commands that import them, or import them on a cluster machine"
 author: "Azure Local Cloud"
 created: 2026-11-15
-updated: 2026-11-15
-version: "1.0.0"
+updated: 2026-11-24
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -94,27 +94,42 @@ An update that reports `Invalid` does not match the hardware model or the family
 
 ### PowerShell
 
-> **When to use**: You want the files and the exact commands for your package listed from `infrastructure.yml`
+> **When to use**: You want the files and the exact commands listed from `infrastructure.yml`, or you want the script to do the import
 
-The script reads the share (a read only list and the discovery manifest, no copy, no hash), chooses the package the same way the pre-cluster verification does, and prints the files and the commands. It runs nothing: you run the commands on a cluster machine, signed in as the deployment user. It changes nothing on the share, the nodes or in Azure, and it does not sign in to Azure.
+Without `-Execute` (or with `-WhatIf`) the script reads the share (a read only list and the discovery manifest, no copy, no hash), chooses the package the same way the pre-cluster verification does, and prints the files and the commands. It runs nothing, changes nothing on the share, the nodes or in Azure, and does not sign in to Azure.
+
+With `-Execute` it runs the steps of the other tab on one machine of the cluster, as the deployment user, and never prompts:
+
+1. Reads `Get-SolutionUpdate`. The import is for an update that reports `AdditionalContentRequired`; when none does, the script says nothing is needed and stops with exit code 0.
+2. Copies the three files into the import folder (a file that is already there with the same size is not copied again). With `hardware.sbe.source_username` the machine maps the share with that account; without it the machine reads the share as the deployment user.
+3. Checks the SHA256 of the zip against the `PackageHash` of the discovery manifest. A difference stops the script before anything is imported.
+4. Runs `Add-SolutionUpdate -SourceFolder` on the import folder.
+5. Reads `Get-SolutionUpdate` until the update is `Ready` (discovery is asynchronous). `Invalid`, or no `Ready` within `-MaxWaitMinutes`, ends with exit code 1.
+
+The import does not install the update: [start the update](../../08-day2-operations/task-02-start-solution-update.mdx) is its own task.
 
 | Script | What it does |
 |---|---|
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1` | Lists the SBE files on the share and prints the import commands. Executes nothing. |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1` | Lists the SBE files on the share and prints the import commands; with `-Execute` it also does the import |
 
 | Parameter | Meaning |
 |-----------|---------|
 | `-InfrastructureFile` | The `infrastructure.yml` (schema 5). Required |
-| `-ImportFolder` | The folder on the infrastructure volume the commands copy the files into. Default: the folder named in the other tab |
+| `-Execute` | Run the import. Without it, or with `-WhatIf`, nothing is run |
+| `-ComputerName`, `-Credential` | With `-Execute`: the cluster machine (default: the first node of `nodes[]` that answers) and the account (default: `identity.active_directory.lcm_user` of the file) |
+| `-ImportFolder` | The folder on the infrastructure volume the files are copied into. Default: the folder named in the other tab |
+| `-MaxWaitMinutes`, `-PollSeconds` | With `-Execute`: how long (default 30 minutes) and how often (default 30 seconds) to read the update state after the import |
 | `-OutputPath` | Also write the plan as JSON to this file. Keep it out of the repository |
+| `-LogPath` | Also append the progress lines to this file |
+
+Exit codes: 0 the plan was printed, the import is done, or nothing is needed; 1 the share could not be read, a step failed, the hash differs, the update is `Invalid`, or the wait ran out; 2 a value in the file is missing or not usable (no source path, no single package, a file missing from the package, no login).
 
 #### Run
 
 ```powershell
-./Get-AzureLocalSbeImportPlan.ps1 -InfrastructureFile ./infrastructure.yml
+./Get-AzureLocalSbeImportPlan.ps1 -InfrastructureFile ./infrastructure.yml            # print the plan
+./Get-AzureLocalSbeImportPlan.ps1 -InfrastructureFile ./infrastructure.yml -Execute   # do the import
 ```
-
-Copy the printed commands to a cluster machine and run them there.
 
 </TabItem>
 </Tabs>
@@ -126,7 +141,8 @@ Copy the printed commands to a cluster machine and run them there.
 | Issue | Cause | Resolution |
 |-------|-------|------------|
 | The script says `hardware.sbe.source_path` is empty | No share is set | Download the vendor package and set `hardware.sbe.source_path` |
-| The script cannot read the share | The account running the script has no read access | Set `hardware.sbe.source_username` and `hardware.sbe.source_password`, or run it as an account that can read the share |
+| The script stops with `Nothing was imported` and a hash | The zip on the machine differs from the `PackageHash` of the discovery manifest | Download the package again from the vendor |
+| The script cannot read the share (or, with `-Execute`, the machine cannot copy from it) | The account has no read access | Set `hardware.sbe.source_username` and `hardware.sbe.source_password`, or share the folder with the account |
 | The script cannot choose a single package | More than one package is on the share | Set `hardware.sbe.family` and `hardware.sbe.version` |
 | The script says a file is missing | The package on the share is incomplete | Download the package again from the vendor: it needs one discovery manifest, the inventory file and the zip |
 | The update state is `Invalid` | The package does not match the hardware model or family | Import only the SBE family that matches the nodes |
@@ -146,3 +162,4 @@ Copy the printed commands to a cluster machine and run them there.
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-11-15 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-24 | Azure Local Cloud | The script imports the files with -Execute (copy, hash check, Add-SolutionUpdate, wait for Ready), with documented exit codes |

@@ -8,8 +8,8 @@ scope: "Day-2 attachment of an external SAN to a hyperconverged Azure Local clus
 purpose: "Enable MPIO, register the array, connect FC or iSCSI, present LUNs, create SAN CSVs and register storage paths"
 author: "Azure Local Cloud"
 created: 2026-11-08
-updated: 2026-11-08
-version: "1.0.0"
+updated: 2026-11-24
+version: "1.1.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -73,6 +73,34 @@ Hybrid is always a **day-2 operation**: you deploy a standard hyperconverged clu
 :::warning Rolling reboots
 MPIO policy changes don't take effect until after a reboot. Reboot the nodes one at a time (a rolling reboot) so the cluster stays up. Check for any running update before you start.
 :::
+
+## Run the steps with the script
+
+The steps below are also one script. It reads everything from `infrastructure.yml`, checks its own preconditions, never asks, and runs alone with only the file (and `-WhatIf`, `-LogPath`, `-ComputerName`, `-Credential`). It is step `external-storage` of [`Invoke-AzureLocalPostDeployment.ps1`](./index.mdx), which runs it only when `scenario.storage_architecture` is `hybrid`.
+
+| Script | What it does |
+|---|---|
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1` | Checks, collects the initiator identifiers, runs Steps 1 to 3 and 5 (MPIO, MSDSM, the iSCSI network, iSCSI), the restarts of Step 6, the disk check of Step 7, the SAN volumes of Steps 8 and 9, `Test-Cluster -Include Storage`, and the storage paths of Step 10 |
+
+```powershell
+./Invoke-ExternalStorageHybrid-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf   # plan: reads, changes nothing
+./Invoke-ExternalStorageHybrid-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml           # do it
+```
+
+| What | Where it comes from |
+|---|---|
+| Hybrid only, not rack aware | `scenario.storage_architecture` is `hybrid` (`s2d`: nothing to do; `san`: the SAN-only runbooks) and `scenario.topology` is not `rack_aware`; otherwise exit code 2 |
+| Version 2604 or later, no update running | Read from a node (`Get-SolutionUpdateEnvironment`, `Get-SolutionUpdate`); otherwise exit code 1 and nothing is changed |
+| MPIO, the array in MSDSM, policy, vendor timers | `storage.san.type`, `storage.san.array.vendor` and `model`, and the vendor table `config/san/msdsm-vendors.json` (Step 2) |
+| iSCSI network (Step 3) | `nodes[].network_adapters` with role `iscsi:a` or `iscsi:b` (the address and prefix, no gateway; `vlan_id` and `vlan_mode`), `storage.san.iscsi.networks[]` (`vlan_id`, `subnet`, `next_hop`), `storage.san.iscsi.jumbo_packet` (the frame size; absent: left alone) and `storage.san.iscsi.qos.enabled` (the optional QoS of Step 3.5, default off). A port that is in a Network ATC intent is reported as Blocked and not touched |
+| Portals and sessions (Step 5) | `storage.san.iscsi.targets[]` and the ports above |
+| Initiator identifiers (Step 1.3) | Read from every node and printed, for the storage administrator of Step 4 |
+| Rolling restart (Step 6) | Only when `operations.post_cluster.allow_node_restarts` is `true` (or `-RollingRestart` for one run). Without it a node that needs a restart stops the run with exit code 1 and the message says what to set |
+| SAN volumes (Steps 8 and 9) | `storage.san.luns[]` (`name`, `unique_id`, `size_gib`); a disk is found only by `unique_id` |
+| Storage validation (Step 9) | `Test-Cluster -Include Storage` runs by default; `-SkipStorageValidation` leaves it out |
+| Storage paths (Step 10) | `storage.paths[]` |
+
+Step 4 (zoning, LUN masking, creating the LUNs) happens on the array and is not scripted. Exit codes: 0 done (or planned, or not hybrid), 1 a check or a step failed or a restart is needed and not approved, 2 a value in the file is missing or the design does not allow this task.
 
 ---
 
@@ -394,3 +422,4 @@ To collect SAN diagnostics (MPIO, FC and iSCSI initiators, disks, volumes, CSVs,
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2026-11-08 | Azure Local Cloud | Initial release, written from Learn 2610 "Connect an external storage array to Azure Local" |
+| 1.1.0 | 2026-11-24 | Azure Local Cloud | The script that runs the steps is named; Step 3 (iSCSI network) and the restarts and the storage validation are automated from infrastructure.yml |
