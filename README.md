@@ -18,7 +18,7 @@ Community documentation for [Azure Local](https://learn.microsoft.com/en-us/azur
 
 ## Versioning
 
-The docs are a single set published at `/docs/`. They track the current Azure Local release train (12.2609) and the release notes on Microsoft Learn. Old `/docs/2411/` and `/docs/next/` URLs redirect to the matching page under `/docs/`.
+The docs are a single set published at `/docs/`. They track the current Azure Local release train (12.2611) and the release notes on Microsoft Learn. Old `/docs/2411/` and `/docs/next/` URLs redirect to the matching page under `/docs/`.
 
 ## Local Development
 
