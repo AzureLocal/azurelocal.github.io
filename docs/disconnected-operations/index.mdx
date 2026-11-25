@@ -1,24 +1,79 @@
 ---
-title: "Disconnected Operations"
+title: "Disconnected Operations on Azure Local"
 sidebar_label: "Overview"
 sidebar_position: 1
-description: "Running Azure Local with limited or no connectivity to Azure"
+description: "Deploy and manage Azure Local without a connection to the Azure public cloud, by using a local control plane. What it is, what it supports, the two connectivity options, and a map of this section."
 ---
 
-# Disconnected Operations
+# Disconnected Operations on Azure Local
 
-Disconnected operations let you deploy and manage Azure Local instances without a connection to the Azure public cloud. You run a local control plane that gives you a familiar Azure portal, Azure Resource Manager, and Azure CLI experience, with data, operations, and control inside your own boundary.
+Disconnected operations let you deploy and manage Azure Local instances without a connection to the Azure public cloud. A local control plane gives you a familiar Azure portal and Azure CLI experience for virtual machines and containerized applications, with data, operations and control inside your own boundary.
 
-## In this section
+:::note Not the same as a short loss of connectivity
+A standard, cloud-connected Azure Local cluster keeps running workloads when the link to Azure is down for a while. Disconnected operations is a different deployment model with its own local control plane (a virtual appliance on a dedicated management cluster), its own hardware requirements and an approval process. Plan it from the start. Microsoft Learn states that the minimum hardware to deploy and operate Azure Local this way is higher than for a standard deployment, because you host a local control plane.
+:::
 
-| Page | What it covers |
-|------|----------------|
+## Why use it
+
+Microsoft Learn lists three scenarios:
+
+- **Sovereign requirements and compliance.** In sectors such as government, healthcare and finance, data residency and sovereignty requirements can be hard to meet with public sovereign cloud controls. Running disconnected keeps data, operations and control inside your organization's boundary.
+- **Remote or isolated locations.** Where network infrastructure is limited, such as oil rigs and manufacturing sites, you can use Azure Arc services and run workloads without relying on internet connectivity.
+- **Security.** Not exposing systems to external networks reduces the attack surface for industries with strict security requirements.
+
+## What the local control plane supports
+
+| Service | What you get |
+|---------|--------------|
+| Azure portal | An Azure portal experience similar to Azure public |
+| Azure Resource Manager | Subscriptions, resource groups, ARM templates and CLI |
+| Role-based access control | RBAC for subscriptions and resource groups |
+| Managed identity | System-assigned managed identity for resource types that support it |
+| Arc-enabled servers | Manage VM guests for Azure Local VMs |
+| Azure Local VMs | Create and manage Windows or Linux VMs |
+| Arc-enabled Kubernetes clusters | Connect and manage CNCF Kubernetes clusters deployed on Azure Local VMs |
+| AKS on Azure Local | Set up and manage AKS clusters. See [AKS on Azure Local](../azure-services/aks-on-azure-local.md) |
+| Azure Local device management | Create and manage instances, including adding and removing nodes |
+| Azure Container Registry | Create and manage container registries |
+| Azure Key Vault | Create and manage key vaults |
+| Azure Policy | Enforce standards when you create new resources |
+
+Only these services are available in the local control plane. Check the [limits](./limits.mdx) page before you design a workload around a service that is not listed.
+
+## Two connectivity options
+
+When you create the virtual appliance resource in Azure, you choose how the appliance is deployed.
+
+| Option | Behavior |
+|--------|----------|
+| **Limited connectivity** | The appliance can optionally connect to Azure, which simplifies support and updating the appliance. All Azure Local node traffic and Azure Arc agent traffic stays on your network. |
+| **Air-gapped** | The appliance never connects to Azure. You import and export data in both directions, such as update packages and support logs, across your datacenter boundary yourself. |
+
+Learn notes that both modes let you operate the control plane and the surrounding Azure Local nodes fully disconnected.
+
+## How the section is organized
+
+| Page | Use it for |
+|------|------------|
 | [Disconnected Operations on Azure Local](./disconnected-operations-on-azure-local.md) | What it enables, connectivity options, eligibility, planning topics, deployment flow, and limitations |
+| [Requirements](./requirements.mdx) | Eligibility, the dedicated management cluster, network, identity, PKI and security planning |
+| [Deployment](./deployment.mdx) | Acquire the appliance, prepare the nodes, deploy the control plane, register, then deploy workload clusters |
+| [Operations](./operations.mdx) | Updates, monitoring, logs, BitLocker keys, syslog and the services you run day to day |
+| [Limits and known issues](./limits.mdx) | Documented limitations and where to find the current known issues |
+| [Microsoft Learn links](./microsoft-learn-links.mdx) | Every Learn article this section is based on |
 
-## Related pages
+## Where this fits in the rest of the site
 
-- [Update management and Solution Builder Extension](../operations/update-management-and-sbe.mdx)
-- [Rack aware clustering](../planning/09-rack-aware-clustering.mdx)
-- [AKS on Azure Local](../azure-services/aks-on-azure-local.md)
-- [SQL Managed Instance on Azure Local](../azure-services/sql-managed-instance-on-azure-local.md)
-- Repository: [azurelocal-disconnected](https://github.com/AzureLocal/azurelocal-disconnected)
+- Standard deployments follow the [Implementation Guide](../implementation/index.mdx). Disconnected operations adds the control plane first, then deploys Azure Local instances against it.
+- Rack aware workload clusters in disconnected operations need a file share witness and a dedicated storage network intent. See [Rack aware clustering](../planning/09-rack-aware-clustering.mdx).
+- Update planning for the host, the SBE and the control plane is covered in [Update management and Solution Builder Extension](../operations/update-management-and-sbe.mdx).
+- Disconnected operations is licensed per physical core on an annual term. See [Cost management](../operations/cost-management-on-azure-local.md).
+- Repository: [azurelocal-disconnected](https://github.com/AzureLocal/azurelocal-disconnected).
+
+## Sources
+
+- [Disconnected operations for Azure Local (Microsoft Learn)](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-overview?view=azloc-2610)
+- [Acquire disconnected operations for Azure Local (Microsoft Learn)](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-acquire?view=azloc-2610)
+- [Plan your network for disconnected operations (Microsoft Learn)](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-network?view=azloc-2610)
+
+> Content checked against Microsoft Learn on 2026-11-07 (documentation view azloc-2610).
