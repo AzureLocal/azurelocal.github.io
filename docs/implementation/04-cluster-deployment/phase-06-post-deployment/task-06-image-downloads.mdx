@@ -9,7 +9,7 @@ purpose: "Download Azure Marketplace VM images to the Azure Local cluster for Ar
 author: "Azure Local Cloud"
 created: 2025-03-25
 updated: 2026-11-24
-version: "1.1.0"
+version: "1.2.0"
 tags:
   - azure-local
   - cluster-deployment
@@ -61,7 +61,7 @@ appendix or in the custom image management section of this documentation.
 The script reads these keys from `infrastructure.yml` (schema 5). Each key, with its type, default and example, is in the [variables reference](https://github.com/AzureLocal/azurelocal-toolkit/blob/main/config/variables/docs/VARIABLES.md).
 
 ```text
-azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags
+azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags, cluster.name (the instance whose Edge Marketplace gives a latest version)
 storage.paths[]: name
 storage.vm_images[]: name, os_type, publisher, offer, sku, version, storage_path
 ```
@@ -133,12 +133,20 @@ or when CLI access is unavailable.
 |---|---|
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-VmImage.ps1` | Downloads the Azure Marketplace images that storage.vm_images of infrastructure.yml lists to Azure Local, as Azure Local VM images. Supports `-WhatIf`. |
 
-Requires: PowerShell 7.
+Requires: PowerShell 7, the Az modules Az.Accounts, Az.Resources and Az.StackHCIVM, signed in with `Connect-AzAccount -Tenant <azure.tenant_id>`. It takes `-InfrastructureFile`, `-WhatIf`, `-LogPath`, `-MaxWaitMinutes` and `-PollSeconds`. Exit 0: every image exists (created now, already there, still downloading, planned under `-WhatIf`) or the file lists none. Exit 1: an Azure call or a precondition failed, or an image is `Failed`. Exit 2: a value in the file is missing or not usable (nothing is sent to Azure).
 
+**Waiting for the download.** `New-AzStackHCIVMImage` returns when Azure has accepted the image. While the image is not `Succeeded` the script reads it again every `-PollSeconds` (default 30), prints the state and the percent, and waits up to `-MaxWaitMinutes` (default 60, the time after which this page calls a download stuck; 0 does not wait). An image that an earlier run left downloading gets the same wait. Past the limit the image is reported as `InProgress` (exit 0, not a failure) and the next run reads it again; an image that ends `Failed` is reported with the error Azure gives (exit 1). `-WhatIf` waits for nothing. The images are created one after the other.
+
+**Version.** `latest` is resolved from the Edge Marketplace of the instance (the newest version it offers), not left to Azure, because Azure takes the newest version of the Azure Marketplace, which can be newer than the Edge Marketplace has. The script reports the version it got and never writes it to the file. Pin `storage.vm_images[].version` when you need a fixed version.
+
+**Idempotence.** An image that exists and has `Succeeded` is reported as `AlreadyExists` and left alone. The script reports, without changing anything, when its publisher, offer, SKU, OS type, version or tags differ from the file; a newer Marketplace image is a new image with a new name. The tags are `tags` of the file.
+
+Prerequisite from Learn that the script does not check: the **Azure Connected Machine Resource Manager** role is assigned to the `Microsoft.AzureStackHCI` resource provider app on the resource group ([Learn](https://learn.microsoft.com/en-us/azure/azure-local/manage/virtual-machine-image-azure-marketplace?view=azloc-2611)). The script does check that the `Microsoft.EdgeMarketplace` provider is registered.
 #### Run
 
 ```powershell
 ./New-VmImage.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+./New-VmImage.ps1 -InfrastructureFile ./infrastructure.yml
 ```
 
 </TabItem>
@@ -156,7 +164,7 @@ Requires: PowerShell 7.
 
 Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extension `stack-hci-vm` (`az extension add --name stack-hci-vm`); the script does not install it.
 
-Only Azure Marketplace images are supported. The images are created one after the other and each command waits until its image is downloaded. `latest` takes the newest version at creation, and the script reports the version it got without writing it to the file. An image that exists is left alone; an image that failed is reported as `Failed` and is not deleted or recreated (delete it with `az stack-hci-vm image delete`, then run the script again). The `Microsoft.EdgeMarketplace` provider must be registered in the subscription (the script checks this).
+Only Azure Marketplace images are supported. The images are created one after the other. The script waits for each download the way the PowerShell tab describes (`-MaxWaitMinutes`, default 60, and `-PollSeconds`, default 30; past the limit the image is `InProgress`, not a failure). `latest` is the newest version of the Edge Marketplace of the instance, and the script reports the version it got without writing it to the file. An image that exists is left alone, and a difference from the file (including the tags) is reported; an image that failed is reported as `Failed` and is not deleted or recreated (delete it with `az stack-hci-vm image delete`, then run the script again). The `Microsoft.EdgeMarketplace` provider must be registered in the subscription (the script checks this).
 
 #### Run
 
@@ -240,4 +248,5 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.2.0 | 2026-11-24 | Azure Local Cloud | Both scripts wait for the download (`-MaxWaitMinutes`, `-PollSeconds`), report tag differences, and read `latest` from the Edge Marketplace of the instance |
 | 1.1.0 | 2026-11-24 | Azure Local Cloud | The offer of Windows Server 2022 Datacenter: Azure Edition on the Edge Marketplace of an instance is windowsserver2022; Learn's table (https://learn.microsoft.com/en-us/azure/azure-local/manage/virtual-machine-image-azure-marketplace?view=azloc-2611) lists windowsserver. The key is storage.vm_images[], not marketplace_images |

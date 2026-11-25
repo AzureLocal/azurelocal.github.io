@@ -147,12 +147,13 @@ logical networks show provisioning state **Succeeded** and VLAN IDs match the si
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1` | The whole verification in one run, read only. It runs `Invoke-VerifyPostDeployment.ps1` (below), then the Azure CLI script of this task, then two checks that neither covers: the solution health summary and, with an external SAN, the SAN disks. Each step runs even when an earlier one failed, so one run shows every problem. Supports `-WhatIf`. |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | Verifies a deployed Azure Local instance against `infrastructure.yml`. Read only. Supports `-WhatIf` (lists the checks and runs none). |
 
-`Invoke-PostDeploymentVerification-Orchestrated.ps1` runs four steps:
+`Invoke-PostDeploymentVerification-Orchestrated.ps1` runs five steps:
 
 1. `Invoke-VerifyPostDeployment.ps1` (the eight checks below).
 2. `azurecli/Invoke-VerifyPostDeployment.azcli.ps1` (the Azure CLI tab). `-SkipAzure` leaves this step out, for a host without the Azure CLI.
-3. Solution health on one node: `Get-SolutionHealthSummary` (Azure Local 2610 and later; a status of FAILED fails, WARNING warns, SUCCESS passes), else `Get-SolutionUpdateEnvironment`. See Learn: [Use the Get-SolutionHealthSummary command](https://learn.microsoft.com/en-us/azure/azure-local/manage/use-get-solution-health-summary-powershell-command?view=azloc-2611).
-4. Only when `scenario.storage_architecture` is `san` or `hybrid`, on every node: every Fibre Channel or iSCSI disk is Healthy, every MPIO disk has at least two paths, and the set of SAN disk unique IDs is the same on every node.
+3. SDN, only when `sdn.enabled` is true: `Test-ArcSdn.ps1` of [Task 01](./task-01-deploy-sdn.mdx) (the Network Controller group and its resources are Online and the REST name resolves). With `sdn.enabled` not true the step is reported as Skipped with the reason `sdn.enabled is not true`.
+4. Solution health on one node: `Get-SolutionHealthSummary` (Azure Local 2610 and later; a status of FAILED fails, WARNING warns, SUCCESS passes), else `Get-SolutionUpdateEnvironment`. See Learn: [Use the Get-SolutionHealthSummary command](https://learn.microsoft.com/en-us/azure/azure-local/manage/use-get-solution-health-summary-powershell-command?view=azloc-2611).
+5. Only when `scenario.storage_architecture` is `san` or `hybrid`, on every node: every Fibre Channel or iSCSI disk is Healthy, every MPIO disk has at least two paths, and the set of SAN disk unique IDs is the same on every node. With `hybrid` the array of `storage.san.array` is also registered in MSDSM (its vendor and product IDs are in `Get-MSDSMSupportedHw`) and the load balance policy is `RR`, as [Task 10](./task-10-enable-external-storage-hybrid.mdx) sets it.
 
 It takes `-InfrastructureFile` (required), `-Credential`, `-TargetNode`, `-SkipAzure` and `-LogPath`. The login is `-Credential`, else the account the file names (the LCM user with Active Directory, the local administrator with local identity). Exit 0: every step passed (warnings allowed) or the checks were listed under `-WhatIf`. Exit 1: a step or a check failed. Exit 2: a value in the file is missing or there is no login.
 
@@ -163,9 +164,9 @@ It takes `-InfrastructureFile` (required), `-Credential`, `-TargetNode`, `-SkipA
 3. **Quorum**: a quorum type is set and the quorum state is Normal. The deployment creates the witness from `cluster.witness`.
 4. **Security groups**: each node has at least one group in Administrators and in Remote Management Users (from `identity.active_directory.security_groups[].local_groups`). Active Directory only.
 5. **SSH**: sshd runs on each node and TCP 22 answers.
-6. **Storage**: a non-primordial storage pool is healthy, at least one cluster shared volume exists and every one is Online.
+6. **Storage**: a non-primordial storage pool is healthy, at least one cluster shared volume exists and every one is Online, every virtual disk is Healthy, every volume of `storage.volumes[]` (Storage Spaces Direct) and every LUN of `storage.san.luns[]` (SAN, with `san` or `hybrid`) is an Online cluster shared volume of that name.
 7. **VM images in Azure**: the number of images that Succeeded is not below the number in `storage.vm_images[]`.
-8. **Logical networks in Azure**: the number that Succeeded is not below the number in `networking.logical_networks[]`.
+8. **Logical networks in Azure**: the number that Succeeded is not below the number in `networking.logical_networks[]`, and each network of the file that gives a `vlan_id` exists in Azure with that VLAN ID.
 
 The login is `-Credential`, else the account the file names: the LCM user (`identity.active_directory.lcm_user`) with Active Directory, the local administrator (`identity.local_admin`) with local identity. The password is a secret reference. The script never prompts: with neither it stops with exit code 2. Exit codes: 0 every check passed; 1 a check failed; 2 a value in the file is missing or there is no login.
 
@@ -201,7 +202,7 @@ Requires: PowerShell 7; modules FailoverClusters, Storage; the Azure CLI, signed
 
 Requires: PowerShell 7 and the Azure CLI, signed in with `az login --tenant <azure.tenant_id>`. Needs the Azure CLI extensions `connectedmachine`, `stack-hci`, `stack-hci-vm`, `customlocation` (`az extension add --name connectedmachine`, `az extension add --name stack-hci`, `az extension add --name stack-hci-vm`, `az extension add --name customlocation`); the script does not install them.
 
-It checks the Arc machines and their extensions (including `WindowsOpenSSH`), the instance, the custom location, the cloud witness account, and that the numbers of storage paths, VM images, logical networks and network security groups in Azure are not below the numbers in the file. It does not reach the nodes: the cluster state, domain membership, quorum, local groups, sshd, storage pool and cluster shared volumes are checked by the PowerShell script. `-TargetNode` limits the machine checks.
+It checks the Arc machines and their extensions (including `WindowsOpenSSH`), the instance, the custom location, the cloud witness account, and that the numbers of storage paths, VM images and logical networks that Succeeded in Azure are not below the numbers in the file. With `sdn.enabled` true it also checks that the number of network security groups is not below `networking.network_security_groups[]`; otherwise that check is Skipped with the reason `sdn.enabled is not true`. It does not reach the nodes: the cluster state, domain membership, quorum, local groups, sshd, storage pool and cluster shared volumes are checked by the PowerShell script. `-TargetNode` limits the machine checks.
 
 #### Run
 
@@ -264,3 +265,4 @@ The procedures in this task use the methods shown in the tabs above. The toolkit
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0.0 | 2025-03-25 | Azure Local Cloud | Initial release |
+| 1.1.0 | 2026-11-24 | Azure Local Cloud | Volumes, LUNs, VLAN IDs, virtual disk health, MSDSM (hybrid) and the SDN step (skipped with a reason when `sdn.enabled` is not true) |
