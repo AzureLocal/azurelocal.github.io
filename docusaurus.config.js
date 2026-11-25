@@ -50,7 +50,8 @@ const config = {
       {
         // Phase 02 manual tasks moved into manual-installation/ on 2026-11-06.
         redirects: [
-          'task-01-delete-and-recreate-virtual-disk-on-dell-boss-card',
+          ...[
+            'task-01-delete-and-recreate-virtual-disk-on-dell-boss-card',
           'task-02-mount-and-verify-dell-gold-image-iso',
           'task-03-manual-os-installation',
           'task-04-verify-os-deployment',
@@ -58,6 +59,26 @@ const config = {
           from: `/docs/implementation/04-cluster-deployment/phase-02-os-installation/${page}`,
           to: `/docs/implementation/04-cluster-deployment/phase-02-os-installation/manual-installation/${page}`,
         })),
+        // Automation pages moved from the Implementation Guide into the Automation
+        // Guide, and disconnected operations became a top-level section (2026-11-07).
+        // Each old URL also works under the old /docs/2411 and /docs/next prefixes.
+        ...[
+          ['/docs/implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/automation', '/docs/automation/04-zero-touch-provisioning/'],
+          ...['prerequisites', 'operator-inputs', 'run-from-management-host', 'run-from-pipeline', 'output-and-handoff'].map((page) => [
+            `/docs/implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/automation/${page}`,
+            `/docs/automation/04-zero-touch-provisioning/${page}`,
+          ]),
+          ['/docs/implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/automation/monitor-with-sonar', '/docs/automation/06-sonar/monitor-with-sonar'],
+          ...['automated-os-configuration', 'how-the-run-works', 'which-method-then-os-configuration'].map((page) => [
+            `/docs/implementation/04-cluster-deployment/phase-03-os-configuration/${page}`,
+            `/docs/automation/05-os-configuration/${page}`,
+          ]),
+          ['/docs/operations/disconnected-operations-on-azure-local', '/docs/disconnected-operations/'],
+        ].flatMap(([from, to]) => ['', '/docs/2411', '/docs/next'].map((prefix) => ({
+          from: prefix + (prefix ? from.slice('/docs'.length) : from),
+          to,
+        }))),
+        ],
         // Docs used to be versioned (2411 and next). Keep the old URLs working.
         createRedirects(existingPath) {
           if (existingPath === '/docs' || existingPath.startsWith('/docs/')) {
@@ -167,7 +188,7 @@ const config = {
               { label: 'Business continuity and DR', href: 'https://azurelocal.cloud/azurelocal-bcdr/', title: 'Azure Site Recovery and Azure Backup runbooks' },
               { label: 'Cost Management', href: 'https://azurelocal.cloud/azurelocal-cost/', title: 'Chargeback, showback, rightsizing and cost reporting' },
               { label: 'Governance', href: 'https://azurelocal.cloud/azurelocal-governance/', title: 'Azure Policy, security baselines, RBAC and CIS automation' },
-              { label: 'Disconnected Operations', to: '/docs/operations/disconnected-operations-on-azure-local', title: 'Running Azure Local with limited or no connectivity' },
+              { label: 'Disconnected Operations', to: '/docs/disconnected-operations/', title: 'Running Azure Local with limited or no connectivity' },
             ],
           },
           {

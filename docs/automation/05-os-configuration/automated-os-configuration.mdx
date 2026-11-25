@@ -28,13 +28,17 @@ status: Active
 
 **Status**: Active
 
+:::tip Manual steps live in the Implementation Guide
+This page documents the automation. The same work, one setting at a time, is in the [Phase 03 manual tasks](../../implementation/04-cluster-deployment/phase-03-os-configuration/index.mdx#manual-tasks); each task links to its script in the azurelocal-toolkit.
+:::
+
 ---
 
 ## Overview
 
-The [16 manual tasks](./index.mdx#manual-tasks) in this phase do one setting at a time on one node at a time. The toolkit does the whole phase for the whole cluster in one run. It reads each node first, compares it with the master `infrastructure.yml`, changes only what differs, restarts where needed, reads again, and stops with a report. A node that already matches gets one read and no change.
+The [16 manual tasks](../../implementation/04-cluster-deployment/phase-03-os-configuration/index.mdx#manual-tasks) in this phase do one setting at a time on one node at a time. The toolkit does the whole phase for the whole cluster in one run. It reads each node first, compares it with the master `infrastructure.yml`, changes only what differs, restarts where needed, reads again, and stops with a report. A node that already matches gets one read and no change.
 
-- It works for both ways the OS got there: azurelocal-ztp's [Handoff](../phase-02-os-installation/simplified-provisioning/automation/index.mdx#where-ztp-ends) and a [manual ISO install](../phase-02-os-installation/manual-installation/index.mdx). It detects which, per node ([method detection](./which-method-then-os-configuration.mdx#method-detection)).
+- It works for both ways the OS got there: azurelocal-ztp's [Handoff](../04-zero-touch-provisioning/index.mdx#where-ztp-ends) and a [manual ISO install](../../implementation/04-cluster-deployment/phase-02-os-installation/manual-installation/index.mdx). It detects which, per node ([method detection](./which-method-then-os-configuration.mdx#method-detection)).
 - It runs the same stages every time: **plan** (read-only), **approval gate**, **apply**, **verify**.
 - It runs standalone from a PowerShell 7 session, or from a GitHub Actions or GitLab CI pipeline with a manual approval in front of apply.
 - It never wipes anything unless the master file says so (`os_configuration.clear_storage`).
@@ -139,12 +143,12 @@ Rules that matter more than the syntax:
 - **Keep the plan and the apply on the same commit.** The person approves what will run.
 - **No secret in the pipeline.** The runner signs in with a managed identity or an OIDC federated credential. The local administrator's password stays in Key Vault and travels as a protected parameter.
 - **The apply job never runs on its own.** Without approval there is no apply.
-- **Gate ARM on the exit code.** Start [ARM Validate](../phase-05-cluster-deployment/index.mdx) only after the apply job is green.
+- **Gate ARM on the exit code.** Start [ARM Validate](../../implementation/04-cluster-deployment/phase-05-cluster-deployment/index.mdx) only after the apply job is green.
 
 ### Linux runner notes
 
 - The wrapper is PowerShell 7. A Linux runner with PowerShell 7, `powershell-yaml` and `Az.Accounts` is enough for the **Arc Run Command** transport, because that path is HTTPS from the runner to Azure and needs no route to the nodes. Prove it on your runner image first with `-SpecOnly`, which touches nothing.
-- The **WinRM** transport (the ISO route) needs a route to TCP 5985 on the nodes and PowerShell remoting from the runner to Windows. Test that from the runner before you rely on it; remoting from Linux needs extra packages for Negotiate authentication. If the runner is in Azure and the nodes are on-premises, the network path is the same VPN question as for [azurelocal-ztp's runner](../phase-02-os-installation/simplified-provisioning/automation/run-from-pipeline.mdx).
+- The **WinRM** transport (the ISO route) needs a route to TCP 5985 on the nodes and PowerShell remoting from the runner to Windows. Test that from the runner before you rely on it; remoting from Linux needs extra packages for Negotiate authentication. If the runner is in Azure and the nodes are on-premises, the network path is the same VPN question as for [azurelocal-ztp's runner](../04-zero-touch-provisioning/run-from-pipeline.mdx).
 - azurelocal-ztp itself needs a Windows runner on the management network. OS configuration does not.
 
 ---
@@ -229,7 +233,7 @@ This is a summary. The cross-tool matrix, with every source cited, is the toolki
 | the same | Storage Blob Data Contributor and Storage Blob Delegator | A staging storage account | Only if you stage files that way; the default SBE routes need none |
 | Whoever registered the machines | Azure Connected Machine Onboarding and Azure Connected Machine Resource Administrator | The resource group | Done by ZTP or by hand before this step |
 
-The runner holds **resource-group-scope roles only**, never a subscription role. The Azure resource providers (`Microsoft.HybridCompute` and the rest) are registered once by the subscription owner in [Azure foundation, Phase 02: resource providers](../../02-azure-foundation/phase-02-resource-providers/index.mdx).
+The runner holds **resource-group-scope roles only**, never a subscription role. The Azure resource providers (`Microsoft.HybridCompute` and the rest) are registered once by the subscription owner in [Azure foundation, Phase 02: resource providers](../../implementation/02-azure-foundation/phase-02-resource-providers/index.mdx).
 
 ### Network paths
 
@@ -257,8 +261,8 @@ With the default Arc transport the operator host needs **no path to the nodes**.
 | Management address is wrong after ZTP (Modes B or C) | The OS install reset it. This is expected | Apply sets it by MAC. In Mode C the management port is handled first so the node keeps a way out |
 | **SBE package NOT delivered** | `hardware.sbe.delivery` is `skip`, `winrm_copy` has no WinRM route or no credential, or `node_pull_url` is empty or unreachable from the node | Set the delivery route. Nothing else stops; the OEM drivers wait for the package |
 | **A node did not come back after a restart** | The restart wait is 30 minutes for a new boot time | Check the console (BMC) for the node. Run again once it is `Connected` |
-| **Blocked: leftover storage** on an S2D design | The machine was used before | Set `os_configuration.clear_storage: true` for it, read the disk list in the plan, and apply. Or wipe by hand: [Task 11](./task-11-clear-previous-storage-configuration-conditional.mdx) |
-| **Blocked: a SAN LUN is not visible, is not RAW or has one path** | Zoning or LUN masking is not done, or a LUN was initialised | Fix it on the fabric and the array. The run never changes either. [Task 14](./task-14-verify-san-lun-presentation-conditional.mdx) |
+| **Blocked: leftover storage** on an S2D design | The machine was used before | Set `os_configuration.clear_storage: true` for it, read the disk list in the plan, and apply. Or wipe by hand: [Task 11](../../implementation/04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional.mdx) |
+| **Blocked: a SAN LUN is not visible, is not RAW or has one path** | Zoning or LUN masking is not done, or a LUN was initialised | Fix it on the fabric and the array. The run never changes either. [Task 14](../../implementation/04-cluster-deployment/phase-03-os-configuration/task-14-verify-san-lun-presentation-conditional.mdx) |
 | **The nodes don't see the same SAN disks** | Masking differs between nodes | Present the same LUNs with the same IDs to every node |
 | Method mismatch for a node | `scenario.os_install` disagrees with the evidence | [Which method did I use?](./which-method-then-os-configuration.mdx#which-method-did-i-use), then correct the file or the node |
 | The plan changes something every time | An item cannot reach its desired state (for example DNS set by DHCP again) | Read the item's note in the plan; check for a competing policy or a DHCP setting |
@@ -272,7 +276,7 @@ With the default Arc transport the operator host needs **no path to the nodes**.
 - [ ] If `clear_storage` is `true`, the disk list is exactly the disks you mean to wipe
 - [ ] The apply ended with exit code `0` and every node matches the file
 - [ ] The report was written and kept (it holds no secrets)
-- [ ] Active Directory (or local identity) is ready before [ARM Validate](../phase-05-cluster-deployment/index.mdx)
+- [ ] Active Directory (or local identity) is ready before [ARM Validate](../../implementation/04-cluster-deployment/phase-05-cluster-deployment/index.mdx)
 
 ---
 
@@ -280,7 +284,7 @@ With the default Arc transport the operator host needs **no path to the nodes**.
 
 | | | |
 |:--|:--:|--:|
-| ← [Which Method Did I Use?](./which-method-then-os-configuration.mdx) | [↑ Phase 03: OS Configuration](./index.mdx) | [How the run works →](./how-the-run-works.mdx) |
+| ← [Which Method Did I Use?](./which-method-then-os-configuration.mdx) | [↑ Manual steps: Phase 03 OS Configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/index.mdx) | [How the run works →](./how-the-run-works.mdx) |
 
 ---
 

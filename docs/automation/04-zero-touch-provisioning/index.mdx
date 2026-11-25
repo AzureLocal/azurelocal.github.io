@@ -17,7 +17,7 @@ status: Active
 
 # Zero-Touch Provisioning Automation (Preview)
 
-[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](../../index.mdx)
+[![Runbook](https://img.shields.io/badge/Type-Runbook-blue?style=flat-square)](./index.mdx)
 [![Azure](https://img.shields.io/badge/Platform-Azure_Local-0078D4?style=flat-square&logo=microsoftazure)](https://learn.microsoft.com/en-us/azure/azure-local/)
 [![Preview](https://img.shields.io/badge/Status-Preview-yellow?style=flat-square)](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)
 
@@ -28,20 +28,24 @@ status: Active
 
 **Status**: Active
 
+:::tip This guide documents the automation; the manual steps are in the Implementation Guide
+These pages describe the azurelocal-ztp automation. To do the same work by hand, follow the [simplified provisioning tasks](../../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/index.mdx) in the Implementation Guide (portal route, no scripts needed), or the [manual ISO installation](../../implementation/04-cluster-deployment/phase-02-os-installation/manual-installation/index.mdx). [Choose your route](../../implementation/04-cluster-deployment/choose-your-route.mdx) compares them. Known issues for both routes are in [Troubleshooting and known issues](../../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/troubleshooting.mdx).
+:::
+
 :::warning Preview feature and known limits
 Simplified machine provisioning is **in preview**. Review the [Supplemental Terms of Use for Microsoft Azure Previews](https://azure.microsoft.com/support/legal/preview-supplemental-terms/) before you use it.
 
 - **Region**: East US only (Learn).
 - **Arc gateway**: Not supported (Learn).
 - **Hardware**: Learn lists Dell AX-750 and AX-650, Lenovo ThinkAgile MX650 V3 and V4, and HPE ProLiant DL360 Gen11 as validated hardware. The automation was **proven on Dell AX-760 with iDRAC 7.30**. That model is not on Learn's validated list for this flow, so the result is a proof, not Microsoft support.
-- **Scope**: The automation ends at the **Handoff**: the machines are Provisioned and Arc-connected. It does not configure the OS (drivers, the SBE, DHCP and gateways on the other ports, DNS, time, the deployment administrator, and the static management address in Modes B and C), prepare Active Directory, run Validate, or deploy the cluster. [OS configuration](../../../phase-03-os-configuration/index.mdx) comes next.
+- **Scope**: The automation ends at the **Handoff**: the machines are Provisioned and Arc-connected. It does not configure the OS (drivers, the SBE, DHCP and gateways on the other ports, DNS, time, the deployment administrator, and the static management address in Modes B and C), prepare Active Directory, run Validate, or deploy the cluster. [OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/index.mdx) comes next.
 :::
 
 ---
 
 ## Overview
 
-The [portal route](../index.mdx) of simplified machine provisioning needs a person in the rack for the USB boot, then a person in the Azure portal to upload vouchers. The [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) scripts replace both with automation. Given one environment file (the master `infrastructure.yml`), they:
+The [portal route](../../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/index.mdx) of simplified machine provisioning needs a person in the rack for the USB boot, then a person in the Azure portal to upload vouchers. The [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) scripts replace both with automation. Given one environment file (the master `infrastructure.yml`), they:
 
 1. Build one virtual USB image per machine from Microsoft's maintenance environment.
 2. Attach each image through the machine's BMC (Redfish), boot the machine once from it, and collect the ownership voucher it writes.
@@ -61,8 +65,8 @@ Other pages on this site describe azurelocal-ztp as mounting the maintenance ISO
 | Choose | When |
 |--------|------|
 | **Automated route** (this section) | The machines' BMCs are reachable from a Windows management host, you want a repeatable run with evidence at each step, or you provision many machines or sites. |
-| **Portal route** ([Tasks 1 to 5](../index.mdx#steps-in-this-section)) | Someone is on site with USB media, the BMC is not reachable from a management host, or you want to follow Microsoft's documented steps exactly. |
-| **ISO route** ([Phase 02](../../index.mdx)) | You need a generally available method, Arc gateway, or hardware that simplified provisioning doesn't cover. |
+| **Portal route** ([Tasks 1 to 5](../../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/index.mdx#steps-in-this-section)) | Someone is on site with USB media, the BMC is not reachable from a management host, or you want to follow Microsoft's documented steps exactly. |
+| **ISO route** ([Phase 02](../../implementation/04-cluster-deployment/phase-02-os-installation/index.mdx)) | You need a generally available method, Arc gateway, or hardware that simplified provisioning doesn't cover. |
 
 ---
 
@@ -72,7 +76,7 @@ Other pages on this site describe azurelocal-ztp as mounting the maintenance ISO
 
 Select the diagram to open it full screen and zoom. Source: [`ztp-flow.drawio`](https://github.com/AzureLocal/azurelocal.github.io/blob/main/docs/assets/diagrams/ztp-flow.drawio).
 
-The chart has four lanes. The operator fills in one file and runs one command. The management host does the work it can do locally. Azure claims the machines and installs the OS. The machines and their BMCs carry out the boot. Each arrow that crosses a lane carries a gate, shown as a label on the line. The chart ends at the Handoff; what comes after is on [Which provisioning method, then OS configuration](../../../phase-03-os-configuration/which-method-then-os-configuration.mdx).
+The chart has four lanes. The operator fills in one file and runs one command. The management host does the work it can do locally. Azure claims the machines and installs the OS. The machines and their BMCs carry out the boot. Each arrow that crosses a lane carries a gate, shown as a label on the line. The chart ends at the Handoff; what comes after is on [Which provisioning method, then OS configuration](../05-os-configuration/which-method-then-os-configuration.mdx).
 
 ---
 
@@ -105,7 +109,7 @@ The **Azure** stage prerequisite gate checks that:
 The plan refuses to submit if a voucher is missing or invalid.
 
 :::info Why the OS install is resubmitted automatically
-Learn states that simplified machine provisioning doesn't retry a failed OS installation from the service, and it gives a manual resubmit procedure. The **Ready** stage does that resubmit once, automatically. See [Troubleshooting and known issues](../troubleshooting.mdx#first-os-install-attempt-fails-with-5901).
+Learn states that simplified machine provisioning doesn't retry a failed OS installation from the service, and it gives a manual resubmit procedure. The **Ready** stage does that resubmit once, automatically. See [Troubleshooting and known issues](../../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/troubleshooting.mdx#first-os-install-attempt-fails-with-5901).
 :::
 
 ### Management address modes
@@ -126,7 +130,7 @@ Some hardware must look different during the install than in production. An Emul
 
 ### Where ZTP ends
 
-ZTP ends at the Handoff. The machines are Provisioned and Arc-connected with their BIOS on its final settings, and they are **not yet ready for Validate**. OS configuration comes next: the OEM's network drivers and the SBE in `C:\SBE`, DHCP and extra default gateways off on the other ports, the static management address in Modes B and C, DNS, time, the host name and the deployment administrator. The toolkit does that, in [Phase 03: OS configuration](../../../phase-03-os-configuration/index.mdx), preferably with the [automated run](../../../phase-03-os-configuration/automated-os-configuration.mdx).
+ZTP ends at the Handoff. The machines are Provisioned and Arc-connected with their BIOS on its final settings, and they are **not yet ready for Validate**. OS configuration comes next: the OEM's network drivers and the SBE in `C:\SBE`, DHCP and extra default gateways off on the other ports, the static management address in Modes B and C, DNS, time, the host name and the deployment administrator. The toolkit does that, in [Phase 03: OS configuration](../../implementation/04-cluster-deployment/phase-03-os-configuration/index.mdx), preferably with the [automated run](../05-os-configuration/automated-os-configuration.mdx).
 
 :::note The iDRAC USB link is not a cluster port
 The iDRAC presents a USB link to the operating system (Remote NDIS, `169.254.0.x`) as a network adapter. It has no gateway, is not a cluster port, and must stay out of your network intents.
@@ -198,17 +202,17 @@ After the Boot stage, each image holds that machine's voucher. A run that starts
 | [Prerequisites](./prerequisites.mdx) | Azure, hardware and BMC, network paths, management host |
 | [Operator inputs](./operator-inputs.mdx) | The environment file and where the SBE belongs |
 | [Run from a management host](./run-from-management-host.mdx) | Plan, run, watch, and resume on a Windows host |
-| [Monitor with Sonar](./monitor-with-sonar.mdx) | Follow the run live and read-only with azurelocal-sonar |
+| [Monitor with Sonar](../06-sonar/monitor-with-sonar.mdx) | Follow the run live and read-only with azurelocal-sonar |
 | [Run from a pipeline](./run-from-pipeline.mdx) | Self-hosted Windows runner, identity, Key Vault secrets, approval before Boot |
 | [Output and handoff](./output-and-handoff.mdx) | The Handoff, what it holds and what comes next |
-| [OS configuration](../../../phase-03-os-configuration/automated-os-configuration.mdx) | What to run after the Handoff |
-| [Troubleshooting and known issues](../troubleshooting.mdx) | Issues found on live runs and Learn's recovery steps |
+| [OS configuration](../05-os-configuration/automated-os-configuration.mdx) | What to run after the Handoff |
+| [Troubleshooting and known issues](../../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/troubleshooting.mdx) | Issues found on live runs and Learn's recovery steps |
 
 ---
 
 ## Where the scripts live
 
-The scripts, the full parameter reference, the JSON schemas and the example pipelines are in the [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp). Use that repository as the source of truth for parameter names and defaults. You can follow a run live with [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/) (see [Monitor with Sonar](./monitor-with-sonar.mdx)), and check endpoints and network readiness first with [azurelocal-beacon](https://azurelocal.cloud/azurelocal-beacon/).
+The scripts, the full parameter reference, the JSON schemas and the example pipelines are in the [azurelocal-ztp repository](https://github.com/AzureLocal/azurelocal-ztp). Use that repository as the source of truth for parameter names and defaults. You can follow a run live with [azurelocal-sonar](https://azurelocal.cloud/azurelocal-sonar/) (see [Monitor with Sonar](../06-sonar/monitor-with-sonar.mdx)), and check endpoints and network readiness first with [azurelocal-beacon](https://azurelocal.cloud/azurelocal-beacon/).
 
 ---
 
@@ -216,7 +220,7 @@ The scripts, the full parameter reference, the JSON schemas and the example pipe
 
 | | | |
 |:--|:--:|--:|
-| ← [Simplified Provisioning Overview](../index.mdx) | [↑ Phase 02: OS Installation](../../index.mdx) | [Prerequisites →](./prerequisites.mdx) |
+| ← [Manual steps: Simplified Provisioning](../../implementation/04-cluster-deployment/phase-02-os-installation/simplified-provisioning/index.mdx) | [↑ Manual steps: Phase 02 OS Installation](../../implementation/04-cluster-deployment/phase-02-os-installation/index.mdx) | [Prerequisites →](./prerequisites.mdx) |
 
 ---
 

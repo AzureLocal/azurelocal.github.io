@@ -1,0 +1,92 @@
+---
+title: "Operating Disconnected Operations"
+sidebar_label: "Operations"
+sidebar_position: 4
+description: "Day-2 work for Azure Local disconnected operations: the update model, monitoring, log collection, BitLocker recovery keys, syslog forwarding and managing workloads from the local control plane."
+---
+
+# Operations
+
+Day-2 tasks for an Azure Local environment that runs disconnected operations. Details and commands are in the linked Microsoft Learn articles.
+
+## Updates
+
+Learn describes three update layers and who is responsible for each:
+
+| Layer | What it is | Who provides and applies it |
+|-------|------------|-----------------------------|
+| Control plane | The disconnected operations appliance | The control plane operator provides and maintains it |
+| Data plane | The Azure Local instances | Azure Local administrators apply updates in their facilities |
+| Workloads | VMs, guest operating systems, AKS and applications | The workload owners |
+
+**Update order:** control plane, then data plane, then workloads. One supported control plane version can enable several data plane releases, so the versions do not map one to one.
+
+- Keep the control plane inside its six-month support window. Update it when its support lifecycle requires it or when a downstream update depends on a newer control plane. Learn also says you must update regularly to stay supported, so build the routine into production planning.
+- To update the appliance, download the update files from the appliance's **Updates** page in the Azure portal (or by script), copy them to the seed node, and use the OperationsModule: `Invoke-ApplianceUpdatePackageUpload`, `Wait-AppliancePreUpdate`, `Start-ApplianceUpdate` and `Get-ApplianceUpdateHistory`. An update can take several hours and might reboot the appliance. If it fails, the system tries to roll back to the last known good state.
+- Before you start an appliance update, export your BitLocker recovery keys, and confirm the LDAP credentials are valid and not expired (`Test-ApplianceExternalIdentityConfigurationDeep`).
+- To update an Azure Local instance, choose a solution version your control plane supports, download the update package (from the local endpoint by script, from Learn, or from the Azure portal), copy it to the cluster, and import it. Before the first solution update, set the machine-level environment variable `NUGET_CERT_REVOCATION_MODE` to `offline` on each node.
+- In air-gapped mode you move update packages across the boundary yourself.
+
+For the host, the Solution Builder Extension and the broader update model, see [Update management and Solution Builder Extension](../operations/update-management-and-sbe.mdx).
+
+## Monitoring
+
+Learn describes monitoring with external tools, because metrics and telemetry streaming are not supported in disconnected mode.
+
+| What | How |
+|------|-----|
+| Azure Local infrastructure and the appliance | System Center Operations Manager with the Operations Manager agent on each node, the Windows Server, cluster, Hyper-V and S2D management packs, and the disconnected operations management pack |
+| Virtual machines | Operations Manager, non-Microsoft or open-source tools, with an agent in each VM |
+| AKS clusters | Non-Microsoft or open-source tools such as Prometheus and Grafana, installed on an AKS cluster on Azure Local or on a Kubernetes cluster outside it |
+
+The disconnected operations management pack supports a single disconnected operations deployment and AD FS, and includes health and metrics dashboards and preconfigured alert rules, including certificate expiration warnings. Versions are available for System Center Operations Manager 2022 and 2025.
+
+## Logs and support
+
+- **On-demand log collection** uses the disconnected operations PowerShell module (`Invoke-AzureLocalDisconnectedLogCollection`). Use `Domain\Username` for the share account, and run the commands on the nodes that are part of the Azure Local host infrastructure.
+- `Send-DiagnosticData` must run on a Windows machine with direct internet access to Azure, not on Arc-enabled systems or on the appliance.
+- **Fallback log collection** is the other documented route for troubleshooting.
+- Not supported in disconnected mode: remote support, portal-based log collection, and metrics and telemetry streaming.
+- Known issue: when you collect the `Observability` role during indirect log collection, share credentials can be captured in those logs and uploaded to Microsoft with a diagnostic data submission. Pass an explicit `-CloudManagementFilterByRoles` list that omits `Observability`. See [limits](./limits.mdx#known-issues).
+
+## BitLocker recovery keys
+
+The appliance encrypts its data volumes with BitLocker and keeps the recovery passwords in an internal secret store. You do not need them for regular operations or startup, but support scenarios might. Without them, some support scenarios can cause data loss and require redeploying the appliance.
+
+- Retrieve the keys with `Get-ApplianceBitLockerRecoveryKeys` against the management endpoint.
+- Store them in a secure location outside Azure Local and outside the Azure Local host.
+- Back up the Host Guardian Service certificates from the seed node with `Export-ApplianceHGSCertificates`.
+
+## Syslog forwarding
+
+The appliance can forward security events in syslog format (RFC 3164 framing with a Common Event Format payload) to your SIEM. You configure it with GET and PUT calls to the appliance's sysconfig endpoint, with the management client certificate.
+
+- Use TCP with authentication and TLS encryption in production. That is the default and the minimum Learn recommends.
+- Do not use the `SkipServerCertificateCheck` flag, no encryption, or UDP in production. They do not protect against eavesdropping or man-in-the-middle attacks.
+
+## Working with the services
+
+| Task | Learn article |
+|------|---------------|
+| Use the Azure CLI against the local control plane | [Azure CLI for disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-cli?view=azloc-2610) |
+| Manage Azure Local VMs | [Azure Local VMs for disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-arc-vm?view=azloc-2610) |
+| Manage AKS | [AKS on Azure Local with disconnected operations](https://learn.microsoft.com/en-us/azure/aks/aksarc/disconnected-operations-aks) |
+| Manage container registries | [Azure Container Registry for disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-azure-container-registry?view=azloc-2610) |
+| Enforce standards | [Azure Policy for disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-policy?view=azloc-2610) |
+| Create key vaults | [Create a key vault with the CLI](https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-cli#create-a-key-vault) |
+
+## Identity maintenance
+
+If identity synchronization fails or the wrong groups sync, check that the LDAP credentials are valid with read access, that the appliance can reach and resolve the LDAP server, and that `SyncGroupIdentifier` points to the right root group. If you lose access to the operator subscription, change `rootOperatorUserPrincipalName`. The OperationsModule has cmdlets to test and reset the identity configuration (`Get-Command *Appliance*ExternalIdentity*`).
+
+## Sources
+
+- [Apply updates for Azure Local disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-update?view=azloc-2610)
+- [Plan updates for Azure Local disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-plan-updates?view=azloc-2610)
+- [Update an Azure Local instance running on disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-update-azure-local-instance?view=azloc-2610)
+- [Monitor disconnected operations for Azure Local](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-monitoring?view=azloc-2610)
+- [Collect logs on demand](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-on-demand-logs?view=azloc-2610)
+- [Security considerations for disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-security?view=azloc-2610)
+- [Plan your identity for disconnected operations](https://learn.microsoft.com/en-us/azure/azure-local/manage/disconnected-operations-identity?view=azloc-2610)
+
+> Content checked against Microsoft Learn on 2026-11-07 (documentation view azloc-2610).

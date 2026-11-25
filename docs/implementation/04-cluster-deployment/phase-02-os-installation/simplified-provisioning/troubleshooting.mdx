@@ -33,7 +33,7 @@ Simplified machine provisioning is in preview, East US only, and doesn't support
 :::
 
 :::info How to read this page
-Items marked **proven on Dell AX-760 / iDRAC 7.30** were seen on live runs of the [azurelocal-ztp automation](./automation/index.mdx) on two Dell AX-760 machines with iDRAC 7.30, Azure Local build `12.2690.1003.15` and maintenance image `10.2610.0.3063`. They aren't confirmed on other hardware or builds. Where the cause is a best guess, the page says so. Items marked **Learn** come from Microsoft's documentation, with a link.
+Items marked **proven on Dell AX-760 / iDRAC 7.30** were seen on live runs of the [azurelocal-ztp automation](../../../../automation/04-zero-touch-provisioning/index.mdx) on two Dell AX-760 machines with iDRAC 7.30, Azure Local build `12.2690.1003.15` and maintenance image `10.2610.0.3063`. They aren't confirmed on other hardware or builds. Where the cause is a best guess, the page says so. Items marked **Learn** come from Microsoft's documentation, with a link.
 :::
 
 ---
@@ -101,7 +101,7 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 
 **Signals.** The automation watches the iDRAC log for 10 minutes for event `OSE1002`, logged with the text "C: boot completed". The automation reads it as the installed OS booting. This is what the log showed on the proven runs, not a definition that Dell documents.
 
-**If the machine doesn't boot the image.** The iDRAC's SMB client connects out to the management host on TCP 445. Check that the BMC can reach the host on that port, and check the share and the firewall rule on the host. See [network paths](./automation/prerequisites.mdx#network-paths).
+**If the machine doesn't boot the image.** The iDRAC's SMB client connects out to the management host on TCP 445. Check that the BMC can reach the host on that port, and check the share and the firewall rule on the host. See [network paths](../../../../automation/04-zero-touch-provisioning/prerequisites.mdx#network-paths).
 
 **After a failed Boot stage.** Before you retry, check on each BMC that the virtual media is ejected and that the one-time boot setting is cleared. A leftover attached image or pending one-time boot can send the next attempt to the wrong place.
 
@@ -117,7 +117,7 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 
 **Why Validate doesn't catch it.** Validate runs the readiness checks only. The deployment content that runs this step is downloaded when Deploy starts, so it isn't on the machines during Validate. Validate's Arc checks use the resource IDs you pass in, and those are correct. The ISO route never hits this, because there the Arc machine carries the host name.
 
-**What you do.** Give cluster deployment each machine's `arcMachineResourceId` and Arc machine name from the handoff file. That's needed, but on an affected build it doesn't prevent the failure, and no workaround is known. Check Microsoft's [known issues](https://learn.microsoft.com/en-us/azure/azure-local/known-issues?view=azloc-2610) for your build, or use the ISO route for that build. The handoff reads them after the Ready stage, so they point at the service-created `<device-id>-1` machine. See [Output and handoff](./automation/output-and-handoff.mdx#what-to-hand-to-os-configuration-and-cluster-deployment). Check the names before Deploy.
+**What you do.** Give cluster deployment each machine's `arcMachineResourceId` and Arc machine name from the handoff file. That's needed, but on an affected build it doesn't prevent the failure, and no workaround is known. Check Microsoft's [known issues](https://learn.microsoft.com/en-us/azure/azure-local/known-issues?view=azloc-2610) for your build, or use the ISO route for that build. The handoff reads them after the Ready stage, so they point at the service-created `<device-id>-1` machine. See [Output and handoff](../../../../automation/04-zero-touch-provisioning/output-and-handoff.mdx#what-to-hand-to-os-configuration-and-cluster-deployment). Check the names before Deploy.
 
 ### A resubmitted job keeps the earlier error
 
@@ -133,7 +133,7 @@ This page has two parts: issues that Microsoft Learn documents, which apply to b
 
 **Symptom.** A restart inside a remote WinRM call kills the session before the call returns, so the caller sees an error although the restart worked.
 
-**What the automation does.** ZTP itself opens no WinRM session to the installed OS. [OS configuration](../../phase-03-os-configuration/automated-os-configuration.mdx) restarts a machine with a separate call and then waits for a new boot time. If you restart machines yourself during OS configuration, do the same.
+**What the automation does.** ZTP itself opens no WinRM session to the installed OS. [OS configuration](../../../../automation/05-os-configuration/automated-os-configuration.mdx) restarts a machine with a separate call and then waits for a new boot time. If you restart machines yourself during OS configuration, do the same.
 
 ### The iDRAC USB link shows up as an adapter
 
@@ -210,7 +210,7 @@ The full script is on Learn: [Reattempt a failed OS provisioning](https://learn.
 
 **What was seen.** **Proven on Dell AX-760 / iDRAC 7.30.** After a fresh OS, a machine has inbox drivers, DHCP and a default gateway on more than one port, and an empty `C:\SBE`. Dell states that the SBE can't install drivers or firmware during deployment, so the drivers must go on before Validate and Deploy.
 
-**What the automation does.** ZTP does not. [OS configuration](../../phase-03-os-configuration/automated-os-configuration.mdx) installs the SBE's network drivers, sets one static management address by MAC (Modes B and C), and turns off DHCP and the gateway on the other adapters. See [where ZTP ends](./automation/index.mdx#where-ztp-ends).
+**What the automation does.** ZTP does not. [OS configuration](../../../../automation/05-os-configuration/automated-os-configuration.mdx) installs the SBE's network drivers, sets one static management address by MAC (Modes B and C), and turns off DHCP and the gateway on the other adapters. See [where ZTP ends](../../../../automation/04-zero-touch-provisioning/index.mdx#where-ztp-ends).
 
 **Check by hand.**
 
@@ -240,7 +240,7 @@ For the automation, the event file `ztp-events.jsonl` in the `ztp-state` folder 
 
 | | | |
 |:--|:--:|--:|
-| ← [Simplified Provisioning Overview](./index.mdx) | [↑ Phase 02: OS Installation](../index.mdx) | [Automation Overview →](./automation/index.mdx) |
+| ← [Simplified Provisioning Overview](./index.mdx) | [↑ Phase 02: OS Installation](../index.mdx) | [Automation Overview →](../../../../automation/04-zero-touch-provisioning/index.mdx) |
 
 ---
 
